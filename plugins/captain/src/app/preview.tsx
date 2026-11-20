@@ -102,7 +102,7 @@ function prose(text: string): string {
 export const Preview = memo(function Preview({ markdown }: { markdown: string }) {
   const lines = previewLines(markdown);
   return (
-    <span className="flex min-w-0 flex-col text-[10px] leading-snug break-words text-foreground">
+    <span className="flex min-w-0 flex-col text-[10px] leading-3 break-words text-foreground">
       {lines.map((line, index) => {
         const key = `${index}`;
         switch (line.kind) {

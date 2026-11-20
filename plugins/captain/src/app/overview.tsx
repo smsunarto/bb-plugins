@@ -81,7 +81,7 @@ export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
       data-testid="captain-overview"
       className="h-full min-h-0 overflow-y-auto overscroll-contain"
     >
-      <div className="flex min-w-0 flex-col gap-1.5 p-2 text-sm">
+      <div className="flex min-w-0 flex-col gap-3 p-2 text-sm leading-5">
         <Section
           id="needs"
           title="Needs you"
@@ -211,7 +211,7 @@ function ReadState({
       {problem === null ? null : (
         <output
           className={cn(
-            "flex min-w-0 items-center gap-2 px-2 py-1 text-xs",
+            "flex min-w-0 items-center gap-2 px-2 py-1 text-xs leading-4",
             read.error !== null && !offline ? "text-destructive" : "text-muted-foreground",
           )}
         >
@@ -311,8 +311,8 @@ function Section({
 }) {
   const body = useId();
   return (
-    <section aria-label={title} data-section={id} className="flex min-w-0 flex-col gap-0.5">
-      <div className="flex min-h-8 min-w-0 items-center rounded-md bg-muted/60 pe-1 pointer-coarse:min-h-11">
+    <section aria-label={title} data-section={id} className="flex min-w-0 flex-col gap-1">
+      <div className="flex min-h-8 min-w-0 items-center rounded-lg bg-muted/60 pe-1 pointer-coarse:min-h-11">
         <button
           type="button"
           aria-expanded={!collapsed}
@@ -321,19 +321,22 @@ function Section({
           onClick={() => onToggle(id)}
           className={cn(
             TAP,
-            "flex min-h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-start outline-none focus-visible:outline-1",
+            "flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-start outline-none focus-visible:outline-1",
           )}
         >
-          <span className="truncate font-medium text-foreground">{title}</span>
+          <span className="truncate leading-5 font-medium text-foreground">{title}</span>
           <span
-            className={cn("text-muted-foreground tabular-nums", count === undefined && "invisible")}
+            className={cn(
+              "leading-5 text-muted-foreground tabular-nums",
+              count === undefined && "invisible",
+            )}
           >
             {count ?? 0}
           </span>
           <Icon
             name={collapsed ? "ChevronRight" : "ChevronDown"}
             aria-hidden
-            className="size-3.5 shrink-0 text-muted-foreground"
+            className="size-4 shrink-0 text-muted-foreground"
           />
         </button>
         {action}
@@ -395,20 +398,20 @@ function AskRow({ captainId, item, now }: { captainId: string; item: QueueItem; 
         onClick={() => setOpen(!open)}
         className={cn(
           TAP,
-          "flex min-w-0 items-start gap-2 rounded-md px-2 py-1.5 text-start outline-none hover:bg-muted/40 focus-visible:outline-1",
+          "flex min-w-0 items-start gap-2 rounded-lg px-2 py-2 text-start outline-none hover:bg-muted/40 focus-visible:outline-1",
         )}
       >
         <AskIcon item={item} />
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="font-medium break-words text-foreground [unicode-bidi:plaintext]">
+          <span className="leading-5 font-medium break-words text-foreground [unicode-bidi:plaintext]">
             {title}
           </span>
-          <span className="truncate text-xs text-muted-foreground" title={sub}>
+          <span className="truncate text-xs leading-4 text-muted-foreground" title={sub}>
             {sub}
           </span>
         </span>
         {item.since === null ? null : (
-          <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+          <span className="shrink-0 text-xs leading-5 text-muted-foreground tabular-nums">
             {age(now, item.since)}
           </span>
         )}
@@ -450,7 +453,7 @@ function Answer({ id, captainId, item }: { id: string; captainId: string; item: 
       {detail ? (
         <Markdown
           content={detail}
-          className="min-w-0 text-xs leading-snug text-muted-foreground [--foreground:var(--muted-foreground)]"
+          className="min-w-0 text-xs leading-4 text-muted-foreground [--foreground:var(--muted-foreground)]"
         />
       ) : null}
       {other !== null && item.kind === "ask" && !sending ? (
@@ -471,7 +474,7 @@ function Answer({ id, captainId, item }: { id: string; captainId: string; item: 
           }}
         />
       ) : null}
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         {sending && item.kind === "ask" ? (
           <output className="max-w-full min-w-0 wrap-anywhere text-muted-foreground">
             Answered {JSON.stringify(item.answer)} · Sending…
@@ -583,7 +586,7 @@ function TaskRow({ task }: { task: CaptainTaskItem }) {
         href={`/plugins/scott-tasks/tasks/task/${encodeURIComponent(task.key)}`}
         className={cn(
           TAP,
-          "flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-2 text-start no-underline outline-none hover:bg-muted/40 focus-visible:outline-1",
+          "flex min-w-0 flex-1 items-start gap-2 rounded-lg px-2 py-2 text-start no-underline outline-none hover:bg-muted/40 focus-visible:outline-1",
         )}
       >
         <TaskStatusGlyph status={task.status} ready={task.ready} />
@@ -611,7 +614,7 @@ function TaskRow({ task }: { task: CaptainTaskItem }) {
           size="icon"
           variant="ghost"
           aria-label={`Open ${task.key}'s ${role} thread`}
-          className={cn(TAP, "mt-2 me-1 size-8 shrink-0 text-muted-foreground")}
+          className={cn(TAP, "me-1 size-8 shrink-0 self-center text-muted-foreground")}
           onClick={() => navigate.toThread(crew.threadId)}
         >
           <Icon name="MessageSquare" aria-hidden className="size-4" />
@@ -681,30 +684,30 @@ function DriveCard({ threadId, file }: { threadId: string; file: DriveFileItem }
         type="button"
         onClick={open}
         aria-label={`Open ${file.path}`}
-        className="flex w-full min-w-0 flex-col gap-1 rounded-md text-start outline-none hover:bg-muted/40 focus-visible:outline-1"
+        className="flex w-full min-w-0 flex-col gap-1 rounded-lg text-start outline-none hover:bg-muted/40 focus-visible:outline-1"
       >
         <span
           aria-hidden
-          className="flex h-32 min-w-0 flex-col overflow-hidden rounded-md border border-border bg-background p-2"
+          className="flex h-32 min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background p-2"
         >
           {file.excerpt === null ? (
             <span className="flex h-full items-center justify-center text-muted-foreground">
               <Icon name="File" className="size-6" />
             </span>
           ) : file.excerpt.trim() === "" ? (
-            <span className="flex h-full items-center justify-center text-xs text-muted-foreground">
+            <span className="flex h-full items-center justify-center text-xs leading-4 text-muted-foreground">
               Empty
             </span>
           ) : (
             <Preview markdown={file.excerpt} />
           )}
         </span>
-        <span className="flex min-w-0 flex-col leading-snug">
-          <span className="truncate text-sm text-foreground" title={file.name}>
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-sm leading-5 text-foreground" title={file.name}>
             {file.name}
           </span>
           {file.folder === null ? null : (
-            <span className="truncate text-xs text-muted-foreground" title={file.folder}>
+            <span className="truncate text-xs leading-4 text-muted-foreground" title={file.folder}>
               {file.folder}
             </span>
           )}
@@ -754,7 +757,7 @@ function OpenDrive({ folder }: { folder: { hostId: string; path: string } | null
       className={cn(TAP, "size-6 text-muted-foreground")}
       onClick={open.run}
     >
-      <Icon name="ArrowUpRight" aria-hidden className="size-3.5" />
+      <Icon name="ArrowUpRight" aria-hidden className="size-4" />
     </Button>
   );
 }
@@ -774,13 +777,13 @@ function MoreInDrive({
   // A walk that stopped before finding any file knows only that there is more.
   const label = more > 0 ? `${more}${truncated ? "+" : ""} more in the Drive` : "More in the Drive";
   return open === null ? (
-    <p className="m-0 px-2 py-1 text-xs text-muted-foreground">{label}</p>
+    <p className="m-0 px-2 py-1 text-xs leading-4 text-muted-foreground">{label}</p>
   ) : (
     <Button
       type="button"
       size="sm"
       variant="link"
-      className={cn(TAP, "h-auto self-start px-2 py-1 text-xs text-muted-foreground")}
+      className={cn(TAP, "h-auto self-start px-2 py-1 text-xs leading-4 text-muted-foreground")}
       aria-label={`${label}: ${open.label.toLowerCase()}`}
       onClick={open.run}
     >
@@ -790,28 +793,29 @@ function MoreInDrive({
 }
 
 function Empty({ children }: { children: ReactNode }) {
-  return <p className="m-0 px-2 py-1.5 text-xs text-muted-foreground">{children}</p>;
+  return <p className="m-0 px-2 py-2 text-xs leading-4 text-muted-foreground">{children}</p>;
 }
 
-/** Space for rows or cards while they first load, about the loaded content's height. */
+/** Space for rows or cards while they first load, each the loaded one's height. */
 function Placeholder({ rows, cards = false }: { rows: number; cards?: boolean }) {
   return (
-    <div aria-busy className="flex flex-col gap-1 px-2 py-1.5">
+    <div aria-busy className="flex flex-col">
       {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="flex items-start gap-2 py-0.5">
-          <span className="size-4 shrink-0 animate-pulse rounded bg-muted" />
-          <span className="flex flex-1 flex-col gap-1">
+        // A loaded row: 8 + a 20px title + a 16px subline + 8.
+        <div key={index} className="flex items-start gap-2 px-2 py-2">
+          <span className="mt-0.5 size-4 shrink-0 animate-pulse rounded bg-muted" />
+          <span className="flex flex-1 flex-col gap-2">
             <span className="h-4 w-3/4 animate-pulse rounded bg-muted" />
             <span className="h-3 w-1/2 animate-pulse rounded bg-muted" />
           </span>
         </div>
       ))}
       {cards ? (
-        <div className={CARD_GRID}>
+        <div className={cn("px-2 py-1", CARD_GRID)}>
           {[0, 1, 2, 3, 4, 5].map((index) => (
             <span key={index} className="flex flex-col gap-1">
-              <span className="h-32 animate-pulse rounded-md bg-muted" />
-              <span className="h-4 w-1/2 animate-pulse rounded bg-muted" />
+              <span className="h-32 animate-pulse rounded-lg bg-muted" />
+              <span className="h-5 w-1/2 animate-pulse rounded bg-muted" />
             </span>
           ))}
         </div>
