@@ -7,6 +7,16 @@ description: Run review rounds on implemented work, from the first Review dispat
 
 Review checks a change against its brief through blind lens subagents and reports one batch. You decide what goes back to the implementer and when to stop.
 
+## Decide whether to review
+
+- **Always review** a change that touches runtime behavior, a storage schema, permissions, sends, or another plugin, whatever its size.
+- **Skip Review only when all of these hold:**
+  - The diff is instruction, skill or docs text only; mockups or research with no code; or a mechanical change (rename, constant, formatting) under about 20 lines that existing tests cover.
+  - The diff changes no runtime behavior, data or permissions.
+  - You read the diff yourself and ran the brief's checks.
+- **To skip:** record `bb captain verdict <task> review skipped --reason "<rule it met>"`, such as `--reason "docs text only"`. A skip without a reason is refused.
+- Otherwise start a round.
+
 ## Start a round
 
 1. Check the Implement report as `captain.md`'s Check a report says: the branch holds commits, its head matches the report, and the checks it names pass. A PR is open unless the brief said the repo has no remote.
@@ -30,6 +40,5 @@ Review checks a change against its brief through blind lens subagents and report
 
 - Stop when a round finds only rare edge cases. File those as follow-up tasks with `bb tasks create`, then record `review passed`.
 - Stop and ask the user, with `bb captain ask`, when the same finding survives two fix rounds.
-- **To skip review:** record `bb captain verdict <task> review skipped --reason "<why>"`. A skip without a reason is refused.
 
 The loop is done when the task's `review` verdict is `passed` or `skipped`.
