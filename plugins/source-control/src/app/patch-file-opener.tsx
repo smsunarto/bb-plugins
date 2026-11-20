@@ -1,47 +1,57 @@
 /**
  * Opens `.patch` and `.diff` files as the Review page's Files view draws a
  * Change: one card per file, with its path, status and +/− counts, and
- * Pierre's diff virtualized against the column. A file that holds no diff
- * this can read, or one too large to fetch, shows as BB's text preview;
- * "Open as text" switches to it on demand.
+ * Pierre's diff virtualized against the column. The diff view shows only
+ * what it can show faithfully: a file the parser rejects, or one too large
+ * to read, shows as BB's text preview under a line saying why. "Open as
+ * text" switches to that preview on demand and keeps the diff view's place.
  */
-import type { PluginFileOpenerProps, PluginFileOpenerSource } from "@get-bb/plugin-sdk/app";
 import {
+  experimental_Icon as Icon,
+  experimental_useTabVisible as useTabVisible,
+  type PluginFileOpenerProps,
+  type PluginFileOpenerSource,
+} from "@get-bb/plugin-sdk/app";
+import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type ReactNode,
   type RefObject,
 } from "react";
-import type { FilePatch } from "../core/change.ts";
-import { readPatchFile, type PatchFile, type PatchFileCommit } from "../core/patch-file.ts";
+import { startsCollapsed } from "../core/review.ts";
+import {
+  readPatchFile,
+  type PatchFile,
+  type PatchFileCommit,
+  type PatchFileEntry,
+} from "../core/patch-file.ts";
 import { Button } from "./components/ui/button.tsx";
 import { FileRowsSkeleton } from "./file-cards.tsx";
-import { plural } from "./format.ts";
+import { plural, shortId } from "./format.ts";
+import { PHONE, useWidth } from "./page/hooks.ts";
 import {
   ColumnContext,
   DiffColumn,
   EAGER_CARDS,
   FileCard,
-  isOpen,
   useColumn,
-  useOpenState,
   WrapContext,
 } from "./page/files-view.tsx";
 import { PatchStore } from "./page/patches.ts";
 
 /** Larger files show as text: reading them whole into the page would cost more than it shows. */
 export const MAX_PATCH_BYTES = 8 * 1024 * 1024;
+/** How often a showing tab asks whether its file changed, when the server can answer cheaply. */
+const POLL_MS = 5000;
 
-function encodePath(path: string): string {
-  return path.replace(/^\/+/u, "").split("/").map(encodeURIComponent).join("/");
-}
-
-/** The file's raw URL on the BB server, as BB's own file openers read it. */
+/** The file's raw URL on the BB server, as BB's own file openers read it; null for a path with `.` or `..`. */
 export function patchFileUrl(path: string, source: PluginFileOpenerSource): string | null {
-  const file = encodePath(path);
+  const segments = path.replace(/^\/+/u, "").split("/");
+  if (segments.some((segment) => segment === "." || segment === "..")) return null;
+  const file = segments.map(encodeURIComponent).join("/");
   switch (source.kind) {
     case "workspace":
       if (source.environmentId !== null)
@@ -64,120 +74,164 @@ export function patchFileUrl(path: string, source: PluginFileOpenerSource): stri
   }
 }
 
+/** The body as text, or null once it passes `max` bytes: the cap holds without a content-length. */
+export async function readCapped(response: Response, max: number): Promise<string | null> {
+  const size = response.headers.get("content-length");
+  if (size !== null && Number(size) > max) {
+    void response.body?.cancel();
+    return null;
+  }
+  if (!response.body) return response.text();
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return text + decoder.decode();
+    total += value.byteLength;
+    if (total > max) {
+      void reader.cancel();
+      return null;
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+}
+
 type Loaded =
   | { state: "loading" }
-  /** Null `read` when the text holds no diff: shown as text. */
-  | { state: "ready"; read: PatchFile | null }
-  /** Too large, or the request failed: BB's preview shows the file and its own error. */
-  | { state: "text" };
+  | { state: "diff"; read: PatchFile }
+  /** BB's preview, with the line saying why; a null reason lets the preview speak (a failed read). */
+  | { state: "text"; reason: string | null };
 
-function usePatchFile(url: string | null): Loaded {
+const TOO_LARGE = `This file is over ${MAX_PATCH_BYTES / 1024 / 1024} MB, too large for the diff view.`;
+
+/**
+ * The file read and parsed, read again when it may have changed: on Refresh,
+ * when its tab shows again, when the window regains focus, and every few
+ * seconds while showing when the server answers a conditional request.
+ */
+function usePatchFile(url: string | null) {
+  const visible = useTabVisible();
   const [loaded, setLoaded] = useState<{ url: string | null; value: Loaded }>({
     url,
     value: { state: "loading" },
   });
-  useEffect(() => {
+  const [refreshing, setRefreshing] = useState(false);
+  const last = useRef<{
+    url: string;
+    text: string | null;
+    etag: string | null;
+    modified: string | null;
+  }>(null);
+  const inflight = useRef<AbortController | null>(null);
+
+  const load = useCallback(async () => {
     if (url === null) return;
+    inflight.current?.abort();
     const controller = new AbortController();
-    const settle = (value: Loaded) => {
-      if (!controller.signal.aborted) setLoaded({ url, value });
+    inflight.current = controller;
+    const known = last.current?.url === url ? last.current : null;
+    const headers: Record<string, string> = {};
+    if (known?.etag) headers["If-None-Match"] = known.etag;
+    else if (known?.modified) headers["If-Modified-Since"] = known.modified;
+    const settle = (value: Loaded, text: string | null, response: Response | null) => {
+      if (controller.signal.aborted) return;
+      last.current = {
+        url,
+        text,
+        etag: response?.headers.get("etag") ?? null,
+        modified: response?.headers.get("last-modified") ?? null,
+      };
+      setLoaded({ url, value });
     };
-    void (async () => {
-      try {
-        const response = await fetch(url, {
-          credentials: "same-origin",
-          signal: controller.signal,
-        });
-        const size = Number(response.headers.get("content-length") ?? "0");
-        if (!response.ok || size > MAX_PATCH_BYTES) {
-          // Leave the body unread: BB's preview reads it again, with its own states.
-          settle({ state: "text" });
-          controller.abort();
-          return;
-        }
-        const text = await response.text();
-        if (text.length > MAX_PATCH_BYTES) return settle({ state: "text" });
-        settle({ state: "ready", read: readPatchFile(text) });
-      } catch {
-        settle({ state: "text" });
+    try {
+      const response = await fetch(url, {
+        credentials: "same-origin",
+        cache: "no-cache",
+        headers,
+        signal: controller.signal,
+      });
+      if (response.status === 304) return;
+      if (!response.ok) return settle({ state: "text", reason: null }, null, response);
+      const text = await readCapped(response, MAX_PATCH_BYTES);
+      // Unchanged text keeps the drawn diff, its open cards and its scroll.
+      if (text !== null && known?.text === text) return;
+      if (text === null) return settle({ state: "text", reason: TOO_LARGE }, null, response);
+      const read = readPatchFile(text);
+      settle(
+        read.ok ? { state: "diff", read: read.read } : { state: "text", reason: read.reason },
+        text,
+        response,
+      );
+    } catch {
+      if (!controller.signal.aborted) settle({ state: "text", reason: null }, null, null);
+    } finally {
+      if (inflight.current === controller) {
+        inflight.current = null;
+        setRefreshing(false);
       }
-    })();
-    return () => controller.abort();
+    }
   }, [url]);
-  if (url === null) return { state: "text" };
-  return loaded.url === url ? loaded.value : { state: "loading" };
+
+  useEffect(() => {
+    void load();
+    return () => inflight.current?.abort();
+  }, [load]);
+
+  // Read again as the tab shows again, as the window regains focus, and on a poll while showing.
+  const wasVisible = useRef(visible);
+  useEffect(() => {
+    if (visible && !wasVisible.current) void load();
+    wasVisible.current = visible;
+    if (!visible) return;
+    const onFocus = () => void load();
+    window.addEventListener("focus", onFocus);
+    const poll = setInterval(() => {
+      const known = last.current;
+      if (document.visibilityState === "visible" && (known?.etag || known?.modified)) void load();
+    }, POLL_MS);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      clearInterval(poll);
+    };
+  }, [visible, load]);
+
+  const refresh = useCallback(() => {
+    setRefreshing(true);
+    last.current = null;
+    void load();
+  }, [load]);
+
+  const value: Loaded =
+    url === null
+      ? { state: "text", reason: null }
+      : loaded.url === url
+        ? loaded.value
+        : { state: "loading" };
+  return { loaded: value, refresh, refreshing };
 }
 
-/** A patch store already holding every file: cards ask for their patch as the Files view's do. */
-function storeOf(commit: PatchFileCommit): PatchStore {
-  const byPath = new Map<string, FilePatch>(
-    commit.files.map((entry) => [entry.file.path, entry.patch]),
-  );
-  return new PatchStore(async (paths) => ({
+/** A patch store already holding every file, keyed by entry: a path may show twice. */
+function storeOf(read: PatchFile): PatchStore {
+  const byKey = new Map<string, PatchFileEntry>();
+  for (const commit of read.commits) for (const entry of commit.files) byKey.set(entry.key, entry);
+  return new PatchStore(async (keys) => ({
     ok: true,
-    value: { files: paths.flatMap((path) => byPath.get(path) ?? []) },
+    value: {
+      files: keys.flatMap((key) => {
+        const entry = byKey.get(key);
+        // The store files a patch under its path; the key stands in for it.
+        return entry ? [{ ...entry.patch, path: key }] : [];
+      }),
+    },
   }));
 }
 
 const NOOP = () => {};
 
-/** A phone, not a narrow desktop panel: there the Files view wraps lines rather than scroll sideways. */
-const PHONE_QUERY = "(max-width: 767px) and (pointer: coarse)";
-
-function subscribePhone(onChange: () => void): () => void {
-  if (typeof matchMedia === "undefined") return NOOP;
-  const query = matchMedia(PHONE_QUERY);
-  query.addEventListener("change", onChange);
-  return () => query.removeEventListener("change", onChange);
-}
-
-const isPhone = () => typeof matchMedia !== "undefined" && matchMedia(PHONE_QUERY).matches;
-
-/** One commit's files, with their own column watch, store and open state. */
-function CommitFiles({
-  commit,
-  scroller,
-  firstIndex,
-  showHeader,
-}: {
-  commit: PatchFileCommit;
-  scroller: RefObject<HTMLDivElement | null>;
-  /** The commit's first card's place among all the file's cards: the first few draw at once. */
-  firstIndex: number;
-  showHeader: boolean;
-}) {
-  const column = useColumn(scroller, NOOP);
-  const store = useMemo(() => storeOf(commit), [commit]);
-  const { openState, toggle } = useOpenState();
-  return (
-    <ColumnContext.Provider value={column}>
-      <section
-        aria-label={commit.subject ?? commit.id ?? "Files"}
-        className="flex min-w-0 flex-col gap-2"
-        data-testid="sc-patch-commit"
-      >
-        {showHeader ? <CommitHeader commit={commit} /> : null}
-        {commit.files.map((entry, index) => (
-          <FileCard
-            key={entry.file.path}
-            eager={firstIndex + index < EAGER_CARDS}
-            file={entry.file}
-            open={isOpen(openState, entry.file.path)}
-            store={store}
-            line={null}
-            onToggle={toggle}
-            review={undefined}
-            actions={null}
-            head=""
-          />
-        ))}
-      </section>
-    </ColumnContext.Provider>
-  );
-}
-
 function CommitHeader({ commit }: { commit: PatchFileCommit }) {
-  const meta = [commit.id?.slice(0, 7), commit.author?.replace(/\s*<[^>]*>$/, ""), commit.date]
+  const meta = [commit.id ? shortId(commit.id) : null, commit.authorName, commit.date]
     .filter(Boolean)
     .join(" · ");
   return (
@@ -186,7 +240,7 @@ function CommitHeader({ commit }: { commit: PatchFileCommit }) {
         {commit.subject ?? "Commit"}
       </h3>
       {meta ? (
-        <p className="m-0 min-w-0 truncate font-mono text-[11px] leading-4 text-muted-foreground">
+        <p className="m-0 min-w-0 font-mono text-[11px] leading-4 break-words text-muted-foreground">
           {meta}
         </p>
       ) : null}
@@ -194,63 +248,134 @@ function CommitHeader({ commit }: { commit: PatchFileCommit }) {
   );
 }
 
-function Toolbar({
-  label,
-  action,
-  onAction,
-}: {
-  label: ReactNode;
-  action: string;
-  onAction: () => void;
-}) {
+function Toolbar({ children, actions }: { children: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="flex min-h-9 min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-solid border-border-hairline px-3 py-1">
-      <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-muted-foreground">
-        {label}
-      </span>
-      <Button
-        size="sm"
-        variant="ghost"
-        data-testid="sc-patch-file-mode"
-        className="h-7 shrink-0 px-2 text-[12px] max-md:pointer-coarse:min-h-11"
-        onClick={onAction}
-      >
-        {action}
-      </Button>
+    <div className="flex min-h-9 min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-solid border-border-hairline px-3 py-1">
+      <span className="min-w-0 flex-1 text-[12px] leading-4 text-muted-foreground">{children}</span>
+      {actions}
     </div>
   );
 }
 
-/** Each commit with the place of its first card among all the file's cards, which also keys it. */
-function sectionsOf(read: PatchFile): { commit: PatchFileCommit; first: number }[] {
-  const firsts = read.commits.map((commit) => commit.files.length);
-  return read.commits.map((commit, index) => ({
-    commit,
-    first: firsts.slice(0, index).reduce((sum, count) => sum + count, 0),
-  }));
+const TOOL = "h-7 shrink-0 px-2 text-[12px] max-md:pointer-coarse:min-h-11";
+
+function TextButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      data-testid="sc-patch-file-mode"
+      className={TOOL}
+      onClick={onClick}
+    >
+      {label}
+    </Button>
+  );
 }
 
-function PatchColumn({ read }: { read: PatchFile }) {
-  const scroller = useRef<HTMLDivElement>(null);
-  const showHeaders = read.commits.length > 1 || read.commits.some((commit) => commit.subject);
-  const sections = useMemo(() => sectionsOf(read), [read]);
-  const phone = useSyncExternalStore(subscribePhone, isPhone, () => false);
+function RefreshButton({ refreshing, onRefresh }: { refreshing: boolean; onRefresh: () => void }) {
   return (
-    <WrapContext.Provider value={phone}>
+    <Button
+      size="sm"
+      variant="ghost"
+      aria-label={refreshing ? "Refreshing file" : "Refresh file"}
+      disabled={refreshing}
+      className={`${TOOL} w-7 max-md:pointer-coarse:min-w-11`}
+      onClick={onRefresh}
+    >
+      <Icon name="RotateCcw" className="size-3.5" aria-hidden />
+    </Button>
+  );
+}
+
+/** Each card's place among all of them, keyed by entry, so the first few draw at once. */
+function placesOf(read: PatchFile): Map<string, number> {
+  const places = new Map<string, number>();
+  for (const commit of read.commits)
+    for (const entry of commit.files) places.set(entry.key, places.size);
+  return places;
+}
+
+function PatchColumn({
+  read,
+  scroller,
+  onOpenAsText,
+}: {
+  read: PatchFile;
+  scroller: RefObject<HTMLDivElement | null>;
+  onOpenAsText: () => void;
+}) {
+  const column = useColumn(scroller, NOOP);
+  const store = useMemo(() => storeOf(read), [read]);
+  const places = useMemo(() => placesOf(read), [read]);
+  const [open, setOpen] = useState<Readonly<Record<string, boolean>>>({});
+  const paths = useMemo(() => {
+    const byKey = new Map<string, string>();
+    for (const commit of read.commits)
+      for (const entry of commit.files) byKey.set(entry.key, entry.file.path);
+    return byKey;
+  }, [read]);
+  const isOpen = (key: string, path: string) => open[key] ?? !startsCollapsed(path);
+  const toggle = useCallback(
+    (key: string) =>
+      setOpen((state) => ({
+        ...state,
+        [key]: !(state[key] ?? !startsCollapsed(paths.get(key) ?? key)),
+      })),
+    [paths],
+  );
+  const headed = read.commits.length > 1 || read.commits.some((commit) => commit.subject);
+  return (
+    <ColumnContext.Provider value={column}>
       <DiffColumn scroller={scroller}>
         <div className="flex min-w-0 flex-col gap-4 px-3 py-3 @3xl:px-6 @3xl:py-4">
-          {sections.map(({ commit, first }) => (
-            <CommitFiles
-              key={first}
-              commit={commit}
-              scroller={scroller}
-              firstIndex={first}
-              showHeader={showHeaders}
-            />
+          {read.commits.map((commit) => (
+            <section
+              key={commit.files[0]!.key}
+              aria-label={commit.subject ?? commit.id ?? "Files"}
+              className="flex min-w-0 flex-col gap-2"
+              data-testid="sc-patch-commit"
+            >
+              {headed ? <CommitHeader commit={commit} /> : null}
+              {commit.files.map((entry) => (
+                <FileCard
+                  key={entry.key}
+                  id={entry.key}
+                  eager={places.get(entry.key)! < EAGER_CARDS}
+                  file={entry.file}
+                  open={isOpen(entry.key, entry.file.path)}
+                  store={store}
+                  line={null}
+                  onToggle={toggle}
+                  review={undefined}
+                  actions={null}
+                  head=""
+                />
+              ))}
+            </section>
           ))}
+          {read.omitted > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 text-[12px] leading-4 text-muted-foreground">
+              <span>{plural(read.omitted, "more file")} not drawn.</span>
+              <TextButton label="Open as text" onClick={onOpenAsText} />
+            </div>
+          ) : null}
         </div>
       </DiffColumn>
-    </WrapContext.Provider>
+    </ColumnContext.Provider>
+  );
+}
+
+function summary(read: PatchFile): ReactNode {
+  return (
+    <>
+      {read.commits.length > 1 ? `${plural(read.commits.length, "commit")} · ` : null}
+      {plural(read.files + read.omitted, "file")}{" "}
+      <span className="font-mono tabular-nums">
+        <span className="text-success-foreground">+{read.additions}</span>{" "}
+        <span className="text-destructive-text">−{read.deletions}</span>
+      </span>
+    </>
   );
 }
 
@@ -267,54 +392,70 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
       source.experimental_hostId,
     ],
   );
-  const loaded = usePatchFile(url);
+  const { loaded, refresh, refreshing } = usePatchFile(url);
   const [asText, setAsText] = useState(false);
-  const read = loaded.state === "ready" ? loaded.read : null;
+  const root = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  // As the Files view: lines wrap where scrolling sideways would hide their ends.
+  const width = useWidth(root, true);
+  const wrap = width !== null && width < PHONE;
 
-  if (loaded.state === "text" || (loaded.state === "ready" && read === null)) return <Original />;
-  if (asText)
-    return (
+  if (loaded.state === "text")
+    return loaded.reason === null ? (
+      <Original />
+    ) : (
       <div className="flex h-full min-h-0 flex-col" data-testid="sc-patch-file-text">
-        <Toolbar
-          label="Showing the patch as text"
-          action="Show diff"
-          onAction={() => setAsText(false)}
-        />
+        <Toolbar actions={<RefreshButton refreshing={refreshing} onRefresh={refresh} />}>
+          <span data-testid="sc-patch-file-notice">Shown as text. {loaded.reason}</span>
+        </Toolbar>
         <div className="min-h-0 flex-1">
           <Original />
         </div>
       </div>
     );
+
+  const read = loaded.state === "diff" ? loaded.read : null;
   return (
     <div
+      ref={root}
       className="@container flex h-full min-h-0 min-w-0 flex-col bg-background"
       data-testid="sc-patch-file"
     >
       <Toolbar
-        label={
-          read ? (
-            <>
-              {read.commits.length > 1 ? `${plural(read.commits.length, "commit")} · ` : null}
-              {plural(read.files, "file")}{" "}
-              <span className="font-mono tabular-nums">
-                <span className="text-success-foreground">+{read.additions}</span>{" "}
-                <span className="text-destructive-text">−{read.deletions}</span>
-              </span>
-            </>
-          ) : (
-            "Reading the patch…"
-          )
+        actions={
+          <>
+            <RefreshButton refreshing={refreshing} onRefresh={refresh} />
+            <TextButton
+              label={asText ? "Show diff" : "Open as text"}
+              onClick={() => setAsText(!asText)}
+            />
+          </>
         }
-        action="Open as text"
-        onAction={() => setAsText(true)}
-      />
-      {read ? (
-        <PatchColumn read={read} />
-      ) : (
-        <div className="min-h-0 flex-1 px-3 py-3">
-          <FileRowsSkeleton rows={6} label="Loading the patch…" />
-        </div>
-      )}
+      >
+        {asText ? "Showing the patch as text" : read ? summary(read) : "Reading the patch…"}
+      </Toolbar>
+      <div className="relative min-h-0 flex-1">
+        {read ? (
+          // Kept mounted, and laid out, behind the text: open cards and scroll survive the switch.
+          <div
+            className={`absolute inset-0 flex min-h-0 flex-col ${asText ? "invisible" : ""}`}
+            inert={asText}
+          >
+            <WrapContext.Provider value={wrap}>
+              <PatchColumn read={read} scroller={scroller} onOpenAsText={() => setAsText(true)} />
+            </WrapContext.Provider>
+          </div>
+        ) : (
+          <div className="px-3 py-3">
+            <FileRowsSkeleton rows={6} label="Loading the patch…" />
+          </div>
+        )}
+        {asText ? (
+          <div className="absolute inset-0 bg-background" data-testid="sc-patch-file-text">
+            <Original />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

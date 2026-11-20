@@ -1,0 +1,21 @@
+diff --git a/f.txt b/f.txt
+--- a/f.txt
++++ b/f.txt
+@@ -1,3 +1,3 @@
+ a
+-b
++B
+ c
++extra the count missed
+ d
+@@ -20,3 +21,4 @@
+ x
++second hunk
+ y
+ z
+diff --git a/g.txt b/g.txt
+--- a/g.txt
++++ b/g.txt
+@@ -1 +1 @@
+-g
++G

