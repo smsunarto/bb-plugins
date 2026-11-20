@@ -22,6 +22,30 @@
 - Reopen the toolbar's event stream when it closes for good (a plugin reload, a server restart, the tunnel's offline page) or goes silent past two heartbeats, instead of polling every 4 seconds until the page reloads. The healthy safety-net poll drops from 30 seconds to 5 minutes, toolbars skip pulls for other pages' changes, and an unchanged pull no longer carries the annotation list.
 - The review panel, its header, and every staged-annotation banner share one request per change and skip changes that cannot affect them. Panel actions show their result at once instead of waiting for a refetch.
 
+## [0.4.0](https://github.com/smsunarto/bb-plugins/compare/agentation/v0.3.0...agentation/v0.4.0) (2026-11-20)
+
+
+### Features
+
+* **agentation:** discard all staged annotations without confirmation ([68899ad](https://github.com/smsunarto/bb-plugins/commit/68899ad9912d3fc3b2cfd32bc59389ba41b54c12))
+* **agentation:** optionally keep the shared Agentation server running on each machine ([fec3ee8](https://github.com/smsunarto/bb-plugins/commit/fec3ee86f303407b1c717061458e014ca77e5625))
+* **agentation:** show the shortcut in a shorter footer tooltip ([27e1012](https://github.com/smsunarto/bb-plugins/commit/27e101210a5cf7507e605ed7eb51fcd1e7e17179))
+
+
+### Bug Fixes
+
+* **agentation:** acknowledged annotations stop reappearing after a turn ([#208](https://github.com/smsunarto/bb-plugins/issues/208)) ([b3a843f](https://github.com/smsunarto/bb-plugins/commit/b3a843fcd84eee627bfbeb561b845cc282cf4aed))
+* **agentation:** hide the composer chip when the plugin server is unreachable ([35031ed](https://github.com/smsunarto/bb-plugins/commit/35031ed6d5afc659106eb0e84d588b177e900803))
+* **agentation:** keep annotations assigned while bb resumes a turn it interrupted to restart ([88edb29](https://github.com/smsunarto/bb-plugins/commit/88edb295c7247adf0f1df287f56f7f69e004a430))
+* **agentation:** stop an Escape that exits feedback mode from closing the page ([#181](https://github.com/smsunarto/bb-plugins/issues/181)) ([6853f26](https://github.com/smsunarto/bb-plugins/commit/6853f26cb90b84277b7a4b081d7a132e4fc70600))
+* **ci:** green main's Build and Test jobs ([#174](https://github.com/smsunarto/bb-plugins/issues/174)) ([3cb2e5d](https://github.com/smsunarto/bb-plugins/commit/3cb2e5dfd25fbf7ee5b62b8f34b0d6cb038f7289))
+* **plugins:** stamp bb's plugin-scope attribute on self-labeled plugin UI ([#190](https://github.com/smsunarto/bb-plugins/issues/190)) ([60268f6](https://github.com/smsunarto/bb-plugins/commit/60268f6423114bcae8c8f488209fe6575c428ece))
+
+
+### Performance Improvements
+
+* **plugins:** drop space and divide utilities from thread-page sheets ([12cb427](https://github.com/smsunarto/bb-plugins/commit/12cb42716b14c70553a2821d97ed54ed66eb1d06))
+
 ## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/agentation/v0.2.3...agentation/v0.3.0) (2026-09-15)
 
 ### Features
