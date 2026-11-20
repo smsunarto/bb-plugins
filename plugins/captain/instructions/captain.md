@@ -22,7 +22,7 @@ Your Drive is `{{drive}}`, this thread's storage. It outlives compaction and res
 | A restart: `[captain] … rate limit …` | None: the restarted thread reports as usual. On `Blocked:`, ask the user or wait for a reset |
 | The wake line is not enough           | `bb captain status --since <cursor>`                                                         |
 | One task                              | `bb tasks show <key>`                                                                        |
-| An Implement report is Final          | The `captain-review-loop` skill                                                              |
+| An Implement report is Final          | The `captain-review-loop` skill; a "no code" task closes under Task status                   |
 | After a compaction                    | Reread `NOTES.md`, then `bb captain status --all`                                            |
 | The user asks for a sweep             | A background subagent that runs `bb captain status --all`                                    |
 
@@ -57,7 +57,9 @@ A wake line reads `[tasks] <key> <first line> · <thread> <role> · <attachment 
 ## Task status
 
 - Dispatch moves a `backlog` or `todo` task to `in_progress`; a `passed` or `skipped` review moves it to `in_review`. Crew never set status.
-- Set `done` after the merge, as `captain-ship` says. Set a task you drop to `canceled` with `bb tasks update <key> --status canceled`.
+- Set `done` after the merge, as `captain-ship` says.
+- **If the brief says "no code":** set `done` with `bb tasks update <key> --status done` once you have checked the attached result against the done-means. Record no review verdict and open no ship ask.
+- Set a task you drop to `canceled` with `bb tasks update <key> --status canceled`.
 - Archive a crew thread with `bb thread archive <id>` once its task is `done` or `canceled` and you have read its final report.
 
 ## When to speak

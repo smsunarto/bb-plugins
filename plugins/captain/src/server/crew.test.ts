@@ -325,6 +325,37 @@ describe("bb captain dispatch", () => {
     expect(stranger.instructions).not.toContain("# Role:");
   });
 
+  test("overlapping Review dispatches on two tasks: the first child keeps its contract and lenses", async () => {
+    const { host, captainId, as } = await crewHost();
+    await dispatched(as, "BBPLUGINS-1", "Implement");
+    await dispatched(as, "BBPLUGINS-2", "Implement");
+    let first: string | null = null;
+    const pending: { second?: ReturnType<typeof as> } = {};
+    const firstSessions: { skills: unknown; instructions: string | null | undefined }[] = [];
+    host.tasks.onSpawn = async (threadId) => {
+      if (first === null) {
+        // Review A's child exists, A's delegate has not returned: start Review B now.
+        first = threadId;
+        pending.second = as(["dispatch", "BBPLUGINS-2", "--role", "Review"]);
+        await pending.second;
+        return;
+      }
+      // Inside B's spawn, both dispatches are pending: rebuild A's session.
+      const resolved = await host.harness.behavior.resolveAgentConfiguration(
+        makePluginAgentConfigurationContext({ thread: { id: first, parentThreadId: captainId } }),
+      );
+      firstSessions.push({ skills: resolved.skills, instructions: resolved.instructions });
+    };
+
+    const a = await as(["dispatch", "BBPLUGINS-1", "--role", "Review"]);
+
+    expect(a.exitCode).toBe(0);
+    expect((await pending.second)?.exitCode).toBe(0);
+    expect(firstSessions).toHaveLength(1);
+    expect(firstSessions[0]?.instructions).toContain("# Role: Review");
+    expect(firstSessions[0]?.skills).toEqual(["captain-review-lenses"]);
+  });
+
   test("--dry-run prints the rung, preset, machine and branch and spawns nothing", async () => {
     const { host, as } = await crewHost();
 

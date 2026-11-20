@@ -89,14 +89,15 @@ export function createRegistry(store: Store) {
     /**
      * The role an unknown child of this Captain gets: the pending role when
      * every pending entry names the same one, otherwise none, because
-     * `configure` cannot tell which child is which. A child that existed
-     * before a pending dispatch started, such as a crew thread of a retired
-     * role, is not that dispatch's thread and gets none.
+     * `configure` cannot tell which child is which. A dispatch that already
+     * knew the child before it started is not its candidate, so a crew thread
+     * of a retired role, which every dispatch knew, gets none.
      */
     pendingRole(captainId: string, threadId: string): Role | null {
-      const entries = [...(pending.get(captainId)?.values() ?? [])];
-      if (entries.some((entry) => entry.known.has(threadId))) return null;
-      const roles = new Set(entries.map((entry) => entry.role));
+      const candidates = [...(pending.get(captainId)?.values() ?? [])].filter(
+        (entry) => !entry.known.has(threadId),
+      );
+      const roles = new Set(candidates.map((entry) => entry.role));
       const [only] = roles;
       return roles.size === 1 && only !== undefined ? only : null;
     },
