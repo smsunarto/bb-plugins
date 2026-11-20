@@ -82,6 +82,7 @@ export const ROLE_SPECS: Readonly<Record<Role, RoleSpec>> = {
 export const CAPTAIN_SKILLS: readonly string[] = [
   "captain-brief",
   "captain-review-loop",
+  "captain-routines",
   "captain-ship",
 ];
 

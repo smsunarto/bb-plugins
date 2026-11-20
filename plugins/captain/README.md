@@ -31,6 +31,28 @@ Long text goes through a file on the calling machine (`--message-file`, `--detai
 
 Run `bb captain --help` for every option. Every command takes `--json`.
 
+## Routines
+
+A routine is a message a Captain gets on a schedule, like a Grok Bot routine: the Captain does its instruction under its usual rules and reports in its own thread. Each one is a script automation in bb's built-in Automations plugin, in the Captains project, named `Captain <name> · <routine>`; Captain keeps no timer of its own.
+
+```sh
+bb captain routine add --name "Stalled crew sweep" --cron "0 9 * * 1-5" [--timezone <iana>] --prompt-file sweep.md [--paused]
+bb captain routine add --name "Check the deploy" --in 2h --prompt-file check.md   # or --at <iso>
+bb captain routine list
+bb captain routine show <id-or-name> [--runs]
+bb captain routine update <id-or-name> [--name …] [--cron …] [--timezone …] [--in …] [--at …] [--prompt-file …]
+bb captain routine pause|resume|remove <id-or-name>
+bb captain routine run <id-or-name>      # a test run, now
+```
+
+- `add` and `update` print the schedule in words and the next run. A new routine waits for its next time. `--timezone` defaults to the bb server's.
+- Limits: 20 routines per Captain, names unique per Captain, instructions up to 4000 characters, a cron at most every 15 minutes.
+- A run sends the Captain `[captain] routine <id> "<name>" · scheduled` (or `· test`) and the text of `instructions/routine.md`, with `queue-if-active`: it waits behind a running turn instead of steering into it. While that message is still queued, the next run is skipped. Each run is recorded as `sent`, `queued`, `skipped` or `failed`, 20 per routine.
+- The user and the Captain manage routines; a crew thread is refused, even with `--captain`. The Captain sets one only when the user asks in its thread, following the `captain-routines` skill.
+- Archiving a Captain pauses its routines; deleting it removes them. On start, Captain schedules again a routine whose automation is gone and deletes an automation no routine owns.
+- **Away pause:** when no client has opened a Captain for 7 days and a routine ran since, the background check pauses its running routines and opens one ask, "Routines paused while you were away". **Resume** restarts exactly those; **Keep paused** leaves them.
+- The Captain's Overview tab gains a Routines section in a later step.
+
 ## What `new` sets up
 
 - A Claude Code thread on the bb server's machine, pinned, in the shared **Captains** project (`~/Captains`), carrying `pluginMetadata { captain: { name } }`.
@@ -46,12 +68,12 @@ Rerunning `new` with a live Captain's name converges that Captain instead of sta
 
 `configure` gives each thread its text from `instructions/`, which Agent Instructions → Plugin prompts can edit:
 
-| Thread                                                | Gets                                                                                                                           |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| A Captain, by its metadata                            | `captain.md`, its Drive's skills index and `CAPTAIN.md`; the `captain-brief`, `captain-review-loop` and `captain-ship` skills  |
-| A child of a Captain                                  | `crew.md`, its role's contract, the Drive's `CREW.md` and `repos/<KEY>.md`; Review also gets the `captain-review-lenses` skill |
-| A Merge or Dream thread, by `pluginMetadata { role }` | `crew.md` and `CREW.md`                                                                                                        |
-| Anything else                                         | Nothing                                                                                                                        |
+| Thread                                                | Gets                                                                                                                                              |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A Captain, by its metadata                            | `captain.md`, its Drive's skills index and `CAPTAIN.md`; the `captain-brief`, `captain-review-loop`, `captain-routines` and `captain-ship` skills |
+| A child of a Captain                                  | `crew.md`, its role's contract, the Drive's `CREW.md` and `repos/<KEY>.md`; Review also gets the `captain-review-lenses` skill                    |
+| A Merge or Dream thread, by `pluginMetadata { role }` | `crew.md` and `CREW.md`                                                                                                                           |
+| Anything else                                         | Nothing                                                                                                                                           |
 
 The output stays within bb's 32,768-character limit. Only Drive text is ever cut, and the cut ends with a marker.
 
@@ -59,3 +81,4 @@ The output stays within bb's 32,768-character limit. Only Drive text is ever cut
 
 - The Tasks plugin (`scott-tasks`) enabled. `new` and `repo add` refuse while it does not answer.
 - Push notifications, optional: without it `new` warns and continues.
+- bb's built-in Automations plugin, for routines. `routine add` refuses while it does not answer.
