@@ -47,10 +47,10 @@ bb captain routine run <id-or-name>      # a test run, now
 
 - `add` and `update` print the schedule in words and the next run. A new routine waits for its next time. A new `--in` or `--at` arms a one-shot again, paused or spent. `--timezone` defaults to the bb server's.
 - Limits: 20 routines per Captain, names unique per Captain, instructions up to 4000 characters, a cron at most every 15 minutes.
-- A run sends the Captain `[captain] routine <id> "<name>" · scheduled` (or `· test`) and the text of `instructions/routine.md`, with `queue-if-active`: it waits behind a running turn instead of steering into it. While that message is still queued, the next run is skipped. Each run is recorded as `sent`, `queued`, `skipped` or `failed`, 20 per routine.
-- The user and the Captain manage routines; a crew thread is refused, even with `--captain`. The Captain sets one only when the user asks in its thread, following the `captain-routines` skill.
-- Archiving a Captain pauses its routines; deleting it removes them. On start, Captain schedules again a routine whose automation is gone and deletes an automation no routine owns.
-- **Away pause:** when no client has opened a Captain for 7 days and a routine ran since, the background check pauses its running routines and opens one ask, "Routines paused while you were away". **Resume** restarts exactly those; **Keep paused** leaves them.
+- A run sends the Captain `[captain] routine <id> "<name>" · scheduled` (or `· test`) and the text of `instructions/routine.md`, with `queue-if-active`: it waits behind a running turn instead of steering into it. While that message is still queued, or the queue cannot be read, the next run is skipped. Each run is recorded as `sent`, `queued`, `skipped` or `failed`, 20 per routine.
+- Only a Captain's own thread, for its own routines, or the user's terminal with `--captain` manages routines; crew and other threads are refused. The Captain sets one only when the user asks in its thread, following the `captain-routines` skill.
+- Archiving a Captain pauses its routines; deleting it removes them. A `routines` maintenance service, apart from the crew check, schedules again a routine whose automation is gone, deletes a Captain automation no routine owns (only one running exactly Captain's script), and retries any Automations call that failed.
+- **Away pause:** when no client has opened a Captain for 7 days and a routine reached it on its schedule since, the maintenance service pauses its running routines and opens one ask, "Routines paused while you were away". **Resume** restarts exactly those; **Keep paused** leaves them. Only the user or that Captain may answer it. A failed step is retried on the next pass.
 - The Captain's Overview tab gains a Routines section in a later step.
 
 ## What `new` sets up

@@ -120,7 +120,9 @@ describe("update and actions", () => {
     const row = host.automations.rows.get(created.automationId as string);
     // The run came and went: Automations disables a once automation after it.
     host.setNow(host.now() + 120_000);
+    await routines.fire(created.id, { automationId: created.automationId as string, runId: null });
     if (row !== undefined) row.enabled = false;
+    expect((await routines.view(host.server.store.routine(created.id) as never)).done).toBe(true);
 
     const renamed = await routines.update(created, { name: "Renamed" });
     expect(renamed.name).toBe("Renamed");
@@ -130,7 +132,53 @@ describe("update and actions", () => {
     const rearmed = await routines.update(renamed, { schedule: { at } });
     expect(row).toMatchObject({ enabled: true, trigger: { triggerType: "once", runAt: at } });
     expect(rearmed.automation?.enabled).toBe(true);
+    expect(rearmed.done).toBe(false);
     expect(host.automations.rows.size).toBe(1);
+    // The rename sent only the name: the spent trigger would have been refused.
+    const rename = host.automations.calls.find((call) => call.method === "automations_update");
+    expect(rename?.input).not.toHaveProperty("trigger");
+  });
+
+  test("moving a paused one-shot's time keeps it paused (finding 4)", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(
+      owner,
+      { ...SWEEP, schedule: { at: host.now() + 60_000 } },
+      { paused: true },
+    );
+    const moved = await routines.update(created, { schedule: { at: host.now() + 120_000 } });
+    expect(moved.automation?.enabled).toBe(false);
+    expect(host.automations.rows.get(created.automationId as string)?.enabled).toBe(false);
+  });
+
+  test("an update queued behind a delete is refused and makes nothing (finding 10)", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const removing = routines.act(created, "delete");
+    const updating = routines.update(created, {
+      schedule: { cron: "0 10 * * *", timezone: "UTC" },
+    });
+    await removing;
+    await expect(updating).rejects.toThrow(/was removed/);
+    expect(host.automations.rows.size).toBe(0);
+  });
+
+  test("two renames to one name: the loser's schedule is untouched (finding 11)", async () => {
+    const { host, owner, routines } = await routineHost();
+    const a = await routines.create(owner, SWEEP);
+    const b = await routines.create(owner, { ...SWEEP, name: "Digest" });
+    const next = { cron: "0 11 * * *", timezone: "UTC" };
+    const results = await Promise.allSettled([
+      routines.update(a, { name: "Same", schedule: next }),
+      routines.update(b, { name: "Same", schedule: next }),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+    const loser = results[0]?.status === "rejected" ? a : b;
+    const stored = host.server.store.routine(loser.id);
+    expect(stored?.schedule).toEqual(SWEEP.schedule);
+    expect(host.automations.rows.get(loser.automationId as string)?.trigger).toMatchObject({
+      cron: "0 9 * * 1-5",
+    });
   });
 
   test("pause, resume and delete pass through", async () => {
@@ -287,7 +335,17 @@ describe("reconcile", () => {
       name: "Captain Plugins · gone",
       enabled: true,
       trigger: { triggerType: "schedule", cron: "0 9 * * *", timezone: "UTC" },
-      execution: { mode: "script", env: { [ROUTINE_ENV]: "r99" } },
+      execution: { mode: "script", script: ROUTINE_SCRIPT, env: { [ROUTINE_ENV]: "r99" } },
+      runs: [],
+    });
+    // Copied config with the same env key but its own script: not Captain's to delete.
+    host.automations.rows.set("auto_foreign", {
+      id: "auto_foreign",
+      projectId: "proj_captains",
+      name: "Someone else",
+      enabled: true,
+      trigger: { triggerType: "schedule", cron: "0 9 * * *", timezone: "UTC" },
+      execution: { mode: "script", script: "echo hi", env: { [ROUTINE_ENV]: "r98" } },
       runs: [],
     });
     host.setNow(host.now() + 5_000);
@@ -296,13 +354,14 @@ describe("reconcile", () => {
 
     const store = host.server.store;
     expect(host.automations.rows.has("auto_orphan")).toBe(false);
+    expect(host.automations.rows.has("auto_foreign")).toBe(true);
     expect(host.automations.rows.has(kept.automationId as string)).toBe(true);
     const relost = store.routine(lost.id);
     expect(relost?.automationId).not.toBe(lost.automationId);
     expect(host.automations.rows.has(relost?.automationId as string)).toBe(true);
     // The one-shot's time passed while its automation was gone: it is not made again.
     expect(store.routine(past.id)?.automationId).toBeNull();
-    expect(host.automations.rows.size).toBe(2);
+    expect(host.automations.rows.size).toBe(3);
   });
 
   test("retries until Automations answers, then runs once", async () => {
@@ -315,6 +374,235 @@ describe("reconcile", () => {
     const calls = host.automations.calls.length;
     expect(await routines.reconcile()).toBe(true);
     expect(host.automations.calls.length).toBe(calls);
+  });
+});
+
+describe("durability", () => {
+  test("an unreadable queue skips the run and sends nothing (finding 3)", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    host.harness.sdk.stub("threads.queuedMessages.list", async () => {
+      throw new Error("queue read timed out");
+    });
+    const result = await routines.fire(created.id, {
+      automationId: created.automationId as string,
+      runId: null,
+    });
+    expect(result).toMatchObject({ state: "skipped", run: { reason: "queue unreadable" } });
+    expect(routineSends(host, captainId)).toEqual([]);
+  });
+
+  test("a test run stays a test run across a reload (finding 13)", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const { runId } = await routines.act(created, "run");
+    await host.reload();
+    await host.server.routines.fire(created.id, {
+      automationId: created.automationId as string,
+      runId,
+    });
+    expect(routineSends(host, captainId)[0]?.text.split("\n")[0]).toContain("· test");
+    expect(host.server.store.routineRuns(created.id)).toMatchObject([{ trigger: "test" }]);
+    expect(host.server.store.routine(created.id)?.deliveredAt).toBeNull();
+  });
+
+  test("a failed repair stays pending and is retried (finding 8)", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    host.automations.rows.delete(created.automationId as string);
+    host.automations.refuseCreate = "Automations busy";
+    expect((await routines.maintain()).pending).toBe(true);
+    expect(host.server.store.cleanups()).toMatchObject([{ kind: "repair", routineId: created.id }]);
+    expect(host.automations.rows.size).toBe(0);
+
+    host.automations.refuseCreate = null;
+    expect((await routines.maintain()).pending).toBe(false);
+    expect(host.server.store.cleanups()).toEqual([]);
+    expect(host.automations.rows.size).toBe(1);
+  });
+
+  test("a failed delete of a deleted Captain's automation is retried (finding 9)", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    host.automations.down = true;
+    await routines.removeCaptain(captainId);
+    expect(host.server.store.routinesOf(captainId)).toEqual([]);
+    expect(host.server.store.cleanups()).toMatchObject([
+      { kind: "delete", automationId: created.automationId },
+    ]);
+    host.automations.down = false;
+    await routines.maintain();
+    expect(host.automations.rows.size).toBe(0);
+    expect(host.server.store.cleanups()).toEqual([]);
+  });
+
+  test("the crew check makes no Automations calls (finding 15)", async () => {
+    const { host, owner, routines } = await routineHost();
+    await routines.create(owner, SWEEP);
+    const before = host.automations.calls.length;
+    await host.server.check.pass();
+    expect(host.automations.calls.length).toBe(before);
+  });
+});
+
+describe("away pause", () => {
+  const DAY = 24 * 60 * 60_000;
+
+  /** A Captain seen at 1s with two routines, one paused by hand, and a scheduled run 3 days in. */
+  async function awayHost() {
+    const base = await routineHost();
+    const { host, captainId, owner, routines } = base;
+    const sweep = await routines.create(owner, SWEEP);
+    const manual = await routines.create(owner, { ...SWEEP, name: "Digest" }, { paused: true });
+    host.server.store.setLastSeen(captainId, "web", 1_000);
+    host.setNow(1_000 + 3 * DAY);
+    await routines.fire(sweep.id, { automationId: sweep.automationId as string, runId: null });
+    const enabled = (id: string | null) => host.automations.rows.get(id as string)?.enabled;
+    const awayAsks = () =>
+      host.server.store
+        .asksOf(captainId)
+        .filter((ask) => ask.text === "Routines paused while you were away");
+    const maintainAt = async (at: number) => {
+      host.setNow(at);
+      return host.server.routines.maintain();
+    };
+    const resolve = (askId: string, answer: string, threadId?: string) =>
+      host.harness.behavior.runCli(
+        ["ask", "resolve", askId, "--answer", answer],
+        threadId === undefined ? {} : { threadId },
+      );
+    return { ...base, sweep, manual, enabled, awayAsks, maintainAt, resolve };
+  }
+
+  test("after 7 days unseen, maintenance pauses running routines and opens one ask", async () => {
+    const { host, sweep, manual, enabled, awayAsks, maintainAt } = await awayHost();
+    await maintainAt(1_000 + 6 * DAY);
+    expect(awayAsks()).toEqual([]);
+
+    await maintainAt(1_000 + 7 * DAY + 60_000);
+    expect(enabled(sweep.automationId)).toBe(false);
+    const [ask] = awayAsks();
+    expect(ask).toMatchObject({
+      kind: "decision",
+      taskKey: null,
+      options: ["Resume", "Keep paused"],
+    });
+    expect(ask?.options.every((option) => option.length <= 12)).toBe(true);
+    expect(ask?.detail).toContain('r1 "Stalled crew sweep"');
+    expect(ask?.detail).not.toContain("Digest");
+    expect(host.server.store.awayHolds({ askId: ask?.id }).map((h) => h.routineId)).toEqual([
+      sweep.id,
+    ]);
+    expect(enabled(manual.automationId)).toBe(false);
+  });
+
+  test("a second pass, or a reload, opens no second ask", async () => {
+    const { host, awayAsks, maintainAt } = await awayHost();
+    await maintainAt(1_000 + 8 * DAY);
+    await maintainAt(1_000 + 8 * DAY + 120_000);
+    await host.reload();
+    await maintainAt(1_000 + 9 * DAY);
+    expect(awayAsks()).toHaveLength(1);
+  });
+
+  test("an outage during the pause is retried, not lost (finding 1)", async () => {
+    const { host, sweep, enabled, awayAsks, maintainAt } = await awayHost();
+    host.automations.down = true;
+    await maintainAt(1_000 + 8 * DAY);
+    expect(awayAsks()).toEqual([]);
+    host.automations.down = false;
+    // The pause itself fails once after the choice was recorded.
+    host.automations.failNext.add("automations_pause");
+    await maintainAt(1_000 + 8 * DAY + 60_000);
+    expect(enabled(sweep.automationId)).toBe(true);
+    expect(awayAsks()).toEqual([]);
+    expect((await maintainAt(1_000 + 8 * DAY + 120_000)).pending).toBe(false);
+    expect(enabled(sweep.automationId)).toBe(false);
+    expect(awayAsks()).toHaveLength(1);
+  });
+
+  test("trimming the run history keeps the delivery that qualifies (finding 2)", async () => {
+    const { host, captainId, sweep, awayAsks, maintainAt } = await awayHost();
+    // Twenty skips while the delivered run waits push it out of the 20-row history.
+    host.queued.set(captainId, [queued('[captain] routine r1 "Stalled crew sweep" · scheduled')]);
+    for (let i = 0; i < 20; i += 1) {
+      await host.server.routines.fire(sweep.id, {
+        automationId: sweep.automationId as string,
+        runId: null,
+      });
+    }
+    expect(host.server.store.routineRuns(sweep.id).every((run) => run.status === "skipped")).toBe(
+      true,
+    );
+    await maintainAt(1_000 + 8 * DAY);
+    expect(awayAsks()).toHaveLength(1);
+  });
+
+  test("no run since the user was last seen: nothing is paused", async () => {
+    const { host, captainId, sweep, enabled, awayAsks, maintainAt } = await awayHost();
+    host.server.store.setLastSeen(captainId, "web", 1_000 + 4 * DAY);
+    await maintainAt(1_000 + 12 * DAY);
+    expect(awayAsks()).toEqual([]);
+    expect(enabled(sweep.automationId)).toBe(true);
+  });
+
+  test("reconcile keeps a held routine paused when it remakes its automation (finding 5)", async () => {
+    const { host, sweep, awayAsks, maintainAt } = await awayHost();
+    await maintainAt(1_000 + 8 * DAY);
+    expect(awayAsks()).toHaveLength(1);
+    host.automations.rows.delete(sweep.automationId as string);
+    await host.reload();
+    await maintainAt(1_000 + 8 * DAY + 60_000);
+    const remade = host.server.store.routine(sweep.id)?.automationId as string;
+    expect(remade).not.toBe(sweep.automationId);
+    expect(host.automations.rows.get(remade)?.enabled).toBe(false);
+  });
+
+  test("Resume resumes exactly the routines it held", async () => {
+    const { host, captainId, sweep, manual, enabled, awayAsks, maintainAt, resolve } =
+      await awayHost();
+    await maintainAt(1_000 + 8 * DAY);
+    const [ask] = awayAsks();
+    expect((await resolve(ask?.id as string, "Resume")).exitCode).toBe(0);
+    expect(enabled(sweep.automationId)).toBe(true);
+    expect(enabled(manual.automationId)).toBe(false);
+    expect(host.server.store.awayHolds()).toEqual([]);
+    expect(host.sent.at(-1)).toMatchObject({ threadId: captainId });
+    expect(host.sent.at(-1)?.text).toContain('answered "Resume"');
+  });
+
+  test("Keep paused leaves them paused and ends the hold", async () => {
+    const { host, sweep, enabled, awayAsks, maintainAt, resolve } = await awayHost();
+    await maintainAt(1_000 + 8 * DAY);
+    const [ask] = awayAsks();
+    await resolve(ask?.id as string, "Keep paused");
+    expect(enabled(sweep.automationId)).toBe(false);
+    expect(host.server.store.awayHolds()).toEqual([]);
+  });
+
+  test("a resume that fails on answer is retried by the next pass", async () => {
+    const { host, sweep, enabled, awayAsks, maintainAt, resolve } = await awayHost();
+    await maintainAt(1_000 + 8 * DAY);
+    const [ask] = awayAsks();
+    host.automations.failNext.add("automations_resume");
+    expect((await resolve(ask?.id as string, "Resume")).stderr).toContain("not resumed");
+    await maintainAt(1_000 + 8 * DAY + 60_000);
+    expect(enabled(sweep.automationId)).toBe(true);
+    expect(host.server.store.awayHolds()).toEqual([]);
+  });
+
+  test("only the user or its own Captain may answer the away ask (finding 7)", async () => {
+    const { host, captainId, sweep, enabled, awayAsks, maintainAt, resolve } = await awayHost();
+    host.addThread({ id: "thr_crew1", parentThreadId: captainId });
+    await maintainAt(1_000 + 8 * DAY);
+    const [ask] = awayAsks();
+    const refused = await resolve(ask?.id as string, "Resume", "thr_crew1");
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stderr).toContain("cannot answer it");
+    expect(host.server.store.ask(ask?.id as string)?.answer).toBeNull();
+    expect(enabled(sweep.automationId)).toBe(false);
+    expect((await resolve(ask?.id as string, "Resume", captainId)).exitCode).toBe(0);
+    expect(enabled(sweep.automationId)).toBe(true);
   });
 });
 

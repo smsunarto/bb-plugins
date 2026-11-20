@@ -37,6 +37,17 @@ const runSchema = z.looseObject({
   startedAt: z.number(),
 });
 
+const detailSchema = z.looseObject({
+  id: z.string(),
+  execution: z
+    .looseObject({
+      mode: z.string(),
+      script: z.string().optional(),
+      env: z.record(z.string(), z.string()).optional(),
+    })
+    .optional(),
+});
+
 /** A list row; rows Automations cannot read carry `problem` and are skipped. */
 const listRowSchema = z.looseObject({
   id: z.string(),
@@ -97,16 +108,38 @@ export function createAutomationsClient(bb: Pick<BbPluginApi, "sdk">) {
         },
         statusSchema,
       ),
+    /** Send only what changed: Automations validates every trigger it is given, so a spent one-shot's would be refused. */
     update: (
       target: AutomationTarget,
       captainName: string,
-      routine: Pick<Routine, "name" | "schedule">,
+      changes: { name?: string; schedule?: Schedule },
     ) =>
       call(
         "automations_update",
-        { ...target, name: name(captainName, routine), trigger: trigger(routine.schedule) },
+        {
+          ...target,
+          ...(changes.name === undefined
+            ? {}
+            : { name: name(captainName, { name: changes.name }) }),
+          ...(changes.schedule === undefined ? {} : { trigger: trigger(changes.schedule) }),
+        },
         statusSchema,
       ),
+    /**
+     * Whether this automation is Captain's for the routine: a script
+     * automation running exactly `ROUTINE_SCRIPT` with only the routine's id
+     * in its env. Cleanup deletes nothing else.
+     */
+    async ownedBy(target: AutomationTarget, routineId: string): Promise<boolean> {
+      const detail = await call("automations_get", target, detailSchema);
+      const env = detail.execution?.env ?? {};
+      return (
+        detail.execution?.mode === "script" &&
+        detail.execution.script?.trim() === ROUTINE_SCRIPT.trim() &&
+        Object.keys(env).length === 1 &&
+        env[ROUTINE_ENV] === routineId
+      );
+    },
     get: (target: AutomationTarget) => call("automations_get", target, statusSchema),
     pause: (target: AutomationTarget) => call("automations_pause", target, statusSchema),
     resume: (target: AutomationTarget) => call("automations_resume", target, statusSchema),

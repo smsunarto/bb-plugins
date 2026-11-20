@@ -1,6 +1,6 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
 import type { Routine, RoutineRun, RoutineView, Schedule } from "../../contract/routines.ts";
-import { callerCaptain, readCallerFile, refuseCrew } from "../caller.ts";
+import { readCallerFile, routineCaptain, routineThreadAllowed } from "../caller.ts";
 import { guard, Refusal, render, type Item } from "../output.ts";
 import type { RoutineOwner } from "../routines.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
@@ -108,8 +108,7 @@ async function owner(
   ctx: PluginCliContext,
   captainOption: string | undefined,
 ): Promise<RoutineOwner> {
-  await refuseCrew(deps.bb, deps.registry, deps.store, ctx);
-  const captain = await callerCaptain(deps.bb, deps.registry, ctx, { captain: captainOption });
+  const captain = await routineCaptain(deps.bb, deps.registry, deps.store, ctx, captainOption);
   return { threadId: captain.threadId, name: captain.name, homeProjectId: captain.homeProjectId };
 }
 
@@ -123,7 +122,6 @@ async function named(
   address: string,
   captainOption: string | undefined,
 ): Promise<Routine> {
-  await refuseCrew(deps.bb, deps.registry, deps.store, ctx);
   if (ctx.threadId === undefined && captainOption === undefined) {
     const routine = deps.store.routine(address);
     if (routine !== null) return routine;
@@ -165,19 +163,15 @@ function zoneOf(view: RoutineView): string | undefined {
 }
 
 /** A one-shot whose time came: Automations disables it after its run. */
-function ranOnce(view: RoutineView): boolean {
-  return "at" in view.schedule && view.automation?.enabled === false && view.lastRun !== null;
-}
-
 function state(view: RoutineView): string {
+  if (view.done) return "done";
   if (view.automation === null) return "unavailable";
-  if (ranOnce(view)) return "done";
   return view.automation.enabled ? "active" : "paused";
 }
 
 function next(view: RoutineView): string {
+  if (view.done) return "ran once";
   if (view.automation === null) return view.automationError ?? "schedule unavailable";
-  if (ranOnce(view)) return "ran once";
   if (!view.automation.enabled) return "paused";
   return view.automation.nextRunAt === null
     ? "no next run"
@@ -434,12 +428,37 @@ export function routineFireCommand(deps: CommandDeps) {
         description: "The calling automation's id",
       },
       run: { type: "string", placeholder: "id", description: "The calling automation run's id" },
+      captain: CAPTAIN_OPTION,
       json: JSON_OPTION,
     },
     run(input, ctx) {
       const json = input.options.json;
       return guard("captain routine fire", json, async () => {
-        await refuseCrew(deps.bb, deps.registry, deps.store, ctx);
+        const routine = deps.store.routine(input.positionals.routine);
+        // A thread-bound call is refused unless it is the routine's own Captain.
+        await routineThreadAllowed(
+          deps.bb,
+          deps.registry,
+          deps.store,
+          ctx,
+          routine?.captainId ?? "",
+        );
+        if (routine !== null) {
+          const named = input.options.captain?.trim();
+          const owner = deps.store.captain(routine.captainId);
+          if (
+            named !== undefined &&
+            named !== routine.captainId &&
+            named.toLowerCase() !== owner?.name.toLowerCase()
+          ) {
+            throw new Refusal([
+              {
+                reason: `${routine.id} belongs to ${owner?.name ?? routine.captainId} Captain, not ${JSON.stringify(named)}`,
+                fix: "drop --captain or pass the routine's Captain",
+              },
+            ]);
+          }
+        }
         const result = await deps.routines.fire(input.positionals.routine, {
           automationId: input.options.automation,
           runId:

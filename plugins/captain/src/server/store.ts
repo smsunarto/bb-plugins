@@ -124,8 +124,10 @@ export const MIGRATIONS: readonly string[] = [
     served_at INTEGER NOT NULL
   )`,
   // A scheduled message to one Captain; bb Automations holds the schedule's
-  // state. `seq` never reuses a number, so a deleted routine's id is not
-  // given to a new one. `away_ask` names the away-pause ask that paused it.
+  // state. `seq` never reuses a number, so a deleted routine's id is not given
+  // to a new one. `fired_at` is the newest scheduled fire of any outcome, and
+  // `delivered_at` the newest scheduled one that reached the Captain: both
+  // outlive the trimmed run history.
   `CREATE TABLE routines (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
@@ -136,10 +138,11 @@ export const MIGRATIONS: readonly string[] = [
     automation_id TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    away_ask TEXT,
+    fired_at INTEGER,
+    delivered_at INTEGER,
     UNIQUE (captain_id, name COLLATE NOCASE)
   )`,
-  // Each delivery of a routine, newest kept; trimmed to ROUTINE_RUNS_KEPT per routine.
+  // Each delivery of a routine; trimmed to ROUTINE_RUNS_KEPT per routine.
   `CREATE TABLE routine_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     routine_id TEXT NOT NULL,
@@ -147,6 +150,33 @@ export const MIGRATIONS: readonly string[] = [
     status TEXT NOT NULL CHECK (status IN ('sent', 'queued', 'skipped', 'failed')),
     reason TEXT,
     at INTEGER NOT NULL
+  )`,
+  "CREATE INDEX routine_runs_by_routine ON routine_runs (routine_id, id)",
+  // A routine the away pause holds: chosen while it ran (`paused` 0), then
+  // paused (1), then put in one ask. Answering the ask removes the row.
+  `CREATE TABLE routine_away (
+    routine_id TEXT PRIMARY KEY,
+    captain_id TEXT NOT NULL,
+    absence INTEGER NOT NULL,
+    paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1)),
+    ask_id TEXT
+  )`,
+  // Automations runs Captain started as tests, until their fire arrives.
+  `CREATE TABLE routine_tests (
+    run_id TEXT PRIMARY KEY,
+    routine_id TEXT NOT NULL,
+    at INTEGER NOT NULL
+  )`,
+  // Automations work that failed and is retried each maintenance pass: an
+  // automation to delete, or a routine whose automation must be made again.
+  `CREATE TABLE routine_cleanup (
+    key TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('delete', 'repair')),
+    project_id TEXT,
+    automation_id TEXT,
+    routine_id TEXT,
+    last_error TEXT,
+    created_at INTEGER NOT NULL
   )`,
 ];
 
@@ -327,8 +357,46 @@ type RoutineRecord = {
   automation_id: string | null;
   created_at: number;
   updated_at: number;
-  away_ask: string | null;
+  fired_at: number | null;
+  delivered_at: number | null;
 };
+type AwayRecord = {
+  routine_id: string;
+  captain_id: string;
+  absence: number;
+  paused: number;
+  ask_id: string | null;
+};
+type CleanupRecord = {
+  key: string;
+  kind: "delete" | "repair";
+  project_id: string | null;
+  automation_id: string | null;
+  routine_id: string | null;
+  last_error: string | null;
+  created_at: number;
+};
+
+/** A routine the away pause holds. */
+export type AwayHold = {
+  routineId: string;
+  captainId: string;
+  /** The `last_seen` the absence was judged from. */
+  absence: number;
+  paused: boolean;
+  askId: string | null;
+};
+
+/** Automations work retried each maintenance pass. */
+export type Cleanup =
+  | {
+      key: string;
+      kind: "delete";
+      projectId: string;
+      automationId: string;
+      lastError: string | null;
+    }
+  | { key: string; kind: "repair"; routineId: string; lastError: string | null };
 type RoutineRunRecord = {
   id: number;
   routine_id: string;
@@ -408,7 +476,31 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     automationId: row.automation_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    firedAt: row.fired_at,
+    deliveredAt: row.delivered_at,
   });
+  const toAway = (row: AwayRecord): AwayHold => ({
+    routineId: row.routine_id,
+    captainId: row.captain_id,
+    absence: row.absence,
+    paused: row.paused === 1,
+    askId: row.ask_id,
+  });
+  const toCleanup = (row: CleanupRecord): Cleanup =>
+    row.kind === "delete"
+      ? {
+          key: row.key,
+          kind: "delete",
+          projectId: row.project_id ?? "",
+          automationId: row.automation_id ?? "",
+          lastError: row.last_error,
+        }
+      : {
+          key: row.key,
+          kind: "repair",
+          routineId: row.routine_id ?? "",
+          lastError: row.last_error,
+        };
   const toRoutineRun = (row: RoutineRunRecord): RoutineRun => ({
     id: row.id,
     routineId: row.routine_id,
@@ -1040,6 +1132,9 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     deleteRoutine(id: string): void {
       db.transaction(() => {
         db.prepare("DELETE FROM routine_runs WHERE routine_id = ?").run(id);
+        db.prepare("DELETE FROM routine_away WHERE routine_id = ?").run(id);
+        db.prepare("DELETE FROM routine_tests WHERE routine_id = ?").run(id);
+        db.prepare("DELETE FROM routine_cleanup WHERE kind = 'repair' AND routine_id = ?").run(id);
         db.prepare("DELETE FROM routines WHERE id = ?").run(id);
       })();
     },
@@ -1051,6 +1146,14 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
             "INSERT INTO routine_runs (routine_id, trigger, status, reason, at) VALUES (?, ?, ?, ?, ?)",
           )
           .run(run.routineId, run.trigger, run.status, run.reason, run.at);
+        if (run.trigger === "schedule") {
+          const delivered = run.status === "sent" || run.status === "queued";
+          db.prepare(
+            `UPDATE routines SET fired_at = MAX(COALESCE(fired_at, 0), ?),
+               delivered_at = CASE WHEN ? THEN MAX(COALESCE(delivered_at, 0), ?) ELSE delivered_at END
+             WHERE id = ?`,
+          ).run(run.at, delivered ? 1 : 0, run.at, run.routineId);
+        }
         db.prepare(
           `DELETE FROM routine_runs WHERE routine_id = ? AND id NOT IN (
              SELECT id FROM routine_runs WHERE routine_id = ? ORDER BY id DESC LIMIT ?)`,
@@ -1067,41 +1170,137 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         .all(routineId, limit)
         .map(toRoutineRun);
     },
-    /** When any of the Captain's routines last reached it on its schedule, or null. */
+    /** When any of the Captain's routines last reached it on its schedule, or null. Kept apart from the trimmed history. */
     lastScheduledDelivery(captainId: string): number | null {
       return (
         db
           .prepare<[string], { at: number | null }>(
-            `SELECT MAX(routine_runs.at) AS at FROM routine_runs
-             JOIN routines ON routines.id = routine_runs.routine_id
-             WHERE routines.captain_id = ? AND routine_runs.trigger = 'schedule'
-               AND routine_runs.status IN ('sent', 'queued')`,
+            "SELECT MAX(delivered_at) AS at FROM routines WHERE captain_id = ?",
           )
           .get(captainId)?.at ?? null
       );
     },
-    /** Mark the routines an away pause paused with its ask; null clears the mark. */
-    setRoutinesAway(ids: readonly string[], askId: string | null): void {
-      const update = db.prepare("UPDATE routines SET away_ask = ? WHERE id = ?");
-      db.transaction(() => {
-        for (const id of ids) update.run(askId, id);
+
+    /**
+     * Start one away pause: claim its notice and record the routines it will
+     * pause, in one transaction, so a restart either redoes the choice or
+     * keeps it. False when this absence was already claimed. A routine an
+     * older absence still holds stays with it.
+     */
+    startAway(
+      noticeKey: string,
+      captainId: string,
+      absence: number,
+      routineIds: readonly string[],
+      at: number,
+    ): boolean {
+      return db.transaction(() => {
+        const claimed =
+          db
+            .prepare(
+              `INSERT INTO notices (key, first_seen, sent_at) VALUES (?, ?, ?)
+               ON CONFLICT (key) DO UPDATE SET sent_at = excluded.sent_at
+               WHERE notices.sent_at IS NULL`,
+            )
+            .run(noticeKey, at, at).changes === 1;
+        if (!claimed) return false;
+        const insert = db.prepare(
+          `INSERT INTO routine_away (routine_id, captain_id, absence) VALUES (?, ?, ?)
+           ON CONFLICT (routine_id) DO NOTHING`,
+        );
+        for (const id of routineIds) insert.run(id, captainId, absence);
+        return true;
       })();
     },
-    /** The routines an away pause paused under this ask. */
-    routinesAwayUnder(askId: string): Routine[] {
-      return db
-        .prepare<[string], RoutineRecord>("SELECT * FROM routines WHERE away_ask = ? ORDER BY seq")
-        .all(askId)
-        .map(toRoutine);
+    awayHold(routineId: string): AwayHold | null {
+      const row = db
+        .prepare<[string], AwayRecord>("SELECT * FROM routine_away WHERE routine_id = ?")
+        .get(routineId);
+      return row === undefined ? null : toAway(row);
     },
-    /** Asks that paused routines still marked, so an answer not yet applied is retried. */
-    awayAsks(): string[] {
+    /** A Captain's away holds for one absence, or every hold with none given. */
+    awayHolds(filter: { captainId?: string; absence?: number; askId?: string } = {}): AwayHold[] {
       return db
-        .prepare<[], { away_ask: string }>(
-          "SELECT DISTINCT away_ask FROM routines WHERE away_ask IS NOT NULL",
+        .prepare<
+          [{ captain: string | null; absence: number | null; ask: string | null }],
+          AwayRecord
+        >(
+          `SELECT * FROM routine_away WHERE (@captain IS NULL OR captain_id = @captain)
+             AND (@absence IS NULL OR absence = @absence) AND (@ask IS NULL OR ask_id = @ask)
+           ORDER BY rowid`,
         )
+        .all({
+          captain: filter.captainId ?? null,
+          absence: filter.absence ?? null,
+          ask: filter.askId ?? null,
+        })
+        .map(toAway);
+    },
+    markAwayPaused(routineId: string): void {
+      db.prepare("UPDATE routine_away SET paused = 1 WHERE routine_id = ?").run(routineId);
+    },
+    setAwayAsk(routineIds: readonly string[], askId: string): void {
+      const update = db.prepare("UPDATE routine_away SET ask_id = ? WHERE routine_id = ?");
+      db.transaction(() => {
+        for (const id of routineIds) update.run(askId, id);
+      })();
+    },
+    clearAway(routineId: string): void {
+      db.prepare("DELETE FROM routine_away WHERE routine_id = ?").run(routineId);
+    },
+
+    /** A test run Captain started, so its fire is told apart from a scheduled one. */
+    addTestRun(runId: string, routineId: string, at: number): void {
+      db.prepare(
+        "INSERT INTO routine_tests (run_id, routine_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+      ).run(runId, routineId, at);
+    },
+    /** Claim a test run once; also drops claims older than `staleBefore`. */
+    takeTestRun(runId: string, staleBefore: number): boolean {
+      return db.transaction(() => {
+        const taken = db.prepare("DELETE FROM routine_tests WHERE run_id = ?").run(runId).changes;
+        db.prepare("DELETE FROM routine_tests WHERE at < ?").run(staleBefore);
+        return taken === 1;
+      })();
+    },
+
+    /** Queue Automations work to retry; a second add of the same key keeps one row. */
+    addCleanup(
+      cleanup:
+        | { kind: "delete"; projectId: string; automationId: string }
+        | { kind: "repair"; routineId: string },
+      error: string,
+      at: number,
+    ): void {
+      const key =
+        cleanup.kind === "delete"
+          ? `delete:${cleanup.automationId}`
+          : `repair:${cleanup.routineId}`;
+      db.prepare(
+        `INSERT INTO routine_cleanup (key, kind, project_id, automation_id, routine_id, last_error, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (key) DO UPDATE SET last_error = excluded.last_error`,
+      ).run(
+        key,
+        cleanup.kind,
+        cleanup.kind === "delete" ? cleanup.projectId : null,
+        cleanup.kind === "delete" ? cleanup.automationId : null,
+        cleanup.kind === "repair" ? cleanup.routineId : null,
+        error,
+        at,
+      );
+    },
+    cleanups(): Cleanup[] {
+      return db
+        .prepare<[], CleanupRecord>("SELECT * FROM routine_cleanup ORDER BY created_at, key")
         .all()
-        .map((row) => row.away_ask);
+        .map(toCleanup);
+    },
+    removeCleanup(key: string): void {
+      db.prepare("DELETE FROM routine_cleanup WHERE key = ?").run(key);
+    },
+    setCleanupError(key: string, error: string): void {
+      db.prepare("UPDATE routine_cleanup SET last_error = ? WHERE key = ?").run(error, key);
     },
   };
 

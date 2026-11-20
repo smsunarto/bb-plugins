@@ -251,6 +251,8 @@ export async function resolveAsk(
   deps: CommandDeps,
   address: string,
   rawAnswer: string,
+  /** The calling thread; null for the user's terminal and the banner. */
+  caller: { threadId: string | null } = { threadId: null },
 ): Promise<Resolved> {
   // The user's shell has no thread, so the ask itself names its Captain.
   const id = address.trim().toLowerCase();
@@ -271,6 +273,17 @@ export async function resolveAsk(
       fix: "open a new ask with bb captain ask",
     });
   }
+  // An away ask changes schedules: only the user or its own Captain may answer it.
+  if (
+    caller.threadId !== null &&
+    caller.threadId !== ask.captainId &&
+    deps.routines.isAwayAsk(id)
+  ) {
+    blockers.push({
+      reason: `${id} pauses ${captain?.name ?? "a"} Captain's routines; ${caller.threadId} cannot answer it`,
+      fix: "the user answers it from the banner or their terminal",
+    });
+  }
   if (blockers.length > 0 || captain === null) throw new Refusal(blockers);
 
   const notes: string[] = [];
@@ -288,7 +301,7 @@ export async function resolveAsk(
   }
   const answered = deps.store.ask(id);
   if (answered === null || answered.answer === null) throw new Error(`${id} lost its answer`);
-  // An away-pause ask: Captain resumes or releases the routines it paused; the check retries a failure.
+  // An away-pause ask: Captain resumes or releases the routines it holds; maintenance retries a failure.
   const away = await deps.routines
     .applyAwayAnswer(id, answered.answer)
     .catch((error: unknown) => `routines not resumed yet: ${(error as Error).message}`);

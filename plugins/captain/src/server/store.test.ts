@@ -119,15 +119,76 @@ describe("routines", () => {
     expect(store.routineRuns(routine.id)).toEqual([]);
   });
 
-  test("away marks name the ask that paused each routine", async () => {
+  test("away holds: one claim per absence, then paused, then asked", async () => {
     const host = await captainHost();
     const store = host.server.store;
     const a = store.createRoutine({ ...fields("A"), captainId: "thr_a", at: 1 });
     store.createRoutine({ ...fields("B"), captainId: "thr_a", at: 1 });
-    store.setRoutinesAway([a.id], "a7");
-    expect(store.routinesAwayUnder("a7").map((r) => r.id)).toEqual([a.id]);
-    expect(store.awayAsks()).toEqual(["a7"]);
-    store.setRoutinesAway([a.id], null);
-    expect(store.awayAsks()).toEqual([]);
+    expect(store.startAway("routines-away:thr_a:5", "thr_a", 5, [a.id], 10)).toBe(true);
+    expect(store.startAway("routines-away:thr_a:5", "thr_a", 5, [a.id], 11)).toBe(false);
+    expect(store.awayHolds({ captainId: "thr_a" })).toMatchObject([
+      { routineId: a.id, absence: 5, paused: false, askId: null },
+    ]);
+    store.markAwayPaused(a.id);
+    store.setAwayAsk([a.id], "a7");
+    expect(store.awayHolds({ askId: "a7" })).toMatchObject([{ routineId: a.id, paused: true }]);
+    store.clearAway(a.id);
+    expect(store.awayHolds()).toEqual([]);
+  });
+
+  test("the last scheduled delivery outlives the trimmed history", async () => {
+    const host = await captainHost();
+    const store = host.server.store;
+    const routine = store.createRoutine({ ...fields("Sweep"), captainId: "thr_a", at: 1 });
+    store.recordRoutineRun({
+      routineId: routine.id,
+      trigger: "schedule",
+      status: "sent",
+      reason: null,
+      at: 5,
+    });
+    for (let at = 6; at < 40; at += 1) {
+      store.recordRoutineRun({
+        routineId: routine.id,
+        trigger: "schedule",
+        status: "skipped",
+        reason: null,
+        at,
+      });
+    }
+    store.recordRoutineRun({
+      routineId: routine.id,
+      trigger: "test",
+      status: "sent",
+      reason: null,
+      at: 50,
+    });
+    expect(store.routineRuns(routine.id).some((run) => run.at === 5)).toBe(false);
+    expect(store.lastScheduledDelivery("thr_a")).toBe(5);
+    expect(store.routine(routine.id)).toMatchObject({ firedAt: 39, deliveredAt: 5 });
+  });
+
+  test("a routine's latest run is an index lookup (finding 19)", async () => {
+    const host = await captainHost();
+    const db = host.bb.storage.database();
+    const plan = db
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT * FROM routine_runs WHERE routine_id = ? ORDER BY id DESC LIMIT 1",
+      )
+      .all("r1") as { detail: string }[];
+    expect(plan.map((row) => row.detail).join(" ")).toContain("routine_runs_by_routine");
+  });
+
+  test("test runs are claimed once; cleanup rows keep one per key", async () => {
+    const host = await captainHost();
+    const store = host.server.store;
+    store.addTestRun("arun_1", "r1", 100);
+    expect(store.takeTestRun("arun_1", 0)).toBe(true);
+    expect(store.takeTestRun("arun_1", 0)).toBe(false);
+    store.addCleanup({ kind: "delete", projectId: "p", automationId: "auto_1" }, "down", 1);
+    store.addCleanup({ kind: "delete", projectId: "p", automationId: "auto_1" }, "still down", 2);
+    expect(store.cleanups()).toMatchObject([
+      { kind: "delete", automationId: "auto_1", lastError: "still down" },
+    ]);
   });
 });

@@ -133,9 +133,20 @@ export const routineSchema = routineFieldsSchema
     automationId: z.string().min(1).nullable(),
     createdAt: z.number(),
     updatedAt: z.number(),
+    /** The newest scheduled fire, whatever its outcome. */
+    firedAt: z.number().nullable(),
+    /** The newest scheduled fire that reached the Captain. */
+    deliveredAt: z.number().nullable(),
   })
   .strict();
 export type Routine = z.infer<typeof routineSchema>;
+
+/** A one-shot whose time came and was fired: Automations disables it after that run. */
+export function oneShotDone(routine: Pick<Routine, "schedule" | "firedAt">): boolean {
+  return (
+    "at" in routine.schedule && routine.firedAt !== null && routine.firedAt >= routine.schedule.at
+  );
+}
 
 export const ROUTINE_RUN_TRIGGERS = ["schedule", "test"] as const;
 /** Delivery states only: the Captain thread shows the work. */
@@ -211,13 +222,17 @@ function frequentWords(fields: readonly string[]): string | null {
   const [minuteField = "", hourField = "", day, , weekday] = fields;
   if (day !== "*" || weekday !== "*") return null;
   const everyMinutes = /^\*\/(\d+)$/u.exec(minuteField);
-  if (everyMinutes && hourField === "*") return `Every ${everyMinutes[1]} minutes`;
+  // Only a step that divides the hour keeps the gaps equal; `*/40` runs at :00 and :40.
+  if (everyMinutes && hourField === "*")
+    return 60 % Number(everyMinutes[1]) === 0 ? `Every ${everyMinutes[1]} minutes` : null;
   const minute = single(minuteField);
   if (minute === null) return null;
   const past = minute === 0 ? "" : ` at :${pad(minute)}`;
   if (hourField === "*") return minute === 0 ? "Every hour" : `Every hour${past}`;
   const everyHours = /^\*\/(\d+)$/u.exec(hourField);
-  return everyHours ? `Every ${everyHours[1]} hours${past}` : null;
+  return everyHours && 24 % Number(everyHours[1]) === 0
+    ? `Every ${everyHours[1]} hours${past}`
+    : null;
 }
 
 /** One time of day: daily, on weekdays, on named days, or monthly. */
@@ -255,6 +270,8 @@ export type RoutineView = Routine & {
   } | null;
   /** Why `automation` is null. */
   automationError: string | null;
+  /** A one-shot that has run for its current time and is not armed again. */
+  done: boolean;
   lastRun: RoutineRun | null;
 };
 

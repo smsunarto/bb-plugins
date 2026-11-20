@@ -11,7 +11,8 @@ import { configure } from "./configure.ts";
 import { createDrive } from "./drive.ts";
 import { createFields } from "./fields.ts";
 import { createRegistry } from "./registry.ts";
-import { createRoutines } from "./routines.ts";
+import { openAsk } from "./asks.ts";
+import { AWAY_ASK_TEXT, AWAY_OPTIONS, createRoutines } from "./routines.ts";
 import { registerRpc } from "./rpc.ts";
 import { createTaskGuard } from "./spawn.ts";
 import { openStore } from "./store.ts";
@@ -41,6 +42,18 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     files,
     now,
     automations: createAutomationsClient(bb),
+    openAwayAsk: async (captainId, detail) => {
+      const captain = registry.get(captainId);
+      if (captain === null) throw new Error(`${captainId} is not a live Captain`);
+      const { item } = await openAsk({ bb, store, now, tasks }, captain, {
+        kind: "decision",
+        task: null,
+        text: AWAY_ASK_TEXT,
+        detail,
+        options: [...AWAY_OPTIONS],
+      });
+      return item.id;
+    },
     defaultTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
   const deps: CommandDeps = {
@@ -77,7 +90,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
   bb.cli.register(captainCli(deps));
   registerRpc(deps, options.crewPollMs);
   check.register(bb);
-  routines.register(bb.events);
+  routines.register(bb);
 
   // `configure` is synchronous, so the Drive root is read once here and cached.
   const ready = ensureStorageRoot(deps).then(

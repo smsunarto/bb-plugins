@@ -153,7 +153,7 @@ export type FakeAutomation = {
 };
 
 /** bb Automations as Captain calls it: create, update, get, pause, resume, run, delete, list. */
-export function fakeAutomations() {
+export function fakeAutomations(now: () => number = Date.now) {
   const rows = new Map<string, FakeAutomation>();
   let next = 0;
   let runs = 0;
@@ -165,6 +165,8 @@ export function fakeAutomations() {
     /** Called after a manual run is recorded, as the stored script would run. */
     onRun: null as null | ((row: FakeAutomation, runId: string) => Promise<void> | void),
     calls: [] as { method: string; input: unknown }[],
+    /** Methods whose next call fails once. */
+    failNext: new Set<string>(),
   };
   const status = (row: FakeAutomation) => ({
     id: row.id,
@@ -180,9 +182,20 @@ export function fakeAutomations() {
       throw new Error("Automation not found");
     return row;
   };
+  /** As the real plugin validates every trigger it is given. */
+  const checkTrigger = (trigger: unknown) => {
+    const runAt = (trigger as { runAt?: number } | undefined)?.runAt;
+    if (runAt !== undefined && runAt <= now())
+      throw new Error("One-shot run time must be in the future");
+  };
   async function call(method: string, input: Record<string, unknown>): Promise<unknown> {
     state.calls.push({ method, input });
     if (state.down) throw new Error("plugin automations is not running");
+    if (state.failNext.has(method)) {
+      state.failNext.delete(method);
+      throw new Error(`${method} failed once`);
+    }
+    if (input["trigger"] !== undefined) checkTrigger(input["trigger"]);
     switch (method) {
       case "automations_create": {
         if (state.refuseCreate !== null) throw new Error(state.refuseCreate);
@@ -206,7 +219,7 @@ export function fakeAutomations() {
         return status(row);
       }
       case "automations_get":
-        return status(find(input));
+        return Object.assign(status(find(input)), { execution: find(input).execution });
       case "automations_pause":
         find(input).enabled = false;
         return status(find(input));
@@ -282,7 +295,7 @@ export async function captainHost(options: FakeOptions = {}) {
   const queued = new Map<string, QueuedRow[]>();
   /** Threads with a turn running: a `queue-if-active` send to one is queued. */
   const busy = new Set<string>();
-  const automations = fakeAutomations();
+  const automations = fakeAutomations(() => clock);
   /** Each send-now, with whether the thread was marked and registered by then. */
   const released: { threadId: string; marked: boolean; registered: boolean }[] = [];
   let serial = 0;

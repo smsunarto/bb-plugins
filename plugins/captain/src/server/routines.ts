@@ -3,6 +3,7 @@ import type { InstructionFiles } from "@bb-plugins/instructions";
 import type { z } from "zod";
 import {
   describeSchedule,
+  oneShotDone,
   routineFieldsSchema,
   routinesTag,
   type Routine,
@@ -15,12 +16,14 @@ import {
 } from "../contract/routines.ts";
 import { isMissing, type AutomationsClient, type AutomationTarget } from "./automations-client.ts";
 import { Refusal } from "./output.ts";
-import type { Store } from "./store.ts";
+import { NOTICE, type Cleanup, type Store } from "./store.ts";
 
 /**
  * Routines: each is one script automation in bb Automations that calls the
  * hidden `bb captain routine fire`, which guards the run and sends the
- * Captain one message. Captain keeps no timer of its own.
+ * Captain one message. Captain keeps no timer of its own; its maintenance
+ * service repairs drift, retries failed Automations work and runs the away
+ * pause, apart from the crew check.
  */
 
 export type RoutinesDeps = {
@@ -29,12 +32,24 @@ export type RoutinesDeps = {
   files: InstructionFiles;
   now: () => number;
   automations: AutomationsClient;
+  /** Open the away ask for a live Captain and return its id; reruns return the open one. */
+  openAwayAsk: (captainId: string, detail: string) => Promise<string>;
   /** The server machine's time zone, the default for `--timezone`. */
   defaultTimezone?: string;
 };
 
 /** The Captain a routine belongs to, as the service needs it. */
 export type RoutineOwner = { threadId: string; name: string; homeProjectId: string };
+
+/** Unseen this long while routines ran, a Captain's routines are paused with one ask. */
+export const AWAY_PAUSE_AFTER_MS = 7 * 24 * 60 * 60_000;
+export const AWAY_ASK_TEXT = "Routines paused while you were away";
+export const AWAY_OPTIONS = ["Resume", "Keep paused"] as const;
+/** Maintenance calls in flight at once, and the deadline on each. */
+const MAINTENANCE_CONCURRENCY = 4;
+const MAINTENANCE_DEADLINE_MS = 20_000;
+/** A test run's claim is dropped after this, in case its fire never came. */
+const TEST_RUN_TTL_MS = 24 * 60 * 60_000;
 
 /** Queue rows still waiting to reach the Captain; `failed_exhausted` never will. */
 const PENDING_QUEUE_STATES = new Set([
@@ -50,16 +65,12 @@ export function wakeToken(routineId: string): string {
   return `[captain] routine ${routineId} `;
 }
 
-export type FireResult =
-  | { state: "sent" | "queued"; run: RoutineRun }
-  | { state: "skipped"; run: RoutineRun };
+export type FireResult = { state: "sent" | "queued" | "skipped"; run: RoutineRun };
 
 export type Routines = ReturnType<typeof createRoutines>;
 
 export function createRoutines(deps: RoutinesDeps) {
   const { bb, store, automations } = deps;
-  /** Test runs Captain started, by Automations run id, until their `fire` arrives. */
-  const pendingTests = new Set<string>();
   let reconciled = false;
   let reconcileWarned = false;
 
@@ -76,6 +87,7 @@ export function createRoutines(deps: RoutinesDeps) {
     return run;
   }
 
+  const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
   const changed = (captainId: string) => bb.rpc.experimental_invalidate([routinesTag(captainId)]);
   const ownerOf = (routine: Routine): RoutineOwner => {
     const row = store.captain(routine.captainId);
@@ -99,17 +111,48 @@ export function createRoutines(deps: RoutinesDeps) {
       },
     ]);
   };
+  /** The routine as it is now, inside its lock; refuses one deleted meanwhile. */
+  const current = (routineId: string): Routine => {
+    const found = store.routine(routineId);
+    if (found !== null) return found;
+    throw new Refusal([
+      { reason: `routine ${routineId} was removed`, fix: "bb captain routine list" },
+    ]);
+  };
   const automationsRefused = (error: unknown): Refusal =>
     error instanceof Refusal
       ? error
       : new Refusal([
           {
-            reason: `bb Automations did not take it: ${(error as Error).message}`,
+            reason: `bb Automations did not take it: ${message(error)}`,
             fix: "check `bb plugin list` shows automations running, then rerun",
           },
         ]);
 
   const spent = (schedule: Schedule) => "at" in schedule && schedule.at <= deps.now();
+
+  /** Delete an automation now, or queue the delete for the next maintenance pass. */
+  async function deleteAutomation(found: AutomationTarget): Promise<void> {
+    try {
+      await automations.delete(found);
+    } catch (error) {
+      if (isMissing(error)) return;
+      store.addCleanup({ kind: "delete", ...found }, message(error), deps.now());
+    }
+  }
+
+  /** Make a routine's automation; held by an away pause, it starts paused and stays held. */
+  async function makeAutomation(owner: RoutineOwner, routine: Routine, enabled: boolean) {
+    const held = store.awayHold(routine.id) !== null;
+    const made = await automations.create(
+      owner.homeProjectId,
+      owner.name,
+      routine,
+      enabled && !held,
+    );
+    if (held) store.markAwayPaused(routine.id);
+    return made.id;
+  }
 
   /**
    * Parse fields the way the CLI and the app share. A new one-shot must be in
@@ -137,6 +180,10 @@ export function createRoutines(deps: RoutinesDeps) {
     return parsed.data;
   }
 
+  function timezoneOf(schedule: Schedule): string | undefined {
+    return "at" in schedule ? deps.defaultTimezone : schedule.timezone;
+  }
+
   async function view(routine: Routine): Promise<RoutineView> {
     const base = {
       ...routine,
@@ -148,7 +195,10 @@ export function createRoutines(deps: RoutinesDeps) {
       return {
         ...base,
         automation: null,
-        automationError: "no schedule; update the routine to schedule it again",
+        automationError: oneShotDone(routine)
+          ? null
+          : "no schedule; update the routine to schedule it again",
+        done: oneShotDone(routine),
       };
     }
     try {
@@ -161,6 +211,7 @@ export function createRoutines(deps: RoutinesDeps) {
           lastRunAt: status.lastRunAt,
         },
         automationError: null,
+        done: oneShotDone(routine) && !status.enabled,
       };
     } catch (error) {
       return {
@@ -168,13 +219,10 @@ export function createRoutines(deps: RoutinesDeps) {
         automation: null,
         automationError: isMissing(error)
           ? "its automation was deleted; update the routine to schedule it again"
-          : `Schedule unavailable: ${(error as Error).message}`,
+          : `Schedule unavailable: ${message(error)}`,
+        done: false,
       };
     }
-  }
-
-  function timezoneOf(schedule: Schedule): string | undefined {
-    return "at" in schedule ? deps.defaultTimezone : schedule.timezone;
   }
 
   /** Make a routine and its automation. When Automations refuses or is down, nothing is stored. */
@@ -184,8 +232,9 @@ export function createRoutines(deps: RoutinesDeps) {
     options: { paused?: boolean } = {},
   ): Promise<RoutineView> {
     const fields = parseFields(input);
+    // The insert reserves the name; the lock is taken before any await, so
+    // reconcile never sees the automation before its id is saved.
     const draft = store.createRoutine({ ...fields, captainId: captain.threadId, at: deps.now() });
-    // Taken before any await, so reconcile never sees the automation without its id saved.
     return serial(`routine:${draft.id}`, async () => {
       let automationId: string;
       try {
@@ -208,114 +257,96 @@ export function createRoutines(deps: RoutinesDeps) {
   }
 
   /**
-   * Change a routine. A new name or schedule updates its one automation in
-   * place; an automation deleted outside Captain is made again, so two never
-   * schedule the same routine.
+   * Change a routine. A new name is reserved in the store before Automations
+   * hears of it, so two renames never both reach it. Only changed fields are
+   * sent. An automation deleted outside Captain is made again, so two never
+   * schedule the same routine. A one-shot that already ran is armed again by
+   * a new time; a paused one stays paused.
    */
   async function update(
     routine: Routine,
     patch: Partial<z.input<typeof routineFieldsSchema>>,
   ): Promise<RoutineView> {
     return serial(`routine:${routine.id}`, async () => {
-      const current = store.routine(routine.id) ?? routine;
+      const before = current(routine.id);
       const fields = parseFields(
         {
-          name: patch.name ?? current.name,
-          instruction: patch.instruction ?? current.instruction,
-          schedule: patch.schedule ?? current.schedule,
+          name: patch.name ?? before.name,
+          instruction: patch.instruction ?? before.instruction,
+          schedule: patch.schedule ?? before.schedule,
         },
         patch.schedule !== undefined,
       );
-      // Automations disables a one-shot after its run, so a new one-shot time arms it again.
-      const rearm = patch.schedule !== undefined && "at" in fields.schedule;
-      const owner = ownerOf(current);
-      const taken = store.findRoutine(owner.threadId, fields.name);
-      if (taken !== null && taken.id !== current.id) {
-        throw new Refusal([
-          {
-            reason: `routine ${taken.id} is already named ${JSON.stringify(fields.name)}`,
-            fix: "pick another --name",
-          },
-        ]);
-      }
-      let automationId = current.automationId;
-      const scheduleChanged =
-        fields.name !== current.name ||
-        JSON.stringify(fields.schedule) !== JSON.stringify(current.schedule);
+      const owner = ownerOf(before);
+      const nameChanged = fields.name !== before.name;
+      const scheduleChanged = JSON.stringify(fields.schedule) !== JSON.stringify(before.schedule);
+      const rearm = scheduleChanged && oneShotDone(before);
+      // Reserve the name now: a concurrent rename to it fails here, before any remote write.
+      if (nameChanged) store.updateRoutine(before.id, { name: fields.name }, before.updatedAt);
+      let automationId = before.automationId;
       try {
-        const found = target(current);
-        if (found === null && spent(fields.schedule)) {
-          // A spent one-shot with no automation: only its words change.
-        } else if (found === null) {
-          automationId = (
-            await automations.create(
-              owner.homeProjectId,
-              owner.name,
-              { ...current, ...fields },
-              true,
-            )
-          ).id;
+        const found = target(before);
+        const remake = async () =>
+          spent(fields.schedule) ? null : makeAutomation(owner, { ...before, ...fields }, true);
+        if (found === null) {
+          automationId = await remake();
         } else {
           try {
-            // Only the instruction changed: still confirm the schedule exists.
-            if (scheduleChanged) await automations.update(found, owner.name, fields);
-            else await automations.get(found);
-            if (rearm) await automations.resume(found);
+            if (nameChanged || scheduleChanged) {
+              await automations.update(found, owner.name, {
+                ...(nameChanged ? { name: fields.name } : {}),
+                ...(scheduleChanged ? { schedule: fields.schedule } : {}),
+              });
+            } else {
+              await automations.get(found);
+            }
+            if (rearm && store.awayHold(before.id) === null) await automations.resume(found);
           } catch (error) {
             if (!isMissing(error)) throw error;
-            automationId = (
-              await automations.create(
-                owner.homeProjectId,
-                owner.name,
-                { ...current, ...fields },
-                true,
-              )
-            ).id;
+            automationId = await remake();
           }
         }
       } catch (error) {
+        if (nameChanged) store.updateRoutine(before.id, { name: before.name }, before.updatedAt);
         throw automationsRefused(error);
       }
-      const saved = store.updateRoutine(current.id, { ...fields, automationId }, deps.now());
+      const saved = store.updateRoutine(before.id, { ...fields, automationId }, deps.now());
       changed(owner.threadId);
       return view(saved);
     });
   }
 
-  /** Pause, resume, run now (Grok's Test) or delete. */
+  /** Pause, resume, run now (Grok's Test) or delete. An explicit choice ends an away hold. */
   async function act(
     routine: Routine,
     action: RoutineAction,
   ): Promise<{ view: RoutineView | null; runId: string | null }> {
     return serial(`routine:${routine.id}`, async () => {
-      const current = store.routine(routine.id) ?? routine;
-      const owner = ownerOf(current);
+      const latest = current(routine.id);
+      const owner = ownerOf(latest);
       if (action === "delete") {
-        const found = target(current);
-        if (found !== null) {
-          await automations.delete(found).catch((error: unknown) => {
-            if (!isMissing(error)) throw automationsRefused(error);
-          });
-        }
-        store.deleteRoutine(current.id);
+        const found = target(latest);
+        if (found !== null) await deleteAutomation(found);
+        store.deleteRoutine(latest.id);
         changed(owner.threadId);
         return { view: null, runId: null };
       }
-      const found = requireTarget(current);
+      const found = requireTarget(latest);
       let runId: string | null = null;
       try {
         if (action === "pause") await automations.pause(found);
         else if (action === "resume") await automations.resume(found);
         else {
           runId = (await automations.run(found)).run.id;
-          // Its `fire` waits on this lock, so it finds the id.
-          pendingTests.add(runId);
+          // Durable, so a reload before the script's fire still finds it.
+          store.addTestRun(runId, latest.id, deps.now());
         }
       } catch (error) {
         throw automationsRefused(error);
       }
+      if (action !== "run") store.clearAway(latest.id);
       changed(owner.threadId);
-      return { view: await view(current), runId };
+      return { view: await view(latest), runId };
     });
   }
 
@@ -340,7 +371,8 @@ export function createRoutines(deps: RoutinesDeps) {
    * Deliver one run: the automation's script calls this. Refuses an
    * automation that no longer schedules the routine and an archived Captain,
    * whose routines it pauses. Skips while the Captain's queue still holds this
-   * routine's last message, so at most one run waits per routine.
+   * routine's last message, or cannot be read, so at most one run waits per
+   * routine.
    */
   async function fire(
     routineId: string,
@@ -365,7 +397,9 @@ export function createRoutines(deps: RoutinesDeps) {
         ]);
       }
       const trigger: RoutineRunTrigger =
-        call.runId !== null && pendingTests.delete(call.runId) ? "test" : "schedule";
+        call.runId !== null && store.takeTestRun(call.runId, deps.now() - TEST_RUN_TTL_MS)
+          ? "test"
+          : "schedule";
       const captainRow = store.captain(routine.captainId);
       const thread = await bb.sdk.threads
         .get({ threadId: routine.captainId })
@@ -375,14 +409,14 @@ export function createRoutines(deps: RoutinesDeps) {
         });
       if (captainRow === null || thread === null || thread.deletedAt != null) {
         record(routine, trigger, "failed", "Captain deleted");
-        await removeCaptain(routine.captainId);
+        void removeCaptain(routine.captainId, routine.id);
         throw new Refusal([
           { reason: `${routine.captainId} was deleted`, fix: "its routines are removed" },
         ]);
       }
       if (captainRow.archivedAt !== null || thread.archivedAt !== null) {
         record(routine, trigger, "failed", "Captain archived");
-        // Inside this routine's lock: pause the others now, this one directly.
+        // Inside this routine's lock: pause this one directly, the others after.
         await pauseOne(routine);
         void pauseCaptain(routine.captainId, routine.id);
         throw new Refusal([
@@ -392,20 +426,17 @@ export function createRoutines(deps: RoutinesDeps) {
           },
         ]);
       }
-      if (await alreadyQueued(routine)) {
-        return {
-          state: "skipped",
-          run: record(routine, trigger, "skipped", "previous run still queued"),
-        };
+      const queued = await alreadyQueued(routine);
+      if (queued !== false) {
+        const reason = queued === "unreadable" ? "queue unreadable" : "previous run still queued";
+        return { state: "skipped", run: record(routine, trigger, "skipped", reason) };
       }
-      const text = `${wakeToken(routine.id)}${JSON.stringify(routine.name)} · ${trigger === "test" ? "test" : "scheduled"}\n\n${deps.files.read(
-        "routine",
-        {
-          id: routine.id,
-          instruction: routine.instruction,
-          why: trigger === "test" ? "as a test run" : "on its schedule",
-        },
-      )}`;
+      const wake = `${wakeToken(routine.id)}${JSON.stringify(routine.name)} · ${trigger === "test" ? "test" : "scheduled"}`;
+      const text = `${wake}\n\n${deps.files.read("routine", {
+        id: routine.id,
+        instruction: routine.instruction,
+        why: trigger === "test" ? "as a test run" : "on its schedule",
+      })}`;
       try {
         const result = await bb.sdk.threads.send({
           threadId: routine.captainId,
@@ -415,19 +446,20 @@ export function createRoutines(deps: RoutinesDeps) {
         const state = result.delivery === "queued" ? "queued" : "sent";
         return { state, run: record(routine, trigger, state, null) };
       } catch (error) {
-        record(routine, trigger, "failed", (error as Error).message);
+        record(routine, trigger, "failed", message(error));
         throw new Refusal([
-          {
-            reason: `not sent to the Captain: ${(error as Error).message}`,
-            fix: "the next run tries again",
-          },
+          { reason: `not sent to the Captain: ${message(error)}`, fix: "the next run tries again" },
         ]);
       }
     });
   }
 
-  /** Whether the Captain's queue still holds a message this routine sent. A failed read does not block the send. */
-  async function alreadyQueued(routine: Routine): Promise<boolean> {
+  /**
+   * Whether the Captain's queue still holds a message this routine sent. A
+   * queue that cannot be read counts as held: a send then could stack paid
+   * turns behind the running one.
+   */
+  async function alreadyQueued(routine: Routine): Promise<boolean | "unreadable"> {
     try {
       const rows = await bb.sdk.threads.queuedMessages.list({ threadId: routine.captainId });
       const token = wakeToken(routine.id);
@@ -437,14 +469,13 @@ export function createRoutines(deps: RoutinesDeps) {
           row.content.some((part) => part.type === "text" && part.text.startsWith(token)),
       );
     } catch (error) {
-      bb.log.warn(
-        `queue of ${routine.captainId} not read for ${routine.id}: ${(error as Error).message}`,
-      );
-      return false;
+      bb.log.warn(`queue of ${routine.captainId} not read for ${routine.id}: ${message(error)}`);
+      return "unreadable";
     }
   }
 
-  async function pauseOne(routine: Routine): Promise<boolean> {
+  /** Pause one routine's automation; true when it was running. Throws when Automations fails. */
+  async function pauseRunning(routine: Routine): Promise<boolean> {
     const found = target(routine);
     if (found === null) return false;
     try {
@@ -453,10 +484,16 @@ export function createRoutines(deps: RoutinesDeps) {
       await automations.pause(found);
       return true;
     } catch (error) {
-      if (!isMissing(error))
-        bb.log.warn(`routine ${routine.id} not paused: ${(error as Error).message}`);
-      return false;
+      if (isMissing(error)) return false;
+      throw error;
     }
+  }
+
+  async function pauseOne(routine: Routine): Promise<boolean> {
+    return pauseRunning(routine).catch((error: unknown) => {
+      bb.log.warn(`routine ${routine.id} not paused: ${message(error)}`);
+      return false;
+    });
   }
 
   /** Pause every routine of a Captain; returns the ones that were running and now are not. */
@@ -464,83 +501,96 @@ export function createRoutines(deps: RoutinesDeps) {
     const paused: string[] = [];
     for (const routine of store.routinesOf(captainId)) {
       if (routine.id === skip) continue;
-      const done = await serial(`routine:${routine.id}`, () =>
-        pauseOne(store.routine(routine.id) ?? routine),
-      );
+      const done = await serial(`routine:${routine.id}`, async () => {
+        const latest = store.routine(routine.id);
+        return latest === null ? false : pauseOne(latest);
+      });
       if (done) paused.push(routine.id);
     }
     if (paused.length > 0) changed(captainId);
     return paused;
   }
 
-  /** Delete a deleted Captain's routines and their automations. */
-  async function removeCaptain(captainId: string): Promise<void> {
+  /** Delete a deleted Captain's routines; an automation not deleted now is queued for cleanup. */
+  async function removeCaptain(captainId: string, inLock?: string): Promise<void> {
     for (const routine of store.routinesOf(captainId)) {
-      const found = target(routine);
-      if (found !== null) {
-        await automations.delete(found).catch((error: unknown) => {
-          if (!isMissing(error))
-            bb.log.warn(`automation of ${routine.id} not deleted: ${(error as Error).message}`);
-        });
-      }
-      store.deleteRoutine(routine.id);
+      const remove = async () => {
+        const latest = store.routine(routine.id);
+        if (latest === null) return;
+        const found = target(latest);
+        if (found !== null) await deleteAutomation(found);
+        store.deleteRoutine(latest.id);
+      };
+      if (routine.id === inLock) await remove();
+      else await serial(`routine:${routine.id}`, remove);
     }
+    changed(captainId);
   }
 
   /**
-   * Converge with Automations once it answers: delete an automation that no
-   * routine owns, and schedule again a live Captain's routine whose
-   * automation is gone, except a one-shot whose time has passed. Returns true
-   * once it has run to the end; until then each call tries again.
+   * Converge with Automations once it lists: delete a Captain automation that
+   * no routine owns, and queue a repair for a live Captain's routine whose
+   * automation is gone. Returns true once listing worked and every orphan was
+   * checked; failed deletes and repairs wait in the cleanup table.
    */
   async function reconcile(): Promise<boolean> {
     if (reconciled) return true;
-    const projects = new Set(store.allRoutines().map((routine) => ownerOf(routine).homeProjectId));
+    const projects = new Set<string>();
+    for (const routine of store.allRoutines()) {
+      const owner = store.captain(routine.captainId);
+      if (owner !== null) projects.add(owner.homeProjectId);
+    }
     for (const captain of store.liveCaptains()) projects.add(captain.homeProjectId);
+    for (const cleanup of store.cleanups()) {
+      if (cleanup.kind === "delete") projects.add(cleanup.projectId);
+    }
     const listed: { projectId: string; automationId: string; routineId: string }[] = [];
     try {
       for (const projectId of projects) {
-        for (const row of await automations.listRoutineAutomations(projectId))
+        for (const row of await automations.listRoutineAutomations(projectId)) {
           listed.push({ projectId, ...row });
+        }
       }
     } catch (error) {
-      if (!reconcileWarned) bb.log.warn(`routines not reconciled yet: ${(error as Error).message}`);
+      if (!reconcileWarned) bb.log.warn(`routines not reconciled yet: ${message(error)}`);
       reconcileWarned = true;
       return false;
     }
-    for (const row of listed) {
-      await serial(`routine:${row.routineId}`, async () => {
-        if (store.routine(row.routineId)?.automationId === row.automationId) return;
-        await automations
-          .delete({ projectId: row.projectId, automationId: row.automationId })
-          .catch((error: unknown) => {
-            if (!isMissing(error))
-              bb.log.warn(
-                `orphan automation ${row.automationId} not deleted: ${(error as Error).message}`,
-              );
-          });
-      });
-    }
+    const orphans = await mapLimit(listed, async (row) =>
+      serial(`routine:${row.routineId}`, async () => {
+        if (store.routine(row.routineId)?.automationId === row.automationId) return true;
+        const found = { projectId: row.projectId, automationId: row.automationId };
+        // Never delete what Captain did not make: the script and env must be exactly its own.
+        if (!(await automations.ownedBy(found, row.routineId))) return true;
+        await deleteAutomation(found);
+        return true;
+      }).catch((error: unknown) => {
+        bb.log.warn(`automation ${row.automationId} not checked: ${message(error)}`);
+        return false;
+      }),
+    );
     const known = new Set(listed.map((row) => row.automationId));
-    for (const routine of store.allRoutines()) {
-      await serial(`routine:${routine.id}`, () => reschedule(routine.id, known)).catch(
-        (error: unknown) =>
-          bb.log.warn(`routine ${routine.id} not rescheduled: ${(error as Error).message}`),
-      );
-    }
-    reconciled = true;
-    return true;
+    await mapLimit(store.allRoutines(), (routine) =>
+      serial(`routine:${routine.id}`, () => reschedule(routine.id, known)).catch(
+        (error: unknown) => {
+          store.addCleanup({ kind: "repair", routineId: routine.id }, message(error), deps.now());
+        },
+      ),
+    );
+    reconciled = orphans.every(Boolean);
+    return reconciled;
   }
 
-  async function reschedule(routineId: string, known: ReadonlySet<string>): Promise<void> {
+  /** Give a live Captain's routine an automation again when its own is gone. */
+  async function reschedule(routineId: string, known?: ReadonlySet<string>): Promise<void> {
     const routine = store.routine(routineId);
     if (routine === null) return;
     const owner = store.captain(routine.captainId);
     if (owner === null || owner.archivedAt !== null) return;
-    if (routine.automationId !== null && known.has(routine.automationId)) return;
+    if (routine.automationId !== null && known?.has(routine.automationId) === true) return;
     const found = target(routine);
     if (found !== null) {
-      // Made after the list was read, or listed under another project: ask for it directly.
+      // Made after the list was read, or not listed: ask for it directly.
       const gone = await automations.get(found).then(
         () => false,
         (error: unknown) => {
@@ -550,56 +600,209 @@ export function createRoutines(deps: RoutinesDeps) {
       );
       if (!gone) return;
     }
-    if ("at" in routine.schedule && routine.schedule.at <= deps.now()) {
+    if (spent(routine.schedule)) {
       if (routine.automationId !== null)
         store.updateRoutine(routine.id, { automationId: null }, deps.now());
       return;
     }
-    const created = await automations.create(owner.homeProjectId, owner.name, routine, true);
-    store.updateRoutine(routine.id, { automationId: created.id }, deps.now());
+    const automationId = await makeAutomation(
+      { threadId: owner.threadId, name: owner.name, homeProjectId: owner.homeProjectId },
+      routine,
+      true,
+    );
+    store.updateRoutine(routine.id, { automationId }, deps.now());
     changed(routine.captainId);
   }
 
+  /** Retry each queued delete and repair once; done ones leave the table. */
+  async function drainCleanup(): Promise<void> {
+    await mapLimit(store.cleanups(), async (cleanup: Cleanup) => {
+      try {
+        if (cleanup.kind === "delete") {
+          await automations
+            .delete({ projectId: cleanup.projectId, automationId: cleanup.automationId })
+            .catch((error: unknown) => {
+              if (!isMissing(error)) throw error;
+            });
+        } else {
+          await serial(`routine:${cleanup.routineId}`, () => reschedule(cleanup.routineId));
+        }
+        store.removeCleanup(cleanup.key);
+      } catch (error) {
+        store.setCleanupError(cleanup.key, message(error));
+      }
+    });
+  }
+
+  /**
+   * The away pause, as steps a restart resumes: choose the running routines
+   * and claim the absence in one write, pause each (a failure is retried next
+   * pass), then open one ask once all are paused.
+   */
+  async function awayPass(captainId: string): Promise<void> {
+    const now = deps.now();
+    const row = store.captain(captainId);
+    if (row === null || row.archivedAt !== null) return;
+    const seen = store.lastSeen(captainId) ?? row.createdAt;
+    if (now - seen <= AWAY_PAUSE_AFTER_MS) return;
+    const delivered = store.lastScheduledDelivery(captainId);
+    if (delivered === null || delivered <= seen) return;
+    const key = NOTICE.routinesAway(captainId, seen);
+    if (store.noticeSentAt(key) === null) {
+      const running: string[] = [];
+      for (const routine of store.routinesOf(captainId)) {
+        const found = target(routine);
+        if (found === null || store.awayHold(routine.id) !== null) continue;
+        // A failed read stops the choice; nothing is written, so the next pass chooses again.
+        const status = await automations.get(found).catch((error: unknown) => {
+          if (isMissing(error)) return null;
+          throw error;
+        });
+        if (status?.enabled === true) running.push(routine.id);
+      }
+      if (!store.startAway(key, captainId, seen, running, now)) return;
+    }
+    const holds = store.awayHolds({ captainId, absence: seen });
+    for (const hold of holds.filter((entry) => !entry.paused)) {
+      await serial(`routine:${hold.routineId}`, async () => {
+        const routine = store.routine(hold.routineId);
+        if (routine !== null) await pauseRunning(routine);
+        store.markAwayPaused(hold.routineId);
+      }).catch((error: unknown) =>
+        bb.log.warn(`away pause of ${hold.routineId} retried next pass: ${message(error)}`),
+      );
+    }
+    const after = store.awayHolds({ captainId, absence: seen });
+    if (after.length === 0 || after.some((hold) => !hold.paused)) return;
+    if (after.every((hold) => hold.askId !== null)) return;
+    const names = after.map((hold) => {
+      const routine = store.routine(hold.routineId);
+      return routine === null
+        ? hold.routineId
+        : `${hold.routineId} ${JSON.stringify(routine.name)}`;
+    });
+    const askId = await deps.openAwayAsk(
+      captainId,
+      deps.files.read("routines-paused", {
+        captain: row.name,
+        days: Math.floor((now - seen) / (24 * 60 * 60_000)),
+        routines: names.join(", "),
+      }),
+    );
+    store.setAwayAsk(
+      after.map((hold) => hold.routineId),
+      askId,
+    );
+    changed(captainId);
+  }
+
+  /** Whether this ask is an away-pause ask still holding routines. */
+  const isAwayAsk = (askId: string) => store.awayHolds({ askId }).length > 0;
+
   /**
    * Apply the answer to an away-pause ask: Resume resumes exactly the
-   * routines that pass paused; any other answer leaves them paused. Each
-   * routine's mark is cleared once handled, so a retry does only the rest.
-   * Returns a warning when some could not be resumed yet.
+   * routines it holds; any other answer leaves them paused. Each hold is
+   * removed once handled, so a retry does only the rest. Returns a warning
+   * when some could not be resumed yet.
    */
   async function applyAwayAnswer(askId: string, answer: string): Promise<string | null> {
-    const marked = store.routinesAwayUnder(askId);
-    if (marked.length === 0) return null;
-    if (answer.trim().toLowerCase() !== "resume") {
-      store.setRoutinesAway(
-        marked.map((routine) => routine.id),
-        null,
-      );
-      return null;
-    }
+    const holds = store.awayHolds({ askId });
+    if (holds.length === 0) return null;
+    const resume = answer.trim().toLowerCase() === "resume";
     const failed: string[] = [];
-    for (const routine of marked) {
-      await serial(`routine:${routine.id}`, async () => {
-        const found = target(store.routine(routine.id) ?? routine);
+    for (const hold of holds) {
+      await serial(`routine:${hold.routineId}`, async () => {
+        const routine = store.routine(hold.routineId);
+        const found = routine === null ? null : target(routine);
         try {
-          if (found !== null) await automations.resume(found);
+          if (resume && found !== null) await automations.resume(found);
         } catch (error) {
           if (!isMissing(error)) {
-            failed.push(routine.id);
+            failed.push(hold.routineId);
             return;
           }
         }
-        store.setRoutinesAway([routine.id], null);
+        store.clearAway(hold.routineId);
       });
     }
-    changed(marked[0]?.captainId as string);
+    changed(holds[0]?.captainId as string);
     return failed.length === 0
       ? null
-      : `${failed.join(", ")} not resumed: bb Automations did not answer; the next check retries`;
+      : `${failed.join(", ")} not resumed: bb Automations did not answer; the next pass retries`;
+  }
+
+  /**
+   * One maintenance pass, off the crew check: reconcile until it has run,
+   * retry queued cleanup, run the away pause per live Captain and apply
+   * answered away asks. Each part runs with bounded concurrency and a
+   * deadline, and its failure skips only itself. Returns whether work is left.
+   */
+  async function maintain(): Promise<{ pending: boolean }> {
+    const step = async (name: string, work: () => Promise<unknown>) => {
+      try {
+        await withDeadline(work(), MAINTENANCE_DEADLINE_MS * 3);
+      } catch (error) {
+        bb.log.warn(`routine maintenance: ${name} skipped: ${message(error)}`);
+      }
+    };
+    await step("reconcile", reconcile);
+    await step("cleanup", drainCleanup);
+    await step("away pause", () =>
+      mapLimit(store.liveCaptains(), (captain) =>
+        withDeadline(awayPass(captain.threadId), MAINTENANCE_DEADLINE_MS).catch((error: unknown) =>
+          bb.log.warn(`away pause for ${captain.threadId} skipped: ${message(error)}`),
+        ),
+      ),
+    );
+    await step("away answers", async () => {
+      const asks = new Set(
+        store.awayHolds().flatMap((hold) => (hold.askId === null ? [] : [hold.askId])),
+      );
+      for (const askId of asks) {
+        const ask = store.ask(askId);
+        if (ask?.answer == null) continue;
+        const warning = await applyAwayAnswer(askId, ask.answer);
+        if (warning !== null) bb.log.warn(`away answer ${askId}: ${warning}`);
+      }
+    });
+    const holdsLeft = store.awayHolds().some((hold) => !hold.paused || hold.askId === null);
+    return { pending: !reconciled || store.cleanups().length > 0 || holdsLeft };
+  }
+
+  async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`no answer in ${ms / 1000}s`)), ms);
+    });
+    try {
+      return await Promise.race([promise, deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function mapLimit<T, R>(items: readonly T[], run: (item: T) => Promise<R>): Promise<R[]> {
+    const results: R[] = Array.from({ length: items.length });
+    let next = 0;
+    const worker = async () => {
+      while (next < items.length) {
+        const index = next++;
+        results[index] = await withDeadline(run(items[index] as T), MAINTENANCE_DEADLINE_MS).catch(
+          (error: unknown) => {
+            bb.log.warn(`routine maintenance item skipped: ${message(error)}`);
+            return undefined as R;
+          },
+        );
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(MAINTENANCE_CONCURRENCY, items.length) }, worker),
+    );
+    return results;
   }
 
   return {
     parseFields,
-    applyAwayAnswer,
     view,
     list: (captainId: string) => Promise.all(store.routinesOf(captainId).map(view)),
     create,
@@ -609,19 +812,43 @@ export function createRoutines(deps: RoutinesDeps) {
     pauseCaptain,
     removeCaptain,
     reconcile,
-    /** Register the bb events that pause or remove a Captain's routines. */
-    register(events: Pick<BbPluginApi, "events">["events"]): void {
-      events.on("thread.archived", ({ thread }) => {
+    maintain,
+    isAwayAsk,
+    applyAwayAnswer,
+    /** Register the maintenance service and the bb events that pause or remove a Captain's routines. */
+    register(host: Pick<BbPluginApi, "events" | "background">): void {
+      host.events.on("thread.archived", ({ thread }) => {
         if (store.captain(thread.id) === null) return;
         void pauseCaptain(thread.id).catch((error: unknown) =>
-          bb.log.warn(`routines of ${thread.id} not paused: ${(error as Error).message}`),
+          bb.log.warn(`routines of ${thread.id} not paused: ${message(error)}`),
         );
       });
-      events.on("thread.deleted", ({ thread }) => {
+      host.events.on("thread.deleted", ({ thread }) => {
         if (store.captain(thread.id) === null) return;
         void removeCaptain(thread.id).catch((error: unknown) =>
-          bb.log.warn(`routines of ${thread.id} not removed: ${(error as Error).message}`),
+          bb.log.warn(`routines of ${thread.id} not removed: ${message(error)}`),
         );
+      });
+      host.background.service("routines", {
+        async start(signal) {
+          while (!signal.aborted) {
+            let pending = true;
+            try {
+              pending = (await maintain()).pending;
+            } catch (error) {
+              bb.log.warn(`routine maintenance failed: ${message(error)}`);
+            }
+            await new Promise<void>((resolve) => {
+              const done = () => {
+                clearTimeout(timer);
+                signal.removeEventListener("abort", done);
+                resolve();
+              };
+              const timer = setTimeout(done, pending ? 60_000 : 15 * 60_000);
+              signal.addEventListener("abort", done, { once: true });
+            });
+          }
+        },
       });
     },
   };

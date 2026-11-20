@@ -550,6 +550,7 @@ describe("bb captain routine", () => {
       captainId,
     );
     const automation = [...host.automations.rows.values()][0];
+    host.setNow(host.now() + 61_000);
     await run(host, ["routine", "fire", "r1", "--automation", automation?.id ?? ""]);
     if (automation !== undefined) automation.enabled = false;
     expect((await run(host, ["routine", "list"], captainId)).stdout).toMatch(
@@ -600,6 +601,86 @@ describe("bb captain routine", () => {
     expect((await run(host, ["routine", "list", "--captain", "Plugins"])).stdout).toMatch(
       /^r1 {2}paused/u,
     );
+  });
+
+  test("a thread manages only its own Captain's routines (finding 6)", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    const add = [
+      "routine",
+      "add",
+      "--name",
+      "Sweep",
+      "--cron",
+      "0 9 * * *",
+      "--prompt-file",
+      prompt,
+    ];
+    expect((await run(host, add, captainId)).exitCode).toBe(0);
+    const other = await newCaptain(host, ["--name", "Other", "--repo", "rampage"]);
+    host.addThread({ id: "thr_plain" });
+
+    const fromOther = await run(host, ["routine", "pause", "r1", "--captain", captainId], other);
+    expect(fromOther.exitCode).toBe(1);
+    expect(fromOther.stderr).toContain("Other Captain manages only its own routines");
+    expect((await run(host, ["routine", "pause", "r1"], other)).stderr).toContain("has no routine");
+    const plain = await run(host, ["routine", "list", "--captain", captainId], "thr_plain");
+    expect(plain.stderr).toContain("thr_plain is not a Captain");
+    const fire = await run(host, ["routine", "fire", "r1", "--automation", "auto_1"], other);
+    expect(fire.stderr).toContain("manages only its own routines");
+    // The user's terminal still works with --captain.
+    expect((await run(host, ["routine", "pause", "r1", "--captain", captainId])).exitCode).toBe(0);
+  });
+
+  test("fire takes --captain and refuses another Captain's (finding 18)", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    const add = [
+      "routine",
+      "add",
+      "--name",
+      "Sweep",
+      "--cron",
+      "0 9 * * *",
+      "--prompt-file",
+      prompt,
+    ];
+    await run(host, add, captainId);
+    const automation = [...host.automations.rows.values()][0]?.id ?? "";
+    const wrong = await run(host, [
+      "routine",
+      "fire",
+      "r1",
+      "--automation",
+      automation,
+      "--captain",
+      "Nope",
+    ]);
+    expect(wrong.stderr).toContain("belongs to Plugins Captain");
+    const right = await run(host, [
+      "routine",
+      "fire",
+      "r1",
+      "--automation",
+      automation,
+      "--captain",
+      "Plugins",
+    ]);
+    expect(right.stdout).toMatch(/^r1 {2}sent/u);
+  });
+
+  test("a re-armed, paused one-shot does not read done (finding 14)", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    await run(
+      host,
+      ["routine", "add", "--name", "Once", "--in", "1m", "--prompt-file", prompt],
+      captainId,
+    );
+    const automation = [...host.automations.rows.values()][0];
+    host.setNow(host.now() + 61_000);
+    await run(host, ["routine", "fire", "r1", "--automation", automation?.id ?? ""]);
+    if (automation !== undefined) automation.enabled = false;
+    await run(host, ["routine", "update", "r1", "--in", "1h"], captainId);
+    await run(host, ["routine", "pause", "r1"], captainId);
+    expect((await run(host, ["routine", "list"], captainId)).stdout).toMatch(/^r1 {2}paused /u);
   });
 
   test("bad schedules are refused with the fix", async () => {

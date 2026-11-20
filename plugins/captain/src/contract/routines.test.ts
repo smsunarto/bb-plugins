@@ -98,6 +98,9 @@ describe("describeSchedule", () => {
     ["0 9 1 * *", "Monthly on the 1st at 9:00 AM"],
     ["0 9 22 * *", "Monthly on the 22nd at 9:00 AM"],
     ["0 9 * 1 *", "Custom schedule (0 9 * 1 *)"],
+    // Steps that do not divide the hour or day leave uneven gaps (finding 17).
+    ["*/40 * * * *", "Custom schedule (*/40 * * * *)"],
+    ["0 */5 * * *", "Custom schedule (0 */5 * * *)"],
     ["0 9,17 * * *", "Custom schedule (0 9,17 * * *)"],
   ])("%s reads %s", (cron, expected) => {
     expect(words(cron)).toBe(expected);
