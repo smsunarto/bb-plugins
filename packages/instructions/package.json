@@ -13,7 +13,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/packages-instructions.tsbuildinfo",
-    "test": "node --test src/*.test.ts",
+    "test": "node --import ../../scripts/test-tmp-root-preload.mjs --test src/*.test.ts",
     "lint": "oxlint"
   }
 }

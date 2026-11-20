@@ -8,6 +8,7 @@ export default defineConfig({
     silent: "passed-only",
     name: "bb-plugin-captain",
     include: ["src/**/*.test.{ts,tsx}"],
+    globalSetup: ["../../scripts/test-tmp-root.mjs"],
     exclude: ["node_modules/**"],
   },
 });

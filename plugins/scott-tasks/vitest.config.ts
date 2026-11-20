@@ -14,6 +14,7 @@ export default defineConfig({
     exclude: ["node_modules/**"],
     testTimeout: 20_000,
     setupFiles: ["./vitest.setup.ts"],
+    globalSetup: ["../../scripts/test-tmp-root.mjs"],
     server: {
       deps: {
         inline: ["@tiptap/extension-bubble-menu"],
