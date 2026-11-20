@@ -180,7 +180,7 @@ const SlimRowBody = memo(function SlimRowBody({
           {thread.isUnread ? "Unread response" : "Unread response in subthreads"}
         </span>
       ) : null}
-      <HostLead host={thread.host} />
+      <HostLead thread={thread} />
       {rename.isEditing ? (
         // The title's classes minus the click-through and the clip, which
         // would hide the editor's error below the row.

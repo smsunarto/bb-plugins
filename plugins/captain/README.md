@@ -12,6 +12,7 @@ bb captain repo add rampage [--tasks RAMP]
 bb captain repo remove RAMP
 bb captain drive read CREW.md
 bb captain drive write NOTES.md --file ./notes.md
+bb captain icon Star                 # or --clear, or no argument to show it
 bb captain archive
 
 bb captain dispatch PLUG-14 PLUG-15 --role Implement [--base-branch <ref>] [--rung <n>] [--again] [--dry-run]
@@ -41,6 +42,18 @@ Run `bb captain --help` for every option. Every command takes `--json`.
 - The Plan, Implement and Review presets in Tasks, when missing.
 
 Rerunning `new` with a live Captain's name converges that Captain instead of starting a second one.
+
+## Sidebar icon
+
+The thread is titled with the Captain's name alone; its sidebar icon marks it as a Captain. A Captain shows the declared `captain/captain` glyph until it gets its own icon: a name from bb's built-in icon set (Hugeicons-style names such as `Star`, `Target` or `Brain`), or a picture. Set a name with `bb captain icon` or in Captain settings (Captain icons); set a picture only in settings. `--clear`, or Use default, goes back to the glyph. It is stored in `data.db`, so it survives a reload and a restart; archiving a Captain deletes it.
+
+- **Names:** bb gives plugins no list of its icons. Settings draws the typed name and refuses one bb has no icon for ("Unknown icon"). The CLI stores a name unchecked and says so; a name bb lacks draws the default glyph.
+- **Pictures:** settings decodes the upload in the browser (PNG, JPEG, GIF, WebP or SVG), crops it to its centre square and re-encodes it as a PNG of at most 96x96 px and 16 KB, stepping down to 80, 64, 48 or 32 px when a detailed picture is too big. An SVG is first sized from its viewBox, so the whole drawing is kept. `setIcon` stores only such a PNG: it checks the signature, a header of at most 96x96 and the closing IEND chunk, and refuses anything else. The CLI sets names only and refuses a value that looks like a file.
+- **Bad rows:** a stored icon that fails the contract reads as the default glyph, never a failed read.
+
+gtd-sidebar reads it through the keyed `icons` RPC, one batched read over the rows the Captain plugin started. Every key gets an entry, null for a thread that is not a live Captain (an archived one), so that row keeps its globe. A row holds an empty lead while the read loads, and every row keeps its globe while Captain is disabled or the read fails.
+
+Captains started before this were titled "<name> Captain". On plugin start each one still titled exactly that is renamed to its name, once; a title the user changed is left alone.
 
 ## Instructions
 

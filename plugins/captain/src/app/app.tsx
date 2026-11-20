@@ -1,11 +1,12 @@
 import { definePluginApp, experimental_THREAD_ACTION_GROUPS } from "@get-bb/plugin-sdk/app";
 import { ADOPT_ICON, ADOPT_LABEL, AdoptOverlay, adoptItem, useAdoptData } from "./adopt.tsx";
 import { NeedsYouBanner } from "./banner.tsx";
+import { CaptainIconSettings } from "./icon-settings.tsx";
 import { CrewModelsSettings } from "./settings.tsx";
 
 /**
- * Registers the Needs you banner, the crew model ladders in Captain's settings,
- * and Adopt into Captain in every thread menu.
+ * Registers the Needs you banner, the crew model ladders and Captain icons in
+ * Captain's settings, and Adopt into Captain in every thread menu.
  */
 export default definePluginApp((app) => {
   app.slots.settingsSection({
@@ -13,6 +14,12 @@ export default definePluginApp((app) => {
     title: "Crew models",
     description: "The provider, model and reasoning each crew role starts on, in fallback order.",
     component: CrewModelsSettings,
+  });
+  app.slots.settingsSection({
+    id: "captain-icons",
+    title: "Captain icons",
+    description: "The icon or picture each Captain shows in the sidebar.",
+    component: CaptainIconSettings,
   });
   // Composer banners scope only by composer kind, so this mounts on every
   // thread's composer; it renders only on Captain threads.

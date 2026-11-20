@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Minor Changes
+
+- A live Captain's row leads with its Captain icon instead of the machine
+  globe: Captain's default glyph, an icon set with `bb captain icon` or in
+  Captain settings, or a picture set in settings, read in one batch from Captain's
+  `icons` RPC. The row holds an empty lead while the read loads, and keeps
+  its globe when Captain is disabled, the read fails, or the thread is not a
+  live Captain, such as an archived one.
+
 ### Patch Changes
 
 - Background agents no longer rename threads. Codex's memory-consolidation

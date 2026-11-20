@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { captainIconSchema, type CaptainIcon, type IconChoice } from "../contract/icon.ts";
 import { ASK_KINDS, type AskKind } from "../contract/queue.ts";
 import { parseRole, type Role } from "./roles.ts";
 
@@ -114,6 +115,14 @@ export const MIGRATIONS: readonly string[] = [
     fingerprint TEXT NOT NULL,
     served_at INTEGER NOT NULL
   )`,
+  // A Captain's sidebar icon, set by `bb captain icon` or Captain settings: a
+  // bb icon name, or an image as a data URL. No row means the default glyph.
+  `CREATE TABLE captain_icons (
+    thread_id TEXT PRIMARY KEY CHECK (thread_id GLOB 'thr_*'),
+    kind TEXT NOT NULL CHECK (kind IN ('icon', 'image')),
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
 ];
 
 /**
@@ -134,6 +143,8 @@ export const NOTICE = {
   askPush: (askId: string) => `push:ask:${askId}`,
   answerPush: (askId: string) => `push:answer:${askId}`,
   undeliverablePush: (commentId: string) => `push:undeliverable:${commentId}`,
+  /** A Captain's title checked once for the retired " Captain" suffix. */
+  titleSuffix: (threadId: string) => `title-suffix:${threadId}`,
   /** Later and Skip on a banner row that has no ask: the row's own key. */
   blocked: (interactionId: string) => `blocked:${interactionId}`,
   captainHealth: (captainId: string, since: number) => `health:${captainId}:${since}`,
@@ -304,6 +315,9 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
   const selectCaptain = db.prepare<[string], CaptainRecord>(
     "SELECT * FROM captains WHERE thread_id = ?",
   );
+  const selectIcon = db.prepare<[string], { kind: "icon" | "image"; value: string }>(
+    "SELECT kind, value FROM captain_icons WHERE thread_id = ?",
+  );
   const selectCrewRole = db.prepare<[string], CrewRoleRecord>(
     "SELECT * FROM crew_roles WHERE thread_id = ?",
   );
@@ -386,10 +400,14 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         for (const repo of captain.repos) putRepo(captain.threadId, repo);
       })();
     },
+    /** Archive a Captain; its icon goes with it, since only live Captains draw one. */
     archiveCaptain(threadId: string, at: number): void {
-      db.prepare(
-        "UPDATE captains SET archived_at = ? WHERE thread_id = ? AND archived_at IS NULL",
-      ).run(at, threadId);
+      db.transaction(() => {
+        db.prepare(
+          "UPDATE captains SET archived_at = ? WHERE thread_id = ? AND archived_at IS NULL",
+        ).run(at, threadId);
+        db.prepare("DELETE FROM captain_icons WHERE thread_id = ?").run(threadId);
+      })();
     },
     putRepo(captainId: string, repo: Repo): void {
       putRepo(captainId, repo);
@@ -848,6 +866,28 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         at,
         failedThreadId,
       );
+    },
+    /** The Captain's own icon; the default glyph when it has none. */
+    captainIcon(threadId: string): CaptainIcon {
+      const row = selectIcon.get(threadId);
+      if (row === undefined) return { kind: "default" };
+      const icon =
+        row.kind === "icon" ? { kind: "icon", name: row.value } : { kind: "image", src: row.value };
+      // A row an earlier build stored, such as an SVG, reads as no icon: never a failed read.
+      const parsed = captainIconSchema.safeParse(icon);
+      return parsed.success ? parsed.data : { kind: "default" };
+    },
+    /** Set the Captain's icon; null goes back to the default glyph. */
+    setCaptainIcon(threadId: string, icon: IconChoice, at: number): void {
+      if (icon === null) {
+        db.prepare("DELETE FROM captain_icons WHERE thread_id = ?").run(threadId);
+        return;
+      }
+      db.prepare(
+        `INSERT INTO captain_icons (thread_id, kind, value, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (thread_id) DO UPDATE SET kind = excluded.kind, value = excluded.value,
+           updated_at = excluded.updated_at`,
+      ).run(threadId, icon.kind, icon.kind === "icon" ? icon.name : icon.src, at);
     },
   };
 

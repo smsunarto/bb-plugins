@@ -1,0 +1,126 @@
+/**
+ * Turn a picture the user picked into the PNG Captain stores: decoded in the
+ * browser, cropped to its centre square, drawn at most `ICON_IMAGE_SIDE` px a
+ * side, and encoded as PNG within `ICON_IMAGE_MAX_BYTES`. An SVG is drawn the
+ * same way, so only a raster ever leaves the browser.
+ */
+import { ICON_IMAGE_MAX_BYTES, ICON_IMAGE_SIDE } from "../contract/icon.ts";
+
+/** Sides tried in turn when a detailed picture's PNG is over the byte limit. */
+const SIDES = [ICON_IMAGE_SIDE, 80, 64, 48, 32] as const;
+
+/** The uploaded file as the PNG data URL `setIcon` accepts. */
+export async function iconImage(file: File): Promise<string> {
+  const picture = await loadPicture(file);
+  try {
+    const side = Math.min(picture.width, picture.height);
+    for (const target of SIDES) {
+      const canvas = document.createElement("canvas");
+      canvas.width = target;
+      canvas.height = target;
+      const context = canvas.getContext("2d");
+      if (context === null) throw new Error("This browser cannot scale the image.");
+      context.drawImage(
+        picture.source,
+        (picture.width - side) / 2,
+        (picture.height - side) / 2,
+        side,
+        side,
+        0,
+        0,
+        target,
+        target,
+      );
+      const url = canvas.toDataURL("image/png");
+      if (dataUrlBytes(url) <= ICON_IMAGE_MAX_BYTES) return url;
+    }
+  } finally {
+    picture.release();
+  }
+  throw new Error("That picture is too detailed to fit 16 KB; try a simpler one.");
+}
+
+type Picture = {
+  source: CanvasImageSource;
+  width: number;
+  height: number;
+  release: () => void;
+};
+
+/** Decode a raster with `createImageBitmap`, and an SVG through an `<img>`, which can draw one. */
+async function loadPicture(file: File): Promise<Picture> {
+  if (file.type !== "image/svg+xml") {
+    try {
+      const bitmap = await createImageBitmap(file);
+      return {
+        source: bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        release: () => bitmap.close(),
+      };
+    } catch {
+      throw new Error("That file is not an image this browser can read.");
+    }
+  }
+  const sized = sizeSvg(await file.text());
+  if (sized === null) throw new Error("That SVG could not be read.");
+  const url = URL.createObjectURL(new Blob([sized.text], { type: "image/svg+xml" }));
+  const image = new Image();
+  image.src = url;
+  try {
+    await image.decode();
+  } catch {
+    URL.revokeObjectURL(url);
+    throw new Error("That SVG could not be drawn.");
+  }
+  return {
+    source: image,
+    width: sized.width,
+    height: sized.height,
+    release: () => URL.revokeObjectURL(url),
+  };
+}
+
+/** The size an SVG is drawn at before cropping: twice the stored side, for a clean downscale. */
+const SVG_DRAW_SIDE = ICON_IMAGE_SIDE * 2;
+
+/**
+ * Give an SVG an explicit pixel size from its viewBox, so the browser draws
+ * the whole drawing instead of a default 300x150 viewport cropped from it. The
+ * shorter side becomes `SVG_DRAW_SIDE`. Null when the text is not an SVG.
+ */
+export function sizeSvg(text: string): { text: string; width: number; height: number } | null {
+  const document = new DOMParser().parseFromString(text, "image/svg+xml");
+  const root = document.documentElement;
+  if (root.localName !== "svg" || document.getElementsByTagName("parsererror").length > 0)
+    return null;
+  const box = (root.getAttribute("viewBox") ?? "")
+    .trim()
+    .split(/[\s,]+/u)
+    .map(Number);
+  const [boxWidth, boxHeight] = [box[2] ?? Number.NaN, box[3] ?? Number.NaN];
+  const fromBox = box.length === 4 && boxWidth > 0 && boxHeight > 0;
+  const width = fromBox ? boxWidth : (pixels(root.getAttribute("width")) ?? SVG_DRAW_SIDE);
+  const height = fromBox ? boxHeight : (pixels(root.getAttribute("height")) ?? SVG_DRAW_SIDE);
+  const scale = SVG_DRAW_SIDE / Math.min(width, height);
+  const drawn = { width: Math.round(width * scale), height: Math.round(height * scale) };
+  if (!fromBox) root.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  root.setAttribute("width", String(drawn.width));
+  root.setAttribute("height", String(drawn.height));
+  root.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  return { text: new XMLSerializer().serializeToString(root), ...drawn };
+}
+
+/** A plain or `px` length; null for a percentage, other units or nothing. */
+function pixels(value: string | null): number | null {
+  const match = /^\s*([\d.]+)(px)?\s*$/u.exec(value ?? "");
+  const number = match === null ? Number.NaN : Number(match[1]);
+  return number > 0 ? number : null;
+}
+
+/** A base64 data URL's decoded size in bytes. */
+function dataUrlBytes(url: string): number {
+  const body = url.slice(url.indexOf(",") + 1);
+  const padding = body.endsWith("==") ? 2 : body.endsWith("=") ? 1 : 0;
+  return Math.floor((body.length * 3) / 4) - padding;
+}
