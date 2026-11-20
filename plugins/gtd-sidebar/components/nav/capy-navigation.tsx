@@ -1,19 +1,16 @@
 // Sidebar navigation in Capy's list style: 28px rows of a 14px icon and a
-// 13px medium label above the thread list, and Search as an icon in the
-// sidebar header. bb owns the items, their order, and what each one does;
-// this file only draws them.
+// 13px medium label above the thread list, Search included. bb owns the
+// items, their order, and what each one does; this file only draws them.
 import { memo, useRef, type MouseEvent } from "react";
 import {
   experimental_ShortcutHint as ShortcutHint,
   experimental_SidebarNavigationIcon as NavigationIcon,
   experimental_useSidebarNavigation as useSidebarNavigation,
   experimental_useSidebarNavigationSplit as useSidebarNavigationSplit,
-  type ExperimentalSidebarHeaderProps,
   type ExperimentalSidebarNavigationActions as NavigationActions,
   type ExperimentalSidebarNavigationItem as NavigationItem,
   type ExperimentalSidebarNavigationProps,
 } from "@get-bb/plugin-sdk/app";
-import { Button } from "@bb-plugins/ui/button";
 import { cn } from "../../lib/utils";
 import { Badge } from "../ui/badge";
 import {
@@ -31,10 +28,7 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Icon } from "../ui/icon";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { MenuSurface } from "../inbox/menu-surface";
-
-const SEARCH_ID = "__bb__/search-threads";
 
 const ROW_CLASS = cn(
   "flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-[6px] px-2",
@@ -61,7 +55,7 @@ export function CapyNavigation(_props: ExperimentalSidebarNavigationProps) {
       <ContextMenuTrigger asChild>
         <nav aria-label="Navigation" className="flex shrink-0 flex-col px-2 py-1">
           {items.map((item) =>
-            item.isVisible && item.id !== SEARCH_ID ? (
+            item.isVisible ? (
               <NavigationRow
                 key={item.id}
                 item={item}
@@ -179,37 +173,5 @@ function MoreRow({ hidden, actions }: { hidden: NavigationItem[]; actions: Navig
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-/** Capy keeps Search out of the list, as an icon at the right of the sidebar header. */
-export function CapyNavigationHeader({ width, controlSize }: ExperimentalSidebarHeaderProps) {
-  const { items, actions } = useSidebarNavigation();
-  const search = items.find((item) => item.id === SEARCH_ID);
-  if (search === undefined || width < controlSize) return <div className="flex-1" />;
-  return (
-    <div className="flex min-w-0 flex-1 items-center justify-end">
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={search.label}
-              aria-keyshortcuts={search.shortcut?.ariaKeyShortcuts}
-              disabled={search.isDisabled}
-              onClick={(event) => actions.activate(search.id, { target: activationTarget(event) })}
-              style={{ width: controlSize, height: controlSize }}
-              className="shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring focus-visible:ring-inset"
-            >
-              <NavigationIcon icon={search.icon} className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {search.shortcut === null ? search.label : `${search.label} (${search.shortcut.label})`}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </div>
   );
 }

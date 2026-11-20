@@ -6,7 +6,7 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import { ThreadInbox } from "./components/inbox/thread-inbox";
-import { CapyNavigation, CapyNavigationHeader } from "./components/nav/capy-navigation";
+import { CapyNavigation } from "./components/nav/capy-navigation";
 import { archiveThread, hasSidebarActions } from "./lib/sidebar-actions-bridge";
 import {
   HeaderSettle,
@@ -36,10 +36,9 @@ export default definePluginApp((app) => {
   app.slots.experimental_sidebarNavigation({
     id: "capy-list",
     title: "GTD Sidebar (Capy list)",
-    description: "Capy-style rows above the thread list, with Search in the sidebar header.",
+    description: "Capy-style rows above the thread list, Search included.",
     placement: "list",
     component: CapyNavigation,
-    headerComponent: CapyNavigationHeader,
   });
 
   // On a phone, New thread and Settle join the header; Settle takes the place

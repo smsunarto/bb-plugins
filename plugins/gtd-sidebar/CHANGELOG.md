@@ -4,6 +4,9 @@
 
 ### Patch Changes
 
+- Search is a navigation row again, in the order bb gives it, instead of an
+  icon in the sidebar header.
+
 - Background agents no longer rename threads. Codex's memory-consolidation
   agent renamed threads to "Consolidate agent memories" after their turn
   ended. A thread's agent now renames it only while a turn runs, once per
