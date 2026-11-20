@@ -41,7 +41,13 @@ type Calls = { method: string; input: unknown }[];
 function render(
   threadId: string,
   asks: QueueItem[] | (() => QueueItem[]),
-  options: { since?: unknown; crew?: QueueItem[]; crewFails?: boolean; sdk?: unknown } = {},
+  options: {
+    since?: unknown;
+    crew?: QueueItem[];
+    crewFails?: boolean;
+    sdk?: unknown;
+    panelTabs?: unknown;
+  } = {},
 ) {
   const calls: Calls = [];
   const log =
@@ -69,6 +75,9 @@ function render(
       markSeen: log("markSeen", () => ({ at: NOW })),
     } as never,
     ...(options.sdk === undefined ? {} : { sdk: options.sdk as never }),
+    ...(options.panelTabs === undefined
+      ? {}
+      : { experimental_panelTabs: options.panelTabs as never }),
   });
   return { slot, calls, of: (method: string) => calls.filter((call) => call.method === method) };
 }
@@ -664,4 +673,27 @@ test("an errored Captain thread's Retry re-submits its failed turn", async () =>
   expect(retry.textContent).not.toContain("Recommended");
   act(() => retry.click());
   await waitFor(() => expect(retried).toEqual([{ threadId: CAPTAIN }]));
+});
+
+const infoOpen = {
+  open: true,
+  selectedKey: "info",
+  tabs: [{ key: "info", title: "Info", status: null, closable: false, detail: { kind: "info" } }],
+};
+
+test("a Captain's panel already open at mount keeps its tab: that open was before the banner", async () => {
+  const { slot, of } = render(CAPTAIN, [decision], { panelTabs: infoOpen });
+  await waitFor(() => expect(of("asks").length).toBeGreaterThan(0));
+  await new Promise((settle) => setTimeout(settle, 30));
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+  expect(window.localStorage.getItem(`captain:overview-opened:${CAPTAIN}`)).toBeNull();
+});
+
+test("a Captain's closed panel is never opened by the banner", async () => {
+  const { slot, of } = render(CAPTAIN, [decision], {
+    panelTabs: { open: false, selectedKey: null, tabs: [] },
+  });
+  await waitFor(() => expect(of("asks").length).toBeGreaterThan(0));
+  await new Promise((settle) => setTimeout(settle, 30));
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
 });

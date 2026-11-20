@@ -37,6 +37,7 @@ import { captainContract, type ChangeRef } from "../contract/rpc.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Input } from "./components/ui/input.tsx";
 import { cn } from "./lib/utils.ts";
+import { useOverviewFirstOpen } from "./overview-default.ts";
 
 const NO_INPUT = {};
 type ItemUi = { key: string; other: string | null; error: string | null };
@@ -57,7 +58,19 @@ export function NeedsYouBanner() {
 
 function CaptainGate({ threadId }: { threadId: string }) {
   const captains = useRpcQuery({ contract: captainContract, method: "captains", input: NO_INPUT });
-  return captains.data?.ids.includes(threadId) ? <Banner captainId={threadId} /> : null;
+  if (!captains.data?.ids.includes(threadId)) return null;
+  return (
+    <>
+      <OverviewFirstOpen threadId={threadId} />
+      <Banner captainId={threadId} />
+    </>
+  );
+}
+
+/** Rides on the banner, already mounted on every Captain thread: it renders nothing. */
+function OverviewFirstOpen({ threadId }: { threadId: string }) {
+  useOverviewFirstOpen(threadId);
+  return null;
 }
 
 export type Action = { label: string; run: () => void; primary?: boolean; recommended?: boolean };
