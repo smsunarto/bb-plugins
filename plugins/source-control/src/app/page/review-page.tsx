@@ -53,7 +53,8 @@ import { CommitsView } from "./commits-view.tsx";
 import { ConversationView, PullRequestDescription } from "./conversation-view.tsx";
 import { PrImagesContext } from "../pr-markdown.tsx";
 import { FilesView, WrapContext } from "./files-view.tsx";
-import { GuidedView, ReviewBar, ViewedProgress } from "./guided-view.tsx";
+import { GuidedView, ViewedProgress } from "./guided-view.tsx";
+import { CLEAR_REVIEW_BAR, ReviewBar } from "./review-bar.tsx";
 import { PANEL_PATH, PHONE, WIDE, useGo, useIsPage, useNow, useWidth, type Go } from "./hooks.ts";
 import { AskHost, BotIcon, useAskAgent } from "./ask-panel.tsx";
 import { ArrowRight, Chevron, StackIcon, StateIcon } from "./icons.tsx";
@@ -592,7 +593,7 @@ function TabBody({
   if (!revision)
     return (
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="flex flex-col gap-4 px-4 py-4 @3xl:px-6">
+        <div className={cx("flex flex-col gap-4 px-4 py-4 @3xl:px-6", CLEAR_REVIEW_BAR)}>
           {lead}
           {description}
           <p
@@ -795,7 +796,8 @@ function ReviewReady({
         <ReviewTabs location={location} files={detail.files} go={go}>
           {phone ? null : <TabControls location={location} detail={detail} send={send} />}
         </ReviewTabs>
-        <div className="flex min-h-0 min-w-0 flex-1">
+        {/* The phone's bar floats over this, the tabs' scrollers. */}
+        <div className="relative flex min-h-0 min-w-0 flex-1">
           <PrImagesContext value={location.key}>
             <TabBody
               location={location}
@@ -817,12 +819,12 @@ function ReviewReady({
               {rail}
             </aside>
           ) : null}
+          {phone && location.tab !== "overview" ? (
+            <PhoneBar changeKey={key} revision={detail.revision}>
+              {barSend}
+            </PhoneBar>
+          ) : null}
         </div>
-        {phone && location.tab !== "overview" ? (
-          <PhoneBar changeKey={key} revision={detail.revision}>
-            {barSend}
-          </PhoneBar>
-        ) : null}
       </WrapContext.Provider>
     </FocusContext.Provider>
   );
