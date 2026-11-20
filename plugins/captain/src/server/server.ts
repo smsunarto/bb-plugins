@@ -49,7 +49,14 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
 
   bb.agents.configure((context) => {
     try {
-      return configure(context, { registry, store, drive, files });
+      return configure(context, {
+        registry,
+        store,
+        drive,
+        files,
+        now: deps.now,
+        warn: (line) => bb.log.warn(line),
+      });
     } catch (error) {
       bb.log.warn(`configure failed for ${context.thread.id}: ${(error as Error).message}`);
       return { tools: [], skills: [] };
@@ -77,7 +84,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     (error: unknown) =>
       bb.log.warn(`Captains not marked person-facing: ${(error as Error).message}`),
   );
-  return { store, registry, drive, check, ready, fieldsReady, audienceReady };
+  return { store, registry, drive, files, check, ready, fieldsReady, audienceReady };
 }
 
 const CAPTAINS_FOLDER = "Captains";

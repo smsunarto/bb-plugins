@@ -5,6 +5,7 @@ import type { CommandDeps } from "./commands/deps.ts";
 import { joinCrew, listChildren, steer, type ListedThread } from "./crew.ts";
 import { runFallbacks } from "./fallback.ts";
 import { sendPush } from "./push.ts";
+import { pendingChanges, type InstructionChange } from "./served.ts";
 import type { Captain } from "./registry.ts";
 import { ROLE_SPECS, roleOfPreset } from "./roles.ts";
 import { age, crewState } from "./status.ts";
@@ -14,7 +15,8 @@ import type { CrewRow } from "./tasks-client.ts";
 /**
  * The background check: one pass a minute while any Captain has live crew or
  * an answer still being retried, otherwise idle until a Captain gains a child.
- * A pass wakes a Captain once per stall, retries undelivered answers, and
+ * A pass wakes a Captain once per stall, retries undelivered answers, tells
+ * live Captain and crew threads about edits to their instruction files, and
  * sends the once-only pushes. Every once-only effect is claimed in `notices`
  * before it is sent, so a reload or two overlapping passes send it at most once.
  *
@@ -139,6 +141,8 @@ async function checkCaptain(
 ): Promise<{ crew: number }> {
   const now = deps.now();
   const threads = await listChildren(deps.bb, captain.threadId, false, signal);
+  // Before any Tasks read, so a Tasks outage does not hold back the notice.
+  await sendInstructionChanges(deps, captain, threads, now);
   for (const thread of threads) {
     if (thread.status !== "error") continue;
     // A failure first seen now is a Since you left transition.
@@ -182,6 +186,69 @@ async function checkCaptain(
   await wakeForStalls(deps, captain, stalls, now);
   await pushUndeliverable(deps, captain, rows, now);
   return { crew: threads.length };
+}
+
+/**
+ * One message per live thread whose instruction files changed since it was
+ * served: queued behind a running turn, or starting one on an idle thread.
+ * The new text is claimed as served before the send and given back if the
+ * send fails, so each change is sent once and a failed send is retried.
+ */
+async function sendInstructionChanges(
+  deps: CheckDeps,
+  captain: Captain,
+  threads: readonly ListedThread[],
+  now: number,
+): Promise<void> {
+  try {
+    const served = deps.store.servedOf([captain.threadId, ...threads.map((thread) => thread.id)]);
+    const changes = pendingChanges(deps.files, served);
+    // Plain bb archival leaves the Captain row live, so ask bb, and only when there is news for it.
+    if (changes.some((change) => change.threadId === captain.threadId)) {
+      const thread = await deps.bb.sdk.threads.get({ threadId: captain.threadId });
+      if (thread.archivedAt !== null) {
+        changes.splice(
+          changes.findIndex((change) => change.threadId === captain.threadId),
+          1,
+        );
+      }
+    }
+    for (const change of changes) await sendChange(deps, change, now);
+  } catch (error) {
+    // A bad file or row must not cost this pass its stall wakes.
+    deps.bb.log.warn(
+      `instruction notices for ${captain.threadId} skipped: ${(error as Error).message}`,
+    );
+  }
+}
+
+async function sendChange(deps: CheckDeps, change: InstructionChange, now: number): Promise<void> {
+  // Rendered before the claim, so a broken template leaves the change unclaimed for the next pass.
+  const text = deps.files.read("instructions-changed", {
+    form: change.form === "diff" ? "diff from your original text to the new" : "full new text",
+    change: change.change,
+  });
+  const claim = { ...change.to, servedAt: now };
+  if (!deps.store.swapServed(change.threadId, change.from.fingerprint, claim)) return;
+  try {
+    await withDeadline(
+      deps.bb.sdk.threads.send({
+        threadId: change.threadId,
+        input: [{ type: "text", text, mentions: [] }],
+        mode: "queue-if-active",
+      }),
+      SEND_DEADLINE_MS,
+    );
+  } catch (error) {
+    // A send past its deadline may still land; then the next pass repeats it, which is harmless.
+    deps.store.swapServed(change.threadId, change.to.fingerprint, {
+      ...change.from,
+      servedAt: now,
+    });
+    deps.bb.log.warn(
+      `instruction change for ${change.threadId} not sent: ${(error as Error).message}`,
+    );
+  }
 }
 
 /** A child with no role row gets one from its Tasks preset, owing a report since it was created. */

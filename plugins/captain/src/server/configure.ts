@@ -3,7 +3,8 @@ import { PLUGIN_INSTRUCTIONS_MAX_CHARS, type InstructionFiles } from "@bb-plugin
 import { join } from "node:path";
 import type { Drive } from "./drive.ts";
 import type { Captain, Registry } from "./registry.ts";
-import { CAPTAIN_SKILLS, METADATA_ROLES, parseRole, ROLE_SPECS, type Role } from "./roles.ts";
+import { METADATA_ROLES, parseRole, type Role } from "./roles.ts";
+import { recordServed, renderFixed, type InstructionSpec } from "./served.ts";
 import type { Store } from "./store.ts";
 
 /** Who a thread is to Captain, decided from metadata first, then its parent. */
@@ -14,9 +15,11 @@ export type Identity =
 
 export type ConfigureDeps = {
   registry: Registry;
-  store: Pick<Store, "crewRole">;
+  store: Pick<Store, "crewRole" | "recordServed">;
   drive: Drive;
   files: InstructionFiles;
+  now: () => number;
+  warn: (line: string) => void;
 };
 
 const NONE: PluginAgentConfiguration = { tools: [], skills: [] };
@@ -65,19 +68,19 @@ export function configure(
     case "captain":
       return captainConfiguration(identity, deps);
     case "crew":
-      return crewConfiguration(identity, context.project.id, deps);
+      return crewConfiguration(identity, context.thread.id, context.project.id, deps);
   }
 }
 
 function captainConfiguration(
   identity: Extract<Identity, { kind: "captain" }>,
-  { registry, drive, files }: ConfigureDeps,
+  deps: ConfigureDeps,
 ): PluginAgentConfiguration {
+  const { registry, drive, files } = deps;
   const dir = registry.driveDir(identity.captainId);
-  const rules = files.read("captain", {
-    name: JSON.stringify(identity.name),
-    drive: dir ?? "(not yet known; run `bb captain drive read CAPTAIN.md`)",
-  });
+  const spec: InstructionSpec = { kind: "captain", name: identity.name, drive: dir };
+  const rendered = renderFixed(files, spec);
+  recordServed(deps, identity.captainId, identity.captainId, spec, rendered);
   const sections: DriveSection[] = [];
   if (dir !== null) {
     const skills = drive.skillsIndex(dir);
@@ -91,25 +94,29 @@ function captainConfiguration(
   }
   return {
     tools: [],
-    skills: [...CAPTAIN_SKILLS],
-    instructions: budget([rules], sections, files.read("drive-truncated")),
+    skills: rendered.skills,
+    instructions: budget(rendered.fixed, sections, files.read("drive-truncated")),
   };
 }
 
 function crewConfiguration(
   identity: Extract<Identity, { kind: "crew" }>,
+  threadId: string,
   projectId: string,
-  { registry, drive, files }: ConfigureDeps,
+  deps: ConfigureDeps,
 ): PluginAgentConfiguration {
+  const { registry, drive, files } = deps;
   const { captain, role } = identity;
   const dir = captain === null ? null : registry.driveDir(captain.threadId);
-  const rules = files.read("crew", {
-    captain: JSON.stringify(captain?.name ?? "unknown"),
-    drive: dir ?? "(unknown)",
-    report: files.read("report"),
-  });
-  const contract = role === null ? null : ROLE_SPECS[role].contract;
-  const fixed = contract === null ? [rules] : [rules, files.read(contract)];
+  const spec: InstructionSpec = {
+    kind: "crew",
+    captain: captain?.name ?? "unknown",
+    drive: dir,
+    role,
+  };
+  const rendered = renderFixed(files, spec);
+  // The check reaches crew only through their Captain, so crew with none is not recorded.
+  if (captain !== null) recordServed(deps, threadId, captain.threadId, spec, rendered);
   const sections: DriveSection[] = [];
   if (captain !== null && dir !== null) {
     sections.push(driveFile(drive, dir, "CREW.md"));
@@ -119,8 +126,8 @@ function crewConfiguration(
   }
   return {
     tools: [],
-    skills: role === null ? [] : [...ROLE_SPECS[role].skills],
-    instructions: budget(fixed, sections, files.read("drive-truncated")),
+    skills: rendered.skills,
+    instructions: budget(rendered.fixed, sections, files.read("drive-truncated")),
   };
 }
 
