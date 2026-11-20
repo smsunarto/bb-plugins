@@ -229,7 +229,8 @@ Syntax rules may never borrow these for non-feedback meaning:
   safe-area padding.
 - Transient toasts use a compact shadcn-style card on mobile and desktop,
   with the shared Card and Button radii, standard border and shadow, muted description, filled
-  actions, and inline dismissal. Desktop placement is top-centered over the
+  actions, and inline dismissal. Under a coarse pointer the actions and dismissal
+  keep their compact look with a 44 px hit area. Desktop placement is top-centered over the
   focused conversation; compact layouts keep bb's native placement and stacking.
 - Archive confirmations with Undo use a single-row card: dismiss, title, Undo.
   Their thread-title description is hidden; other toast details remain visible.
