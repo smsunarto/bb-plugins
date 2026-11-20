@@ -22,8 +22,7 @@
     "**/vendor/**",
     ".agents/skills/shadcn/**",
     "**/generated/**",
-    "**/*.d.ts",
-    "plugins/gtd-sidebar/bots-components/**"
+    "**/*.d.ts"
   ],
   "rules": {
     "complexity/complexity": [

@@ -92,9 +92,6 @@ moment it settled; expand Snoozed to see that order.
 An empty section disappears. A pending interaction stays in **Next Action** even if
 background work is also live, because the user can act now.
 
-GTD Sidebar stored bots itself before they moved to a separate Bots plugin. It keeps
-those tables and the `retired_bots_export` handoff, which refuses any other caller.
-
 ### Visible machines
 
 The globe menu chooses which machines appear in the thread list. Check several
