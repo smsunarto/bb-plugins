@@ -12,7 +12,10 @@ const SWEEP = {
 };
 
 async function routineHost() {
-  const host = await captainHost();
+  return ownerOf(await captainHost());
+}
+
+async function ownerOf(host: CaptainHost) {
   const captainId = await newCaptain(host);
   const row = host.server.store.captain(captainId);
   if (row === null) throw new Error("no Captain row");
@@ -442,6 +445,151 @@ describe("durability", () => {
     const before = host.automations.calls.length;
     await host.server.check.pass();
     expect(host.automations.calls.length).toBe(before);
+  });
+});
+
+describe("deletes, names and maintenance limits", () => {
+  const gate = (host: CaptainHost, methods: string[]) => {
+    let release = () => {};
+    const until = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    host.automations.gate = { until, methods: new Set(methods) };
+    return () => {
+      host.automations.gate = null;
+      release();
+    };
+  };
+  const creates = (host: CaptainHost) =>
+    host.automations.calls.filter((call) => call.method === "automations_create").length;
+
+  test("a delete while Automations is down retires the routine and keeps the delete", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    host.automations.down = true;
+    await routines.act(created, "delete");
+    expect(host.server.store.routine(created.id)).toBeNull();
+    expect(host.server.store.cleanups()).toMatchObject([
+      { kind: "delete", automationId: created.automationId, routineId: created.id },
+    ]);
+
+    host.automations.down = false;
+    const before = creates(host);
+    await routines.maintain();
+    expect(host.automations.rows.size).toBe(0);
+    expect(host.server.store.cleanups()).toEqual([]);
+    expect(creates(host)).toBe(before);
+  });
+
+  test("a delete retires the routine locally before Automations answers", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const open = gate(host, ["automations_delete"]);
+    const deleting = routines.act(created, "delete");
+    await waitFor(() => host.automations.inFlight === 1);
+    // An interruption here leaves no routine to remake, only the delete to retry.
+    expect(host.server.store.routine(created.id)).toBeNull();
+    expect(host.server.store.cleanups()).toMatchObject([
+      { kind: "delete", automationId: created.automationId, routineId: created.id },
+    ]);
+    open();
+    await deleting;
+    expect(host.server.store.cleanups()).toEqual([]);
+    expect(host.automations.rows.size).toBe(0);
+  });
+
+  test("a pending delete of a routine's automation stops repair from remaking it", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const automationId = created.automationId as string;
+    host.server.store.addCleanup(
+      { kind: "delete", projectId: owner.homeProjectId, automationId, routineId: created.id },
+      "pending",
+      1,
+    );
+    host.automations.rows.delete(automationId);
+    const before = creates(host);
+    await routines.maintain();
+    expect(creates(host)).toBe(before);
+  });
+
+  test("a delete retry keeps an automation whose script changed since", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const row = host.automations.rows.get(created.automationId as string);
+    if (row === undefined) throw new Error("no automation");
+    host.automations.down = true;
+    await routines.act(created, "delete");
+    host.automations.down = false;
+    row.execution = { ...row.execution, script: "echo someone else's job\n" };
+    await routines.maintain();
+    expect(host.automations.rows.has(row.id)).toBe(true);
+    expect(host.server.store.cleanups()).toEqual([]);
+  });
+
+  test("a rename that fails never refuses a create of the same name", async () => {
+    const { host, owner, routines } = await routineHost();
+    const first = await routines.create(owner, SWEEP);
+    const open = gate(host, ["automations_update"]);
+    const renaming = routines.update(first, { name: "Digest" });
+    await waitFor(() => host.automations.inFlight === 1);
+    host.automations.failNext.add("automations_update");
+    // Waits for the rename: its reservation must not refuse this create.
+    const creating = routines.create(owner, { ...SWEEP, name: "Digest" });
+    open();
+    await expect(renaming).rejects.toThrow();
+    expect((await creating).name).toBe("Digest");
+    expect(host.server.store.routine(first.id)?.name).toBe(SWEEP.name);
+  });
+
+  test("a create of a name being renamed away waits, so a failed rename restores it", async () => {
+    const { host, owner, routines } = await routineHost();
+    const first = await routines.create(owner, SWEEP);
+    const open = gate(host, ["automations_update"]);
+    const renaming = routines.update(first, { name: "Digest" });
+    await waitFor(() => host.automations.inFlight === 1);
+    host.automations.failNext.add("automations_update");
+    const creating = routines.create(owner, SWEEP);
+    open();
+    await expect(renaming).rejects.toThrow();
+    await expect(creating).rejects.toThrow();
+    expect(host.server.store.routine(first.id)?.name).toBe(SWEEP.name);
+    expect(host.automations.rows.get(first.automationId as string)?.name).toContain(SWEEP.name);
+  });
+
+  test("a slow maintenance item keeps its worker slot past the deadline", async () => {
+    const host = await captainHost({ maintenanceDeadlineMs: 5 });
+    const { owner, routines } = await ownerOf(host);
+    for (let i = 0; i < 6; i++) await routines.create(owner, { ...SWEEP, name: `R${i}` });
+    host.automations.rows.clear();
+    const open = gate(host, ["automations_create"]);
+    const pass = routines.maintain();
+    await waitFor(() => host.automations.inFlight === 4);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(host.automations.inFlight).toBe(4);
+    open();
+    await pass;
+    expect(host.automations.rows.size).toBe(6);
+  });
+
+  test("a stopped maintenance pass starts no new work", async () => {
+    const { host, owner, routines } = await routineHost();
+    for (let i = 0; i < 6; i++) await routines.create(owner, { ...SWEEP, name: `R${i}` });
+    const stopped = new AbortController();
+    stopped.abort();
+    const before = host.automations.calls.length;
+    await routines.maintain(stopped.signal);
+    expect(host.automations.calls.length).toBe(before);
+
+    host.automations.rows.clear();
+    const open = gate(host, ["automations_create"]);
+    const stopping = new AbortController();
+    const pass = routines.maintain(stopping.signal);
+    await waitFor(() => host.automations.inFlight === 4);
+    stopping.abort();
+    open();
+    expect((await pass).pending).toBe(true);
+    expect(host.automations.rows.size).toBe(4);
   });
 });
 

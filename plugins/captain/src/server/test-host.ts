@@ -109,6 +109,8 @@ export type FakeOptions = {
   tasksDeadlineMs?: number;
   /** How often a watched banner rechecks the crew. */
   crewPollMs?: number;
+  /** How long one routine maintenance item runs before Captain warns. */
+  maintenanceDeadlineMs?: number;
 };
 
 /** The Account Pooler's `status.get` fields Captain reads; null when the pool is not loaded. */
@@ -167,6 +169,10 @@ export function fakeAutomations(now: () => number = Date.now) {
     calls: [] as { method: string; input: unknown }[],
     /** Methods whose next call fails once. */
     failNext: new Set<string>(),
+    /** While set, calls to `methods` (every call when absent) wait for `until`, as a slow Automations would. */
+    gate: null as { until: Promise<void>; methods?: ReadonlySet<string> } | null,
+    /** Calls started and not yet answered. */
+    inFlight: 0,
   };
   const status = (row: FakeAutomation) => ({
     id: row.id,
@@ -190,6 +196,14 @@ export function fakeAutomations(now: () => number = Date.now) {
   };
   async function call(method: string, input: Record<string, unknown>): Promise<unknown> {
     state.calls.push({ method, input });
+    if (state.gate !== null && (state.gate.methods?.has(method) ?? true)) {
+      state.inFlight++;
+      try {
+        await state.gate.until;
+      } finally {
+        state.inFlight--;
+      }
+    }
     if (state.down) throw new Error("plugin automations is not running");
     if (state.failNext.has(method)) {
       state.failNext.delete(method);
@@ -772,6 +786,9 @@ export async function captainHost(options: FakeOptions = {}) {
     captainsDir,
     now: () => clock,
     tasksDeadlineMs: options.tasksDeadlineMs ?? 500,
+    ...(options.maintenanceDeadlineMs === undefined
+      ? {}
+      : { maintenanceDeadlineMs: options.maintenanceDeadlineMs }),
     crewPollMs: options.crewPollMs ?? 20,
   };
   let server = await start(host.bb, startOptions);

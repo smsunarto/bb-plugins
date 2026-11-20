@@ -179,14 +179,38 @@ describe("routines", () => {
     expect(plan.map((row) => row.detail).join(" ")).toContain("routine_runs_by_routine");
   });
 
+  test("retiring a routine records its delete in the same write", async () => {
+    const host = await captainHost();
+    const store = host.server.store;
+    const routine = store.createRoutine({ ...fields("Sweep"), captainId: "thr_a", at: 10 });
+    const key = store.retireRoutine(routine.id, { projectId: "p", automationId: "auto_1" }, 20);
+    expect(store.routine(routine.id)).toBeNull();
+    expect(store.cleanups()).toMatchObject([
+      { key, kind: "delete", automationId: "auto_1", routineId: routine.id },
+    ]);
+    expect(store.deletePending(routine.id, "auto_1")).toBe(true);
+    expect(store.deletePending(routine.id, "auto_2")).toBe(false);
+    const bare = store.createRoutine({ ...fields("Digest"), captainId: "thr_a", at: 30 });
+    expect(store.retireRoutine(bare.id, null, 40)).toBeNull();
+    expect(store.routine(bare.id)).toBeNull();
+  });
+
   test("test runs are claimed once; cleanup rows keep one per key", async () => {
     const host = await captainHost();
     const store = host.server.store;
     store.addTestRun("arun_1", "r1", 100);
     expect(store.takeTestRun("arun_1", 0)).toBe(true);
     expect(store.takeTestRun("arun_1", 0)).toBe(false);
-    store.addCleanup({ kind: "delete", projectId: "p", automationId: "auto_1" }, "down", 1);
-    store.addCleanup({ kind: "delete", projectId: "p", automationId: "auto_1" }, "still down", 2);
+    store.addCleanup(
+      { kind: "delete", projectId: "p", automationId: "auto_1", routineId: "r1" },
+      "down",
+      1,
+    );
+    store.addCleanup(
+      { kind: "delete", projectId: "p", automationId: "auto_1", routineId: "r1" },
+      "still down",
+      2,
+    );
     expect(store.cleanups()).toMatchObject([
       { kind: "delete", automationId: "auto_1", lastError: "still down" },
     ]);

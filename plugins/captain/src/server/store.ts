@@ -394,6 +394,8 @@ export type Cleanup =
       kind: "delete";
       projectId: string;
       automationId: string;
+      /** The routine Captain made it for: a retry deletes it only while it still runs Captain's script for this id. */
+      routineId: string | null;
       lastError: string | null;
     }
   | { key: string; kind: "repair"; routineId: string; lastError: string | null };
@@ -493,6 +495,7 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
           kind: "delete",
           projectId: row.project_id ?? "",
           automationId: row.automation_id ?? "",
+          routineId: row.routine_id,
           lastError: row.last_error,
         }
       : {
@@ -1267,11 +1270,11 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     /** Queue Automations work to retry; a second add of the same key keeps one row. */
     addCleanup(
       cleanup:
-        | { kind: "delete"; projectId: string; automationId: string }
+        | { kind: "delete"; projectId: string; automationId: string; routineId: string }
         | { kind: "repair"; routineId: string },
       error: string,
       at: number,
-    ): void {
+    ): string {
       const key =
         cleanup.kind === "delete"
           ? `delete:${cleanup.automationId}`
@@ -1285,9 +1288,40 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         cleanup.kind,
         cleanup.kind === "delete" ? cleanup.projectId : null,
         cleanup.kind === "delete" ? cleanup.automationId : null,
-        cleanup.kind === "repair" ? cleanup.routineId : null,
+        cleanup.routineId,
         error,
         at,
+      );
+      return key;
+    },
+    /**
+     * Retire a routine: record the intent to delete its automation and delete
+     * the routine in one transaction, so an interruption leaves either both
+     * or neither. Returns the cleanup key, or null with no automation.
+     */
+    retireRoutine(
+      routineId: string,
+      deletion: { projectId: string; automationId: string } | null,
+      at: number,
+    ): string | null {
+      return db.transaction(() => {
+        const key =
+          deletion === null
+            ? null
+            : this.addCleanup({ kind: "delete", ...deletion, routineId }, "pending", at);
+        this.deleteRoutine(routineId);
+        return key;
+      })();
+    },
+    /** Whether a delete of this routine's automation is pending: no repair may remake it. */
+    /** Whether a delete of this routine's automation is still queued; repair must not undo it. */
+    deletePending(routineId: string, automationId: string): boolean {
+      return (
+        db
+          .prepare<[string, string], { n: number }>(
+            "SELECT COUNT(*) AS n FROM routine_cleanup WHERE kind = 'delete' AND routine_id = ? AND automation_id = ?",
+          )
+          .get(routineId, automationId)?.n !== 0
       );
     },
     cleanups(): Cleanup[] {

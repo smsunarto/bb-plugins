@@ -37,6 +37,8 @@ export type RoutinesDeps = {
   openAwayAsk: (captainId: string, detail: string) => Promise<string>;
   /** The server machine's time zone, the default for `--timezone`. */
   defaultTimezone?: string;
+  /** How long one maintenance item runs before Captain warns; tests shorten it. */
+  maintenanceDeadlineMs?: number;
 };
 
 /** The Captain a routine belongs to, as the service needs it. */
@@ -48,7 +50,8 @@ export const AWAY_ASK_TEXT = "Routines paused while you were away";
 export const AWAY_OPTIONS = ["Resume", "Keep paused"] as const;
 /** Maintenance calls in flight at once, and the deadline on each. */
 const MAINTENANCE_CONCURRENCY = 4;
-const MAINTENANCE_DEADLINE_MS = 20_000;
+/** How long fire waits on one bb thread call. */
+const THREAD_DEADLINE_MS = 10_000;
 /** A test run's claim is dropped after this, in case its fire never came. */
 const TEST_RUN_TTL_MS = 24 * 60 * 60_000;
 
@@ -88,6 +91,9 @@ export function createRoutines(deps: RoutinesDeps) {
     return run;
   }
 
+  /** The lock for a Captain's routine names. */
+  const deadlineMs = deps.maintenanceDeadlineMs ?? 20_000;
+  const namesKey = (captainId: string) => `names:${captainId}`;
   const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
   const changed = (captainId: string) => bb.rpc.experimental_invalidate([routinesTag(captainId)]);
   const ownerOf = (routine: Routine): RoutineOwner => {
@@ -132,14 +138,33 @@ export function createRoutines(deps: RoutinesDeps) {
 
   const spent = (schedule: Schedule) => "at" in schedule && schedule.at <= deps.now();
 
-  /** Delete an automation now, or queue the delete for the next maintenance pass. */
-  async function deleteAutomation(found: AutomationTarget): Promise<void> {
+  /**
+   * Delete an automation whose intent is already recorded under `key`; the
+   * record goes once the delete lands, else maintenance retries it.
+   */
+  async function settleDelete(key: string, found: AutomationTarget): Promise<void> {
     try {
       await automations.delete(found);
     } catch (error) {
-      if (isMissing(error)) return;
-      store.addCleanup({ kind: "delete", ...found }, message(error), deps.now());
+      if (!isMissing(error)) {
+        store.setCleanupError(key, message(error));
+        return;
+      }
     }
+    store.removeCleanup(key);
+  }
+
+  /** Record the intent, then delete: an interruption leaves the job for maintenance. */
+  async function deleteAutomation(found: AutomationTarget, routineId: string): Promise<void> {
+    const key = store.addCleanup({ kind: "delete", ...found, routineId }, "pending", deps.now());
+    await settleDelete(key, found);
+  }
+
+  /** Delete a routine and its automation: intent and local delete commit together. */
+  async function retire(routine: Routine): Promise<void> {
+    const found = target(routine);
+    const key = store.retireRoutine(routine.id, found, deps.now());
+    if (key !== null && found !== null) await settleDelete(key, found);
   }
 
   /** Make a routine's automation; held by an away pause, it starts paused and stays held. */
@@ -236,27 +261,31 @@ export function createRoutines(deps: RoutinesDeps) {
     options: { paused?: boolean } = {},
   ): Promise<RoutineView> {
     const fields = parseFields(input);
-    // The insert reserves the name; the lock is taken before any await, so
-    // reconcile never sees the automation before its id is saved.
-    const draft = store.createRoutine({ ...fields, captainId: captain.threadId, at: deps.now() });
-    return serial(`routine:${draft.id}`, async () => {
-      let automationId: string;
-      try {
-        automationId = (
-          await automations.create(
-            captain.homeProjectId,
-            captain.name,
-            draft,
-            options.paused !== true,
-          )
-        ).id;
-      } catch (error) {
-        store.deleteRoutine(draft.id);
-        throw automationsRefused(error);
-      }
-      const saved = store.updateRoutine(draft.id, { automationId }, deps.now());
-      changed(captain.threadId);
-      return view(saved);
+    // Name changes run one at a time per Captain, so a reservation another
+    // operation later releases never refuses this one.
+    return serial(namesKey(captain.threadId), () => {
+      // The insert reserves the name; the routine lock is taken before any
+      // await, so reconcile never sees the automation before its id is saved.
+      const draft = store.createRoutine({ ...fields, captainId: captain.threadId, at: deps.now() });
+      return serial(`routine:${draft.id}`, async () => {
+        let automationId: string;
+        try {
+          automationId = (
+            await automations.create(
+              captain.homeProjectId,
+              captain.name,
+              draft,
+              options.paused !== true,
+            )
+          ).id;
+        } catch (error) {
+          store.deleteRoutine(draft.id);
+          throw automationsRefused(error);
+        }
+        const saved = store.updateRoutine(draft.id, { automationId }, deps.now());
+        changed(captain.threadId);
+        return view(saved);
+      });
     });
   }
 
@@ -285,38 +314,42 @@ export function createRoutines(deps: RoutinesDeps) {
       const nameChanged = fields.name !== before.name;
       const scheduleChanged = JSON.stringify(fields.schedule) !== JSON.stringify(before.schedule);
       const rearm = scheduleChanged && oneShotFired(before);
-      // Reserve the name now: a concurrent rename to it fails here, before any remote write.
-      if (nameChanged) store.updateRoutine(before.id, { name: fields.name }, before.updatedAt);
-      let automationId = before.automationId;
-      try {
-        const found = target(before);
-        const remake = async () =>
-          spent(fields.schedule) ? null : makeAutomation(owner, { ...before, ...fields }, true);
-        if (found === null) {
-          automationId = await remake();
-        } else {
-          try {
-            if (nameChanged || scheduleChanged) {
-              await automations.update(found, owner.name, {
-                ...(nameChanged ? { name: fields.name } : {}),
-                ...(scheduleChanged ? { schedule: fields.schedule } : {}),
-              });
-            } else {
-              await automations.get(found);
-            }
-            if (rearm && store.awayHold(before.id) === null) await automations.resume(found);
-          } catch (error) {
-            if (!isMissing(error)) throw error;
+      const apply = async () => {
+        // Reserve the name now: a concurrent rename to it fails here, before any remote write.
+        if (nameChanged) store.updateRoutine(before.id, { name: fields.name }, before.updatedAt);
+        let automationId = before.automationId;
+        try {
+          const found = target(before);
+          const remake = async () =>
+            spent(fields.schedule) ? null : makeAutomation(owner, { ...before, ...fields }, true);
+          if (found === null) {
             automationId = await remake();
+          } else {
+            try {
+              if (nameChanged || scheduleChanged) {
+                await automations.update(found, owner.name, {
+                  ...(nameChanged ? { name: fields.name } : {}),
+                  ...(scheduleChanged ? { schedule: fields.schedule } : {}),
+                });
+              } else {
+                await automations.get(found);
+              }
+              if (rearm && store.awayHold(before.id) === null) await automations.resume(found);
+            } catch (error) {
+              if (!isMissing(error)) throw error;
+              automationId = await remake();
+            }
           }
+        } catch (error) {
+          if (nameChanged) store.updateRoutine(before.id, { name: before.name }, before.updatedAt);
+          throw automationsRefused(error);
         }
-      } catch (error) {
-        if (nameChanged) store.updateRoutine(before.id, { name: before.name }, before.updatedAt);
-        throw automationsRefused(error);
-      }
-      const saved = store.updateRoutine(before.id, { ...fields, automationId }, deps.now());
-      changed(owner.threadId);
-      return view(saved);
+        const saved = store.updateRoutine(before.id, { ...fields, automationId }, deps.now());
+        changed(owner.threadId);
+        return view(saved);
+      };
+      // Lock order is routine, then names; create takes names, then a routine no one else holds.
+      return nameChanged ? serial(namesKey(owner.threadId), apply) : apply();
     });
   }
 
@@ -329,9 +362,7 @@ export function createRoutines(deps: RoutinesDeps) {
       const latest = current(routine.id);
       const owner = ownerOf(latest);
       if (action === "delete") {
-        const found = target(latest);
-        if (found !== null) await deleteAutomation(found);
-        store.deleteRoutine(latest.id);
+        await retire(latest);
         changed(owner.threadId);
         return { view: null, runId: null };
       }
@@ -405,12 +436,13 @@ export function createRoutines(deps: RoutinesDeps) {
           ? "test"
           : "schedule";
       const captainRow = store.captain(routine.captainId);
-      const thread = await bb.sdk.threads
-        .get({ threadId: routine.captainId })
-        .catch((error: unknown) => {
-          if (isMissing(error)) return null;
-          throw error;
-        });
+      const thread = await bounded(
+        bb.sdk.threads.get({ threadId: routine.captainId }),
+        "reading the Captain",
+      ).catch((error: unknown) => {
+        if (isMissing(error)) return null;
+        throw error;
+      });
       if (captainRow === null || thread === null || thread.deletedAt != null) {
         record(routine, trigger, "failed", "Captain deleted");
         void removeCaptain(routine.captainId, routine.id);
@@ -442,11 +474,15 @@ export function createRoutines(deps: RoutinesDeps) {
         why: trigger === "test" ? "as a test run" : "on its schedule",
       })}`;
       try {
-        const result = await bb.sdk.threads.send({
-          threadId: routine.captainId,
-          mode: "queue-if-active",
-          input: [{ type: "text", text, mentions: [] }],
-        });
+        // On a timeout the message may still arrive; the run records a failure, never a resend.
+        const result = await bounded(
+          bb.sdk.threads.send({
+            threadId: routine.captainId,
+            mode: "queue-if-active",
+            input: [{ type: "text", text, mentions: [] }],
+          }),
+          "sending the wake",
+        );
         const state = result.delivery === "queued" ? "queued" : "sent";
         return { state, run: record(routine, trigger, state, null) };
       } catch (error) {
@@ -465,7 +501,10 @@ export function createRoutines(deps: RoutinesDeps) {
    */
   async function alreadyQueued(routine: Routine): Promise<boolean | "unreadable"> {
     try {
-      const rows = await bb.sdk.threads.queuedMessages.list({ threadId: routine.captainId });
+      const rows = await bounded(
+        bb.sdk.threads.queuedMessages.list({ threadId: routine.captainId }),
+        "reading the queue",
+      );
       const token = wakeToken(routine.id);
       return rows.some(
         (row) =>
@@ -520,10 +559,7 @@ export function createRoutines(deps: RoutinesDeps) {
     for (const routine of store.routinesOf(captainId)) {
       const remove = async () => {
         const latest = store.routine(routine.id);
-        if (latest === null) return;
-        const found = target(latest);
-        if (found !== null) await deleteAutomation(found);
-        store.deleteRoutine(latest.id);
+        if (latest !== null) await retire(latest);
       };
       if (routine.id === inLock) await remove();
       else await serial(`routine:${routine.id}`, remove);
@@ -537,7 +573,7 @@ export function createRoutines(deps: RoutinesDeps) {
    * automation is gone. Returns true once listing worked and every orphan was
    * checked; failed deletes and repairs wait in the cleanup table.
    */
-  async function reconcile(): Promise<boolean> {
+  async function reconcile(signal?: AbortSignal): Promise<boolean> {
     if (reconciled) return true;
     const projects = new Set<string>();
     for (const routine of store.allRoutines()) {
@@ -560,35 +596,47 @@ export function createRoutines(deps: RoutinesDeps) {
       reconcileWarned = true;
       return false;
     }
-    const orphans = await mapLimit(listed, async (row) =>
-      serial(`routine:${row.routineId}`, async () => {
-        if (store.routine(row.routineId)?.automationId === row.automationId) return true;
-        const found = { projectId: row.projectId, automationId: row.automationId };
-        // Never delete what Captain did not make: the script and env must be exactly its own.
-        if (!(await automations.ownedBy(found, row.routineId))) return true;
-        await deleteAutomation(found);
-        return true;
-      }).catch((error: unknown) => {
-        bb.log.warn(`automation ${row.automationId} not checked: ${message(error)}`);
-        return false;
-      }),
+    const orphans = await mapLimit(
+      listed,
+      async (row) =>
+        serial(`routine:${row.routineId}`, async () => {
+          if (store.routine(row.routineId)?.automationId === row.automationId) return true;
+          const found = { projectId: row.projectId, automationId: row.automationId };
+          // Never delete what Captain did not make: the script and env must be exactly its own.
+          if (!(await automations.ownedBy(found, row.routineId))) return true;
+          await deleteAutomation(found, row.routineId);
+          return true;
+        }).catch((error: unknown) => {
+          bb.log.warn(`automation ${row.automationId} not checked: ${message(error)}`);
+          return false;
+        }),
+      signal,
     );
     const known = new Set(listed.map((row) => row.automationId));
-    await mapLimit(store.allRoutines(), (routine) =>
-      serial(`routine:${routine.id}`, () => reschedule(routine.id, known)).catch(
-        (error: unknown) => {
-          store.addCleanup({ kind: "repair", routineId: routine.id }, message(error), deps.now());
-        },
-      ),
+    await mapLimit(
+      store.allRoutines(),
+      (routine) =>
+        serial(`routine:${routine.id}`, () => reschedule(routine.id, known)).catch(
+          (error: unknown) => {
+            store.addCleanup({ kind: "repair", routineId: routine.id }, message(error), deps.now());
+          },
+        ),
+      signal,
     );
-    reconciled = orphans.every(Boolean);
+    // A stopped pass skipped items, so it proves nothing.
+    reconciled = signal?.aborted !== true && orphans.every(Boolean);
     return reconciled;
   }
 
   /** Give a live Captain's routine an automation again when its own is gone. */
   async function reschedule(routineId: string, known?: ReadonlySet<string>): Promise<void> {
     const routine = store.routine(routineId);
-    if (routine === null) return;
+    if (
+      routine === null ||
+      (routine.automationId !== null && store.deletePending(routineId, routine.automationId))
+    ) {
+      return;
+    }
     const owner = store.captain(routine.captainId);
     if (owner === null || owner.archivedAt !== null) return;
     if (routine.automationId !== null && known?.has(routine.automationId) === true) return;
@@ -619,23 +667,38 @@ export function createRoutines(deps: RoutinesDeps) {
   }
 
   /** Retry each queued delete and repair once; done ones leave the table. */
-  async function drainCleanup(): Promise<void> {
-    await mapLimit(store.cleanups(), async (cleanup: Cleanup) => {
-      try {
-        if (cleanup.kind === "delete") {
-          await automations
-            .delete({ projectId: cleanup.projectId, automationId: cleanup.automationId })
-            .catch((error: unknown) => {
-              if (!isMissing(error)) throw error;
-            });
-        } else {
-          await serial(`routine:${cleanup.routineId}`, () => reschedule(cleanup.routineId));
+  async function drainCleanup(signal?: AbortSignal): Promise<void> {
+    await mapLimit(
+      store.cleanups(),
+      async (cleanup: Cleanup) => {
+        try {
+          if (cleanup.kind === "delete") {
+            const found = { projectId: cleanup.projectId, automationId: cleanup.automationId };
+            // Recheck against the recorded basis: an automation changed since is no longer Captain's.
+            const owned =
+              cleanup.routineId === null
+                ? false
+                : await automations.ownedBy(found, cleanup.routineId).catch((error: unknown) => {
+                    if (isMissing(error)) return null;
+                    throw error;
+                  });
+            if (owned === true) {
+              await automations.delete(found).catch((error: unknown) => {
+                if (!isMissing(error)) throw error;
+              });
+            } else if (owned === false) {
+              bb.log.warn(`delete of ${cleanup.automationId} dropped: it is no longer Captain's`);
+            }
+          } else {
+            await serial(`routine:${cleanup.routineId}`, () => reschedule(cleanup.routineId));
+          }
+          store.removeCleanup(cleanup.key);
+        } catch (error) {
+          store.setCleanupError(cleanup.key, message(error));
         }
-        store.removeCleanup(cleanup.key);
-      } catch (error) {
-        store.setCleanupError(cleanup.key, message(error));
-      }
-    });
+      },
+      signal,
+    );
   }
 
   /**
@@ -747,16 +810,17 @@ export function createRoutines(deps: RoutinesDeps) {
    * answered away asks. Each part runs with bounded concurrency and a
    * deadline, and its failure skips only itself. Returns whether work is left.
    */
-  async function maintain(): Promise<{ pending: boolean }> {
+  async function maintain(signal?: AbortSignal): Promise<{ pending: boolean }> {
     const step = async (name: string, work: () => Promise<unknown>) => {
+      if (signal?.aborted === true) return;
       try {
-        await withDeadline(work(), MAINTENANCE_DEADLINE_MS * 3);
+        await slowWarning(work(), deadlineMs * 3, name);
       } catch (error) {
         bb.log.warn(`routine maintenance: ${name} skipped: ${message(error)}`);
       }
     };
-    await step("reconcile", reconcile);
-    await step("cleanup", drainCleanup);
+    await step("reconcile", () => reconcile(signal));
+    await step("cleanup", () => drainCleanup(signal));
     await step("away pause", () =>
       // Live Captains, plus any whose holds still need finishing or releasing.
       mapLimit(
@@ -767,9 +831,10 @@ export function createRoutines(deps: RoutinesDeps) {
           ]),
         ],
         (captainId) =>
-          withDeadline(awayPass(captainId), MAINTENANCE_DEADLINE_MS).catch((error: unknown) =>
+          awayPass(captainId).catch((error: unknown) =>
             bb.log.warn(`away pause for ${captainId} skipped: ${message(error)}`),
           ),
+        signal,
       ),
     );
     await step("away answers", async () => {
@@ -787,25 +852,53 @@ export function createRoutines(deps: RoutinesDeps) {
     return { pending: !reconciled || store.cleanups().length > 0 || holdsLeft };
   }
 
-  async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+  /**
+   * Fail a thread call bb has not answered in time. These hold the routine
+   * lock, and maintenance waits on that lock, so each must settle.
+   */
+  async function bounded<T>(promise: Promise<T>, what: string): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`no answer in ${ms / 1000}s`)), ms);
+    const late = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`bb did not answer ${what} in ${THREAD_DEADLINE_MS / 1000}s`)),
+        THREAD_DEADLINE_MS,
+      );
     });
     try {
-      return await Promise.race([promise, deadline]);
+      return await Promise.race([promise, late]);
     } finally {
       clearTimeout(timer);
     }
   }
 
-  async function mapLimit<T, R>(items: readonly T[], run: (item: T) => Promise<R>): Promise<R[]> {
+  /**
+   * Await work to the end, warning when it runs past `ms`. Automations calls
+   * and fire's thread calls each carry a deadline, so the work settles; a worker keeps its
+   * slot until then, which keeps concurrency bounded.
+   */
+  async function slowWarning<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    const timer = setTimeout(
+      () => bb.log.warn(`routine maintenance: ${label} still running after ${ms / 1000}s`),
+      ms,
+    );
+    try {
+      return await promise;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function mapLimit<T, R>(
+    items: readonly T[],
+    run: (item: T) => Promise<R>,
+    signal?: AbortSignal,
+  ): Promise<R[]> {
     const results: R[] = Array.from({ length: items.length });
     let next = 0;
     const worker = async () => {
-      while (next < items.length) {
+      while (next < items.length && signal?.aborted !== true) {
         const index = next++;
-        results[index] = await withDeadline(run(items[index] as T), MAINTENANCE_DEADLINE_MS).catch(
+        results[index] = await slowWarning(run(items[index] as T), deadlineMs, "item").catch(
           (error: unknown) => {
             bb.log.warn(`routine maintenance item skipped: ${message(error)}`);
             return undefined as R;
@@ -852,10 +945,12 @@ export function createRoutines(deps: RoutinesDeps) {
           while (!signal.aborted) {
             let pending = true;
             try {
-              pending = (await maintain()).pending;
+              pending = (await maintain(signal)).pending;
             } catch (error) {
               bb.log.warn(`routine maintenance failed: ${message(error)}`);
             }
+            // Stopped while that pass ran: leave now rather than wait out the sleep.
+            if (signal.aborted) break;
             await new Promise<void>((resolve) => {
               const done = () => {
                 clearTimeout(timer);

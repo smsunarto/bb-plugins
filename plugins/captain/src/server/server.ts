@@ -23,6 +23,8 @@ export type StartOptions = {
   now?: () => number;
   /** How long a Tasks call may take; tests shorten it. */
   tasksDeadlineMs?: number;
+  /** How long one routine maintenance item runs before Captain warns; tests shorten it. */
+  maintenanceDeadlineMs?: number;
   /** How often a watched banner rechecks the crew; tests shorten it. */
   crewPollMs?: number;
 };
@@ -42,6 +44,9 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     files,
     now,
     automations: createAutomationsClient(bb),
+    ...(options.maintenanceDeadlineMs === undefined
+      ? {}
+      : { maintenanceDeadlineMs: options.maintenanceDeadlineMs }),
     openAwayAsk: async (captainId, detail) => {
       const captain = registry.get(captainId);
       if (captain === null) throw new Error(`${captainId} is not a live Captain`);
