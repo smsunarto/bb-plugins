@@ -482,14 +482,15 @@ describe("mountLinkHints", () => {
     document.body.innerHTML =
       '<div data-app-composer><button id="model" aria-label="GPT-6-Astra" data-t3-model-picker-trigger aria-haspopup="dialog">GPT-6-Astra</button></div>' +
       '<nav aria-label="Navigation"><button id="new-thread" data-sidebar-navigation-item="__bb__/new-thread">New thread</button>' +
+      '<button id="search" data-sidebar-navigation-item="__bb__/search-threads">Search threads</button>' +
       '<button id="plugins" data-sidebar-navigation-item="__bb__/extensions">Plugins</button>' +
       '<button id="more" data-sidebar-navigation-more aria-haspopup="menu">More</button></nav>';
-    for (const [index, id] of ["model", "new-thread", "plugins", "more"].entries()) {
+    for (const [index, id] of ["model", "new-thread", "search", "plugins", "more"].entries()) {
       giveRect(document.getElementById(id) as HTMLElement, 10, 10 + index * 30);
     }
 
     pressKey("f");
-    expect(markers()).toEqual(["m", "n", "dd", "e"]);
+    expect(markers()).toEqual(["m", "n", "s", "dd", "e"]);
 
     void dispose();
     controller.abort();
