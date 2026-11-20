@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { CaptainIcon, IconChoice } from "../contract/icon.ts";
+import { captainIconSchema, type CaptainIcon, type IconChoice } from "../contract/icon.ts";
 import { ASK_KINDS, type AskKind } from "../contract/queue.ts";
 import { parseRole, type Role } from "./roles.ts";
 
@@ -871,9 +871,11 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     captainIcon(threadId: string): CaptainIcon {
       const row = selectIcon.get(threadId);
       if (row === undefined) return { kind: "default" };
-      return row.kind === "icon"
-        ? { kind: "icon", name: row.value }
-        : { kind: "image", src: row.value };
+      const icon =
+        row.kind === "icon" ? { kind: "icon", name: row.value } : { kind: "image", src: row.value };
+      // A row an earlier build stored, such as an SVG, reads as no icon: never a failed read.
+      const parsed = captainIconSchema.safeParse(icon);
+      return parsed.success ? parsed.data : { kind: "default" };
     },
     /** Set the Captain's icon; null goes back to the default glyph. */
     setCaptainIcon(threadId: string, icon: IconChoice, at: number): void {

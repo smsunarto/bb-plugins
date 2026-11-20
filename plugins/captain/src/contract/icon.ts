@@ -18,20 +18,20 @@ export const ICON_IMAGE_SIDE = 96;
 export const ICON_IMAGE_MAX_BYTES = 16 * 1024;
 
 /**
- * The raster types Captain stores, by the bytes that start each one. No SVG:
- * a small hostile SVG can stall every client that draws it, so settings
- * rasterizes one and the CLI refuses it.
+ * Images are set only in Captain settings, which decodes the user's picture
+ * in the browser and re-encodes it as a PNG of at most `ICON_IMAGE_SIDE` px.
+ * Captain stores that PNG and nothing else: no SVG, which a small hostile file
+ * can make stall every client that draws it, and no file read on the server.
  */
-const ICON_IMAGE_TYPES = ["png", "jpeg", "gif", "webp"] as const;
-export type IconImageType = (typeof ICON_IMAGE_TYPES)[number];
+export const ICON_IMAGE_PREFIX = "data:image/png;base64,";
 
 /** A name from bb's built-in icon set, in its PascalCase: `Star`, `AiBrain01`. */
 const iconNameSchema = z.string().regex(/^[A-Z][A-Za-z0-9]{0,63}$/u);
 
 const imageSrcSchema = z
   .string()
-  .max(Math.ceil(ICON_IMAGE_MAX_BYTES / 3) * 4 + 32)
-  .regex(/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/u);
+  .max(ICON_IMAGE_PREFIX.length + Math.ceil(ICON_IMAGE_MAX_BYTES / 3) * 4)
+  .regex(/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/u);
 
 export const captainIconSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("default") }).strict(),

@@ -72,7 +72,16 @@ export async function readCallerFile(
   path: string,
 ): Promise<string> {
   const hostId = await callerHostId(bb, ctx);
-  const absolute = callerPath(ctx, path);
+  let absolute: string;
+  if (isAbsolute(path)) absolute = resolve(path);
+  else if (ctx.cwd !== undefined) absolute = resolve(ctx.cwd, path);
+  else
+    throw new Refusal([
+      {
+        reason: `relative path without a working directory: ${path}`,
+        fix: "pass an absolute path",
+      },
+    ]);
   let file;
   try {
     file = await bb.sdk.files.read({ hostId, path: absolute });
@@ -93,37 +102,4 @@ export async function readCallerFile(
     ]);
   }
   return file.content;
-}
-
-/**
- * Read an image named on the invoking machine as bytes, for `bb captain icon`.
- * bb serves a binary file as base64 and a text one, such as an SVG, as UTF-8.
- */
-export async function readCallerBytes(
-  bb: Pick<BbPluginApi, "sdk">,
-  ctx: PluginCliContext,
-  path: string,
-): Promise<{ path: string; bytes: Buffer }> {
-  const hostId = await callerHostId(bb, ctx);
-  const absolute = callerPath(ctx, path);
-  try {
-    const file = await bb.sdk.files.read({ hostId, path: absolute });
-    return { path: absolute, bytes: Buffer.from(file.content, file.contentEncoding) };
-  } catch (error) {
-    throw new Refusal([
-      {
-        reason: `could not read ${absolute}: ${(error as Error).message}`,
-        fix: "check the path on the calling machine",
-      },
-    ]);
-  }
-}
-
-/** A path the caller typed, made absolute against its working directory. */
-function callerPath(ctx: PluginCliContext, path: string): string {
-  if (isAbsolute(path)) return resolve(path);
-  if (ctx.cwd !== undefined) return resolve(ctx.cwd, path);
-  throw new Refusal([
-    { reason: `relative path without a working directory: ${path}`, fix: "pass an absolute path" },
-  ]);
 }

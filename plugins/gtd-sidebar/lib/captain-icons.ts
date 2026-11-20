@@ -26,8 +26,8 @@ const captainIconSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("icon"), name: z.string().regex(/^[A-Z][A-Za-z0-9]{0,63}$/u) }),
   z.object({
     kind: z.literal("image"),
-    // Raster only, as Captain stores: no SVG reaches an <img> from here.
-    src: z.string().regex(/^data:image\/(png|jpeg|gif|webp);base64,/u),
+    // PNG only, as Captain stores: no SVG reaches an <img> from here.
+    src: z.string().regex(/^data:image\/png;base64,/u),
   }),
 ]);
 export type CaptainIcon = z.infer<typeof captainIconSchema>;

@@ -1,9 +1,6 @@
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { normalizeIconName } from "../contract/icon.ts";
 import { iconTag } from "../contract/rpc.ts";
-import { imageSize, sniffImageType } from "./icon.ts";
 import { NOTICE } from "./store.ts";
 import { captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
 
@@ -25,11 +22,8 @@ function pngSized(width: number, height: number): Buffer {
 async function iconHost() {
   const host = await captainHost();
   const captainId = await newCaptain(host);
-  const cli = (argv: string[], cwd?: string) =>
-    host.harness.behavior.runCli(["icon", ...argv, "--json"], {
-      threadId: captainId,
-      ...(cwd === undefined ? {} : { cwd }),
-    });
+  const cli = (argv: string[]) =>
+    host.harness.behavior.runCli(["icon", ...argv, "--json"], { threadId: captainId });
   const icons = (keys: string[] = [captainId]) =>
     host.callRpc("icons", { keys }) as Promise<Record<string, unknown>>;
   const setIcon = (icon: unknown) => host.callRpc("setIcon", { captainId, icon });
@@ -87,47 +81,14 @@ describe("a Captain's sidebar icon", () => {
     expect(normalizeIconName("9lives")).toBeNull();
   });
 
-  test("`bb captain icon <path>` reads an image from the calling machine as a data URL", async () => {
-    const { host, cli, icons, captainId } = await iconHost();
-    writeFileSync(join(host.root, "crest.png"), PNG);
-    const set = await cli(["./crest.png"], host.root);
-    expect(set.exitCode).toBe(0);
-    expect(results(set.stdout)[0]).toMatchObject({ icon: { kind: "image", bytes: PNG.length } });
-    expect(set.stderr ?? "").not.toContain("not checked");
-    expect(await icons()).toEqual({ [captainId]: { kind: "image", src: PNG_URL } });
-  });
-
-  test("a bare word names a file in the working directory when one is there, else an icon", async () => {
-    const { host, cli, icons, captainId } = await iconHost();
-    writeFileSync(join(host.root, "crest"), PNG);
-    expect((await cli(["crest"], host.root)).exitCode).toBe(0);
-    expect(await icons()).toEqual({ [captainId]: { kind: "image", src: PNG_URL } });
-    expect((await cli(["target"], host.root)).exitCode).toBe(0);
-    expect(await icons()).toEqual({ [captainId]: { kind: "icon", name: "Target" } });
-  });
-
-  test.each([
-    [
-      "an SVG",
-      "logo.svg",
-      Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'),
-      "SVG is not stored",
-    ],
-    ["text", "notes.txt", Buffer.from("not a picture"), "is not a PNG, JPEG, GIF or WebP image"],
-    [
-      "an image over 16 KB",
-      "big.png",
-      Buffer.concat([PNG, Buffer.alloc(16 * 1024)]),
-      "the most is 16 KB",
-    ],
-    ["an image over 96 px", "wide.png", pngSized(8000, 8000), "8000x8000 px; the most is 96x96"],
-  ])("the CLI refuses %s and keeps the icon it had", async (_, file, bytes, reason) => {
-    const { host, cli, icons, captainId } = await iconHost();
+  test("the CLI sets names only, and refuses a value that looks like a file", async () => {
+    const { cli, icons, captainId } = await iconHost();
     await cli(["Target"]);
-    writeFileSync(join(host.root, file), bytes);
-    const refused = await cli([join(host.root, file)]);
-    expect(refused.exitCode).toBe(1);
-    expect(refused.stderr).toContain(reason);
+    for (const value of ["./crest.png", "crest.png", "/tmp/crest", ".crest"]) {
+      const refused = await cli([value]);
+      expect(refused.exitCode).toBe(1);
+      expect(refused.stderr).toContain("looks like a file; the CLI sets icon names only");
+    }
     expect(await icons()).toEqual({ [captainId]: { kind: "icon", name: "Target" } });
   });
 
@@ -150,29 +111,45 @@ describe("a Captain's sidebar icon", () => {
     expect(both.exitCode).toBe(1);
   });
 
-  test("settings stores an uploaded image by its real type, with the CLI's limits", async () => {
+  test("settings stores the PNG it made, and refuses any other image", async () => {
     const { host, setIcon, icons, captainId } = await iconHost();
     const before = invalidated(host).length;
-    // Labelled JPEG, but the bytes are a PNG: stored as what it is.
-    const relabelled = `data:image/jpeg;base64,${PNG.toString("base64")}`;
-    expect(await setIcon({ kind: "image", src: relabelled })).toEqual({
-      kind: "image",
-      src: PNG_URL,
-    });
+    expect(await setIcon({ kind: "image", src: PNG_URL })).toEqual({ kind: "image", src: PNG_URL });
     expect(invalidated(host).slice(before)).toContain(iconTag(captainId));
 
-    const dataUrl = (bytes: Buffer, type = "png") =>
-      `data:image/${type};base64,${bytes.toString("base64")}`;
-    await expect(setIcon({ kind: "image", src: dataUrl(Buffer.from("hello")) })).rejects.toThrow(
-      /not a PNG/u,
+    const png = (bytes: Buffer) => `data:image/png;base64,${bytes.toString("base64")}`;
+    await expect(setIcon({ kind: "image", src: png(Buffer.from("hello")) })).rejects.toThrow(
+      /not a complete PNG/u,
     );
-    await expect(setIcon({ kind: "image", src: dataUrl(pngSized(97, 96)) })).rejects.toThrow(
-      /97x96 px/u,
+    // Cut short: no closing IEND chunk.
+    await expect(setIcon({ kind: "image", src: png(PNG.subarray(0, -12)) })).rejects.toThrow(
+      /not a complete PNG/u,
     );
-    await expect(
-      setIcon({ kind: "image", src: dataUrl(Buffer.from("<svg/>"), "svg+xml") }),
-    ).rejects.toThrow();
+    await expect(setIcon({ kind: "image", src: png(pngSized(97, 96)) })).rejects.toThrow(
+      /97x96 px; the most is 96x96/u,
+    );
+    // Just over 16 KB, still inside the contract's data URL length.
+    const big = Buffer.concat([PNG, Buffer.alloc(16 * 1024 + 1 - PNG.length)]);
+    await expect(setIcon({ kind: "image", src: png(big) })).rejects.toThrow(/the most is 16 KB/u);
+    // Any other type fails the contract before it reaches the check.
+    for (const type of ["jpeg", "gif", "webp", "svg+xml"]) {
+      await expect(
+        setIcon({ kind: "image", src: `data:image/${type};base64,${PNG.toString("base64")}` }),
+      ).rejects.toThrow();
+    }
     expect(await icons()).toEqual({ [captainId]: { kind: "image", src: PNG_URL } });
+  });
+
+  test("a stored row that fails the contract reads as the default glyph, not an error", async () => {
+    const { host, icons, captainId } = await iconHost();
+    const svg = `data:image/svg+xml;base64,${Buffer.from("<svg/>").toString("base64")}`;
+    host.server.store.setCaptainIcon(captainId, { kind: "image", src: svg } as never, 0);
+    expect(await icons()).toEqual({ [captainId]: { kind: "default" } });
+    host.server.store.setCaptainIcon(captainId, { kind: "icon", name: "not a name" } as never, 0);
+    expect(await icons()).toEqual({ [captainId]: { kind: "default" } });
+    expect(await host.callRpc("captainIcons", {})).toEqual({
+      captains: [{ threadId: captainId, name: "Plugins", icon: { kind: "default" } }],
+    });
   });
 
   test("settings lists each live Captain with its name and icon", async () => {
@@ -201,34 +178,6 @@ describe("a Captain's sidebar icon", () => {
     expect(await host.callRpc("icons", { keys: [captainId] })).toEqual({ [captainId]: null });
     // The row is gone, not just hidden: the store reads the default for it.
     expect(host.server.store.captainIcon(captainId)).toEqual({ kind: "default" });
-  });
-
-  test("sniffs only raster types, and reads each one's size from its header", () => {
-    expect(sniffImageType(PNG)).toBe("png");
-    expect(
-      sniffImageType(Buffer.from('<?xml version="1.0"?>\n<svg viewBox="0 0 1 1"/>')),
-    ).toBeNull();
-    expect(imageSize("png", pngSized(40, 30))).toEqual({ width: 40, height: 30 });
-
-    const gif = Buffer.from("GIF89a\x20\x00\x10\x00", "latin1");
-    expect(sniffImageType(gif)).toBe("gif");
-    expect(imageSize("gif", gif)).toEqual({ width: 32, height: 16 });
-
-    const webp = Buffer.alloc(30);
-    webp.write("RIFF", 0, "latin1");
-    webp.write("WEBPVP8X", 8, "latin1");
-    webp.writeUIntLE(63, 24, 3);
-    webp.writeUIntLE(47, 27, 3);
-    expect(sniffImageType(webp)).toBe("webp");
-    expect(imageSize("webp", webp)).toEqual({ width: 64, height: 48 });
-
-    // SOI, an APP0 segment, then a baseline frame of 24 x 12.
-    const jpeg = Buffer.from([
-      0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x0c,
-      0x00, 0x18, 0x03,
-    ]);
-    expect(sniffImageType(jpeg)).toBe("jpeg");
-    expect(imageSize("jpeg", jpeg)).toEqual({ width: 24, height: 12 });
   });
 });
 

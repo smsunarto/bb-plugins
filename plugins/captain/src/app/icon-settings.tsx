@@ -2,8 +2,8 @@
  * Captain icons: the glyph or picture each Captain shows in the sidebar, in
  * Captain's settings. An icon name must be one of bb's built-in icons: bb
  * gives plugins no list of them, so the row draws the typed name and reads
- * back which icon bb drew. A picture, SVG included, is drawn onto a 96 px
- * canvas here and stored as a small raster. Every edit saves at once.
+ * back which icon bb drew. A picture, SVG included, is re-encoded here as the
+ * small PNG Captain stores; see `icon-image.ts`. Every edit saves at once.
  */
 import {
   experimental_Icon as Icon,
@@ -13,8 +13,6 @@ import {
 import { useRef, useState, type ChangeEvent, type SyntheticEvent } from "react";
 import {
   DEFAULT_ICON_GLYPH,
-  ICON_IMAGE_MAX_BYTES,
-  ICON_IMAGE_SIDE,
   normalizeIconName,
   type CaptainIcon,
   type IconChoice,
@@ -22,6 +20,7 @@ import {
 import { captainContract } from "../contract/rpc.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Input } from "./components/ui/input.tsx";
+import { iconImage } from "./icon-image.ts";
 import { cn } from "./lib/utils.ts";
 
 const NO_INPUT = {};
@@ -101,11 +100,18 @@ function CaptainIconRow({
   const [note, setNote] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const preview = useRef<HTMLSpanElement>(null);
+  // Counts saves, so an upload still decoding when a newer one starts is dropped.
+  const edits = useRef(0);
   const write = (choice: IconChoice) => {
+    edits.current += 1;
     setProblem(null);
     setNote(null);
-    setDraft(null);
-    save.mutate({ captainId: threadId, icon: choice }).catch(() => {});
+    const submitted = draft;
+    // The draft clears only once the save lands, so a failed save keeps what was typed.
+    save
+      .mutate({ captainId: threadId, icon: choice })
+      .then(() => setDraft((current) => (current === submitted ? null : current)))
+      .catch(() => {});
   };
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
@@ -128,11 +134,16 @@ function CaptainIconRow({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (file === undefined) return;
+    edits.current += 1;
+    const edit = edits.current;
+    let src: string;
     try {
-      write({ kind: "image", src: await iconImage(file) });
+      src = await iconImage(file);
     } catch (error) {
-      setProblem((error as Error).message);
+      if (edits.current === edit) setProblem((error as Error).message);
+      return;
     }
+    if (edits.current === edit) write({ kind: "image", src });
   };
   const error = problem ?? (save.error === null ? null : `Not saved: ${save.error.message}`);
   const typedName = normalizeIconName(value);
@@ -202,9 +213,9 @@ function CaptainIconRow({
           </span>
         </form>
       </div>
-      {error === null ? null : <p className="text-xs text-destructive">{error}</p>}
+      {error === null ? null : <p className="text-xs wrap-anywhere text-destructive">{error}</p>}
       {note === null || error !== null ? null : (
-        <p className="text-xs text-muted-foreground">{note}</p>
+        <p className="text-xs wrap-anywhere text-muted-foreground">{note}</p>
       )}
     </li>
   );
@@ -230,90 +241,4 @@ function StoredIcon({ icon }: { icon: CaptainIcon }) {
       aria-hidden
     />
   );
-}
-
-/**
- * The uploaded file as a data URL Captain accepts: cropped to its centre
- * square, drawn at `ICON_IMAGE_SIDE` px, and encoded as the smallest of PNG,
- * WebP and JPEG that fits `ICON_IMAGE_MAX_BYTES`. An SVG is drawn the same
- * way, so only a raster is stored.
- */
-async function iconImage(file: File): Promise<string> {
-  const picture = await loadPicture(file);
-  const width = picture.width || ICON_IMAGE_SIDE;
-  const height = picture.height || ICON_IMAGE_SIDE;
-  const side = Math.min(width, height);
-  const canvas = document.createElement("canvas");
-  canvas.width = ICON_IMAGE_SIDE;
-  canvas.height = ICON_IMAGE_SIDE;
-  const context = canvas.getContext("2d");
-  if (context === null) throw new Error("This browser cannot scale the image.");
-  context.drawImage(
-    picture.source,
-    (width - side) / 2,
-    (height - side) / 2,
-    side,
-    side,
-    0,
-    0,
-    ICON_IMAGE_SIDE,
-    ICON_IMAGE_SIDE,
-  );
-  picture.release();
-  for (const [type, quality] of [
-    ["image/png", undefined],
-    ["image/webp", 0.9],
-    ["image/webp", 0.75],
-    ["image/jpeg", 0.8],
-  ] as const) {
-    const url = canvas.toDataURL(type, quality);
-    // A browser that can't encode a type returns PNG; the length check still holds.
-    if (url.startsWith(`data:${type};`) && dataUrlBytes(url) <= ICON_IMAGE_MAX_BYTES) return url;
-  }
-  throw new Error("That picture is too detailed to fit 16 KB at 96 px; try a simpler one.");
-}
-
-type Picture = {
-  source: CanvasImageSource;
-  width: number;
-  height: number;
-  release: () => void;
-};
-
-/** Decode a raster with `createImageBitmap`, and an SVG through an `<img>`, which can draw one. */
-async function loadPicture(file: File): Promise<Picture> {
-  if (file.type !== "image/svg+xml") {
-    try {
-      const bitmap = await createImageBitmap(file);
-      return {
-        source: bitmap,
-        width: bitmap.width,
-        height: bitmap.height,
-        release: () => bitmap.close(),
-      };
-    } catch {
-      throw new Error("That file is not an image this browser can read.");
-    }
-  }
-  const url = URL.createObjectURL(file);
-  const image = new Image();
-  image.src = url;
-  try {
-    await image.decode();
-  } catch {
-    URL.revokeObjectURL(url);
-    throw new Error("That SVG could not be drawn.");
-  }
-  return {
-    source: image,
-    width: image.naturalWidth,
-    height: image.naturalHeight,
-    release: () => URL.revokeObjectURL(url),
-  };
-}
-
-/** A base64 data URL's decoded size in bytes. */
-function dataUrlBytes(url: string): number {
-  const body = url.slice(url.indexOf(",") + 1);
-  return Math.floor((body.length * 3) / 4) - (body.endsWith("==") ? 2 : body.endsWith("=") ? 1 : 0);
 }

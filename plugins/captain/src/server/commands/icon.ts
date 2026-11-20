@@ -1,27 +1,30 @@
-import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
-import { normalizeIconName, type CaptainIcon, type IconChoice } from "../../contract/icon.ts";
-import { callerCaptain, readCallerBytes } from "../caller.ts";
-import { dataUrlBytes, IconImageError, imageDataUrl, setCaptainIcon } from "../icon.ts";
+import { cliCommand } from "@get-bb/plugin-sdk";
+import { normalizeIconName, type CaptainIcon } from "../../contract/icon.ts";
+import { callerCaptain } from "../caller.ts";
+import { dataUrlBytes, setCaptainIcon } from "../icon.ts";
 import { guard, Refusal, render, type Item } from "../output.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
 
 const VALUE = {
   name: "icon",
   description:
-    "A name from bb's icon set such as Star or ai-brain-01, or the path of a PNG, JPEG, GIF or WebP of at most 96x96 px and 16 KB on this machine",
+    "A name from bb's icon set, such as Star or ai-brain-01. Set a picture in Captain settings",
 } as const;
 
 /** bb publishes no list of its icon names to plugins, so a name is stored unchecked. */
 const UNCHECKED_NAME_NOTE =
   "note: the name was not checked against bb's icon set; a name bb lacks shows the default Captain icon. Captain settings checks a name before it saves it";
 
-/** A path, not an icon name: it has a separator, starts with a dot, or ends in a file extension. */
+/** Looks like a file, not a name: a separator, a leading dot, or a file extension. */
 const PATH_LIKE = /[/\\]|^\.|\.[A-Za-z0-9]{2,5}$/u;
 
+/**
+ * `bb captain icon <name>`, `--clear`, or no argument to show the icon. A
+ * picture is set only in Captain settings, which re-encodes it in the browser.
+ */
 export function iconCommand(deps: CommandDeps) {
   return cliCommand({
-    summary:
-      "Set the Captain's sidebar icon to a bb icon or an image; --clear restores the default",
+    summary: "Set the Captain's sidebar icon to a bb icon name; --clear restores the default",
     positionals: [VALUE],
     options: {
       clear: { type: "boolean", description: "Go back to the default Captain icon" },
@@ -34,69 +37,45 @@ export function iconCommand(deps: CommandDeps) {
         const captain = await callerCaptain(deps.bb, deps.registry, ctx, {
           captain: input.options.captain,
         });
-        const value = input.positionals.icon?.trim();
-        if (value !== undefined && value !== "" && input.options.clear === true) {
+        const value = input.positionals.icon?.trim() ?? "";
+        if (value !== "" && input.options.clear === true) {
           throw new Refusal([
             { reason: "an icon and --clear were both given", fix: "pass one of them" },
           ]);
         }
         if (input.options.clear === true) {
-          return render(
-            [iconItem(captain.threadId, "cleared", setCaptainIcon(deps, captain.threadId, null))],
-            json,
-          );
+          const icon = setCaptainIcon(deps, captain.threadId, null);
+          return render([iconItem(captain.threadId, "cleared", icon)], json);
         }
-        if (value === undefined || value === "") {
-          return render(
-            [iconItem(captain.threadId, "current", deps.store.captainIcon(captain.threadId))],
-            json,
-          );
+        if (value === "") {
+          const icon = deps.store.captainIcon(captain.threadId);
+          return render([iconItem(captain.threadId, "current", icon)], json);
         }
-        const choice = await choiceFor(deps, ctx, value);
-        return render(
-          [iconItem(captain.threadId, "set", setCaptainIcon(deps, captain.threadId, choice))],
-          json,
-          choice?.kind === "icon" ? [UNCHECKED_NAME_NOTE] : [],
-        );
+        const name = iconName(value);
+        const icon = setCaptainIcon(deps, captain.threadId, { kind: "icon", name });
+        return render([iconItem(captain.threadId, "set", icon)], json, [UNCHECKED_NAME_NOTE]);
       });
     },
   });
 }
 
-async function choiceFor(
-  deps: CommandDeps,
-  ctx: PluginCliContext,
-  value: string,
-): Promise<IconChoice> {
-  // A bare word is a name unless the working directory holds a file by it.
-  const file = PATH_LIKE.test(value)
-    ? await readCallerBytes(deps.bb, ctx, value)
-    : ctx.cwd === undefined
-      ? null
-      : await readCallerBytes(deps.bb, ctx, value).catch(() => null);
-  if (file === null) {
-    const name = normalizeIconName(value);
-    if (name === null) {
-      throw new Refusal([
-        {
-          reason: `${JSON.stringify(value)} is not an icon name`,
-          fix: "pass a bb icon name such as Star, or an image path such as ./icon.png",
-        },
-      ]);
-    }
-    return { kind: "icon", name };
-  }
-  try {
-    return { kind: "image", src: imageDataUrl(file.bytes) };
-  } catch (error) {
-    if (!(error instanceof IconImageError)) throw error;
+function iconName(value: string): string {
+  if (PATH_LIKE.test(value)) {
     throw new Refusal([
       {
-        reason: `${file.path}: ${error.message}`,
-        fix: "pass a PNG, JPEG, GIF or WebP of at most 96x96 px and 16 KB, or upload the picture in Captain settings, which scales it",
+        reason: `${JSON.stringify(value)} looks like a file; the CLI sets icon names only`,
+        fix: "upload the picture in Captain settings (Captain icons), or pass a bb icon name such as Star",
       },
     ]);
   }
+  const name = normalizeIconName(value);
+  if (name !== null) return name;
+  throw new Refusal([
+    {
+      reason: `${JSON.stringify(value)} is not an icon name`,
+      fix: "pass a bb icon name such as Star",
+    },
+  ]);
 }
 
 function iconItem(threadId: string, state: string, icon: CaptainIcon): Item {
