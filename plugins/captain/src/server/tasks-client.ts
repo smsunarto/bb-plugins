@@ -205,6 +205,7 @@ export function createTasksClient(
       taskId: string;
       presetId: string;
       parentThreadId: string;
+      senderThreadId: string;
       parentNotifications: "stuck";
       reportContract: string;
       extraInstructions: string;

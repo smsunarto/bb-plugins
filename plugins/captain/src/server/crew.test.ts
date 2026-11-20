@@ -57,6 +57,7 @@ describe("bb captain dispatch", () => {
         taskId: host.tasks.tasks[0]?.id,
         presetId: implement?.id,
         parentThreadId: captainId,
+        senderThreadId: captainId,
         parentNotifications: "stuck",
         reportContract: expect.stringContaining("--notify-parent"),
         extraInstructions: expect.stringContaining("# Role: Implement"),
