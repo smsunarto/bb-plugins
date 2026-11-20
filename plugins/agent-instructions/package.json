@@ -86,7 +86,7 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-agent-instructions.tsbuildinfo",
-    "test": "bun test --timeout=30000 && node --import tsx --test 'src/**/*.node-test.ts'",
+    "test": "bun test --timeout=30000 && node --import ../../scripts/test-tmp-root-preload.mjs --import tsx --test 'src/**/*.node-test.ts'",
     "clean": "rm -rf dist"
   }
 }

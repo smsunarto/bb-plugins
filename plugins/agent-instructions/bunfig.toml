@@ -1,0 +1,3 @@
+# Each test run gets a private TMPDIR, removed when the run ends; see scripts/test-tmp-root.mjs.
+[test]
+preload = ["../../scripts/test-tmp-root-preload.mjs"]
