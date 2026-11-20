@@ -607,7 +607,10 @@ function InboxList({
               )}
             </InboxContent>
             {isCompactViewport ? (
-              <div ref={observeThreadScrollEnd} data-gtd-thread-scroll-end="" aria-hidden />
+              <>
+                <div ref={observeThreadScrollEnd} data-gtd-thread-scroll-end="" aria-hidden />
+                <div data-gtd-thread-scroll-clearance="" aria-hidden />
+              </>
             ) : null}
           </RowMenuArea>
         </div>

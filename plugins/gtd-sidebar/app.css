@@ -164,19 +164,21 @@
   --gtd-thread-bottom-inset: var(--sidebar-list-bottom-inset, 0px);
   --gtd-thread-end-padding: calc(var(--gtd-thread-fade-length) + var(--gtd-thread-bottom-inset));
   overflow-y: auto;
-  padding-block-end: var(--gtd-thread-end-padding);
 }
 
-/* Observe the last pixel of the footer clearance. At the scroll end the
-   last row is clear of the fade, so removing the mask cannot flash it. */
+/* Mark the end of the rows before the scroll clearance. Offset the marker
+   only by the part of the viewport covered by the footer. */
 [data-gtd-thread-scroll-end] {
   position: relative;
-  top: calc(var(--gtd-thread-end-padding) - 1px);
+  top: var(--gtd-thread-bottom-inset);
   width: 1px;
-  height: 1px;
-  margin-bottom: -1px;
+  height: 0;
   overflow-anchor: none;
-  pointer-events: none;
+}
+
+[data-gtd-thread-scroll-clearance] {
+  height: var(--gtd-thread-end-padding);
+  overflow-anchor: none;
 }
 
 [data-gtd-thread-more-below] {

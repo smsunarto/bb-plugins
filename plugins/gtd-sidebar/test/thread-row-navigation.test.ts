@@ -639,9 +639,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     dom.window.close();
   });
 
-  it("fades the compact list only while its end is out of view", () => {
+  it("keeps fully visible compact rows readable while the footer clearance still scrolls", () => {
     const OriginalObserver = globalThis.IntersectionObserver;
-    let showEnd: ((visible: boolean) => void) | undefined;
+    let placeContentEnd: ((bottom: number) => void) | undefined;
     globalThis.IntersectionObserver = class extends OriginalObserver {
       constructor(
         private readonly notify: IntersectionObserverCallback,
@@ -653,8 +653,11 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       override observe(target: Element) {
         if (!target.hasAttribute("data-gtd-thread-scroll-end")) return;
         assert.equal(this.options?.root, target.parentElement);
-        showEnd = (visible) => {
-          const rect = target.getBoundingClientRect();
+        assert.ok(target.nextElementSibling?.hasAttribute("data-gtd-thread-scroll-clearance"));
+        const viewport = new DOMRect(0, 0, 320, 200);
+        placeContentEnd = (bottom) => {
+          const rect = new DOMRect(0, bottom, 1, 0);
+          const visible = bottom <= viewport.bottom;
           this.notify(
             [
               {
@@ -662,8 +665,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
                 isIntersecting: visible,
                 intersectionRatio: visible ? 1 : 0,
                 boundingClientRect: rect,
-                intersectionRect: rect,
-                rootBounds: rect,
+                intersectionRect: visible ? rect : new DOMRect(),
+                rootBounds: viewport,
                 time: 0,
               },
             ],
@@ -675,15 +678,15 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     try {
       const view = mount(hostState([thread("a")]), { isCompactViewport: true });
       const list = view.slot.container.querySelector("[data-gtd-thread-scroll]");
-      assert.ok(list && showEnd);
+      assert.ok(list && placeContentEnd);
       const hasFade = () => list.hasAttribute("data-gtd-thread-more-below");
-      showEnd(true);
-      assert.equal(hasFade(), false, "the list fits");
-      showEnd(false);
+      placeContentEnd(190);
+      assert.equal(hasFade(), false, "the rows fit before the footer clearance");
+      placeContentEnd(201);
       assert.equal(hasFade(), true, "the list extends past the viewport");
-      showEnd(true);
-      assert.equal(hasFade(), false, "the list reaches the end");
-      showEnd(false);
+      placeContentEnd(196);
+      assert.equal(hasFade(), false, "the last row fits four pixels above the edge");
+      placeContentEnd(201);
       assert.equal(hasFade(), true, "scrolling up brings the fade back");
       view.updateInbox({ isCompactViewport: false });
       assert.equal(hasFade(), false, "desktop clears the compact fade");
