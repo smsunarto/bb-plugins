@@ -7,6 +7,7 @@ import type { Captain } from "./registry.ts";
 import { SHIP_READY_REVIEWS } from "./roles.ts";
 import { NOTICE, type Ask, type AskKind } from "./store.ts";
 import { TasksError, type TasksTask } from "./tasks-client.ts";
+import { clip, displayWidth } from "./width.ts";
 
 /**
  * Asks: the open decisions waiting on the user. Rules live here so `ask` and
@@ -15,12 +16,17 @@ import { TasksError, type TasksTask } from "./tasks-client.ts";
 
 export const ASK_TEXT_MAX = 80;
 /**
- * An option is a banner button, so every option fits on one row. Counted in
- * graphemes, so an emoji or an accented letter is one. The "Recommended" tag
- * the banner and the `Asked:` comment add sits outside the label and is not
- * counted. Enforced only when an ask opens: stored asks keep their labels.
+ * An option is a banner button, so every option fits on one row: at most 12
+ * columns, where an emoji or a wide East Asian character counts 2. The
+ * "Recommended" tag the banner and the `Asked:` comment add sits outside the
+ * label and is not counted. Checked only when an ask opens: stored asks keep
+ * their labels.
  */
-export const ASK_OPTION_MAX = 12;
+export const ASK_OPTION_COLUMNS = 12;
+/** The option's UTF-16 ceiling, so every label stays a valid `resolveAsk` answer. */
+const ASK_OPTION_UNITS = ASK_TEXT_MAX;
+/** Columns of a refused option echoed back in its blocker. */
+const ECHO_COLUMNS = 24;
 export const SHIP_OPTIONS = ["Merge", "Hold"] as const;
 /** The banner picks options with keys 1 to 9. */
 const OPTIONS_MAX = 9;
@@ -82,7 +88,6 @@ export function askBlockers(draft: Omit<AskDraft, "task"> & { taskKey: string | 
     if (options.some((option) => option === "")) {
       blockers.push({ reason: "an option is empty", fix: "drop the empty --option" });
     }
-    blockers.push(...options.flatMap(longOptionBlocker));
     if (new Set(options.map((option) => option.toLowerCase())).size !== options.length) {
       blockers.push({ reason: "two options are the same", fix: "drop the duplicate --option" });
     }
@@ -90,25 +95,33 @@ export function askBlockers(draft: Omit<AskDraft, "task"> & { taskKey: string | 
   return blockers;
 }
 
-/** A blocker when one trimmed option is longer than a button label may be. */
-function longOptionBlocker(option: string): Blocker[] {
-  const length = graphemes(option);
-  if (length <= ASK_OPTION_MAX) return [];
-  return [
-    {
-      reason: `option "${option}" is ${length} characters; an option is at most ${ASK_OPTION_MAX}, so the buttons fit on one row`,
-      fix: 'shorten it to a label, such as "Redis"; move the detail into --detail-file',
-    },
-  ];
-}
-
-const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-
-/** Characters as a reader counts them: one per grapheme, not per UTF-16 unit. */
-function graphemes(text: string): number {
-  let count = 0;
-  for (const _ of segmenter.segment(text)) count++;
-  return count;
+/**
+ * The label rule for a new ask's options: each fits a banner button. Run it
+ * only when no open ask matches, so a rerun of an older ask still retries.
+ */
+export function optionLabelBlockers(options: readonly string[]): Blocker[] {
+  return options.flatMap((raw): Blocker[] => {
+    const option = raw.trim();
+    const quoted = JSON.stringify(clip(option, ECHO_COLUMNS));
+    const columns = displayWidth(option);
+    if (columns > ASK_OPTION_COLUMNS) {
+      return [
+        {
+          reason: `option ${quoted} is ${columns} columns; an option is ≤${ASK_OPTION_COLUMNS} columns (wide characters count 2), so the buttons fit on one row`,
+          fix: 'shorten it to a label, such as "Redis", with no ⭐ or other marker; move the detail into --detail-file',
+        },
+      ];
+    }
+    if (option.length > ASK_OPTION_UNITS) {
+      return [
+        {
+          reason: `option ${quoted} is ${option.length} UTF-16 units; an option is at most ${ASK_OPTION_UNITS}`,
+          fix: "drop the combining marks; move the detail into --detail-file",
+        },
+      ];
+    }
+    return [];
+  });
 }
 
 /** The ship gate: a ship ask needs a `review` verdict of passed or skipped. */
@@ -178,7 +191,21 @@ export async function openAsk(
     if (warning === null) deps.store.markNoticeSent(pushKey, deps.now());
     else notes.push(`warning: ${warning}`);
   }
+  notes.push(...ignoredOptions(existing, options));
   return { item: askItem(ask, existing === null ? "open" : "exists"), notes };
+}
+
+/** A rerun of an open ask keeps its stored options; say so when new ones differ. */
+function ignoredOptions(existing: Ask | null, options: readonly string[]): string[] {
+  if (existing === null) return [];
+  const same =
+    existing.options.length === options.length &&
+    existing.options.every((option, i) => option === options[i]);
+  return same
+    ? []
+    : [
+        `note: ${existing.id} is already open, so it keeps its options; the new --option values were ignored`,
+      ];
 }
 
 export function askItem(ask: Ask, state: string): Item {

@@ -28,7 +28,7 @@ bb captain ask resolve a7 --answer Studio
 bb captain status [--since <cursor>] [--all]
 ```
 
-An ask's options are button labels, ≤12 characters each; the reasoning goes in `--detail-file`.
+An ask's options are button labels, ≤12 columns each (wide characters count 2), with no ⭐/markers; the reasoning goes in `--detail-file`.
 
 Long text goes through a file on the calling machine (`--message-file`, `--detail-file`). The stdin flags (`--message-stdin`, `--detail-stdin`) take one line only, as every bb plugin CLI stdin flag does.
 

@@ -744,6 +744,85 @@ describe("bb captain ask", () => {
       host.tasks.comments.filter((c) => c.body.startsWith("Answered:")).map((c) => c.body),
     ).toEqual(["Answered: Studio (a1)"]);
   });
+
+  test("an option over 12 columns is refused on every non-ship kind; 12 opens, though the comment adds (recommended)", async () => {
+    const { host, captainId, as } = await crewHost();
+    const ask = (kind: string, first: string) =>
+      as([
+        "ask",
+        "Pick the cache backend",
+        "--kind",
+        kind,
+        "--task",
+        "BBPLUGINS-1",
+        "--option",
+        first,
+        "--option",
+        "SQLite",
+        "--detail",
+        "Builds re-download deps.",
+      ]);
+
+    const decision = await ask("decision", "Redis caches!");
+    const access = await ask("access", "Grant the key");
+    const opened = await ask("decision", "Redis cache!");
+
+    expect(decision.exitCode).toBe(1);
+    expect(decision.stderr).toContain(
+      'option "Redis caches!" is 13 columns; an option is ≤12 columns (wide characters count 2), so the buttons fit on one row; fix: shorten it to a label, such as "Redis", with no ⭐ or other marker; move the detail into --detail-file',
+    );
+    expect(access.exitCode).toBe(1);
+    expect(access.stderr).toContain('option "Grant the key" is 13 columns');
+    expect(opened.exitCode).toBe(0);
+    expect(host.server.store.asksOf(captainId).map((a) => a.options)).toEqual([
+      ["Redis cache!", "SQLite"],
+    ]);
+    expect(host.tasks.comments.at(-1)?.body).toContain("1. Redis cache! (recommended)");
+  });
+
+  test("an open ask stored before the cap still reads, answers, and retries its push on a rerun", async () => {
+    const { host, captainId, as } = await crewHost();
+    const long = "Keep the in-memory cache for now";
+    host.server.store.openAsk({
+      captainId,
+      taskKey: "BBPLUGINS-1",
+      kind: "decision",
+      text: "Pick the cache backend",
+      detail: "Builds re-download deps.",
+      options: [long, "Move to Redis"],
+      askedAt: 1_000,
+    });
+    const rerun = (...options: string[]) =>
+      as([
+        "ask",
+        "Pick the cache backend",
+        "--task",
+        "BBPLUGINS-1",
+        ...options.flatMap((option) => ["--option", option]),
+        "--detail",
+        "Builds re-download deps.",
+      ]);
+    const rpc = (method: string, input: unknown) => host.harness.behavior.callRpc(method, input);
+
+    const same = await rerun(long, "Move to Redis");
+    const changed = await rerun("Keep", "Redis");
+
+    expect(same.exitCode).toBe(0);
+    expect(same.stdout).toBe("a1  exists  decision  BBPLUGINS-1  Pick the cache backend\n");
+    expect(same.stderr).toBe("");
+    expect(host.pushes.filter((push) => push.method === "notifications.send")).toHaveLength(1);
+    expect(changed.exitCode).toBe(0);
+    expect(changed.stderr).toBe(
+      "note: a1 is already open, so it keeps its options; the new --option values were ignored\n",
+    );
+    expect(await rpc("asks", { captainId })).toEqual({
+      items: [expect.objectContaining({ key: "ask:a1", options: [long, "Move to Redis"] })],
+    });
+    expect(await rpc("resolveAsk", { askId: "a1", answer: long })).toEqual({
+      state: "answered",
+      warnings: [],
+    });
+  });
 });
 
 describe("bb captain tell", () => {

@@ -377,7 +377,8 @@ function Heading({
 
 /**
  * One answer; the recommended one says so. A long answer wraps inside the
- * card (the server caps it at 80 characters) and keeps "Recommended" whole.
+ * card (a new ask's options are capped at 12 columns, but older asks may be
+ * longer) and keeps "Recommended" whole.
  */
 function ActionButton({ action, index }: { action: Action; index: number }) {
   return (

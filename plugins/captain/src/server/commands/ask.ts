@@ -1,9 +1,10 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
 import {
-  ASK_OPTION_MAX,
+  ASK_OPTION_COLUMNS,
   askBlockers,
   askItem,
   openAsk,
+  optionLabelBlockers,
   resolveAsk,
   shipBlockers,
 } from "../asks.ts";
@@ -40,7 +41,7 @@ export function askCommand(deps: CommandDeps) {
         type: "string",
         repeatable: true,
         placeholder: "answer",
-        description: `A button label of at most ${ASK_OPTION_MAX} characters, the recommended one first; repeat it. A decision ask needs two or more; a ship ask takes none (Merge and Hold)`,
+        description: `A button label of ≤${ASK_OPTION_COLUMNS} columns (wide characters count 2) with no ⭐ or other marker, the recommended one first; repeat it. A decision ask needs two or more; a ship ask takes none (Merge and Hold)`,
       },
       detail: {
         type: "string",
@@ -79,6 +80,15 @@ export function askCommand(deps: CommandDeps) {
           detail,
           options: input.options.option,
         });
+        // A rerun of an open ask retries its push and keeps its options, so
+        // only a new ask's labels must fit a button.
+        const reopened = deps.store.findOpenAsk(
+          captain.threadId,
+          kind,
+          taskKey,
+          input.positionals.text.trim(),
+        );
+        if (reopened === null) blockers.push(...optionLabelBlockers(input.options.option));
         let task: TasksTask | null = null;
         if (taskKey !== null) {
           const resolved = await tasksOrRefuse(() => resolveTask(deps, captain, taskKey));
