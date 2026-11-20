@@ -100,4 +100,16 @@ button[id="plugin-action:side-chat:side-chat"] > span:nth-child(2)::after {
 button[id="plugin-action:side-chat:side-chat"] > span:nth-child(2)::after {
   content: "Side chat" / "";
 }
+/* Forced colors can paint the transparent source text. Show bb's original
+ * label alone in the system text color. */
+@media (forced-colors: active) {
+  #file-search-result-start-terminal > span:nth-child(2),
+  button[id="plugin-action:side-chat:side-chat"] > span:nth-child(2) {
+    -webkit-text-fill-color: ButtonText;
+  }
+  #file-search-result-start-terminal > span:nth-child(2)::after,
+  button[id="plugin-action:side-chat:side-chat"] > span:nth-child(2)::after {
+    content: none;
+  }
+}
 `;
