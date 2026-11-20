@@ -1,6 +1,6 @@
 import type { ExperimentalPanelTab, ExperimentalPanelTabs } from "@get-bb/plugin-sdk/app";
 import { expect, test } from "vitest";
-import { decideFirstOpen } from "./overview-default.ts";
+import { decideOnOpen } from "./overview-default.ts";
 
 const info: ExperimentalPanelTab = {
   key: "info",
@@ -38,53 +38,57 @@ const panel = (
 ): ExperimentalPanelTabs => ({ open, selectedKey, tabs });
 
 const closed = { open: false };
+const selectOverview = { kind: "select", overviewKey: "captain:overview" };
 
-test("a first open onto bb's Info fallback selects Overview", () => {
-  expect(decideFirstOpen("captain", closed, panel(true, "info"), false)).toEqual({
-    kind: "select",
-    overviewKey: "captain:overview",
-  });
+test("an open onto bb's Info tab selects Overview", () => {
+  expect(decideOnOpen("captain", closed, panel(true, "info"))).toEqual(selectOverview);
 });
 
-test("a first open onto a New tab page selects Overview", () => {
+test("an open onto a New tab page selects Overview", () => {
   const tabs = [info, overview, changes, newTab];
-  expect(decideFirstOpen("captain", closed, panel(true, "new-1", tabs), false)).toEqual({
-    kind: "select",
-    overviewKey: "captain:overview",
+  expect(decideOnOpen("captain", closed, panel(true, "new-1", tabs))).toEqual(selectOverview);
+});
+
+test("an open onto a remembered pick still selects Overview", () => {
+  expect(decideOnOpen("captain", closed, panel(true, "source-control:changes"))).toEqual(
+    selectOverview,
+  );
+});
+
+test("every open selects Overview, not only the first", () => {
+  const first = decideOnOpen("captain", closed, panel(true, "info"));
+  const again = decideOnOpen("captain", closed, panel(true, "new-1", [info, overview, newTab]));
+  expect([first, again]).toEqual([selectOverview, selectOverview]);
+});
+
+test("an open onto Overview needs nothing", () => {
+  expect(decideOnOpen("captain", closed, panel(true, "captain:overview"))).toEqual({
+    kind: "none",
   });
 });
 
 test("Overview not in the strip yet is opened by reference", () => {
-  expect(decideFirstOpen("captain", closed, panel(true, "info", [info]), false)).toEqual({
+  expect(decideOnOpen("captain", closed, panel(true, "info", [info]))).toEqual({
     kind: "select",
     overviewKey: null,
   });
 });
 
-test("a remembered pick that is not bb's fallback is kept", () => {
-  expect(decideFirstOpen("captain", closed, panel(true, "source-control:changes"), false)).toEqual({
-    kind: "keep",
-  });
-});
-
-test("once handled, later opens are bb's own", () => {
-  expect(decideFirstOpen("captain", closed, panel(true, "info"), true)).toEqual({ kind: "none" });
-});
-
 test("the first observation of a thread is a baseline, even with the panel open", () => {
-  expect(decideFirstOpen("captain", null, panel(true, "info"), false)).toEqual({ kind: "none" });
+  expect(decideOnOpen("captain", null, panel(true, "info"))).toEqual({ kind: "none" });
 });
 
 test("nothing happens while the panel stays closed or stays open", () => {
-  expect(decideFirstOpen("captain", closed, panel(false, null), false)).toEqual({ kind: "none" });
-  expect(decideFirstOpen("captain", { open: true }, panel(true, "info"), false)).toEqual({
+  expect(decideOnOpen("captain", closed, panel(false, null))).toEqual({ kind: "none" });
+  // A tab picked while the panel is open stays.
+  expect(decideOnOpen("captain", { open: true }, panel(true, "source-control:changes"))).toEqual({
     kind: "none",
   });
 });
 
 test("another plugin's tab named overview is not Captain's", () => {
   const other = plugin("someone-else", "overview");
-  expect(decideFirstOpen("captain", closed, panel(true, "info", [info, other]), false)).toEqual({
+  expect(decideOnOpen("captain", closed, panel(true, "info", [info, other]))).toEqual({
     kind: "select",
     overviewKey: null,
   });

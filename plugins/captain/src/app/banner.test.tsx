@@ -686,7 +686,6 @@ test("a Captain's panel already open at mount keeps its tab: that open was befor
   await waitFor(() => expect(of("asks").length).toBeGreaterThan(0));
   await new Promise((settle) => setTimeout(settle, 30));
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
-  expect(window.localStorage.getItem(`captain:overview-opened:${CAPTAIN}`)).toBeNull();
 });
 
 test("a Captain's closed panel is never opened by the banner", async () => {
