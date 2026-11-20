@@ -224,44 +224,35 @@ export function listAnnotationRoutings(
  *
  * A second pane gets `stale` if any requested item is no longer staged. New
  * annotations that were not in this snapshot remain staged for a later send.
- * `reassign` also claims annotations assigned to another thread, so an
- * explicit mention moves one to the thread it was mentioned in. An annotation
- * already assigned to `threadId` is never claimed again: it keeps its
- * acknowledgement and the claim is stale. A claim starts a new assignment, so
- * acknowledged annotations return to pending.
+ * Only staged annotations are claimed: one assigned to a thread stays there
+ * until it is staged again. A claim starts a new assignment, so acknowledged
+ * annotations return to pending.
  */
 export function claimStagedAnnotations(
   db: Database,
-  input: { annotationIds: string[]; threadId: string; reassign?: boolean },
+  input: { annotationIds: string[]; threadId: string },
 ): ClaimStagedResult {
   const uniqueIds = [...new Set(input.annotationIds)];
   if (uniqueIds.length === 0 || uniqueIds.length !== input.annotationIds.length) {
     return { outcome: "stale" };
   }
 
-  const claimable = input.reassign
-    ? "(r.state = 'staged' OR (r.state = 'assigned' AND r.assigned_thread_id <> ?))"
-    : "r.state = 'staged'";
-  const claimableParams = input.reassign ? [input.threadId] : [];
   return db.transaction((): ClaimStagedResult => {
     const placeholders = uniqueIds.map(() => "?").join(", ");
     const rows = db
       .prepare(
-        `SELECT a.id, a.payload
+        `SELECT a.id
          FROM annotation_routing r
          JOIN annotations a ON a.id = r.annotation_id
          WHERE r.annotation_id IN (${placeholders})
-           AND ${claimable}
+           AND r.state = 'staged'
            AND a.status IN ('pending', 'acknowledged')`,
       )
-      .all(...uniqueIds, ...claimableParams) as { id: string; payload: string }[];
+      .all(...uniqueIds) as { id: string }[];
     if (rows.length !== uniqueIds.length) return { outcome: "stale" };
 
-    const reopened = reopenAcknowledged(db, uniqueIds);
-    const byId = new Map(rows.map((row) => [row.id, row.payload]));
-    const annotations = uniqueIds.map((annotationId) =>
-      reopened > 0 ? getAnnotation(db, annotationId)! : readAnnotation(byId.get(annotationId)!),
-    );
+    reopenAcknowledged(db, uniqueIds);
+    const annotations = uniqueIds.map((annotationId) => getAnnotation(db, annotationId)!);
     const id = `dsp_${crypto.randomUUID()}`;
     const timestamp = nowIso();
 
@@ -275,19 +266,14 @@ export function claimStagedAnnotations(
     // a `sending` row never names a thread it has not reached.
     const update = db.prepare(
       `UPDATE annotation_routing
-       SET state = 'sending', assigned_thread_id = NULL, dispatch_id = ?, updated_at = ?
-       WHERE annotation_id = ? AND state IN (${input.reassign ? "'staged', 'assigned'" : "'staged'"})`,
-    );
-    // A claimed annotation no longer waits on its previous thread's turn.
-    const forgetTurn = db.prepare(
-      `DELETE FROM annotation_turn_assignments WHERE annotation_id = ?`,
+       SET state = 'sending', dispatch_id = ?, updated_at = ?
+       WHERE annotation_id = ? AND state = 'staged'`,
     );
     for (const annotationId of uniqueIds) {
       const result = update.run(id, timestamp, annotationId);
       if (result.changes !== 1) {
         throw new Error("staging claim changed during transaction");
       }
-      forgetTurn.run(annotationId);
     }
 
     return {
@@ -484,13 +470,13 @@ export function recoverInterruptedTurnAssignments(
         continue;
       }
       const rows = snapshot.turnAssignments.filter((row) => row.threadId === threadId);
-      if (active.has(threadId)) {
-        if (rows.length > 0) result.keptThreads += 1;
-        continue;
-      }
       const ids = rows
         .filter((row) => unchanged.get(row.annotationId, row.threadId, row.updatedAt))
         .map((row) => row.annotationId);
+      if (active.has(threadId)) {
+        if (ids.length > 0) result.keptThreads += 1;
+        continue;
+      }
       result.restaged += stageAssigned(db, ids, { keepAcknowledged: true });
       for (const annotationId of ids) forget.run(annotationId, threadId);
     }

@@ -232,8 +232,8 @@ test("a queued pill's drain pass does not let the previous turn's idle re-stage 
   );
 });
 
-test("a mention moves an acknowledged annotation to another thread as pending", async () => {
-  await withHost(async ({ harness, hook, resolve, view, staged, dispatchRows, acknowledge }) => {
+test("a mention in another thread gives the context and leaves the annotation where it is", async () => {
+  await withHost(async ({ harness, hook, resolve, view, dispatchRows, acknowledge }) => {
     const first = makeThreadResponse({ id: "thr_A", status: "pending" });
     await hook(pill(first));
     await acknowledge();
@@ -241,15 +241,33 @@ test("a mention moves an acknowledged annotation to another thread as pending", 
     const signals = harness.inspection.realtimeSignals.length;
 
     const { context } = await resolve(annotationMentionItemId("ann_1", "thr_B"));
-    assert.deepEqual(await view(), { status: "pending", holder: "thr_B" });
-    assert.equal(dispatchRows(), 2);
-    // The agent is told the status the annotation has now.
-    assert.match(context, /\*\*Status:\*\* pending/u);
-    assert.deepEqual(signalTypes(harness, signals), ["annotations"]);
+    assert.match(context, /ann_1/u);
+    // Status is read through the tools, so the context cannot contradict it.
+    assert.doesNotMatch(context, /Status/u);
+    assert.deepEqual(await view(), { status: "acknowledged", holder: "thr_A" });
+    assert.equal(dispatchRows(), 1);
+    assert.deepEqual(signalTypes(harness, signals), []);
+  }, idleSdk());
+});
 
-    // thr_B's agent never acknowledged it, so it reappears after that turn.
-    await harness.emitThreadEvent("thread.idle", idle(makeThreadResponse({ id: "thr_B" })));
+test("a retried mention cannot take the annotation from the thread now holding it", async () => {
+  await withHost(async ({ harness, resolve, view, staged, acknowledge }) => {
+    // Thread A's message is refused before the provider accepts it.
+    await resolve(annotationMentionItemId("ann_1", "thr_A"));
+    await harness.emitThreadEvent("thread.failed", {
+      thread: makeThreadResponse({ id: "thr_A", status: "error" }),
+      error: null,
+    });
     assert.deepEqual(await staged(), ["ann_1"]);
+
+    const signals = harness.inspection.realtimeSignals.length;
+    await resolve(annotationMentionItemId("ann_1", "thr_B"));
+    assert.deepEqual(signalTypes(harness, signals), ["annotations"]);
+    await acknowledge();
+
+    // bb retries thread A's message with its original mentions.
+    await resolve(annotationMentionItemId("ann_1", "thr_A"));
+    assert.deepEqual(await view(), { status: "acknowledged", holder: "thr_B" });
   }, idleSdk());
 });
 
@@ -261,14 +279,84 @@ test("mentioning an annotation in the thread holding it keeps the acknowledgemen
     const signals = harness.inspection.realtimeSignals.length;
 
     // A follow-up in thr_A's composer, steered into the turn or after it.
-    const { context } = await resolve(annotationMentionItemId("ann_1", "thr_A"));
-    assert.match(context, /\*\*Status:\*\* acknowledged/u);
+    await resolve(annotationMentionItemId("ann_1", "thr_A"));
     assert.equal(dispatchRows(), 1);
     assert.equal(harness.inspection.realtimeSignals.length, signals);
     await harness.emitThreadEvent("thread.idle", idle(thread));
     assert.deepEqual(await view(), { status: "acknowledged", holder: "thr_A" });
     assert.deepEqual(await staged(), []);
   }, idleSdk("active"));
+});
+
+test("a new thread's pill for an acknowledged staged annotation starts a fresh assignment", async () => {
+  await withHost(async ({ harness, hook, resolve, view, staged, acknowledge }) => {
+    await acknowledge();
+    // bb resolves the pill when it creates the thread, before the hook runs.
+    const { context } = await resolve(annotationMentionItemId("ann_1", null));
+    assert.doesNotMatch(context, /Status/u);
+
+    const thread = makeThreadResponse({ id: "thr_new", status: "pending" });
+    const signals = harness.inspection.realtimeSignals.length;
+    await hook(pill(thread));
+    assert.deepEqual(signalTypes(harness, signals), ["annotations"]);
+    assert.deepEqual(await view(), { status: "pending", holder: "thr_new" });
+
+    const turnEnd = harness.inspection.realtimeSignals.length;
+    await harness.emitThreadEvent("thread.idle", idle(thread));
+    assert.deepEqual(signalTypes(harness, turnEnd), ["routing"]);
+    assert.deepEqual(await staged(), ["ann_1"]);
+  });
+});
+
+test("a chip send delivers the annotation as pending and asks the agent to acknowledge", async () => {
+  await withHost(async ({ harness, view, acknowledge }) => {
+    const sent: string[] = [];
+    harness.sdk.stub("threads.get", () => makeThreadResponse({ id: "thr_T", status: "idle" }));
+    harness.sdk.stub("threads.send", (input: { input: Array<{ text: string }> }) => {
+      sent.push(input.input.map((block) => block.text).join("\n"));
+      return {};
+    });
+    await acknowledge();
+
+    const signals = harness.inspection.realtimeSignals.length;
+    await harness.callRpc("sendStagedAnnotations", { annotationIds: ["ann_1"], threadId: "thr_T" });
+    assert.deepEqual(signalTypes(harness, signals), ["annotations", "routing"]);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0]!, /\*\*Status:\*\* pending/u);
+    assert.match(sent[0]!, /agentation_acknowledge/u);
+    assert.deepEqual(await view(), { status: "pending", holder: "thr_T" });
+
+    await acknowledge();
+    const restage = harness.inspection.realtimeSignals.length;
+    await harness.callRpc("restageAnnotation", { annotationId: "ann_1" });
+    assert.deepEqual(signalTypes(harness, restage), ["annotations"]);
+    assert.deepEqual(await view(), { status: "pending", holder: "staged" });
+  }, idleSdk());
+});
+
+test("`bb agentation restage` returns an acknowledged annotation as pending", async () => {
+  await withHost(async ({ harness, hook, view, acknowledge }) => {
+    await hook(pill(makeThreadResponse({ id: "thr_A", status: "pending" })));
+    await acknowledge();
+
+    const signals = harness.inspection.realtimeSignals.length;
+    await harness.runCli(["restage", "ann_1"]);
+    assert.deepEqual(signalTypes(harness, signals), ["annotations"]);
+    assert.deepEqual(await view(), { status: "pending", holder: "staged" });
+  });
+});
+
+test("deleting a thread broadcasts the annotations it gave back", async () => {
+  await withHost(async ({ harness, hook, view, acknowledge }) => {
+    const thread = makeThreadResponse({ id: "thr_gone", status: "pending" });
+    await hook(pill(thread));
+    await acknowledge();
+
+    const signals = harness.inspection.realtimeSignals.length;
+    await harness.emitThreadEvent("thread.deleted", { thread });
+    assert.deepEqual(signalTypes(harness, signals), ["annotations"]);
+    assert.deepEqual(await view(), { status: "pending", holder: "staged" });
+  });
 });
 
 /** The types of the realtime signals published since `from`. */
@@ -351,6 +439,27 @@ test("recovery gives back a deleted thread's acknowledged annotation and keeps a
       "re-staged 1 annotation assigned to threads deleted while Agentation was stopped",
     ]);
     assert.deepEqual(signalTypes(host.harness), ["annotations"]);
+  } finally {
+    await host.harness.lifecycle.dispose();
+  }
+});
+
+test("recovery reads either a thread_not_found code or a 404 as a deleted thread", async () => {
+  const host = await restartWith(
+    (db) => {
+      keptBy(db, "ann_1", "thr_coded");
+      keptBy(db, "ann_2", "thr_404");
+    },
+    async (threadId) => {
+      throw threadId === "thr_coded"
+        ? Object.assign(new Error("thread not found"), { code: "thread_not_found" })
+        : Object.assign(new Error("HTTP 404"), { status: 404 });
+    },
+  );
+  try {
+    const { view } = inspect(host);
+    assert.deepEqual(await view("ann_1"), { status: "pending", holder: "staged" });
+    assert.deepEqual(await view("ann_2"), { status: "pending", holder: "staged" });
   } finally {
     await host.harness.lifecycle.dispose();
   }

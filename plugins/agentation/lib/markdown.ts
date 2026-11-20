@@ -80,7 +80,11 @@ function describeKind(annotation: StoredAnnotation): string | null {
 }
 
 /** One annotation as a self-contained markdown section. */
-export function renderAnnotation(annotation: StoredAnnotation, index?: number): string {
+export function renderAnnotation(
+  annotation: StoredAnnotation,
+  index?: number,
+  options: { status?: boolean } = {},
+): string {
   const heading =
     index === undefined
       ? `### ${annotation.element} — ${annotation.id}`
@@ -99,7 +103,7 @@ export function renderAnnotation(annotation: StoredAnnotation, index?: number): 
   out += line("Nearby text", annotation.selectedText ? null : annotation.nearbyText?.slice(0, 160));
   out += line("Intent", annotation.intent);
   out += line("Severity", annotation.severity);
-  out += line("Status", annotation.status);
+  if (options.status !== false) out += line("Status", annotation.status);
 
   const kindNote = describeKind(annotation);
   out += line("Layout request", kindNote);
@@ -161,7 +165,7 @@ export function renderAnnotationAssignment(
     sessions,
   });
 
-  return `${markdown}\n\nThe annotations above are the complete batch assigned to this thread. Work only on these annotation IDs. Do not call \`agentation_get_all_pending\`; it can include feedback assigned to other threads. Resolve each item with the \`agentation_resolve\` tool once it is fixed, or use \`agentation_reply\` if you need a decision from me.`;
+  return `${markdown}\n\nThe annotations above are the complete batch assigned to this thread. Work only on these annotation IDs. Do not call \`agentation_get_all_pending\`; it can include feedback assigned to other threads. Call \`agentation_acknowledge\` for each item you take on, so it stays assigned to this thread; any you leave pending return to my staging area when your turn ends. Resolve each item with the \`agentation_resolve\` tool once it is fixed, or use \`agentation_reply\` if you need a decision from me.`;
 }
 
 /** Fresh agent-only context for one annotation mention in the composer. */
@@ -170,7 +174,7 @@ export function renderAnnotationMentionContext(
   session: Session | null,
 ): string {
   const page = session ? `${session.route} (${session.id})` : annotation.sessionId;
-  return `## Agentation annotation reference\n\n**Page:** ${page}\n\n${renderAnnotation(annotation)}\n\nThis mention points to Agentation annotation \`${annotation.id}\`. Use that ID with the Agentation tools if the user asks you to act on it.`;
+  return `## Agentation annotation reference\n\n**Page:** ${page}\n\n${renderAnnotation(annotation, undefined, { status: false })}\n\nThis mention points to Agentation annotation \`${annotation.id}\`. Use that ID with the Agentation tools if the user asks you to act on it.`;
 }
 
 /** One line per annotation, for CLI listings and tool summaries. */

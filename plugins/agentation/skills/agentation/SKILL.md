@@ -27,8 +27,12 @@ source context, not the delivery target.
    that thread. Call `agentation_acknowledge` for each item you take on:
    acknowledging keeps the annotation assigned to your thread after your turn
    ends. An annotation you do not acknowledge or resolve returns to the human's
-   staging area. A re-sent or newly mentioned annotation arrives as `pending`,
-   even if it was acknowledged before, so acknowledge it again.
+   staging area. Sending or mentioning a staged annotation to your thread starts
+   a new assignment and sets it back to `pending`, even if it was acknowledged
+   before, so acknowledge it again. A mention of an annotation assigned to
+   another thread gives you its details only; it stays with that thread. Read
+   the current status with `agentation_get_all_pending` or
+   `bb agentation show <annotationId>`, not from the mention.
 3. Locate the code using the targeting fields below, then make and verify the change.
 4. `agentation_resolve` with a one-line summary of what you changed. The marker
    disappears from every open bb window.

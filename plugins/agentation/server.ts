@@ -334,14 +334,9 @@ export default async function plugin(bb: BbPluginApi) {
     },
     async resolve(itemId) {
       const { annotationId, threadId } = parseAnnotationMentionItemId(itemId);
-      if (!getAnnotation(db, annotationId)) {
-        throw new Error(`Annotation ${annotationId} no longer exists.`);
-      }
-      if (threadId) await assignMentionToThread(annotationId, threadId);
-      // Read after assigning: a new assignment sets an acknowledged annotation
-      // back to pending, and the agent must see the status it now has.
       const annotation = getAnnotation(db, annotationId);
       if (!annotation) throw new Error(`Annotation ${annotationId} no longer exists.`);
+      if (threadId) await assignMentionToThread(annotationId, threadId);
       return {
         context: renderAnnotationMentionContext(annotation, getSession(db, annotation.sessionId)),
       };
@@ -426,16 +421,13 @@ export default async function plugin(bb: BbPluginApi) {
   // `annotations`, so the panel reloads statuses. A change that only moves
   // routing (delivery confirmed or failed, a turn ending) sends `routing`.
 
-  // An explicit mention while composing is the one claim that may take an
-  // annotation from another thread. One the target thread already holds is
-  // left alone, so its agent keeps the acknowledgement.
+  // A mention assigns a staged annotation to the mentioning thread. One already
+  // assigned stays with its thread, and the mentioning thread gets the context
+  // only: bb resolves a mention again on a retry or a late queue drain, which
+  // must not take it from the thread working on it. To move it, stage it again.
   async function assignMentionToThread(annotationId: string, threadId: string): Promise<void> {
     const phase = await composerTurnPhase(threadId);
-    const claim = claimStagedAnnotations(db, {
-      annotationIds: [annotationId],
-      threadId,
-      reassign: true,
-    });
+    const claim = claimStagedAnnotations(db, { annotationIds: [annotationId], threadId });
     if (claim.outcome === "stale") return;
 
     completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: phase });

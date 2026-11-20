@@ -427,9 +427,8 @@ function send(
   db: Database.Database,
   threadId: string,
   phase: "awaiting-start" | "awaiting-finish",
-  options: { reassign?: boolean } = {},
 ) {
-  const claim = claimStagedAnnotations(db, { annotationIds: ["ann_1"], threadId, ...options });
+  const claim = claimStagedAnnotations(db, { annotationIds: ["ann_1"], threadId });
   if (claim.outcome !== "claimed") return claim;
   completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: phase });
   return claim;
@@ -524,54 +523,50 @@ test("restart recovery gives back what a missing thread held, acknowledged or no
   assert.equal(getAnnotation(db, "ann_1")?.status, "pending");
 });
 
-test("mentioning an acknowledged annotation in another thread reassigns it", () => {
+test("a claim takes staged annotations only, so an assigned one stays with its thread", () => {
   const db = freshDb();
   seed(db);
   send(db, "thr_A", "awaiting-finish");
   acknowledge(db);
-  restageTurnAssignments(db, "thr_A");
 
   assert.equal(send(db, "thr_B", "awaiting-finish").outcome, "stale");
-  const claim = send(db, "thr_B", "awaiting-finish", { reassign: true });
-  assert.equal(claim.outcome, "claimed");
-  assert.equal(assignedThread(db), "thr_B");
-  assert.equal(getAnnotation(db, "ann_1")?.status, "pending");
-  assert.deepEqual(turnAssignmentThreadIds(db), ["thr_B"]);
-});
-
-test("a claim drops the turn of the thread the annotation leaves", () => {
-  const db = freshDb();
-  seed(db);
-  send(db, "thr_A", "awaiting-finish");
-  const moving = claimStagedAnnotations(db, {
-    annotationIds: ["ann_1"],
-    threadId: "thr_B",
-    reassign: true,
-  });
-  if (moving.outcome !== "claimed") assert.fail("expected a claimed dispatch");
-  failDispatch(db, moving.dispatch.id, "thread unreachable");
-  assert.deepEqual(turnAssignmentThreadIds(db), []);
-
-  // Delivered elsewhere with no turn of its own, thr_A's turn ending leaves it.
-  const claim = claimStagedAnnotations(db, { annotationIds: ["ann_1"], threadId: "thr_C" });
-  if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
-  completeDispatch(db, claim.dispatch.id);
-  assert.equal(restageTurnAssignments(db, "thr_A"), 0);
-  assert.equal(assignedThread(db), "thr_C");
-});
-
-test("an annotation is never claimed again for the thread holding it", () => {
-  const db = freshDb();
-  seed(db);
-  send(db, "thr_A", "awaiting-finish");
-  acknowledge(db);
-
-  assert.equal(send(db, "thr_A", "awaiting-finish", { reassign: true }).outcome, "stale");
+  assert.equal(send(db, "thr_A", "awaiting-finish").outcome, "stale");
+  assert.equal(assignedThread(db), "thr_A");
   assert.equal(getAnnotation(db, "ann_1")?.status, "acknowledged");
   assert.equal(
     (db.prepare(`SELECT COUNT(*) AS n FROM annotation_dispatches`).get() as { n: number }).n,
     1,
   );
+});
+
+test("recovery leaves a turn assignment rewritten after its snapshot", async () => {
+  const db = freshDb();
+  seed(db);
+  send(db, "thr_T", "awaiting-finish");
+  const snapshot = readRecoverySnapshot(db);
+
+  // While recovery looks thr_T up, its turn ends and the annotation is sent
+  // there again: same annotation and thread, a newer turn.
+  assert.equal(restageTurnAssignments(db, "thr_T"), 1);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  send(db, "thr_T", "awaiting-finish");
+
+  const result = recoverInterruptedTurnAssignments(db, snapshot);
+  assert.deepEqual(result, { restaged: 0, orphaned: 0, keptThreads: 0 });
+  assert.equal(assignedThread(db), "thr_T");
+  assert.deepEqual(turnAssignmentThreadIds(db), ["thr_T"]);
+});
+
+test("recovery counts an active thread as kept only while its snapshot turn remains", () => {
+  const db = freshDb();
+  seed(db);
+  send(db, "thr_T", "awaiting-finish");
+  const snapshot = readRecoverySnapshot(db);
+  // The thread's idle event finished the turn before recovery applied.
+  restageTurnAssignments(db, "thr_T");
+
+  const result = recoverInterruptedTurnAssignments(db, snapshot, { active: new Set(["thr_T"]) });
+  assert.equal(result.keptThreads, 0);
 });
 
 test("a queued annotation waits for its own turn instead of the active turn", () => {
