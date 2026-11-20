@@ -41,7 +41,8 @@ import { cn } from "./lib/utils.ts";
 
 const NO_INPUT = {};
 type ItemUi = { key: string; other: string | null; error: string | null; planOpen: boolean };
-const NO_UI: ItemUi = { key: "", other: null, error: null, planOpen: false };
+const CLOSED_UI = { other: null, error: null, planOpen: false };
+const ASKS_UNAVAILABLE = "Couldn’t refresh asks";
 const NO_ITEMS: QueueItem[] = [];
 /** Ages and Later both read the clock; a minute is fine-grained enough for either. */
 const TICK_MS = 30_000;
@@ -83,9 +84,12 @@ function Banner({ captainId }: { captainId: string }) {
     [asks.data, crew.data],
   );
   const items = useMemo(() => orderQueue(allItems, now), [allItems, now]);
-  if (asks.data === undefined) return null;
+  const asksError = asks.error?.message;
+  if (asks.data === undefined && asks.error === null) return null;
   if (items.length === 0) {
-    return crew.data || crew.error ? <AllClear crewUnavailable={crew.error !== null} /> : null;
+    if (asks.error) return <QueueStatus label={ASKS_UNAVAILABLE} />;
+    if (crew.error) return <QueueStatus label="Crew status unavailable" />;
+    return crew.data ? <QueueStatus label="All clear" /> : null;
   }
   const laterCount = allItems.length - items.length;
   return (
@@ -95,12 +99,13 @@ function Banner({ captainId }: { captainId: string }) {
       items={items}
       laterCount={laterCount}
       now={now}
+      asksError={asksError}
       crewError={crew.error?.message}
     />
   );
 }
 
-function AllClear({ crewUnavailable }: { crewUnavailable: boolean }) {
+function QueueStatus({ label }: { label: string }) {
   const panel = useAppPanel();
   return (
     <div
@@ -108,7 +113,7 @@ function AllClear({ crewUnavailable }: { crewUnavailable: boolean }) {
       data-bb-plugin-scope-captain=""
       className="flex min-w-0 items-center gap-2 px-3 text-xs text-muted-foreground"
     >
-      <span>{crewUnavailable ? "Crew status unavailable" : "All clear"}</span>
+      <span>{label}</span>
       <Button
         type="button"
         size="sm"
@@ -127,12 +132,14 @@ function Queue({
   items,
   laterCount,
   now,
+  asksError,
   crewError,
 }: {
   captainId: string;
   items: readonly QueueItem[];
   laterCount: number;
   now: number;
+  asksError: string | undefined;
   crewError: string | undefined;
 }) {
   const navigate = useBbNavigate();
@@ -171,9 +178,11 @@ function Queue({
   };
   const select = (entry: QueueItem) => {
     if (entry.key === item.key) return;
-    patchUi({ other: null, error: null, planOpen: false });
     setSelected(entry.key);
   };
+
+  const editing = other !== null && item.kind === "ask" && !sending;
+  const editorRef = useEditorFocusReturn(root, item.key, editing);
 
   // When More or Less goes while it has focus, focus lands on the banner, where
   // Enter answers. The Enter that follows was meant for the toggle: it does nothing.
@@ -252,7 +261,7 @@ function Queue({
           aria-hidden
           className="mt-0.5 size-3.5 justify-self-center text-warning-text"
         />
-        <Heading item={item} crewError={crewError} />
+        <Heading item={item} asksError={asksError} crewError={crewError} />
         {detail ? (
           <div className="col-start-2 min-w-0">
             {plan ? (
@@ -275,8 +284,8 @@ function Queue({
             )}
           </div>
         ) : null}
-        {other !== null && item.kind === "ask" && !sending ? (
-          <div data-captain-answer-row="" className={ANSWER_ROW}>
+        {editing ? (
+          <div key={item.key} ref={editorRef} data-captain-answer-row="" className={ANSWER_ROW}>
             <OtherAnswer
               value={other}
               pending={pending}
@@ -287,11 +296,7 @@ function Queue({
                 setOther(null);
               }}
               onSubmit={(text) => {
-                void answer(item.id, text).then((accepted) => {
-                  if (!accepted) return;
-                  clearOther();
-                  if (root?.contains(document.activeElement)) root.focus();
-                });
+                void answer(item.id, text).then((accepted) => accepted && clearOther());
               }}
             />
           </div>
@@ -419,15 +424,35 @@ function AnswerRow({
   );
 }
 
-/** Per-item UI, tagged with its item so a new item starts collapsed with no answer box. */
+/** Restore focus when a refresh or an accepted answer removes the focused editor. */
+function useEditorFocusReturn(root: HTMLDivElement | null, key: string, editing: boolean) {
+  const editorLostFocus = useRef(false);
+  const editorRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    return () => {
+      editorLostFocus.current = node.contains(document.activeElement);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (!editorLostFocus.current) return;
+    editorLostFocus.current = false;
+    // Cancel can already have focused Other. A reply must never steal focus.
+    if (document.activeElement !== document.body || !root) return;
+    const selectedTab = root.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    (selectedTab ?? root).focus({ preventScroll: true });
+    // The key and editing state identify commits that can detach the editor ref.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
+  }, [root, key, editing]);
+  return editorRef;
+}
+
+/** Key local UI to the item so async updates from previous items are ignored. */
 function useItemUi(key: string) {
-  const [ui, setUi] = useState<ItemUi>(NO_UI);
-  const { other, error, planOpen } = ui.key === key ? ui : NO_UI;
+  const [ui, setUi] = useState<ItemUi>(() => ({ key, ...CLOSED_UI }));
+  if (ui.key !== key) setUi({ key, ...CLOSED_UI });
   const patchUi = (patch: Partial<Omit<ItemUi, "key">>) =>
-    setUi((current) => ({ ...(current.key === key ? current : NO_UI), ...patch, key }));
-  const clearOther = () =>
-    setUi((current) => (current.key === key ? { ...current, other: null } : current));
-  return { other, error, planOpen, patchUi, clearOther };
+    setUi((current) => (current.key === key ? { ...current, ...patch } : current));
+  return { ...ui, patchUi, clearOther: () => patchUi({ other: null }) };
 }
 
 /**
@@ -472,7 +497,7 @@ export function useItemCommands(
     skip: () => deferItem("skip"),
     fail,
     /** An answer is on its way to the server. */
-    pending: resolve.isPending,
+    pending: resolve.pendingInputs.some(({ askId }) => key === `ask:${askId}`),
   };
 }
 
@@ -651,7 +676,15 @@ function QueueTabs({
   );
 }
 
-function Heading({ item, crewError }: { item: QueueItem; crewError: string | undefined }) {
+function Heading({
+  item,
+  asksError,
+  crewError,
+}: {
+  item: QueueItem;
+  asksError: string | undefined;
+  crewError: string | undefined;
+}) {
   const text = title(item);
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
@@ -663,6 +696,11 @@ function Heading({ item, crewError }: { item: QueueItem; crewError: string | und
       </p>
       {item.task && !text.includes(item.task) ? (
         <span className="font-mono text-[11px] text-muted-foreground">{item.task}</span>
+      ) : null}
+      {asksError !== undefined ? (
+        <span className="text-muted-foreground" title={asksError}>
+          {ASKS_UNAVAILABLE}
+        </span>
       ) : null}
       {crewError ? (
         <span className="text-destructive" title={crewError}>
@@ -796,7 +834,10 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
         aria-controls={id}
         aria-expanded={open}
         onClick={() => {
-          if (open && box.current !== null) box.current.scrollTop = 0;
+          if (open && box.current !== null) {
+            box.current.scrollTop = 0;
+            box.current.scrollLeft = 0;
+          }
           setOpen(!open);
         }}
       >
@@ -825,9 +866,9 @@ function revealFocusedDetail(node: HTMLElement, expand: () => void): void {
 }
 
 /**
- * A single rendered line stays plain. In a longer preview, clipping or a
- * summarised block shows More. Only clipped text gets the noninteractive fade. The ResizeObserver callback
- * measures after layout and, being before paint, sets the toggle's `hidden`
+ * Clipping in either direction or a summarised block shows More. Vertical
+ * clipping gets the noninteractive fade. The ResizeObserver callback measures
+ * after layout and, being before paint, sets the toggle's `hidden`
  * there, so More paints with the text it belongs to; a state update would
  * paint a frame later. The box's size changes as bb's renderer adds its
  * content after the first commit, so summarised blocks are found then too.
@@ -862,11 +903,10 @@ function useToggleShown({
     }
     if (typeof ResizeObserver === "undefined") return;
     const sizes = new ResizeObserver(() => {
-      const lineHeight = Number.parseFloat(getComputedStyle(node).lineHeight) || 16;
-      const longEnough = node.clientHeight > lineHeight * 1.5;
-      const clipped = node.scrollHeight > node.clientHeight + 1;
-      const showMore = longEnough && (clipped || node.querySelector(SUMMARISED) !== null);
-      preview.toggleAttribute("data-preview-fade", longEnough && clipped);
+      const clippedBelow = node.scrollHeight > node.clientHeight + 1;
+      const clippedAcross = node.scrollWidth > node.clientWidth + 1;
+      const showMore = clippedBelow || clippedAcross || node.querySelector(SUMMARISED) !== null;
+      preview.toggleAttribute("data-preview-fade", clippedBelow);
       if (!showMore && button.contains(document.activeElement)) onToggleGone();
       button.hidden = !showMore;
     });

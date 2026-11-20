@@ -251,7 +251,7 @@ test("a ship ask offers no Other…, and More expands the full detail", async ()
  * all, so open it never looks clipped. The ResizeObserver reports after each
  * layout, as the browser's does.
  */
-function layOut(layout: { lines: number; content: number }) {
+function layOut(layout: { lines: number; content: number; horizontalOverflow?: boolean }) {
   const observers = new Set<{ callback: ResizeObserverCallback; targets: Set<Element> }>();
   const box = (element: Element) =>
     element.hasAttribute("data-detail-box")
@@ -277,6 +277,16 @@ function layOut(layout: { lines: number; content: number }) {
     get(this: HTMLElement) {
       return box(this) === null ? 0 : layout.content * 16;
     },
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return box(this) !== null && layout.horizontalOverflow ? 480 : 280;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+    configurable: true,
+    get: () => 280,
   });
   globalThis.ResizeObserver = class {
     readonly entry: { callback: ResizeObserverCallback; targets: Set<Element> };
@@ -311,10 +321,12 @@ function layOut(layout: { lines: number; content: number }) {
     restore() {
       globalThis.ResizeObserver = previous;
       const prototype = HTMLElement.prototype as Partial<
-        Record<"clientHeight" | "scrollHeight", number>
+        Record<"clientHeight" | "scrollHeight" | "clientWidth" | "scrollWidth", number>
       >;
       delete prototype.clientHeight;
       delete prototype.scrollHeight;
+      delete prototype.clientWidth;
+      delete prototype.scrollWidth;
     },
   };
 }
@@ -756,18 +768,44 @@ test("two in-flight answers each have a selectable Sending panel until delivered
   await waitFor(() => expect(slot.queryByRole("tabpanel")).toBeNull());
 });
 
-test("a single rendered line has neither fade nor More, even for a code block", async () => {
+test("a short plain line has neither fade nor More", async () => {
   const layout = layOut({ lines: 1, content: 1 });
   try {
     const { slot } = render(CAPTAIN, [decision]);
     const card = await slot.findByTestId("captain-needs-you");
-    const box = card.querySelector("[data-detail-box]")!;
-    const code = document.createElement("pre");
-    code.innerHTML = "<button>Copy</button><code>bun test</code>";
-    box.append(code);
-    layout.relayout({ lines: 1, content: 1 });
     expect(slot.queryByRole("button", { name: "More" })).toBeNull();
-    expect(box.parentElement?.hasAttribute("data-preview-fade")).toBe(false);
+    expect(card.querySelector("[data-preview-fade]")).toBeNull();
+  } finally {
+    layout.restore();
+  }
+});
+
+test.each([
+  ["Mermaid", "<div><div><button>Expand diagram</button></div></div>"],
+  ["code", "<button>Copy</button><pre><code>bun test</code></pre>"],
+])("a single-line %s preview that hides part of the block offers More", async (_kind, markup) => {
+  const layout = layOut({ lines: 1, content: 1 });
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    const card = await slot.findByTestId("captain-needs-you");
+    const frame = document.createElement("div");
+    frame.innerHTML = markup;
+    card.querySelector("[data-detail-box]")!.append(frame);
+    layout.relayout({ lines: 1, content: 1 });
+    expect(slot.getByRole("button", { name: "More" })).toBeDefined();
+    expect(card.querySelector("[data-preview-fade]")).toBeNull();
+  } finally {
+    layout.restore();
+  }
+});
+
+test("a single line clipped horizontally offers More", async () => {
+  const layout = layOut({ lines: 1, content: 1, horizontalOverflow: true });
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    await slot.findByTestId("captain-needs-you");
+    fireEvent.click(slot.getByRole("button", { name: "More" }));
+    expect(slot.getByRole("button", { name: "Less" })).toBeDefined();
   } finally {
     layout.restore();
   }
@@ -812,4 +850,97 @@ test("a rejected typed answer leaves the draft focused in the answer row", async
   expect(input.value).toBe("Keep it local");
   expect(input.readOnly).toBe(false);
   expect(document.activeElement).toBe(input);
+});
+
+function delayedAnswer() {
+  type Acknowledgement = { state: "answered"; warnings: string[] };
+  let resolve!: (result: Acknowledgement) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<Acknowledgement>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+test.each(["answered", "failed"] as const)(
+  "Other on a second ask stays editable and focused when the first submit is %s",
+  async (result) => {
+    const response = delayedAnswer();
+    const { slot, of } = render(CAPTAIN, [decision, access], {
+      resolve: () => response.promise,
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Other…" }));
+    const first = slot.getByRole("textbox", { name: "Your answer" }) as HTMLInputElement;
+    fireEvent.change(first, { target: { value: "Read-only, for one day" } });
+    fireEvent.submit(first.form!);
+    await waitFor(() => expect(of("resolveAsk")).toHaveLength(1));
+
+    fireEvent.click(slot.getByRole("tab", { name: /Pick the cache/u }));
+    fireEvent.click(slot.getByRole("button", { name: "Other…" }));
+    const second = slot.getByRole("textbox", { name: "Your answer" }) as HTMLInputElement;
+    fireEvent.change(second, { target: { value: "Use the shared cache" } });
+    const editableWhileFirstPending = !second.readOnly;
+    const canCancelWhileFirstPending = !slot
+      .getByRole("button", { name: "Cancel" })
+      .hasAttribute("disabled");
+    await act(async () => {
+      if (result === "failed") response.reject(new Error("Access answer failed"));
+      else response.resolve({ state: "answered", warnings: [] });
+    });
+
+    expect(document.activeElement).toBe(second);
+    expect(second.value).toBe("Use the shared cache");
+    expect(slot.queryByText("Access answer failed")).toBeNull();
+    expect(editableWhileFirstPending).toBe(true);
+    expect(canCancelWhileFirstPending).toBe(true);
+  },
+);
+
+test("refresh removing the submitting editor restores focus and arms the next ask's shortcuts", async () => {
+  const response = delayedAnswer();
+  let recorded = false;
+  const { slot, of } = render(CAPTAIN, () => [decision, ...(recorded ? [] : [access])], {
+    resolve: ({ askId }) =>
+      askId === access.id ? response.promise : Promise.resolve({ state: "answered", warnings: [] }),
+  });
+  fireEvent.click(await slot.findByRole("button", { name: "Other…" }));
+  const first = slot.getByRole("textbox", { name: "Your answer" }) as HTMLInputElement;
+  fireEvent.change(first, { target: { value: "Read-only, for one day" } });
+  fireEvent.submit(first.form!);
+  await waitFor(() => expect(of("resolveAsk")).toHaveLength(1));
+  recorded = true;
+  await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  await waitFor(() => expect(slot.queryByRole("textbox")).toBeNull());
+
+  const next = slot.getByRole("tab", { name: /Pick the cache/u });
+  expect(document.activeElement).toBe(next);
+  fireEvent.keyDown(next, { key: "2" });
+  await waitFor(() =>
+    expect(of("resolveAsk").at(-1)?.input).toEqual({ askId: "a1", answer: "SQLite" }),
+  );
+  await act(async () => response.resolve({ state: "answered", warnings: [] }));
+});
+
+test.each([
+  { state: "empty", items: [] },
+  { state: "populated", items: [decision] },
+])("an asks refresh error reports stale status and keeps the $state queue", async ({ items }) => {
+  let failing = false;
+  const { slot } = render(CAPTAIN, () => {
+    if (failing) throw new Error("Asks RPC unavailable");
+    return items;
+  });
+  if (items.length) await slot.findByRole("tab", { name: /Pick the cache/u });
+  else await slot.findByText("All clear");
+
+  failing = true;
+  await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  await slot.findByText("Couldn’t refresh asks");
+  expect(slot.queryByText("All clear")).toBeNull();
+  if (items.length) expect(slot.getByRole("tab", { name: /Pick the cache/u })).toBeDefined();
+
+  failing = false;
+  await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  await waitFor(() => expect(slot.queryByText("Couldn’t refresh asks")).toBeNull());
 });

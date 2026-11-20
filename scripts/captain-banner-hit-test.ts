@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { BrowserContext, Locator } from "playwright";
+import type { BrowserContext, Locator, Page } from "playwright";
 import { launchScreenshotBrowser } from "./plugin-screenshot-runtime";
 
 const [threadUrl, outputDir] = process.argv.slice(2);
@@ -13,6 +13,9 @@ assert.equal(url.hostname, "127.0.0.1", "Use a local test instance");
 const captainId = /\/threads\/(thr_[\w-]+)$/u.exec(url.pathname)?.[1];
 assert(captainId, "Use a thread URL");
 
+const shortDetail = "Use the shared cache.";
+const longCommand = `bun run captain --project ${"workspace/".repeat(24)}config.json`;
+const diagram = "```mermaid\nflowchart LR\n  A[Proposed] --> B[Approved]\n```";
 const longDetail = [
   "The first line explains the choice.",
   "The second line describes the tradeoff.",
@@ -56,7 +59,7 @@ async function seed(context: BrowserContext, name: string, detail: string) {
                     options: ["Merge", "Hold"],
                   }
                 : ask,
-              ...(name === "link"
+              ...(name === "link" || name === "parallel"
                 ? [
                     {
                       ...ask,
@@ -80,14 +83,24 @@ async function seed(context: BrowserContext, name: string, detail: string) {
     crewThreads: { threads: [] },
     drive: { total: 0, truncated: false, files: [], folder: null },
   };
+  const answer = Promise.withResolvers<void>();
   await context.route(`${url.origin}/api/v1/plugins/captain/rpc/*`, async (route) => {
     const method = new URL(route.request().url()).pathname.split("/").at(-1);
-    if (method && Object.hasOwn(captainReads, method)) {
+    if (method === "resolveAsk" && name === "parallel") {
+      await answer.promise;
+      await route.fulfill({
+        json: {
+          ok: true,
+          result: { state: "undelivered", warnings: ["First answer was recorded"] },
+        },
+      });
+    } else if (method && Object.hasOwn(captainReads, method)) {
       await route.fulfill({ json: { ok: true, result: captainReads[method] } });
     } else {
       await route.abort("blockedbyclient");
     }
   });
+  return answer.resolve;
 }
 
 async function assertSeparateHitAreas(banner: Locator) {
@@ -159,6 +172,58 @@ async function assertInlineOther(banner: Locator, screenshot?: string) {
   }
 }
 
+async function assertParallelAnswer(page: Page, banner: Locator, release: () => void) {
+  const input = banner.getByRole("textbox", { name: "Your answer" });
+  const other = banner.getByRole("button", { name: "Other…" });
+  await other.click();
+  await input.fill("Shared cache, with a fallback");
+  const pending = page.waitForRequest((request) => request.url().endsWith("/rpc/resolveAsk"));
+  await input.press("Enter");
+  await pending;
+  assert.equal(await input.evaluate((field: HTMLInputElement) => field.readOnly), true);
+
+  await banner.getByRole("tab", { name: /Board column order/u }).click();
+  await other.click();
+  assert.equal(await input.isEditable(), true);
+  await input.fill("Keep task order");
+  const response = page.waitForResponse((result) => result.url().endsWith("/rpc/resolveAsk"));
+  release();
+  await response;
+  await page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  );
+  assert.equal(await input.evaluate((field) => field === document.activeElement), true);
+  assert.equal(await input.inputValue(), "Keep task order");
+  assert.equal(await banner.getByText("First answer was recorded").count(), 0);
+
+  await input.press("Enter");
+  await input.waitFor({ state: "detached" });
+  const next = banner.getByRole("tab", { name: /Board column order/u });
+  assert.equal(await next.evaluate((tab) => tab === document.activeElement), true);
+}
+
+async function assertDisclosure(banner: Locator, name: string) {
+  const more = banner.getByRole("button", { name: "More", exact: true });
+  const preview = banner.locator("[data-detail-box]");
+  await more.click();
+  await banner.getByRole("button", { name: "Less", exact: true }).waitFor();
+  if (name === "mermaid") {
+    await preview.locator("svg").filter({ hasText: "Approved" }).waitFor();
+  } else if (name === "command") {
+    const code = preview.locator("pre");
+    assert.equal((await code.textContent())?.trim(), longCommand);
+    assert.equal(
+      await code.evaluate((node) => {
+        node.scrollLeft = node.scrollWidth;
+        return node.scrollLeft > 0;
+      }),
+      true,
+    );
+  } else {
+    await preview.getByText("bun test", { exact: true }).waitFor();
+  }
+}
+
 const modes = [
   { name: "desktop", width: 1096, height: 780, mobile: false, top: 0, bottom: 0 },
   { name: "393-safe-area", width: 393, height: 852, mobile: true, top: 59, bottom: 34 },
@@ -171,11 +236,15 @@ try {
   for (const mode of modes) {
     const cases = [
       ["link", longDetail],
-      ["short", "```sh\nbun test\n```"],
+      ["short", shortDetail],
+      ["mermaid", diagram],
+      ["code", "```sh\nbun test\n```"],
+      ...(mode.mobile ? [["command", `\`\`\`sh\n${longCommand}\n\`\`\``]] : []),
       ...(!mode.mobile
         ? [
             ["ship", "`branch → main`\n\nReview passed."],
             ["clear", ""],
+            ["parallel", shortDetail],
           ]
         : []),
     ];
@@ -189,7 +258,7 @@ try {
         hasTouch: mode.mobile,
       });
       try {
-        await seed(context, name, detail);
+        const releaseAnswer = await seed(context, name, detail);
         const page = await context.newPage();
         if (mode.mobile) {
           const cdp = await context.newCDPSession(page);
@@ -226,13 +295,17 @@ try {
         } else if (name === "ship") {
           await banner.getByText("Review passed.", { exact: true }).waitFor();
           await assertBalancedPadding(banner);
-        } else {
-          await banner.getByText("bun test", { exact: true }).waitFor();
+        } else if (name === "parallel") {
+          await assertParallelAnswer(page, banner, releaseAnswer);
+        } else if (name === "short") {
+          await banner.getByText(shortDetail, { exact: true }).waitFor();
           await page.evaluate(
             () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
           );
           assert.equal(await banner.getByRole("button", { name: "More", exact: true }).count(), 0);
           assert.equal(await banner.locator("[data-preview-fade]").count(), 0);
+        } else {
+          await assertDisclosure(banner, name);
         }
         if (mode.mobile) {
           const dimensions = await banner.evaluate((node) => {
@@ -246,8 +319,14 @@ try {
               top: parseFloat(style.paddingTop),
               bottom: parseFloat(style.paddingBottom),
               touch: matchMedia("(pointer: coarse)").matches,
+              // BB owns the controls inside the SDK Markdown component.
               targets: [...node.querySelectorAll("button")]
-                .filter((button) => button.offsetWidth > 0 && button.offsetHeight > 0)
+                .filter(
+                  (button) =>
+                    !button.closest("[data-detail-box]") &&
+                    button.offsetWidth > 0 &&
+                    button.offsetHeight > 0,
+                )
                 .every((button) => button.offsetHeight >= 44 && button.offsetWidth >= 44),
             };
             insets.remove();
