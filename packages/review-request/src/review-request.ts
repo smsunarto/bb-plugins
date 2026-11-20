@@ -119,13 +119,18 @@ export const REVIEW_AVAILABILITY_EVENT = "bb-plugins:pull-request-review-availab
 
 /**
  * Whether Source Control can open a pull request's Review beside `threadId`
- * now: it is running and the thread's pane is in view. False when unknown.
+ * now: it is running and the thread's pane is in view, and, when `url` is
+ * named, it can show that pull request. False when unknown.
  */
 export function isPullRequestReviewAvailable(
   threadId: string,
+  url: string | null = null,
   target: EventTarget = window,
 ): boolean {
-  const event = new CustomEvent(REVIEW_AVAILABLE_EVENT, { detail: { threadId }, cancelable: true });
+  const event = new CustomEvent(REVIEW_AVAILABLE_EVENT, {
+    detail: { threadId, url },
+    cancelable: true,
+  });
   return !target.dispatchEvent(event);
 }
 
@@ -144,7 +149,7 @@ export function onPullRequestReviewAvailabilityChange(
  * when the answer may have changed.
  */
 export function answerPullRequestReviewAvailability(
-  available: (threadId: string) => boolean,
+  available: (threadId: string, url: string | null) => boolean,
   signal: AbortSignal,
   target: EventTarget = window,
 ): () => void {
@@ -152,8 +157,10 @@ export function answerPullRequestReviewAvailability(
     REVIEW_AVAILABLE_EVENT,
     (event) => {
       if (!(event instanceof CustomEvent)) return;
-      const threadId: unknown = (event.detail as { threadId?: unknown } | null)?.threadId;
-      if (typeof threadId === "string" && available(threadId)) event.preventDefault();
+      const detail = event.detail as { threadId?: unknown; url?: unknown } | null;
+      const threadId = detail?.threadId;
+      const url = typeof detail?.url === "string" ? detail.url : null;
+      if (typeof threadId === "string" && available(threadId, url)) event.preventDefault();
     },
     { signal },
   );

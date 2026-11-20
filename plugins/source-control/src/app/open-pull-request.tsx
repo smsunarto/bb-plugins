@@ -56,16 +56,35 @@ export function knownPullRequest(lookup: string, now = Date.now()): Resolution |
   return null;
 }
 
+const knownListeners = new Set<() => void>();
+const knownChanged = () => {
+  for (const listener of knownListeners) listener();
+};
+
+/** Calls `listener` whenever a pull request becomes, or stops being, a recent miss, until `signal` aborts. */
+export function onKnownPullRequestsChange(listener: () => void, signal: AbortSignal): void {
+  if (signal.aborted) return;
+  knownListeners.add(listener);
+  signal.addEventListener("abort", () => knownListeners.delete(listener), { once: true });
+}
+
 /** The Review tab confirmed the Change shows this pull request: open it directly from now on. */
 export function rememberChange(lookup: string, key: ChangeKey): void {
-  missed.delete(lookup);
+  const wasMiss = missed.delete(lookup);
   found.set(lookup, key);
+  if (wasMiss) knownChanged();
 }
 
 /** Source Control cannot show this pull request: send its links to GitHub for a while. */
 export function rememberMiss(lookup: string, problem: string, now = Date.now()): void {
   found.delete(lookup);
-  missed.set(lookup, { problem, until: now + MISS_MS });
+  const until = now + MISS_MS;
+  missed.set(lookup, { problem, until });
+  knownChanged();
+  // When the miss lapses, its links may open in Review again.
+  setTimeout(() => {
+    if (missed.get(lookup)?.until === until) knownChanged();
+  }, until - Date.now());
 }
 
 /**

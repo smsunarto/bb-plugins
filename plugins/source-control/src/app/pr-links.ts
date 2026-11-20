@@ -31,7 +31,11 @@ import {
 import { useBbContext, type ExperimentalThreadContextSegmentInput } from "@get-bb/plugin-sdk/app";
 import { useLayoutEffect } from "react";
 import { parsePrLink, prLookup } from "../core/watch.ts";
-import { knownPullRequest, useOpenPullRequest } from "./open-pull-request.tsx";
+import {
+  knownPullRequest,
+  onKnownPullRequestsChange,
+  useOpenPullRequest,
+} from "./open-pull-request.tsx";
 import type { OpenReviewOptions } from "./open-review.ts";
 
 /** How long an ask waits for its thread to come into view before the caller opens GitHub. */
@@ -115,14 +119,29 @@ export function takeReviewRequest({
 }: PullRequestReviewRequest): boolean {
   const ref = parsePrLink(url);
   if (!ref) return false;
+  // Whatever this ask ends in, the reader asked for something else than the waiting ask since.
+  supersede();
   if (lent?.threadId === threadId) return lent.open(url, { page: false });
   if (!navigating || !fallback) return false;
   const known = knownPullRequest(prLookup(ref));
   if (known && "problem" in known) return false;
-  supersede();
   const timer = setTimeout(() => settle(null), PENDING_MS);
   waiting = { threadId, url, fallback, timer };
   return true;
+}
+
+/**
+ * Whether Review opens beside `threadId` now, for `url` when named: the
+ * thread is in view, and the link is to a pull request Source Control has
+ * not just failed to show.
+ */
+function reviewAvailable(threadId: string, url: string | null): boolean {
+  if (lent?.threadId !== threadId) return false;
+  if (url === null) return true;
+  const ref = parsePrLink(url);
+  if (!ref) return false;
+  const known = knownPullRequest(prLookup(ref));
+  return !(known && "problem" in known);
 }
 
 const OURS = '[data-bb-plugin="source-control"]';
@@ -149,18 +168,18 @@ export function mountPullRequestLinks(document: Document, signal: AbortSignal): 
     if (!(anchor instanceof view.HTMLAnchorElement) || anchor.closest(OURS)) return;
     // A link whose owner asks for its own review, naming its thread.
     if (anchor.closest(ASKS_ITSELF)) return;
-    if (!parsePrLink(anchor.href) || !lent.open(anchor.href)) return;
+    if (!parsePrLink(anchor.href)) return;
+    // A newer ask: the waiting one ends unopened, wherever this one goes.
+    supersede();
+    if (!lent.open(anchor.href)) return;
     // bb's Markdown link opens the URL without checking defaultPrevented: stop it reaching React.
     event.preventDefault();
     event.stopPropagation();
   };
   document.addEventListener("click", onClick, { capture: true, signal: stop.signal });
   takePullRequestReviews(takeReviewRequest, stop.signal, view);
-  availabilityChanged = answerPullRequestReviewAvailability(
-    (threadId) => lent?.threadId === threadId,
-    stop.signal,
-    view,
-  );
+  availabilityChanged = answerPullRequestReviewAvailability(reviewAvailable, stop.signal, view);
+  onKnownPullRequestsChange(() => availabilityChanged?.(), stop.signal);
   return () => {
     signal.removeEventListener("abort", stopAll);
     stopAll();

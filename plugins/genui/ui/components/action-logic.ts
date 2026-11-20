@@ -52,23 +52,25 @@ export interface ActionIntent {
  * shows (its label): an answer or copy of that same text is not quoted
  * again, and the hint says where it goes instead. A link is always spelled
  * out, since its label can say anything. Taking a picked answer back out
- * runs nothing else, so it is the only line. With `review` (a block in a
- * thread), a link to a pull request itself says it opens in Review, where
- * LiveUi opens it when Source Control takes it.
+ * runs nothing else, so it is the only line. A link to a pull request
+ * itself that `review` passes (one Source Control would open beside the
+ * block's thread; `true` for all) says it opens in Review, where LiveUi
+ * opens it when Source Control takes it.
  */
 export function actionIntent(
   actions: readonly Action[],
-  { send = "none", shown, review = false }: { send?: SendEffect; shown?: string; review?: boolean } = {},
+  { send = "none", shown, review = false }: { send?: SendEffect; shown?: string; review?: boolean | ((url: string) => boolean) } = {},
 ): ActionIntent {
   const answers = send !== "none" && actions.some((action) => action.type === "send");
   if (answers && send === "withdraw") return { glyph: "Sent", hint: "Take it out of your message" };
   // Each link parsed once, for its glyph and its line: the address, and its pull request in Review.
+  const opensInReview = typeof review === "function" ? review : () => review;
   const parsed = new Map<Action, { readonly url: URL | null; readonly review: string | null }>();
   const parse = (action: Extract<Action, { type: "openUrl" }>) => {
     let entry = parsed.get(action);
     if (entry === undefined) {
       const url = openableLink(action.url);
-      entry = { url, review: review && url !== null ? pullRequestUrlKey(url.href) : null };
+      entry = { url, review: url !== null && opensInReview(url.href) ? pullRequestUrlKey(url.href) : null };
       parsed.set(action, entry);
     }
     return entry;

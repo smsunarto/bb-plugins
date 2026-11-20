@@ -118,7 +118,7 @@ test("pullRequestUrlKey reads only a pull request's own page", () => {
 
 test("availability: unknown without Source Control, its answer while it runs, and its change notices", () => {
   const target = new EventTarget();
-  expect(isPullRequestReviewAvailable("thr_1", target)).toBe(false);
+  expect(isPullRequestReviewAvailable("thr_1", null, target)).toBe(false);
   const stop = new AbortController();
   let inView = "thr_1";
   const changed = answerPullRequestReviewAvailability(
@@ -128,12 +128,12 @@ test("availability: unknown without Source Control, its answer while it runs, an
   );
   let notices = 0;
   onPullRequestReviewAvailabilityChange(() => notices++, stop.signal, target);
-  expect(isPullRequestReviewAvailable("thr_1", target)).toBe(true);
-  expect(isPullRequestReviewAvailable("thr_2", target)).toBe(false);
+  expect(isPullRequestReviewAvailable("thr_1", null, target)).toBe(true);
+  expect(isPullRequestReviewAvailable("thr_2", null, target)).toBe(false);
   inView = "thr_2";
   changed();
   expect(notices).toBe(1);
-  expect(isPullRequestReviewAvailable("thr_2", target)).toBe(true);
+  expect(isPullRequestReviewAvailable("thr_2", null, target)).toBe(true);
   stop.abort();
-  expect(isPullRequestReviewAvailable("thr_2", target)).toBe(false);
+  expect(isPullRequestReviewAvailable("thr_2", null, target)).toBe(false);
 });

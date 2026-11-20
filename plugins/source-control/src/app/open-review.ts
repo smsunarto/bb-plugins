@@ -132,13 +132,16 @@ export function setPlace(threadId: string, target: ReviewTarget): void {
  * An entry point asks the thread's Review tab for `target`: it moves there,
  * and reveals it again when it is already there. The location keeps its
  * identity when unchanged, so only the reveal runs, nothing is rebuilt.
+ * Returns the undo, for an ask whose tab did not open: the tab keeps the
+ * place the reader last left it at.
  */
-export function requestPlace(threadId: string, target: ReviewTarget): void {
+export function requestPlace(threadId: string, target: ReviewTarget): () => void {
   const id = slot(threadId, target.key);
   const current = placeOf(id, target.key);
   const next = here(target);
   const moved = !same(current.location, next);
   put(id, { location: moved ? next : current.location, request: current.request + 1 }, moved);
+  return () => put(id, current, moved);
 }
 
 function subscribe(listener: () => void) {
@@ -183,14 +186,17 @@ export function useOpenReview(
     () =>
       (target: ReviewTarget, { page = true }: OpenReviewOptions = {}) => {
         const { panel, navigate, threadId } = latest.current;
-        requestPlace(threadId, target);
+        const undo = requestPlace(threadId, target);
         const opened = panel.openTab({
           tab: REVIEW_TAB,
           params: { key: target.key },
           title: reviewTabTitle(target.key),
         });
         if (opened) return true;
-        if (!page) return false;
+        if (!page) {
+          undo();
+          return false;
+        }
         navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath(target) });
         return true;
       },

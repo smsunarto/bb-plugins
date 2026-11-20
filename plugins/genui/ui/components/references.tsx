@@ -166,7 +166,6 @@ export function Entity({ props }: { props: Props }) {
   const depth = useContext(CardDepthContext);
   const fade = useEntrance<HTMLDivElement>(FADE);
   const openUrl = useOpenUrl();
-  const reviewLinks = useReviewLinks();
   const name = text(props.name).trim();
   const kind = entityKind(props.kind);
   const note = optionalText(props.note)?.trim() || null;
@@ -175,6 +174,7 @@ export function Entity({ props }: { props: Props }) {
   const shownFacts = inlineFacts(facts, CARD_FACTS);
   const rawUrl = text(props.url).trim();
   const link = parseUrl(rawUrl, ["http", "https"]);
+  const reviewLinks = useReviewLinks([link?.href]);
   const picture = usePicture(text(props.image));
   const [decoded, setDecoded] = useState<{ readonly url: string; readonly ok: boolean } | null>(null);
   const [open, setOpen] = useState(false);

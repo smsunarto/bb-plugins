@@ -278,7 +278,7 @@ function LiveDot({ agents }: { agents: number }) {
 function Card({ card, today, open, onToggle }: { card: BoardCard; today: number; open: boolean; onToggle: () => void }) {
   const rise = useEntrance<HTMLLIElement>(RISE);
   const openUrl = useOpenUrl();
-  const reviewLinks = useReviewLinks();
+  const reviewLinks = useReviewLinks([card.url]);
   const late = cardLate(card, today);
   const detailId = useId();
   const shownLabels = card.labels.slice(0, CARD_LABELS);

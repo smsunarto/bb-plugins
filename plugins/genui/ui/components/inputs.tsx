@@ -28,7 +28,7 @@ import { ACTION_GLYPHS, actionIntent, sendEffect } from "./action-logic";
 import { Radio } from "./fields";
 import { reducedMotion, useEntrance, type Entrance } from "./motion";
 import { keepTyping } from "../keepTyping";
-import { useReviewLinks } from "../reviewLinks";
+import { linkUrls, useReviewLinks } from "../reviewLinks";
 
 export const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
@@ -282,7 +282,6 @@ export function Button({ props }: { props: Props }) {
 
 function ButtonView({ props }: { props: Props }) {
   const { run } = useUiRuntime();
-  const reviewLinks = useReviewLinks();
   const choice = useContext(ChoiceContext);
   // Inside a nested tile, buttons sit on a tinted surface beside siblings that
   // carry the same action: a filled button per tile is too loud.
@@ -290,6 +289,7 @@ function ButtonView({ props }: { props: Props }) {
   const [running, setRunning] = useState(false);
   const label = text(props.label);
   const actions: readonly Action[] = props.action === undefined ? [] : list(props.action).filter(isAction);
+  const reviewLinks = useReviewLinks(linkUrls(actions));
   const answers = answerTexts(props);
   // A choice stages its answer; its other actions (a Set beside the Send) run when it is picked.
   const picks = choice != null && answers.length > 0;

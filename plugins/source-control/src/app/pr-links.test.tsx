@@ -14,6 +14,7 @@ import {
 } from "@bb-plugins/review-request";
 import { rememberChange, rememberMiss, resetKnownPullRequests } from "./open-pull-request.tsx";
 import { parsePrLink, prKey } from "../core/watch.ts";
+import { setPlace } from "./open-review.ts";
 import { PENDING_MS } from "./pr-links.ts";
 
 // The app's own registrations: the script that takes the click, and the segment that lends it a panel.
@@ -235,6 +236,54 @@ test("the latest ask wins: an earlier thread's pane opens nothing and leaves the
   vi.advanceTimersByTime(PENDING_MS);
   expect(first.github).toEqual([]);
   expect(second.github).toEqual([]);
+});
+
+test("an ask that opens at once retires an older waiting ask: no late Review and no late fallback", () => {
+  vi.useFakeTimers();
+  const older = opener("thr_a");
+  const inView = pane("thr_b");
+  expect(requestPullRequestReview({ url: PR, threadId: "thr_b", navigating: false })).toBe(true);
+  expect(inView.inspection.experimental_panelCalls).toHaveLength(1);
+  vi.advanceTimersByTime(PENDING_MS);
+  expect(older.github).toEqual([]);
+  inView.unmount();
+  expect(pane("thr_a").inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("a message link that opens at once retires an older waiting ask too", () => {
+  vi.useFakeTimers();
+  const older = opener("thr_a");
+  pane("thr_b");
+  fireEvent.click(markdownLink(PR));
+  vi.advanceTimersByTime(PENDING_MS);
+  expect(older.github).toEqual([]);
+});
+
+test("a declined tab keeps the place the thread's Review last showed", () => {
+  rememberChange("pr:acme/api#12", KEY);
+  setPlace("thr_a", { key: KEY, tab: "files", path: "src/index.ts", line: 42 });
+  const ask = opener();
+  pane("thr_a", () => false);
+  expect(ask.github).toEqual([PR]);
+  const saved: unknown = JSON.parse(
+    sessionStorage.getItem(`source-control:review-place:thr_a\n${KEY}`) ?? "null",
+  );
+  expect(saved).toEqual({ tab: "files", commit: null, path: "src/index.ts", line: 42 });
+});
+
+test("a pull request Source Control just failed to show is not advertised as opening in Review", () => {
+  const changes = vi.fn();
+  const listening = new AbortController();
+  onPullRequestReviewAvailabilityChange(changes, listening.signal);
+  pane();
+  changes.mockClear();
+  expect(isPullRequestReviewAvailable("thr_a", PR)).toBe(true);
+  rememberMiss("pr:acme/api#12", "No access.");
+  expect(changes).toHaveBeenCalled();
+  expect(isPullRequestReviewAvailable("thr_a", PR)).toBe(false);
+  expect(isPullRequestReviewAvailable("thr_a", "https://github.com/acme/api/pull/13")).toBe(true);
+  expect(isPullRequestReviewAvailable("thr_a")).toBe(true);
+  listening.abort();
 });
 
 test("a cached pull request whose pane declines the tab falls back like any other", () => {

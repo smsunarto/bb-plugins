@@ -274,6 +274,32 @@ describe("a button opening a pull request", () => {
     expect(button.querySelector('[data-icon="GitPullRequest"]')).toBeNull();
   });
 
+  it("names the link for a pull request Source Control says it cannot show, while another opens in Review", () => {
+    const OTHER = "https://github.com/acme/api/pull/13";
+    answerPullRequestReviewAvailability((threadId, url) => threadId === "orbit" && url !== PR, (stop = new AbortController()).signal);
+    render("ui", "closed", `Stack([Button("Missed", OpenUrl("${PR}")), Button("Fine", OpenUrl("${OTHER}"))])`, "pr-missed:assistant:1");
+    const [missed, fine] = [...container.querySelectorAll("button")];
+    expect(missed!.querySelector('[data-icon="ExternalLink"]')).not.toBeNull();
+    expect(missed!.querySelector('[data-icon="GitPullRequest"]')).toBeNull();
+    expect(fine!.querySelector('[data-icon="GitPullRequest"]')).not.toBeNull();
+  });
+
+  it("reads a link as its parsed address, so an upper-case host still opens in Review", () => {
+    answerPullRequestReviewAvailability((threadId, url) => threadId === "orbit" && url === PR, (stop = new AbortController()).signal);
+    render("ui", "closed", `Button("Review it", OpenUrl("HTTPS://GITHUB.COM/acme/api/pull/12"))`, "pr-upper:assistant:1");
+    expect(container.querySelector('button [data-icon="GitPullRequest"]')).not.toBeNull();
+  });
+
+  it("asks about Review only from controls that hold a link to a pull request", () => {
+    let probes = 0;
+    const changed = answerPullRequestReviewAvailability(() => (probes++, true), (stop = new AbortController()).signal);
+    render("ui", "closed", `List([{title: "a"}, {title: "b"}, {title: "c", action: OpenUrl("https://example.com")}])`, "pr-rows:assistant:1");
+    act(() => changed());
+    expect(probes).toBe(0);
+    render("ui", "closed", code, "pr-asks:assistant:1");
+    expect(probes).toBeGreaterThan(0);
+  });
+
   it("shows the pull request glyph, not the web link glyph, once Source Control says Review is available", () => {
     let available = false;
     const changed = answerPullRequestReviewAvailability((threadId) => available && threadId === "orbit", (stop = new AbortController()).signal);

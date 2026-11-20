@@ -384,10 +384,10 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 function Detail({ data, span }: { data: WaterfallData; span: Span }) {
   const openUrl = useOpenUrl();
-  const reviewLinks = useReviewLinks();
   const parents = ancestry(data.spans, span.index);
   const childTime = span.children.reduce((sum, child) => sum + (data.spans[child].end - data.spans[child].start), 0);
   const request = span.request;
+  const reviewLinks = useReviewLinks([request?.url]);
   const duration = span.end - span.start;
   return (
     <div className="flex min-w-0 flex-col gap-2 px-2 pb-3 pt-2 text-xs leading-5" style={{ paddingLeft: Math.min(span.depth, MAX_INDENT_LEVELS) * INDENT_PX + 28 }}>
