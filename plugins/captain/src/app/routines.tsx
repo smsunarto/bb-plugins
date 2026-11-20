@@ -68,6 +68,11 @@ type Draft = {
   timezone: string;
   /** A `datetime-local` value in the browser's zone. */
   at: string;
+  /**
+   * The stored one-shot time, to the millisecond. `at` drops the seconds, so
+   * the stored time is sent back unchanged until the date field is edited.
+   */
+  atMs: number | null;
 };
 
 /**
@@ -81,8 +86,10 @@ type RoutinesUi = {
   form: Draft | null;
   confirm: string | null;
   focus: { field: Field; start: number | null; end: number | null } | null;
+  /** The last failed action per routine, kept here so a row restored after a failed delete shows it. */
+  errors: Readonly<Record<string, string>>;
 };
-const CLOSED: RoutinesUi = { open: null, form: null, confirm: null, focus: null };
+const CLOSED: RoutinesUi = { open: null, form: null, confirm: null, focus: null, errors: {} };
 const uiStates = new Map<string, RoutinesUi>();
 const uiListeners = new Set<() => void>();
 function patchUi(captainId: string, patch: Partial<RoutinesUi>): void {
@@ -110,6 +117,7 @@ function startNew(captainId: string): void {
       cron: PRESET_CRONS[0] as string,
       timezone: browserTimezone(),
       at: "",
+      atMs: null,
     },
     confirm: null,
     focus: { field: "name", start: null, end: null },
@@ -127,6 +135,7 @@ function editDraft(routine: RoutineView): Draft {
       cron: PRESET_CRONS[0] as string,
       timezone: browserTimezone(),
       at: localInput(schedule.at),
+      atMs: schedule.at,
     };
   }
   return {
@@ -137,6 +146,7 @@ function editDraft(routine: RoutineView): Draft {
     cron: schedule.cron,
     timezone: schedule.timezone,
     at: "",
+    atMs: null,
   };
 }
 
@@ -149,7 +159,10 @@ function localInput(at: number): string {
 
 /** The schedule a draft names, as the server takes it. */
 function draftSchedule(draft: Draft): RoutineDraft["schedule"] {
-  if (draft.preset === ONCE) return { at: draft.at === "" ? Number.NaN : Date.parse(draft.at) };
+  if (draft.preset === ONCE) {
+    if (draft.atMs !== null && draft.at === localInput(draft.atMs)) return { at: draft.atMs };
+    return { at: draft.at === "" ? Number.NaN : Date.parse(draft.at) };
+  }
   return { cron: draft.preset === CUSTOM ? draft.cron : draft.preset, timezone: draft.timezone };
 }
 
@@ -181,20 +194,36 @@ function formatWhen(at: number): string {
   }).format(new Date(at));
 }
 
+/** The schedule in words; a one-shot in the browser's zone, as the form takes it. */
+function whenOf(routine: RoutineView): string {
+  return "at" in routine.schedule ? describeSchedule(routine.schedule) : routine.when;
+}
+
+/** The newest run as the closed row's second line, or null before the first. */
+function lastRunLine(routine: RoutineView): { text: string; failed: boolean } | null {
+  const run = routine.lastRun;
+  if (run === null) return null;
+  const reason = run.reason === null ? "" : `: ${run.reason}`;
+  return {
+    text: `Last run ${formatWhen(run.at)} · ${run.trigger === "test" ? "Test · " : ""}${RUN_STATUS[run.status]}${reason}`,
+    failed: run.status === "failed",
+  };
+}
+
 /** What a row's subline says, and whether its switch applies. */
 function rowState(routine: RoutineView): {
   line: string;
   problem: boolean;
   enabled: boolean | null;
 } {
-  if (routine.done) return { line: `Ran once · ${routine.when}`, problem: false, enabled: null };
+  if (routine.done) return { line: `Ran once · ${whenOf(routine)}`, problem: false, enabled: null };
   if (routine.missed)
     return { line: "Missed its one run · give it a new time", problem: true, enabled: null };
   const automation = routine.automation;
   if (automation === null) return { line: "Schedule unavailable", problem: true, enabled: null };
   if (!automation.enabled) return { line: "Paused", problem: false, enabled: false };
   const next = automation.nextRunAt === null ? "" : ` · next ${formatWhen(automation.nextRunAt)}`;
-  return { line: `${routine.when}${next}`, problem: false, enabled: true };
+  return { line: `${whenOf(routine)}${next}`, problem: false, enabled: true };
 }
 
 const RUN_STATUS: Record<RoutineRun["status"], string> = {
@@ -331,10 +360,15 @@ function RoutineRow({
   const panel = useId();
   const state = rowState(routine);
   const action = useRoutineAction(captainId);
-  const [error, setError] = useState<string | null>(null);
+  const error = ui.errors[routine.id] ?? null;
+  const setError = (text: string | null) => {
+    const { [routine.id]: _, ...rest } = uiStates.get(captainId)?.errors ?? {};
+    patchUi(captainId, { errors: text === null ? rest : { ...rest, [routine.id]: text } });
+  };
   const [notice, setNotice] = useState<string | null>(null);
+  const last = lastRunLine(routine);
   const run = (kind: RoutineAction) => {
-    setError(null);
+    if (error !== null) setError(null);
     setNotice(null);
     if (kind === "delete") patchUi(captainId, { confirm: null, open: null });
     void action.mutate({ captainId, routineId: routine.id, action: kind }).then(
@@ -382,6 +416,17 @@ function RoutineRow({
             >
               {state.line}
             </span>
+            {last === null ? null : (
+              <span
+                className={cn(
+                  "truncate text-xs leading-4",
+                  last.failed ? "text-destructive" : "text-muted-foreground",
+                )}
+                title={last.text}
+              >
+                {last.text}
+              </span>
+            )}
           </span>
         </button>
         <Switch
@@ -409,13 +454,20 @@ function RoutineRow({
               pending={pendingAction}
               visible={visible}
               notice={notice}
-              error={error}
               run={run}
               onRetry={onRetry}
             />
           )}
         </div>
       ) : null}
+      {error === null ? null : (
+        <p
+          role="alert"
+          className="m-0 min-w-0 ps-8 pe-2 pb-2 text-xs leading-4 break-words text-destructive"
+        >
+          {error}
+        </p>
+      )}
     </li>
   );
 }
@@ -429,7 +481,6 @@ function RoutineDetails({
   pending,
   visible,
   notice,
-  error,
   run,
   onRetry,
 }: {
@@ -442,7 +493,6 @@ function RoutineDetails({
   pending: { action: RoutineAction } | undefined;
   visible: boolean;
   notice: string | null;
-  error: string | null;
   run: (action: RoutineAction) => void;
   onRetry: () => void;
 }) {
@@ -469,7 +519,7 @@ function RoutineDetails({
       </Detail>
       <Detail label="When to run">
         <p className="m-0 text-foreground">
-          {routine.when}
+          {whenOf(routine)}
           {"timezone" in routine.schedule ? (
             <span className="text-muted-foreground"> · {routine.schedule.timezone}</span>
           ) : null}
@@ -569,11 +619,6 @@ function RoutineDetails({
       )}
       {notice === null ? null : (
         <output className="block min-w-0 break-words text-muted-foreground">{notice}</output>
-      )}
-      {error === null ? null : (
-        <p role="alert" className="m-0 min-w-0 break-words text-destructive">
-          {error}
-        </p>
       )}
     </>
   );
@@ -701,7 +746,10 @@ function RoutineForm({ captainId, draft }: { captainId: string; draft: Draft }) 
   // When the form opened is near enough for "that time has passed".
   const [now] = useState(Date.now);
   const words = draftWords(draft, now);
-  const ready = draft.name.trim() !== "" && draft.instruction.trim() !== "";
+  const ready =
+    draft.name.trim() !== "" &&
+    draft.instruction.trim() !== "" &&
+    !(draft.preset === ONCE && Number.isNaN(Date.parse(draft.at)));
   const submit = () => {
     setRefusal([]);
     void save

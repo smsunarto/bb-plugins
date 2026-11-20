@@ -52,6 +52,8 @@ function render(
     routines: RoutineView[];
     runs?: RoutineRun[];
     save?: (input: Record<string, unknown>) => SaveRoutineResult;
+    /** routineAction refuses with this message. */
+    refuse?: string;
   },
 ) {
   const calls: Calls = [];
@@ -69,6 +71,7 @@ function render(
       routineRuns: (input: unknown) => (log("routineRuns", input), { runs: state.runs ?? [] }),
       routineAction: (input: { routineId: string; action: string }) => {
         log("routineAction", input);
+        if (state.refuse !== undefined) throw new Error(state.refuse);
         if (input.action === "delete")
           state.routines = state.routines.filter((each) => each.id !== input.routineId);
         return { runId: input.action === "run" ? "arun_1" : null };
@@ -293,4 +296,62 @@ test("the form keeps its text, focus and caret when bb remounts the tab", async 
   expect(restored.value).toBe("Half typed");
   await waitFor(() => expect(document.activeElement).toBe(restored));
   expect(restored.selectionStart).toBe(4);
+});
+
+test("a closed row shows its last run, a failure in red", async () => {
+  const { routinesSection } = render(nextCaptain(), {
+    routines: [
+      routine({
+        lastRun: {
+          id: 3,
+          routineId: "r1",
+          trigger: "schedule",
+          status: "skipped",
+          reason: "previous run still queued",
+          at: NOW - 60_000,
+        },
+      }),
+    ],
+  });
+  const section = await routinesSection();
+  await within(section).findByText(/^Last run .* · Skipped: previous run still queued$/u);
+});
+
+test("a refused switch says why under the closed row", async () => {
+  const { routinesSection } = render(nextCaptain(), {
+    routines: [routine()],
+    refuse: "bb Automations did not take it: plugin automations is not running",
+  });
+  const section = await routinesSection();
+  fireEvent.click(await within(section).findByRole("switch", { name: /Stalled crew sweep/u }));
+  const alert = await within(section).findByRole("alert");
+  expect(alert.textContent).toMatch(/did not take it/u);
+  expect(within(section).queryByTestId("captain-routine-panel")).toBeNull();
+  await waitFor(() =>
+    expect(within(section).getByRole("switch").getAttribute("aria-checked")).toBe("true"),
+  );
+});
+
+test("editing a one-shot's name sends its stored time back to the millisecond", async () => {
+  const captainId = nextCaptain();
+  // Off the whole minute, as `--in 90m` makes it.
+  const at = NOW + 2 * 3_600_000 + 12_345;
+  const { routinesSection, calls } = render(captainId, {
+    routines: [routine({ schedule: { at }, when: "Once" })],
+  });
+  const section = await routinesSection();
+  fireEvent.click(await within(section).findByRole("button", { name: /Stalled crew sweep/u }));
+  fireEvent.click(await within(section).findByRole("button", { name: "Edit" }));
+  const form = await within(section).findByRole("form", { name: "Edit Stalled crew sweep" });
+  fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Renamed" } });
+  fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(calls).toContainEqual({
+      method: "saveRoutine",
+      input: expect.objectContaining({
+        routineId: "r1",
+        routine: expect.objectContaining({ name: "Renamed", schedule: { at } }),
+      }),
+    }),
+  );
 });
