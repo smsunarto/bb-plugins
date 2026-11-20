@@ -407,7 +407,7 @@ describe("bb Monokai contract audit", () => {
       `[data-state="collapsed"] > [data-sidebar="gap"] {\n    transition: width 150ms ${quint};`,
     );
     expect(theme).toContain(`width 150ms ${quint},\n      visibility 0s linear 150ms;`);
-    // Only the off-canvas sidebar fades its contents; a rail stays in view.
+    // The off-canvas sidebar fades its contents as it closes.
     expect(theme).toContain(
       '[data-collapsible="offcanvas"]\n    > [data-sidebar="panel"]\n    > [data-sidebar="sidebar"] {\n    opacity: 0;\n    translate: -16px 0;',
     );

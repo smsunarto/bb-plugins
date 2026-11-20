@@ -471,13 +471,9 @@
  * the title bar: bb's own 8px frame lip keeps it off the window's edges, and
  * all four corners round at 12px under a 0.5px hairline, as on the unframed
  * page. bb's card mask (8px corners, the top-left squared beside an open
- * sidebar), title-bar seam, and the rail's own 4% fill go. */
+ * sidebar) and title-bar seam go. */
 .dark [data-testid="app-layout-root"][data-framed] {
   background-image: none;
-}
-
-.dark [data-framed] [data-testid="sidebar-navigation-rail"] {
-  background-color: transparent;
 }
 
 .dark [data-framed] [data-sidebar="collapsible-body"] {
@@ -550,8 +546,8 @@
  * drift 16px with it: in over 200ms after a 40ms lag, out over 120ms. Rules
  * key on the state being entered, so a closing sidebar runs the close
  * timing. bb's left/right/width/visibility list is restated whole, or the
- * closing panel would go hidden on its first frame. A sidebar collapsed to a
- * rail keeps its rail in view, so only the off-canvas sidebar fades.
+ * closing panel would go hidden on its first frame. The off-canvas sidebar
+ * fades its contents as it closes.
  * bb's resize drag still wins with its own !important zero duration.
  *
  * The right panel has no width animation: the timeline panel, resize handle,
@@ -603,10 +599,6 @@
       right 150ms cubic-bezier(0.23, 1, 0.32, 1),
       width 150ms cubic-bezier(0.23, 1, 0.32, 1),
       visibility 0s linear 150ms;
-  }
-
-  .dark [data-collapsible="rail"] [data-sidebar="collapsible-body"] {
-    transition: visibility 0s linear 150ms;
   }
 
   .dark
@@ -694,7 +686,6 @@
     [data-variant="sidebar"][data-side="left"][data-state]
     ~ [data-sidebar="inset"]
     [data-testid="app-page-header-content-row"],
-  .dark [data-collapsible="rail"] [data-sidebar="collapsible-body"],
   .dark [id^="thread-detail-secondary-panel"] > aside[aria-hidden] > div {
     transition: none;
   }
@@ -1892,21 +1883,12 @@
     visibility: hidden;
   }
 
-  /* bb drops data-panel-shelf only once the drawer has opened. Its toggle is
-   * fixed above the drawer, so during a tapped open's slide it sat over the
-   * rail's first item. Hide it whenever the page is open or moving aside. */
+  /* bb drops data-panel-shelf only once the drawer has opened. Hide the fixed
+   * toggle while the page is open or moving aside so it does not overlap
+   * the drawer's content. */
   .dark [data-sidebar="inset"][data-sidebar-shelf="open"] ~ [data-testid="app-sidebar-trigger-overlay"],
   .dark [data-sidebar="inset"][data-vaul-animate] ~ [data-testid="app-sidebar-trigger-overlay"] {
     visibility: hidden;
-  }
-
-  /* bb keeps a header-row spacer atop the drawer's nav rail for that toggle.
-   * With the toggle gone, drop the spacer so the rail starts at the top. */
-  .dark
-    [data-sidebar="panel"][data-vaul-drawer-direction="left"]
-    [data-testid="sidebar-navigation-rail"]
-    > .h-\(--bb-app-chrome-row-height\) {
-    display: none;
   }
 
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
