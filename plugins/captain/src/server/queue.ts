@@ -5,7 +5,14 @@ import {
   type BlockedItem,
   type HealthItem,
 } from "../contract/queue.ts";
-import { asksTag, crewTag, sinceTag, type ChangeRef } from "../contract/rpc.ts";
+import {
+  asksTag,
+  crewTag,
+  sinceTag,
+  TASK_PHASES,
+  type BannerTask,
+  type ChangeRef,
+} from "../contract/rpc.ts";
 import { ANSWER_MAX_ATTEMPTS } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { joinCrew, listChildren, readInteractions, type ListedThread } from "./crew.ts";
@@ -88,6 +95,34 @@ export function createCrewReads(deps: Pick<QueueDeps, "bb" | "tasks">) {
 export type CrewReads = ReturnType<typeof createCrewReads>;
 
 const ms = (iso: string | undefined | null): number => (iso ? Date.parse(iso) : 0);
+
+/** Tasks own the work status. A crew thread can be idle while its task is still in progress. */
+export async function bannerTasks(
+  deps: Pick<QueueDeps, "store">,
+  crew: CrewSnapshot,
+): Promise<BannerTask[]> {
+  const [threads, rows] = await Promise.all([crew.threads, crew.rows]);
+  const tasks = new Map<string, BannerTask>();
+  for (const member of joinCrew(deps, threads, rows)) {
+    for (const { task } of member.rows) {
+      if (task.status !== "in_progress" && task.status !== "in_review") continue;
+      const entry = tasks.get(task.key) ?? {
+        key: task.key,
+        title: task.title,
+        status: task.status,
+        roles: [],
+        updatedAt: ms(task.updatedAt) || 0,
+      };
+      for (const phase of TASK_PHASES) {
+        if (phase === member.role && !entry.roles.includes(phase)) entry.roles.push(phase);
+      }
+      tasks.set(task.key, entry);
+    }
+  }
+  return [...tasks.values()].sort(
+    (a, b) => b.updatedAt - a.updatedAt || a.key.localeCompare(b.key),
+  );
+}
 
 /** Open asks, and answered ones until the Captain has them: from `data.db` alone. */
 export function askItems(

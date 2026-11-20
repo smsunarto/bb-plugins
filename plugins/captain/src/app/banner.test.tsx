@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { QueueItem } from "../contract/queue.ts";
-import { asksTag, captainContract } from "../contract/rpc.ts";
+import { asksTag, captainContract, type BannerTask } from "../contract/rpc.ts";
 
 const app = await loadPluginApp(() => import("./app.tsx"));
 const banner = app.composerCustomizations.find((each) => each.id === "needs-you")!.banners![0]!;
@@ -41,7 +41,13 @@ type Calls = { method: string; input: unknown }[];
 function render(
   threadId: string,
   asks: QueueItem[] | (() => QueueItem[]),
-  options: { since?: unknown; crew?: QueueItem[]; crewFails?: boolean; sdk?: unknown } = {},
+  options: {
+    since?: unknown;
+    crew?: QueueItem[];
+    crewFails?: boolean;
+    sdk?: unknown;
+    tasks?: BannerTask[];
+  } = {},
 ) {
   const calls: Calls = [];
   const log =
@@ -60,6 +66,7 @@ function render(
         if (options.crewFails) throw new Error("bb did not answer");
         return { items: options.crew ?? [] };
       }),
+      bannerTasks: log("bannerTasks", () => ({ tasks: options.tasks ?? [] })),
       sinceYouLeft: log(
         "sinceYouLeft",
         () => options.since ?? { cutoff: null, done: [], ready: [], failed: [] },
@@ -81,27 +88,48 @@ test("on a thread that is not a Captain, the banner reads only the Captain list 
   expect(calls.map((call) => call.method)).toEqual(["captains"]);
 });
 
-test("one item at a time, in queue order, with its place, task, age and recommended option", async () => {
-  const { slot } = render(CAPTAIN, [decision, access]);
-  const card = await slot.findByTestId("captain-needs-you");
-  // Access asks come before decisions.
-  expect(card.textContent).toContain("Grant the crew a deploy key");
-  expect(card.textContent).not.toContain("Pick the cache backend");
-  expect(card.textContent).toContain("1 of 2 · PLUG-8 · 40m");
-  // The first option says it is the recommended one; the others do not.
-  expect(slot.getByRole("button", { name: /Grant read-only/u }).textContent).toContain(
-    "Recommended",
-  );
-  expect(slot.getByRole("button", { name: /Grant read-write/u }).textContent).not.toContain(
-    "Recommended",
+test("two items show readable tabs in queue order and one answer panel", async () => {
+  const { slot, of } = render(CAPTAIN, [decision, access]);
+  const tabs = await slot.findAllByRole("tab");
+  expect(tabs.map((tab) => tab.textContent)).toEqual([
+    "Grant the crew a deploy key40m",
+    "Pick the cache backend40m",
+  ]);
+  expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
+  expect(slot.getByRole("tabpanel").textContent).toContain("PLUG-8");
+  expect(slot.getByRole("button", { name: "Grant read-only Recommended" })).toBeDefined();
+  expect(of("bannerTasks")).toEqual([]);
+
+  act(() => tabs[1]!.click());
+  expect(tabs[1]?.getAttribute("aria-selected")).toBe("true");
+  expect(slot.queryByRole("button", { name: /Grant read-only/u })).toBeNull();
+  act(() => slot.getByRole("button", { name: "SQLite" }).click());
+  await waitFor(() =>
+    expect(of("resolveAsk").map(({ input }) => input)).toEqual([{ askId: "a1", answer: "SQLite" }]),
   );
 });
 
-test("a lone item shows no place in the queue", async () => {
+test("a lone item uses the same queue and answer panel", async () => {
   const { slot } = render(CAPTAIN, [decision]);
-  const card = await slot.findByTestId("captain-needs-you");
-  expect(card.textContent).toContain("PLUG-8 · 40m");
-  expect(card.textContent).not.toContain("1 of 1");
+  const tab = await slot.findByRole("tab", { name: /Pick the cache backend/u });
+  expect(tab.getAttribute("aria-selected")).toBe("true");
+  expect(slot.getByRole("tabpanel").textContent).toContain("Pick the cache backend");
+});
+
+test("arrow keys choose among three or more asks and keep tab focus", async () => {
+  const third = { ...decision, key: "ask:a3", id: "a3", text: "Third ask" } as const;
+  const later = { ...decision, key: "ask:a4", id: "a4", snoozedUntil: NOW + 60_000 } as const;
+  const { slot } = render(CAPTAIN, [decision, access, third, later]);
+  const tabs = await slot.findAllByRole("tab");
+  expect(tabs).toHaveLength(3);
+  expect(slot.getByText("1 later")).toBeDefined();
+  act(() => tabs[0]!.focus());
+  fireEvent.keyDown(tabs[0]!, { key: "ArrowLeft" });
+  expect(document.activeElement).toBe(tabs[2]);
+  expect(tabs[2]?.getAttribute("aria-selected")).toBe("true");
+  expect(slot.getByRole("tabpanel").textContent).toContain("Third ask");
+  fireEvent.keyDown(tabs[2]!, { key: "ArrowRight" });
+  expect(document.activeElement).toBe(tabs[0]);
 });
 
 test("keys: a number answers, S skips, L hides it, Enter on the banner picks the recommended", async () => {
@@ -122,6 +150,7 @@ test("keys: a number answers, S skips, L hides it, Enter on the banner picks the
   cleanup();
   const again = render(CAPTAIN, [decision]);
   const fresh = await again.slot.findByTestId("captain-needs-you");
+  act(() => fresh.focus());
   fireEvent.keyDown(fresh, { key: "2" });
   await waitFor(() =>
     expect(again.of("resolveAsk").map((call) => call.input)).toEqual([
@@ -130,40 +159,43 @@ test("keys: a number answers, S skips, L hides it, Enter on the banner picks the
   );
 });
 
-test("the keys work without a visible hint: no keycap, number or framed letter renders", async () => {
+test("answer shortcuts use accessible attributes, with an icon-only Later and no visible Skip", async () => {
   const { slot } = render(CAPTAIN, [decision]);
-  const card = await slot.findByTestId("captain-needs-you");
-  act(() => card.focus());
-  const answers = ["Redis", "SQLite", "No cache"].map((name) =>
-    slot.getByRole("button", { name: new RegExp(name, "u") }),
-  );
-  answers.forEach((button, index) => {
+  await slot.findByTestId("captain-needs-you");
+  ["Redis", "SQLite", "No cache"].forEach((name, index) => {
+    const button = slot.getByRole("button", { name: new RegExp(name, "u") });
     expect(button.getAttribute("aria-keyshortcuts")).toBe(String(index + 1));
     expect(button.textContent).not.toMatch(/\d/u);
   });
   const later = slot.getByRole("button", { name: "Later" });
-  const skip = slot.getByRole("button", { name: "Skip" });
   expect(later.getAttribute("aria-keyshortcuts")).toBe("L");
-  expect(skip.getAttribute("aria-keyshortcuts")).toBe("S");
-  for (const button of [...answers, later, skip]) {
-    expect(button.querySelector("[aria-hidden]")).toBeNull();
-  }
-  // The label reads whole, and no element inside the button frames a part of
-  // it, such as its first letter; a span wrapping the whole word is fine.
-  for (const [button, label] of [
-    [later, "Later"],
-    [skip, "Skip"],
-  ] as const) {
-    expect(button.textContent).toBe(label);
-    const framed = [...button.querySelectorAll("*")].filter((each) => each.textContent !== label);
-    expect(framed.map((each) => each.textContent)).toEqual([]);
-  }
+  expect(later.textContent).toBe("");
+  expect(slot.queryByRole("button", { name: "Skip" })).toBeNull();
+});
+
+test("unfocused and pointer-focused controls do not arm letter or number shortcuts", async () => {
+  const { slot, of } = render(CAPTAIN, [decision]);
+  const card = await slot.findByTestId("captain-needs-you");
+  fireEvent.keyDown(card, { key: "1" });
+  const later = slot.getByRole("button", { name: "Later" });
+  fireEvent.pointerDown(later);
+  const matches = later.matches.bind(later);
+  const pointerFocus = vi
+    .spyOn(later, "matches")
+    .mockImplementation((selector) => (selector === ":focus-visible" ? false : matches(selector)));
+  act(() => later.focus());
+  fireEvent.keyDown(later, { key: "L" });
+  fireEvent.keyDown(later, { key: "2" });
+  pointerFocus.mockRestore();
+  expect(of("resolveAsk")).toEqual([]);
+  expect(of("defer")).toEqual([]);
 });
 
 test("Enter picks the recommended option only when the banner itself has focus", async () => {
   const { slot, of } = render(CAPTAIN, [decision]);
   const card = await slot.findByTestId("captain-needs-you");
   fireEvent.keyDown(slot.getByRole("button", { name: /Later/u }), { key: "Enter" });
+  act(() => card.focus());
   fireEvent.keyDown(card, { key: "Enter" });
   await waitFor(() =>
     expect(of("resolveAsk").map((call) => call.input)).toEqual([{ askId: "a1", answer: "Redis" }]),
@@ -456,7 +488,7 @@ test("the next item starts collapsed, whatever the last one showed", async () =>
     const card = await slot.findByTestId("captain-needs-you");
     expect(card.textContent).toContain("Grant the crew a deploy key");
     act(() => slot.getByRole("button", { name: "More" }).click());
-    act(() => slot.getByRole("button", { name: "Skip" }).click());
+    act(() => slot.getByRole("tab", { name: /Pick the cache backend/u }).click());
     await waitFor(() => expect(card.textContent).toContain("Pick the cache backend"));
     expect(slot.getByRole("button", { name: "More" }).getAttribute("aria-expanded")).toBe("false");
   } finally {
@@ -546,14 +578,12 @@ test("a click on a chip in the collapsed detail acts and leaves the detail as it
   }
 });
 
-test("Later and Skip clicks defer the item on show", async () => {
+test("the Later icon defers the item on show", async () => {
   const { slot, of } = render(CAPTAIN, [decision]);
   await slot.findByTestId("captain-needs-you");
-  act(() => slot.getByRole("button", { name: "Skip" }).click());
   act(() => slot.getByRole("button", { name: "Later" }).click());
   await waitFor(() =>
     expect(of("defer").map((call) => call.input)).toEqual([
-      { captainId: CAPTAIN, key: "ask:a1", action: "skip" },
       { captainId: CAPTAIN, key: "ask:a1", action: "later" },
     ]),
   );
@@ -613,7 +643,7 @@ test("a blocked crew row opens its thread", async () => {
     skipOrder: null,
   };
   const { slot } = render(CAPTAIN, [decision], { crew: [blocked] });
-  await slot.findByText("Implement needs you: secrets request: UNITY_TOKEN");
+  await slot.findByRole("button", { name: "Open thread" });
   act(() => slot.getByRole("button", { name: /Open thread/u }).click());
   expect(slot.inspection.navigateCalls).toEqual([
     expect.objectContaining({ method: "toThread", threadId: "thr_crew" }),
@@ -625,6 +655,7 @@ test("when the crew read fails, asks still show, the card says so, and Skip stil
   const card = await slot.findByTestId("captain-needs-you");
   await waitFor(() => expect(card.textContent).toContain("crew not read"));
   expect(card.textContent).toContain("Pick the cache backend");
+  act(() => card.focus());
   fireEvent.keyDown(card, { key: "s" });
   await waitFor(() =>
     expect(of("defer").map((call) => call.input)).toEqual([
@@ -658,10 +689,71 @@ test("an errored Captain thread's Retry re-submits its failed turn", async () =>
       },
     },
   });
-  await slot.findByText("Captain thread errored");
+  await slot.findByRole("button", { name: "Retry" });
   const retry = slot.getByRole("button", { name: /Retry/u });
   // Retry is the only action, not a recommendation among options.
   expect(retry.textContent).not.toContain("Recommended");
   act(() => retry.click());
   await waitFor(() => expect(retried).toEqual([{ threadId: CAPTAIN }]));
+});
+
+test("a ship panel does not answer on implicit Enter, and its Merge and Hold actions still work", async () => {
+  const ship = { ...decision, askKind: "ship", options: ["Merge", "Hold"] } as const;
+  const { slot, of } = render(CAPTAIN, [{ ...ship, options: [...ship.options] }]);
+  const card = await slot.findByTestId("captain-needs-you");
+  act(() => card.focus());
+  fireEvent.keyDown(card, { key: "Enter" });
+  expect(of("resolveAsk")).toEqual([]);
+  expect(slot.getByRole("button", { name: "Merge Recommended" })).toBeDefined();
+  fireEvent.click(slot.getByRole("button", { name: "Hold" }));
+  await waitFor(() =>
+    expect(of("resolveAsk").map(({ input }) => input)).toEqual([{ askId: "a1", answer: "Hold" }]),
+  );
+});
+
+test("a Plan decision opens its full detail from the action row", async () => {
+  const plan = {
+    ...decision,
+    text: "Approve the plan · Board drag reorder",
+    options: ["Approve", "Revise"],
+  };
+  const { slot } = render(CAPTAIN, [plan]);
+  const read = await slot.findByRole("button", { name: "Read plan" });
+  expect(read.getAttribute("aria-expanded")).toBe("false");
+  expect(slot.queryByRole("tablist")).toBeNull();
+  act(() => read.click());
+  expect(read.getAttribute("aria-expanded")).toBe("true");
+  const details = document.getElementById(read.getAttribute("aria-controls")!);
+  expect(details?.textContent).toContain(plan.detail);
+});
+
+test("no-action rows show task phases, open Tasks, and collapse", async () => {
+  const { slot } = render(CAPTAIN, [], {
+    tasks: [
+      {
+        key: "PLUG-8",
+        title: "Board drag reorder",
+        status: "in_progress",
+        roles: ["implement"],
+        updatedAt: NOW,
+      },
+      {
+        key: "PLUG-9",
+        title: "Stacked PR card",
+        status: "in_review",
+        roles: ["implement", "review"],
+        updatedAt: NOW,
+      },
+    ],
+  });
+  const toggle = await slot.findByRole("button", { name: /No action needed/u });
+  expect(toggle.textContent).toContain("2 in progress");
+  expect(slot.getByRole("link", { name: "Open task PLUG-8" }).getAttribute("href")).toBe(
+    "/plugins/scott-tasks/tasks/task/PLUG-8",
+  );
+  expect(slot.getByText("Impl")).toBeDefined();
+  expect(slot.getByText("Review")).toBeDefined();
+  act(() => toggle.click());
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(slot.queryByRole("link", { name: "Open task PLUG-8" })).toBeNull();
 });

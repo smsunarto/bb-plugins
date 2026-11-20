@@ -1,5 +1,5 @@
 /**
- * Needs you: one item at a time above a Captain's composer, answered with a
+ * Needs you: the queue above a Captain's composer, answered with a
  * click or a key. bb mounts composer banners on every thread, so the banner
  * reads one shared, cached list of Captain ids and renders nothing on any
  * other thread, before any other read. bb hides the card while it is empty.
@@ -14,9 +14,9 @@ import {
   useSdk,
 } from "@get-bb/plugin-sdk/app";
 import {
-  Fragment,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -33,22 +33,24 @@ import {
   type HealthItem,
   type QueueItem,
 } from "../contract/queue.ts";
-import { captainContract, type ChangeRef } from "../contract/rpc.ts";
+import { captainContract, TASK_PHASES, type BannerTask, type ChangeRef } from "../contract/rpc.ts";
+import { surface } from "@bb-plugins/ui/surface";
 import { Button } from "./components/ui/button.tsx";
+import { Icon } from "./components/ui/icon.tsx";
 import { Input } from "./components/ui/input.tsx";
 import { cn } from "./lib/utils.ts";
 
 const NO_INPUT = {};
-type ItemUi = { key: string; other: string | null; error: string | null };
-const NO_UI: ItemUi = { key: "", other: null, error: null };
+type ItemUi = { key: string; other: string | null; error: string | null; planOpen: boolean };
+const NO_UI: ItemUi = { key: "", other: null, error: null, planOpen: false };
 const NO_ITEMS: QueueItem[] = [];
 /** Ages and Later both read the clock; a minute is fine-grained enough for either. */
 const TICK_MS = 30_000;
 const FAR = Number.MAX_SAFE_INTEGER;
 /** Every control a phone user taps gets a 44px target. */
 export const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
-/** Later and Skip: a short pair that sits in the title's first line. */
-const DEFER = "h-6 px-2 text-muted-foreground";
+const ICON_BUTTON = cn(TAP, "size-8 shrink-0");
+const COMPACT_ANSWER = "max-sm:gap-1 max-sm:px-1 max-sm:text-[11px]";
 
 export function NeedsYouBanner() {
   const { scope } = useComposer();
@@ -67,11 +69,18 @@ function Banner({ captainId }: { captainId: string }) {
   const asks = useRpcQuery({ contract: captainContract, method: "asks", input });
   const crew = useRpcQuery({ contract: captainContract, method: "crew", input });
   const now = useNow(asks.data?.items, crew.data?.items);
-  const items = useMemo(
-    () => orderQueue([...(asks.data?.items ?? NO_ITEMS), ...(crew.data?.items ?? NO_ITEMS)], now),
-    [asks.data, crew.data, now],
+  const allItems = useMemo(
+    () => [...(asks.data?.items ?? NO_ITEMS), ...(crew.data?.items ?? NO_ITEMS)],
+    [asks.data, crew.data],
   );
+  const items = useMemo(() => orderQueue(allItems, now), [allItems, now]);
   const loaded = asks.data !== undefined;
+  const tasks = useRpcQuery({
+    contract: captainContract,
+    method: "bannerTasks",
+    input,
+    enabled: loaded && items.length === 0 && crew.data !== undefined,
+  });
   const since = useRpcQuery({
     contract: captainContract,
     method: "sinceYouLeft",
@@ -82,116 +91,280 @@ function Banner({ captainId }: { captainId: string }) {
 
   if (!loaded) return null;
   if (items.length === 0) {
-    return since.data ? <SinceYouLeft captainId={captainId} since={since.data} /> : null;
+    const active = tasks.data?.tasks ?? [];
+    return (
+      <>
+        {active.length > 0 ? <InProgress tasks={active} now={now} /> : null}
+        {since.data ? <SinceYouLeft captainId={captainId} since={since.data} /> : null}
+      </>
+    );
   }
-  return <Queue captainId={captainId} items={items} now={now} crewError={crew.error?.message} />;
+  const laterCount = allItems.length - items.length;
+  return (
+    <Queue
+      key={captainId}
+      captainId={captainId}
+      items={items}
+      laterCount={laterCount}
+      now={now}
+      crewError={crew.error?.message}
+    />
+  );
 }
 
 function Queue({
   captainId,
   items,
+  laterCount,
   now,
   crewError,
 }: {
   captainId: string;
-  items: QueueItem[];
+  items: readonly QueueItem[];
+  laterCount: number;
   now: number;
   crewError: string | undefined;
 }) {
   const navigate = useBbNavigate();
   const sdk = useSdk();
+  const id = useId();
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
-  const item = items[0] as QueueItem;
+  const [selected, setSelected] = useState<string | null>(null);
+  const first = items[0]!;
+  const item = items.find((entry) => entry.key === selected && !isSending(entry)) ?? first;
   const sending = isSending(item);
-  const { other, error, patchUi } = useItemUi(item.key);
+  const { other, error, planOpen, patchUi } = useItemUi(item.key);
   const setOther = (value: string | null) => patchUi({ other: value });
   const { answer, later, skip, fail } = useItemCommands(captainId, item.key, root, (value) =>
     patchUi({ error: value }),
   );
   const actions = sending ? [] : itemActions(item, { answer, navigate, sdk, fail });
+  const kind = bannerKind(item);
+  const showTabs = items.length > 1 || kind !== "plan" || laterCount > 0;
+  const detail = item.kind === "blocked" ? null : item.detail;
+  const plan = kind === "plan" && detail;
+  const dismiss = () => {
+    setSelected(null);
+    skip();
+  };
+  const select = (entry: QueueItem) => {
+    if (entry.key === item.key) return;
+    patchUi({ other: null, error: null, planOpen: false });
+    setSelected(entry.key);
+  };
 
   // When More or Less goes while it has focus, focus lands on the banner, where
   // Enter answers. The Enter that follows was meant for the toggle: it does nothing.
   const toggleGone = useRef(false);
+  // A number key itself can make :focus-visible match after a click. Capture
+  // how focus arrived so that first keypress cannot unexpectedly answer.
+  const keyboardFocus = useRef(false);
   const onToggleGone = useCallback(() => {
     root?.focus();
     toggleGone.current = true;
   }, [root]);
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (!keyboardFocus.current) return;
     const swallow = toggleGone.current && event.key === "Enter";
     toggleGone.current = false;
     if (swallow) {
       event.preventDefault();
       return;
     }
-    const run = shortcut(event, actions, sending ? null : { later, skip });
+    const run = shortcut(
+      event,
+      actions,
+      sending ? null : { later, skip: dismiss },
+      kind !== "ship",
+    );
     if (run === undefined) return;
     event.preventDefault();
     run();
   };
 
-  const detail = item.kind === "blocked" ? null : item.detail;
   return (
-    // A toolbar: one focus stop whose keys answer, defer and skip the item it shows.
     <div
       ref={setRoot}
       role="toolbar"
       tabIndex={0}
       aria-label={`Needs you, ${items.length} item${items.length === 1 ? "" : "s"}`}
-      aria-keyshortcuts="1 2 3 4 5 6 7 8 9 Enter L S"
+      aria-keyshortcuts={kind === "ship" ? "1 2 L" : "1 2 3 4 5 6 7 8 9 Enter L"}
       data-bb-plugin="captain"
       data-bb-plugin-scope-captain=""
       data-testid="captain-needs-you"
       onKeyDown={onKeyDown}
+      onFocus={(event) => {
+        keyboardFocus.current = event.target.matches(":focus-visible");
+      }}
+      onPointerDownCapture={() => {
+        keyboardFocus.current = false;
+      }}
       onBlur={() => {
+        keyboardFocus.current = false;
         toggleGone.current = false;
       }}
-      className="flex min-w-0 flex-col gap-2 px-3 py-2 text-xs outline-none focus-visible:outline-1"
+      className="flex min-w-0 flex-col text-xs outline-none focus-visible:outline-1"
     >
-      {/* On touch, Later's and Skip's targets end with the heading and More's starts with the
-          detail (see Heading and Detail), so this gap need not part them. */}
-      <div className="flex min-w-0 flex-col gap-0.5 pointer-coarse:gap-1.5">
-        <Heading
-          title={title(item)}
-          meta={itemMeta(item, items.length, now)}
-          crewError={crewError}
-          defer={sending ? null : { later, skip }}
-        />
-        {detail ? <Detail key={item.key} content={detail} onToggleGone={onToggleGone} /> : null}
-      </div>
-      {other !== null ? (
-        <OtherAnswer
-          value={other}
-          onChange={setOther}
-          onCancel={() => {
-            setOther(null);
-            root?.focus();
-          }}
-          onSubmit={(text) => item.kind === "ask" && answer(item.id, text)}
+      {showTabs ? (
+        <QueueTabs
+          id={id}
+          items={items}
+          selected={item}
+          laterCount={laterCount}
+          now={now}
+          onSelect={select}
         />
       ) : null}
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        {sending && item.kind === "ask" ? (
-          <output className="text-muted-foreground">
-            Answered {JSON.stringify(item.answer)} · Sending…
-          </output>
+      <div
+        id={`${id}-panel`}
+        role={showTabs ? "tabpanel" : undefined}
+        aria-labelledby={showTabs ? `${id}-${item.key}` : undefined}
+        className={cn(
+          showTabs && surface.divider,
+          "grid min-w-0 grid-cols-[18px_minmax(0,1fr)] gap-x-2 gap-y-2.5 px-3 pt-2.5 pb-3",
+        )}
+      >
+        <Icon
+          name={BANNER_ICONS[kind]}
+          aria-hidden
+          className="mt-0.5 size-3.5 justify-self-center text-warning-text"
+        />
+        <Heading item={item} crewError={crewError} />
+        {detail ? (
+          <div className="col-start-2 min-w-0">
+            {plan ? (
+              <div
+                key={item.key}
+                id={`${id}-plan`}
+                className={cn(
+                  DETAIL_BOX,
+                  planOpen ? "max-h-[12lh] overflow-y-auto" : "max-h-[6.5lh] overflow-hidden",
+                )}
+                onScroll={(event) => {
+                  if (!planOpen)
+                    revealFocusedDetail(event.currentTarget, () => patchUi({ planOpen: true }));
+                }}
+              >
+                <Markdown content={detail} className={DETAIL_TEXT} />
+              </div>
+            ) : (
+              <Detail key={item.key} content={detail} onToggleGone={onToggleGone} />
+            )}
+          </div>
         ) : null}
-        {actions.map((action, index) => (
-          <ActionButton key={action.label} action={action} index={index} />
-        ))}
-        {item.kind === "ask" && item.askKind !== "ship" && !sending && other === null ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className={cn(TAP, "text-muted-foreground")}
-            onClick={() => setOther("")}
-          >
-            Other…
-          </Button>
+        {other !== null ? (
+          <div className="col-start-2 min-w-0">
+            <OtherAnswer
+              value={other}
+              onChange={setOther}
+              onCancel={() => {
+                setOther(null);
+                root?.focus();
+              }}
+              onSubmit={(text) => item.kind === "ask" && answer(item.id, text)}
+            />
+          </div>
+        ) : null}
+        <AnswerRow
+          item={item}
+          kind={kind}
+          actions={actions}
+          later={later}
+          openOther={other === null ? () => setOther("") : null}
+          plan={
+            plan
+              ? {
+                  id: `${id}-plan`,
+                  open: planOpen,
+                  toggle: () => {
+                    const content = document.getElementById(`${id}-plan`);
+                    if (planOpen && content) content.scrollTop = 0;
+                    patchUi({ planOpen: !planOpen });
+                  },
+                }
+              : null
+          }
+        />
+        {error ? (
+          <p className="col-start-2 m-0 min-w-0 break-words text-destructive">{error}</p>
         ) : null}
       </div>
-      {error ? <p className="m-0 min-w-0 break-words text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+function AnswerRow({
+  item,
+  kind,
+  actions,
+  later,
+  openOther,
+  plan,
+}: {
+  item: QueueItem;
+  kind: BannerKind;
+  actions: Action[];
+  later: () => void;
+  openOther: (() => void) | null;
+  plan: { id: string; open: boolean; toggle: () => void } | null;
+}) {
+  if (item.kind === "ask" && item.answer !== null) {
+    return (
+      <output className="col-start-2 text-muted-foreground">
+        Answered {JSON.stringify(item.answer)} · Sending…
+      </output>
+    );
+  }
+  const other = item.kind === "ask" && kind !== "ship" ? openOther : null;
+  return (
+    <div className="col-start-2 flex min-w-0 items-start gap-1.5 max-sm:col-span-2 max-sm:col-start-1">
+      {actions.length > 0 || other || plan ? (
+        <div
+          data-captain-answers=""
+          className="-m-0.5 flex min-w-0 items-center gap-1.5 overflow-x-auto p-0.5"
+        >
+          {actions.map((action, index) => (
+            <ActionButton key={action.label} action={action} index={index} bannerKind={kind} />
+          ))}
+          {plan ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={cn(TAP, COMPACT_ANSWER)}
+              aria-expanded={plan.open}
+              aria-controls={plan.id}
+              onClick={plan.toggle}
+            >
+              <Icon name="FileText" aria-hidden data-icon="inline-start" />
+              {plan.open ? "Close plan" : "Read plan"}
+            </Button>
+          ) : null}
+          {other ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className={cn(TAP, COMPACT_ANSWER, "text-muted-foreground")}
+              onClick={other}
+            >
+              Other…
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      <Button
+        type="button"
+        size="icon"
+        variant="outline"
+        className={cn(ICON_BUTTON, "text-muted-foreground")}
+        aria-label="Later"
+        aria-keyshortcuts="L"
+        aria-description="Hide for an hour"
+        onClick={later}
+      >
+        <Icon name="Clock" aria-hidden />
+      </Button>
     </div>
   );
 }
@@ -199,10 +372,10 @@ function Queue({
 /** Per-item UI, tagged with its item so a new item starts collapsed with no answer box. */
 function useItemUi(key: string) {
   const [ui, setUi] = useState<ItemUi>(NO_UI);
-  const { other, error } = ui.key === key ? ui : NO_UI;
+  const { other, error, planOpen } = ui.key === key ? ui : NO_UI;
   const patchUi = (patch: Partial<Omit<ItemUi, "key">>) =>
     setUi((current) => ({ ...(current.key === key ? current : NO_UI), ...patch, key }));
-  return { other, error, patchUi };
+  return { other, error, planOpen, patchUi };
 }
 
 /**
@@ -282,103 +455,159 @@ function shortcut(
   event: KeyboardEvent<HTMLElement>,
   actions: Action[],
   defer: { later: () => void; skip: () => void } | null,
+  enterAnswers: boolean,
 ): (() => void) | undefined {
   if (event.metaKey || event.ctrlKey || event.altKey) return undefined;
   const target = event.target as HTMLElement;
-  if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return undefined;
+  if (document.activeElement !== target) return undefined;
+  if (target.matches("input, textarea, select, [contenteditable]")) return undefined;
   const key = event.key.toLowerCase();
   if (/^[1-9]$/u.test(key)) return actions[Number(key) - 1]?.run;
   // Enter on a focused button is that button's own click. A held Enter repeats
   // onto the banner when the button it pressed goes away; that is no answer.
   if (key === "enter") {
-    return target === event.currentTarget && !event.repeat ? actions[0]?.run : undefined;
+    return enterAnswers && target === event.currentTarget && !event.repeat
+      ? actions[0]?.run
+      : undefined;
   }
   if (key === "l") return defer?.later;
   if (key === "s") return defer?.skip;
   return undefined;
 }
 
-/** Place in the queue (only when there is more than one), task and age. */
-function itemMeta(item: QueueItem, count: number, now: number): string[] {
-  return [
-    count > 1 ? `1 of ${count}` : null,
-    item.task,
-    item.since === null ? null : age(now, item.since),
-  ].filter((part): part is string => Boolean(part));
+const BANNER_ICONS = {
+  decision: "GitBranch",
+  ship: "GitMerge",
+  access: "Lock",
+  improve: "Lightbulb",
+  plan: "ListTodo",
+  blocked: "MessageCircle",
+  health: "AlertTriangle",
+} as const;
+
+type BannerKind = keyof typeof BANNER_ICONS;
+
+/** Plan requests use the ordinary decision payload. Keep generic decisions on their own template. */
+function bannerKind(item: QueueItem): BannerKind {
+  if (item.kind !== "ask") return item.kind;
+  if (
+    item.askKind === "decision" &&
+    /^(?:approve|review) (?:the |this )?plan\b/iu.test(item.text)
+  ) {
+    return "plan";
+  }
+  return item.askKind;
 }
 
-/**
- * The title, with the item's task and age trailing it so they take no row of
- * their own, and Later and Skip in the corner: deferring is not answering.
- */
-function Heading({
-  title: text,
-  meta,
-  crewError,
-  defer,
+function tabTitle(item: QueueItem): string {
+  const text = title(item);
+  if (item.kind === "ask" && item.askKind === "ship" && item.task !== null) {
+    const prefix = `Merge ${item.task}: `;
+    if (text.startsWith(prefix)) return text.slice(prefix.length);
+    const pr = /^Merge PR #\d+\s+·\s+(.+)$/u.exec(text);
+    if (pr?.[1]) return pr[1];
+  }
+  return text;
+}
+
+function QueueTabs({
+  id,
+  items,
+  selected,
+  laterCount,
+  now,
+  onSelect,
 }: {
-  title: string;
-  meta: string[];
-  crewError: string | undefined;
-  defer: { later: () => void; skip: () => void } | null;
+  id: string;
+  items: readonly QueueItem[];
+  selected: QueueItem;
+  laterCount: number;
+  now: number;
+  onSelect: (item: QueueItem) => void;
 }) {
-  const parts = meta.map((text) => ({ text, error: null as string | null }));
-  if (crewError) parts.push({ text: "crew not read", error: crewError });
+  const waiting = items.filter((item) => !isSending(item));
+  const tabs = waiting.length > 0 ? waiting : items;
   return (
-    <div className="flex min-w-0 items-start gap-2">
-      <p className="m-0 min-w-0 flex-1 py-px text-sm font-medium break-words text-foreground">
-        {/* Isolated, so a right-to-left title cannot reorder the meta; each takes
-            its base direction from its text, while the margin follows the card's
-            direction. The title's end margin, not a leading pad, spaces them, so
-            a wrapped meta starts flush. */}
-        <span className="me-1.5 [unicode-bidi:plaintext]">{text}</span>
-        {parts.length > 0 ? " " : null}
-        {parts.length > 0 ? (
-          // Each part stays whole and the meta wraps between parts, so it never
-          // overflows a narrow card and keeps the title's baseline.
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 px-3 py-1.5">
+      <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground" aria-live="polite">
+        <span className="min-w-4.5 rounded-full bg-(--surface-attention) px-1 text-center font-semibold text-warning-text">
+          {waiting.length}
+        </span>
+        waiting
+      </span>
+      <div
+        role="tablist"
+        tabIndex={-1}
+        aria-label="Captain queue"
+        className="-m-0.5 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto p-0.5 max-sm:basis-full"
+        onKeyDown={(event) => {
+          const index = tabs.indexOf(selected);
+          const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+          if (step === 0 || index === -1) return;
+          event.preventDefault();
+          const next = tabs[(index + step + tabs.length) % tabs.length]!;
+          onSelect(next);
+          document.getElementById(`${id}-${next.key}`)?.focus();
+        }}
+      >
+        {tabs.map((entry) => {
+          const active = entry.key === selected.key;
+          return (
+            <Button
+              key={entry.key}
+              id={`${id}-${entry.key}`}
+              role="tab"
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-controls={`${id}-panel`}
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              className={cn(
+                TAP,
+                "h-6 max-w-42 shrink-0 gap-1.5 px-2",
+                active ? "bg-(--surface-selected) text-foreground" : "text-muted-foreground",
+              )}
+              onClick={() => onSelect(entry)}
+            >
+              <Icon name={BANNER_ICONS[bannerKind(entry)]} aria-hidden data-icon="inline-start" />
+              <span title={tabTitle(entry)} className="min-w-0 truncate [unicode-bidi:plaintext]">
+                {tabTitle(entry)}
+              </span>
+              {entry.since === null ? null : (
+                <span className="shrink-0 font-normal opacity-75">{age(now, entry.since)}</span>
+              )}
+            </Button>
+          );
+        })}
+        {laterCount > 0 ? (
           <span
-            className="text-xs font-normal text-muted-foreground tabular-nums [unicode-bidi:plaintext]"
-            translate="no"
+            className={cn(surface.edge, "shrink-0 rounded-md px-2 py-0.5 text-muted-foreground")}
           >
-            {parts.map((part, index) => (
-              <Fragment key={part.text}>
-                <span
-                  className={cn("whitespace-nowrap", part.error && "text-destructive")}
-                  title={part.error ?? undefined}
-                >
-                  {part.text}
-                  {index < parts.length - 1 ? " ·" : null}
-                </span>
-                {index < parts.length - 1 ? " " : null}
-              </Fragment>
-            ))}
+            {laterCount} later
           </span>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function Heading({ item, crewError }: { item: QueueItem; crewError: string | undefined }) {
+  const text = title(item);
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <p
+        dir="auto"
+        className="m-0 text-[13px] leading-[18px] font-medium wrap-anywhere text-foreground"
+      >
+        {text}
       </p>
-      {defer ? (
-        <span className="-me-1.5 -mt-0.5 flex shrink-0 items-center pointer-coarse:-mt-3">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className={cn(TAP, DEFER)}
-            aria-keyshortcuts="L"
-            aria-description="Hide for an hour"
-            onClick={defer.later}
-          >
-            Later
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className={cn(TAP, DEFER)}
-            aria-keyshortcuts="S"
-            aria-description="Move to the back of the queue"
-            onClick={defer.skip}
-          >
-            Skip
-          </Button>
+      {item.task && !text.includes(item.task) ? (
+        <span className="font-mono text-[11px] text-muted-foreground">{item.task}</span>
+      ) : null}
+      {crewError ? (
+        <span className="text-destructive" title={crewError}>
+          crew not read
         </span>
       ) : null}
     </div>
@@ -394,26 +623,48 @@ export function ActionButton({
   action,
   index,
   shortcuts = true,
+  bannerKind,
 }: {
   action: Action;
   index: number;
   /** False where no key handler answers by number, as outside the banner. */
   shortcuts?: boolean;
+  bannerKind?: BannerKind;
 }) {
   return (
     <Button
       type="button"
       size="sm"
       variant={action.primary ? "default" : "outline"}
-      className={cn(TAP, "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal")}
+      className={cn(
+        TAP,
+        bannerKind
+          ? cn(COMPACT_ANSWER, "shrink-0")
+          : "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal",
+        bannerKind &&
+          action.primary &&
+          "bg-(--foreground) text-background hover:bg-(--foreground)/90",
+      )}
       aria-keyshortcuts={shortcuts && index < 9 ? String(index + 1) : undefined}
       onClick={action.run}
     >
+      {bannerKind && action.recommended ? (
+        <Icon
+          name={bannerKind === "ship" ? "GitMerge" : "Star"}
+          className={cn("size-3", bannerKind !== "ship" && "fill-current")}
+          aria-hidden
+          data-icon="inline-start"
+        />
+      ) : null}
       <span className="min-w-0 text-start break-words [unicode-bidi:plaintext]">
         {action.label}
       </span>
       {action.recommended ? (
-        <span className="shrink-0 font-normal whitespace-nowrap opacity-70">Recommended</span>
+        <span
+          className={bannerKind ? "sr-only" : "shrink-0 font-normal whitespace-nowrap opacity-70"}
+        >
+          Recommended
+        </span>
       ) : null}
     </Button>
   );
@@ -434,7 +685,7 @@ const DETAIL_BOX =
 /** bb's renderer defaults to body size; the box's size and leading keep its lines the box's lines. */
 const DETAIL_TEXT = "min-w-0 text-xs leading-snug text-muted-foreground";
 /**
- * Collapsed: two lines ending in an ellipsis, capped at three line heights.
+ * Collapsed Markdown fits in a short preview under the fade.
  * Every block is lines of text with no margins between, so two blocks of one
  * line each are the two lines. bb's blocks become text there too, at any
  * depth, rather than show a sliver. bb frames a code block or a diagram in a
@@ -445,78 +696,74 @@ const DETAIL_TEXT = "min-w-0 text-xs leading-snug text-muted-foreground";
  * SUMMARISED).
  */
 const PREVIEW =
-  "line-clamp-2 max-h-[3lh] [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0 [&_li]:my-0 [&_blockquote]:my-0 [&_h1]:my-0 [&_h2]:my-0 [&_h3]:my-0 [&_h4]:my-0 [&_h5]:my-0 [&_h6]:my-0 [&_hr]:my-0 [&_button]:hidden [&_div:has(>div>div>button)]:contents [&_div:has(>div>button)]:contents [&_div:has(>pre)>div]:hidden [&_div:has(>div>div>button)>div~div]:hidden [&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent! [&_pre]:p-0 [&_pre>code]:leading-snug! [&_pre_span]:leading-snug! [&_pre_span]:text-inherit! [&_div:has(>div>table)]:contents [&_div:has(>table)]:contents [&_table]:block [&_table]:border-0 [&_thead]:contents [&_tbody]:contents [&_tr]:block [&_th]:inline [&_th]:border-0 [&_th]:p-0 [&_th]:font-medium [&_td]:inline [&_td]:border-0 [&_td]:p-0 [&_th+th]:before:content-['_·_'] [&_td+td]:before:content-['_·_'] [&_img]:my-0! [&_img]:inline [&_img]:h-[1lh] [&_img]:w-auto [&_img]:align-top!";
+  "block max-h-[84px] overflow-hidden [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0 [&_li]:my-0 [&_li+li]:mt-1.5 [&_p+ul]:mt-1.5 [&_ul+p]:mt-1.5 [&_blockquote]:my-0 [&_h1]:my-0 [&_h2]:my-0 [&_h3]:my-0 [&_h4]:my-0 [&_h5]:my-0 [&_h6]:my-0 [&_hr]:my-0 [&_button]:hidden [&_div:has(>div>div>button)]:contents [&_div:has(>div>button)]:contents [&_div:has(>pre)>div]:hidden [&_div:has(>div>div>button)>div~div]:hidden [&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent! [&_pre]:p-0 [&_pre>code]:leading-snug! [&_pre_span]:leading-snug! [&_pre_span]:text-inherit! [&_div:has(>div>table)]:contents [&_div:has(>table)]:contents [&_table]:block [&_table]:border-0 [&_thead]:contents [&_tbody]:contents [&_tr]:block [&_th]:inline [&_th]:border-0 [&_th]:p-0 [&_th]:font-medium [&_td]:inline [&_td]:border-0 [&_td]:p-0 [&_th+th]:before:content-['_·_'] [&_td+td]:before:content-['_·_'] [&_img]:my-0! [&_img]:inline [&_img]:h-[1lh] [&_img]:w-auto [&_img]:align-top!";
 /**
  * Blocks the preview shows only in summary: a code block or diagram, found by
  * its frame's buttons (a diagram draws only once visible), a table, an image.
  */
 const SUMMARISED = "button, table, img";
 
-/**
- * The detail, two lines until opened. More shows only when those two lines
- * leave something out; it and Less sit in a fixed column beside the text, so
- * More appearing never narrows the text it measures. On touch, the toggle's
- * 44px target reaches below its line, never above, so it stays clear of
- * Skip's above it.
- */
+/** The full width of the fade opens the preview. Its center labels the action. */
 function Detail({ content, onToggleGone }: { content: string; onToggleGone: () => void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const toggle = useToggleShown({ box, onToggleGone, open, content });
+  const id = useId();
   return (
-    <div className="flex min-w-0 items-end gap-2">
+    <div className="relative min-w-0">
       <div
         ref={box}
+        id={id}
         data-detail-box=""
-        className={cn(
-          "min-w-0 flex-1",
-          DETAIL_BOX,
-          open ? "max-h-[10lh] overflow-y-auto" : PREVIEW,
-        )}
+        className={cn(DETAIL_BOX, open ? "max-h-[10lh] overflow-y-auto" : PREVIEW)}
         onScroll={(event) => {
-          if (open) return;
-          const active = document.activeElement;
-          // Only keyboard focus on a link past the shown lines scrolls the clipped box
-          // without a pointer: show the whole detail so the focused link is in view. Any
-          // other scroll (a press on a half-hidden chip, find-in-page) snaps back.
-          if (
-            active instanceof HTMLElement &&
-            event.currentTarget.contains(active) &&
-            active.matches(":focus-visible")
-          ) {
-            setOpen(true);
-          } else {
-            event.currentTarget.scrollTop = 0;
-          }
+          if (!open) revealFocusedDetail(event.currentTarget, () => setOpen(true));
         }}
       >
         <Markdown content={content} className={DETAIL_TEXT} />
       </div>
-      <div className="flex w-11 shrink-0 justify-end">
-        {/* Hidden from its first paint; useToggleShown shows it once measured. One
-            line tall, so showing it changes no height with a mouse. */}
-        <Button
-          ref={toggle}
-          type="button"
-          size="sm"
-          variant="ghost"
-          hidden
+      <Button
+        ref={toggle}
+        type="button"
+        size="sm"
+        variant="ghost"
+        hidden
+        className={cn(
+          "z-1 flex w-full items-end justify-center rounded-none px-1 pb-0.5 text-muted-foreground [&[hidden]]:hidden",
+          open
+            ? "relative h-7"
+            : "absolute inset-x-0 bottom-0 h-11 bg-linear-to-b from-transparent via-(--surface-raised-solid) to-(--surface-raised-solid)",
+          TAP,
+        )}
+        aria-controls={id}
+        aria-expanded={open}
+        onClick={() => {
+          if (open && box.current !== null) box.current.scrollTop = 0;
+          setOpen(!open);
+        }}
+      >
+        <span
           className={cn(
-            TAP,
-            "h-auto px-1.5 py-0 leading-snug text-muted-foreground pointer-coarse:-mb-1.5 [&[hidden]]:hidden",
+            surface.edge,
+            "flex items-center gap-1 rounded-full bg-(--surface-raised-solid) px-2.5 py-0.5 text-[11px]",
           )}
-          aria-expanded={open}
-          onClick={() => {
-            // The preview starts at its first line, wherever the open detail was scrolled.
-            if (open && box.current !== null) box.current.scrollTop = 0;
-            setOpen(!open);
-          }}
         >
           {open ? "Less" : "More"}
-        </Button>
-      </div>
+          <Icon name={open ? "ChevronUp" : "ChevronDown"} aria-hidden className="size-3" />
+        </span>
+      </Button>
     </div>
   );
+}
+
+/** Keyboard focus on a clipped link reveals it. Other incidental scrolls snap back. */
+function revealFocusedDetail(node: HTMLElement, expand: () => void): void {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && node.contains(active) && active.matches(":focus-visible")) {
+    expand();
+  } else {
+    node.scrollTop = 0;
+  }
 }
 
 /**
@@ -668,6 +915,126 @@ export function OtherAnswer({
   );
 }
 
+const PHASE_LABEL = { plan: "Plan", implement: "Impl", review: "Review", merge: "Merge" };
+
+function InProgress({ tasks, now }: { tasks: BannerTask[]; now: number }) {
+  const [open, setOpen] = useState(true);
+  const id = useId();
+  return (
+    <section
+      aria-label="No action needed"
+      data-bb-plugin="captain"
+      data-bb-plugin-scope-captain=""
+      className="min-w-0 text-xs"
+    >
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className={cn(TAP, "h-9 w-full justify-start gap-2 px-3 font-normal")}
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen(!open)}
+      >
+        <Icon name="CircleCheck" aria-hidden className="text-muted-foreground" />
+        No action needed
+        <span className="text-muted-foreground">· {tasks.length} in progress</span>
+        <Icon
+          name={open ? "ChevronDown" : "ChevronRight"}
+          aria-hidden
+          className="ms-auto text-muted-foreground"
+        />
+      </Button>
+      <ul
+        id={id}
+        hidden={!open}
+        className={cn("m-0 max-h-56 list-none overflow-y-auto p-0", !open && "hidden")}
+      >
+        {tasks.map((task) => (
+          <li
+            key={task.key}
+            className={cn(
+              surface.divider,
+              "flex h-9 min-w-0 items-center gap-2.5 ps-3 pe-1.5 pointer-coarse:h-11",
+            )}
+          >
+            <span className="w-19 shrink-0 truncate font-mono text-[11px] text-muted-foreground max-sm:w-auto max-sm:max-w-16">
+              {task.key}
+            </span>
+            <span title={task.title} className="min-w-0 flex-1 truncate text-[13px]">
+              {task.title}
+            </span>
+            <TaskPhase task={task} />
+            {task.updatedAt > 0 ? (
+              <span className="w-7 shrink-0 text-end text-muted-foreground tabular-nums max-sm:hidden">
+                {age(now, task.updatedAt)}
+              </span>
+            ) : null}
+            <Button
+              asChild
+              size="icon"
+              variant="ghost"
+              className={cn(ICON_BUTTON, "text-muted-foreground")}
+            >
+              <a
+                href={taskHref(task.key)}
+                aria-label={`Open task ${task.key}`}
+                title={`Open task ${task.key}`}
+              >
+                <Icon name="ListTodo" aria-hidden />
+              </a>
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function TaskPhase({ task }: { task: BannerTask }) {
+  const current = TASK_PHASES.findLast(
+    (phase) => task.roles.includes(phase) || (phase === "review" && task.status === "in_review"),
+  );
+  return (
+    <>
+      <span className="w-24 shrink-0 truncate text-muted-foreground max-md:hidden">
+        {task.roles.length > 0 && current ? `crew · ${PHASE_LABEL[current].toLowerCase()}` : null}
+      </span>
+      <span className="flex w-29.5 shrink-0 items-center gap-2 max-sm:w-auto">
+        {current ? (
+          <>
+            <span aria-hidden className="flex items-center gap-0.5 max-sm:hidden">
+              {TASK_PHASES.map((phase, index) => (
+                <span
+                  key={phase}
+                  className={cn(
+                    "h-1 w-3 rounded-sm bg-foreground",
+                    phase === current
+                      ? "opacity-100"
+                      : index < TASK_PHASES.indexOf(current)
+                        ? "opacity-45"
+                        : "opacity-15",
+                  )}
+                />
+              ))}
+            </span>
+            <span
+              className="font-medium"
+              aria-label={current === "implement" ? "Implement" : undefined}
+            >
+              {PHASE_LABEL[current]}
+            </span>
+          </>
+        ) : null}
+      </span>
+    </>
+  );
+}
+
+function taskHref(key: string): string {
+  return `/plugins/scott-tasks/tasks/task/${encodeURIComponent(key)}`;
+}
+
 type Since = { cutoff: number | null; done: ChangeRef[]; ready: ChangeRef[]; failed: ChangeRef[] };
 
 /** One line of what changed since you last had this thread open; nothing when nothing did. */
@@ -762,10 +1129,7 @@ function RefLink({ change }: { change: ChangeRef }) {
   }
   return (
     <Button asChild size="sm" variant="outline" className={TAP}>
-      <a
-        href={`/plugins/scott-tasks/tasks/task/${encodeURIComponent(change.task)}`}
-        title={change.title ?? undefined}
-      >
+      <a href={taskHref(change.task)} title={change.title ?? undefined}>
         {label}
       </a>
     </Button>

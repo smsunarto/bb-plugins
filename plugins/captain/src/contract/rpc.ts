@@ -16,6 +16,18 @@ const threadId = z.string().regex(/^thr_[A-Za-z0-9_-]+$/u);
 const askId = z.string().regex(/^a\d+$/u);
 const defer = { snoozedUntil: z.number().nullable(), skipOrder: z.number().nullable() };
 
+export const TASK_PHASES = ["plan", "implement", "review", "merge"] as const;
+const bannerTask = z
+  .object({
+    key: z.string(),
+    title: z.string(),
+    status: z.enum(["in_progress", "in_review"]),
+    roles: z.array(z.enum(TASK_PHASES)),
+    updatedAt: z.number(),
+  })
+  .strict();
+export type BannerTask = z.infer<typeof bannerTask>;
+
 const askItem = z
   .object({
     kind: z.literal("ask"),
@@ -76,6 +88,7 @@ const changeRef = z
 
 export const asksTag = (captainId: string) => `asks:${captainId}`;
 export const crewTag = (captainId: string) => `crew:${captainId}`;
+export const bannerTasksTag = (captainId: string) => `banner-tasks:${captainId}`;
 export const sinceTag = (captainId: string) => `since:${captainId}`;
 export const driveTag = (captainId: string) => `drive:${captainId}`;
 export const CAPTAINS_TAG = "captains";
@@ -253,6 +266,12 @@ export const captainContract = defineRpcContract({
     input: z.object({ captainId: threadId }).strict(),
     output: z.object({ items: z.array(z.union([blockedItem, healthItem])) }).strict(),
     tags: ({ captainId }) => [crewTag(captainId)],
+  },
+  /** Current Tasks attached to the Captain's crew, for the idle banner. */
+  bannerTasks: {
+    input: z.object({ captainId: threadId }).strict(),
+    output: z.object({ tasks: z.array(bannerTask) }).strict(),
+    tags: ({ captainId }) => [crewTag(captainId), bannerTasksTag(captainId)],
   },
   /** The Overview's Threads: the Captain's unarchived crew, read live from bb and Tasks. */
   crewThreads: {
