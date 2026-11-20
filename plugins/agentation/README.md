@@ -90,7 +90,11 @@ from its row, mention it in the composer, or press **Send all** to send the full
 batch. A mention removes that annotation from staging when the message is sent.
 In a new-thread composer, **Send all** includes the staged annotations in your
 draft and submits it with the provider and environment selected in the composer.
-If the agent finishes without resolving it, the annotation returns to staging.
+Each row names the page the annotation was captured on, such as `from <thread>`.
+If the agent finishes its turn without acknowledging or resolving an annotation,
+it returns to staging. An annotation the agent acknowledged stays with that
+thread until it is resolved, staged again from the panel, mentioned in another
+thread, or the thread is deleted.
 
 Choose **When sending to an active thread** in Agentation settings. **Default**
 follows bb's **Steer running threads on Enter** setting. **Queue** waits behind
@@ -167,7 +171,9 @@ so Agentation is stopped: no toolbar, panel, or agent tools. Nothing is lost.
 Annotations and staging live in plugin storage, and notes typed but not yet
 saved stay in the toolbar's local storage and are sent when it returns. When
 safe mode ends, annotations sent to a thread that is still mid-turn stay with
-that thread. The rest return to staging.
+that thread, and so do annotations an agent acknowledged. Annotations the agent
+never acknowledged, and everything assigned to a deleted thread, return to
+staging.
 
 **Two panes sent the same batch.** The first pane assigns it. The second pane
 refreshes instead of sending a duplicate. A failed delivery returns the batch to

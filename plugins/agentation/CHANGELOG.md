@@ -4,6 +4,8 @@
 
 ### Patch Changes
 
+- Annotations an agent acknowledged no longer return to staging when its turn ends or after a restart; only ones it never picked up do. An acknowledgement belongs to one assignment: staging an annotation again or sending or mentioning it to a thread sets it back to pending. Mentioning an assigned annotation in another thread moves it there, and deleting a thread returns everything assigned to it to staging.
+- Staged-annotation rows name a captured thread as `from <thread>` instead of `thread: <thread>`, so the label no longer reads as the assignee.
 - **Discard all** in the composer's staged-annotation list discards the batch at once instead of asking for confirmation. Discarded feedback stays recoverable from the panel's Dismissed view.
 - Update the vendored Agentation toolbar from 3.0.2 to 3.1.2: selection inside same-origin iframes and open shadow roots, keyboard and focus fixes, and Copy/Send keep feedback that changed or failed mid-operation. The toolbar now renders in a shadow root, so its styles no longer leak into bb and the `fill-current` icon workaround is gone. Upstream now ships the `inert` fixes this plugin patched in; the patch keeps only React 19 component detection.
 - Expose the staged-annotation composer banner as a stable theme surface.
@@ -14,7 +16,7 @@
 - Map bb 0.44's sidebar header and sidebar navigation slots, plus the diff, source-code, sidebar-footer, and provider-input slots, to their public SDK registrations.
 - Name the sidebar row an annotation on bb's Navigation plugin points at, and the `navPanel` entry behind it.
 - Record whether an annotated plugin ships with bb (bundled thread list, Navigation) or was installed, and where from.
-- Show staged annotations in the new-thread composer. Pills mentioned there are assigned to the thread their first message creates and re-stage when its turn ends unresolved.
+- Show staged annotations in the new-thread composer. Pills mentioned there are assigned to the thread their first message creates and re-stage when its turn ends without the agent acknowledging them.
 - Show the staged batch as a compact `N annotations` composer pill, modeled on the Codex app. Hover or click it for a numbered list with each annotation's element, location, and full comment, plus mention, send, and discard actions.
 - Keep turn assignments across a restart or plugin safe mode while their thread is still mid-turn, instead of re-staging them.
 - Reopen the toolbar's event stream when it closes for good (a plugin reload, a server restart, the tunnel's offline page) or goes silent past two heartbeats, instead of polling every 4 seconds until the page reloads. The healthy safety-net poll drops from 30 seconds to 5 minutes, toolbars skip pulls for other pages' changes, and an unchanged pull no longer carries the annotation list.

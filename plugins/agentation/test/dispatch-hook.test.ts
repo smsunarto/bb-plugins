@@ -199,3 +199,62 @@ test("a pill the agent acknowledged stays assigned after its turn ends", async (
     assert.deepEqual(await staged(), []);
   });
 });
+
+test("a pill acknowledged before it was sent reappears when its queued turn fails", async () => {
+  await withStagedAnnotation(async ({ harness, hook, staged }) => {
+    await harness.callAgentTool("agentation_acknowledge", { annotationId: "ann_1" });
+    const thread = makeThreadResponse({ id: "thr_busy", status: "active" });
+    await hook(dispatch(thread, "start-turn"));
+    assert.deepEqual(await staged(), []);
+
+    await harness.emitThreadEvent("thread.failed", {
+      thread: { ...thread, status: "idle" },
+      error: null,
+    });
+    assert.deepEqual(await staged(), ["ann_1"]);
+  });
+});
+
+test("deleting the thread gives back a pill its agent acknowledged", async () => {
+  await withStagedAnnotation(async ({ harness, hook, staged }) => {
+    const thread = makeThreadResponse({ id: "thr_gone", status: "pending" });
+    await hook(dispatch(thread, "start-turn"));
+    await harness.callAgentTool("agentation_acknowledge", { annotationId: "ann_1" });
+    await harness.emitThreadEvent("thread.idle", {
+      thread: { ...thread, status: "idle" },
+      lastAssistantText: null,
+    });
+    assert.deepEqual(await staged(), []);
+
+    await harness.emitThreadEvent("thread.deleted", { thread });
+    assert.deepEqual(await staged(), ["ann_1"]);
+  });
+});
+
+test("a pill acknowledged in one thread moves to the next thread it is mentioned in", async () => {
+  await withStagedAnnotation(async ({ harness, hook, staged }) => {
+    const first = makeThreadResponse({ id: "thr_A", status: "pending" });
+    await hook(dispatch(first, "start-turn"));
+    await harness.callAgentTool("agentation_acknowledge", { annotationId: "ann_1" });
+    await harness.emitThreadEvent("thread.idle", {
+      thread: { ...first, status: "idle" },
+      lastAssistantText: null,
+    });
+
+    const second = makeThreadResponse({ id: "thr_B", status: "pending" });
+    await hook(dispatch(second, "start-turn"));
+    const { routings } = (await harness.callRpc("listAnnotations", {
+      sessionId: null,
+      statuses: null,
+      pluginId: null,
+    })) as { routings: Record<string, { state: string; threadId?: string }> };
+    assert.equal(routings.ann_1?.threadId, "thr_B");
+
+    // thr_B's agent never acknowledged it, so it reappears after that turn.
+    await harness.emitThreadEvent("thread.idle", {
+      thread: { ...second, status: "idle" },
+      lastAssistantText: null,
+    });
+    assert.deepEqual(await staged(), ["ann_1"]);
+  });
+});

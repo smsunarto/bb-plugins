@@ -8,7 +8,7 @@
 import type DatabaseNamespace from "better-sqlite3";
 
 import type { AnnotationRouting, StoredAnnotation } from "./afs.ts";
-import { setAnnotationStatus } from "./store.ts";
+import { getAnnotation, setAnnotationStatus } from "./store.ts";
 
 type Database = DatabaseNamespace.Database;
 
@@ -21,8 +21,8 @@ export interface ClaimedDispatch {
 export type TurnAssignmentPhase = "awaiting-start" | "awaiting-finish";
 
 export type ClaimStagedResult =
-  | { outcome: "claimed"; dispatch: ClaimedDispatch }
-  | { outcome: "stale" };
+  /** `reopened` counts acknowledged annotations the claim set back to pending. */
+  { outcome: "claimed"; dispatch: ClaimedDispatch; reopened: number } | { outcome: "stale" };
 
 export type DiscardStagedResult =
   | { outcome: "discarded"; annotations: StoredAnnotation[] }
@@ -71,6 +71,27 @@ function toRouting(row: RoutingRow): AnnotationRouting {
 
 function corruptRoutingRow(row: RoutingRow): Error {
   return new Error(`annotation_routing row ${row.annotation_id} is ${row.state} without its ids`);
+}
+
+/**
+ * Set acknowledged annotations back to pending. An acknowledgement means the
+ * agent of the current assignment picked the annotation up, so it ends when the
+ * annotation is staged again or assigned to a thread. Resolved and dismissed
+ * annotations keep their status. Returns how many changed.
+ */
+function reopenAcknowledged(db: Database, annotationIds: readonly string[]): number {
+  if (annotationIds.length === 0) return 0;
+  const placeholders = annotationIds.map(() => "?").join(", ");
+  const rows = db
+    .prepare(
+      `SELECT id FROM annotations
+       WHERE id IN (${placeholders}) AND status = 'acknowledged'`,
+    )
+    .all(...annotationIds) as { id: string }[];
+  for (const row of rows) {
+    setAnnotationStatus(db, { annotationId: row.id, status: "pending", by: "human" });
+  }
+  return rows.length;
 }
 
 export function listStagedAnnotations(db: Database): StoredAnnotation[] {
@@ -162,16 +183,20 @@ export function listAnnotationRoutings(
  *
  * A second pane gets `stale` if any requested item is no longer staged. New
  * annotations that were not in this snapshot remain staged for a later send.
+ * `reassign` also claims annotations assigned to a thread, so a mention moves
+ * one to the thread it was mentioned in. A claim starts a new assignment, so
+ * acknowledged annotations return to pending.
  */
 export function claimStagedAnnotations(
   db: Database,
-  input: { annotationIds: string[]; threadId: string },
+  input: { annotationIds: string[]; threadId: string; reassign?: boolean },
 ): ClaimStagedResult {
   const uniqueIds = [...new Set(input.annotationIds)];
   if (uniqueIds.length === 0 || uniqueIds.length !== input.annotationIds.length) {
     return { outcome: "stale" };
   }
 
+  const claimableStates = input.reassign ? "'staged', 'assigned'" : "'staged'";
   return db.transaction((): ClaimStagedResult => {
     const placeholders = uniqueIds.map(() => "?").join(", ");
     const rows = db
@@ -180,14 +205,17 @@ export function claimStagedAnnotations(
          FROM annotation_routing r
          JOIN annotations a ON a.id = r.annotation_id
          WHERE r.annotation_id IN (${placeholders})
-           AND r.state = 'staged'
+           AND r.state IN (${claimableStates})
            AND a.status IN ('pending', 'acknowledged')`,
       )
       .all(...uniqueIds) as { id: string; payload: string }[];
     if (rows.length !== uniqueIds.length) return { outcome: "stale" };
 
+    const reopened = reopenAcknowledged(db, uniqueIds);
     const byId = new Map(rows.map((row) => [row.id, row.payload]));
-    const annotations = uniqueIds.map((id) => readAnnotation(byId.get(id)!));
+    const annotations = uniqueIds.map((annotationId) =>
+      reopened > 0 ? getAnnotation(db, annotationId)! : readAnnotation(byId.get(annotationId)!),
+    );
     const id = `dsp_${crypto.randomUUID()}`;
     const timestamp = nowIso();
 
@@ -201,19 +229,25 @@ export function claimStagedAnnotations(
     // a `sending` row never names a thread it has not reached.
     const update = db.prepare(
       `UPDATE annotation_routing
-       SET state = 'sending', dispatch_id = ?, updated_at = ?
-       WHERE annotation_id = ? AND state = 'staged'`,
+       SET state = 'sending', assigned_thread_id = NULL, dispatch_id = ?, updated_at = ?
+       WHERE annotation_id = ? AND state IN (${claimableStates})`,
+    );
+    // A reassigned annotation leaves its previous thread's turn behind.
+    const forgetTurn = db.prepare(
+      `DELETE FROM annotation_turn_assignments WHERE annotation_id = ?`,
     );
     for (const annotationId of uniqueIds) {
       const result = update.run(id, timestamp, annotationId);
       if (result.changes !== 1) {
         throw new Error("staging claim changed during transaction");
       }
+      forgetTurn.run(annotationId);
     }
 
     return {
       outcome: "claimed",
       dispatch: { id, threadId: input.threadId, annotations },
+      reopened,
     };
   })();
 }
@@ -273,7 +307,8 @@ export function advanceTurnAssignments(db: Database, threadId: string): number {
 /**
  * Return a thread's turn assignments to staging once its turn ends. Only
  * annotations the agent never picked up (`pending`) reappear; an acknowledged
- * one belongs to the agent working on it and stays assigned.
+ * one belongs to the agent working on it and stays assigned. Use
+ * `restageThreadAssignments` when the thread itself is gone.
  */
 export function restageTurnAssignments(
   db: Database,
@@ -307,10 +342,60 @@ export function restageTurnAssignments(
   })();
 }
 
+/**
+ * Return everything assigned to a thread that no longer exists to staging,
+ * acknowledged annotations included: no agent is left to finish them. Returns
+ * how many annotations were re-staged.
+ */
+export function restageThreadAssignments(db: Database, threadId: string): number {
+  return db.transaction(() => {
+    const ids = (
+      db
+        .prepare(
+          `SELECT r.annotation_id AS id
+           FROM annotation_routing r
+           JOIN annotations a ON a.id = r.annotation_id
+           WHERE r.state = 'assigned' AND r.assigned_thread_id = ?
+             AND a.status IN ('pending', 'acknowledged')`,
+        )
+        .all(threadId) as { id: string }[]
+    ).map((row) => row.id);
+    if (ids.length > 0) {
+      const placeholders = ids.map(() => "?").join(", ");
+      db.prepare(
+        `UPDATE annotation_routing
+         SET state = 'staged', assigned_thread_id = NULL, dispatch_id = NULL,
+             updated_at = ?
+         WHERE annotation_id IN (${placeholders})`,
+      ).run(nowIso(), ...ids);
+      reopenAcknowledged(db, ids);
+    }
+    db.prepare(`DELETE FROM annotation_turn_assignments WHERE thread_id = ?`).run(threadId);
+    return ids.length;
+  })();
+}
+
 /** Threads that held turn assignments when the server last stopped. */
 export function turnAssignmentThreadIds(db: Database): string[] {
   const rows = db
     .prepare(`SELECT DISTINCT thread_id FROM annotation_turn_assignments ORDER BY thread_id`)
+    .all() as Array<{ thread_id: string }>;
+  return rows.map((row) => row.thread_id);
+}
+
+/**
+ * Threads that held turn assignments or assigned annotations when the server
+ * last stopped: the ones recovery checks.
+ */
+export function assignmentThreadIds(db: Database): string[] {
+  const rows = db
+    .prepare(
+      `SELECT thread_id FROM annotation_turn_assignments
+       UNION
+       SELECT assigned_thread_id FROM annotation_routing
+       WHERE state = 'assigned' AND assigned_thread_id IS NOT NULL
+       ORDER BY 1`,
+    )
     .all() as Array<{ thread_id: string }>;
   return rows.map((row) => row.thread_id);
 }
@@ -321,16 +406,22 @@ export function turnAssignmentThreadIds(db: Database): string[] {
  * mid-turn keeps its phase: the thread events that follow finish it as if the
  * server had never stopped. Every other pending assignment returns to staging,
  * since the turn it waited on may have ended unseen; acknowledged ones stay
- * with the agent that picked them up.
+ * with the agent that picked them up. A thread in `missingThreadIds` was
+ * deleted, so everything assigned to it returns to staging.
  */
 export function recoverInterruptedTurnAssignments(
   db: Database,
   activeThreadIds: ReadonlySet<string> = new Set(),
+  missingThreadIds: ReadonlySet<string> = new Set(),
 ): number {
   return db.transaction(() => {
     const timestamp = nowIso();
     let restaged = 0;
-    for (const threadId of turnAssignmentThreadIds(db)) {
+    for (const threadId of assignmentThreadIds(db)) {
+      if (missingThreadIds.has(threadId)) {
+        restaged += restageThreadAssignments(db, threadId);
+        continue;
+      }
       if (activeThreadIds.has(threadId)) continue;
       restaged += db
         .prepare(
@@ -427,6 +518,7 @@ export function restageAnnotation(db: Database, annotationId: string): Annotatio
       db.prepare(`DELETE FROM annotation_turn_assignments WHERE annotation_id = ?`).run(
         annotationId,
       );
+      reopenAcknowledged(db, [annotationId]);
     }
     return result.changes === 1 ? getAnnotationRouting(db, annotationId) : null;
   })();
