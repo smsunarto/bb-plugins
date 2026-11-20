@@ -14,6 +14,7 @@ import { FileRowsSkeleton, PatchesProblem } from "../file-cards.tsx";
 import { absoluteTime, cx, shortAge, shortId } from "../format.ts";
 import { Rail } from "../workspace-lane.tsx";
 import { FilesView } from "./files-view.tsx";
+import { CLEAR_REVIEW_BAR } from "./review-bar.tsx";
 
 /**
  * A commit's own changes as a revision: its parent to itself. The host reads
@@ -265,8 +266,18 @@ export function CommitsView({
       </div>
     );
   return (
-    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
-      <div className="flex max-w-3xl min-w-0 flex-col gap-4 px-4 py-4 @3xl:px-6">
+    <div
+      className={cx(
+        "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain",
+        CLEAR_REVIEW_BAR.scroll,
+      )}
+    >
+      <div
+        className={cx(
+          "flex max-w-3xl min-w-0 flex-col gap-4 px-4 pt-4 @3xl:px-6",
+          CLEAR_REVIEW_BAR.contentPb4,
+        )}
+      >
         {lead}
         {card}
         {marker}

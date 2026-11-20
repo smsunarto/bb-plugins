@@ -16,7 +16,6 @@ import {
   Component,
   memo,
   useCallback,
-  useContext,
   useMemo,
   useRef,
   useState,
@@ -61,9 +60,8 @@ import {
   useViewed,
   type Column,
 } from "./files-view.tsx";
-import { Chevron } from "./icons.tsx";
 import { usePatchStore } from "./patches.ts";
-import { FocusContext } from "./review-focus.ts";
+import { ReviewBar } from "./review-bar.tsx";
 import { useListWindow } from "./use-window.ts";
 
 const LABEL =
@@ -785,99 +783,6 @@ class KeepReading extends Component<{
   }
 }
 
-// ── Phone review bar ───────────────────────────────────────────────────
-
-function Step({
-  direction,
-  onClick,
-  label,
-}: {
-  direction: -1 | 1;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <Button
-      size="sm"
-      variant="ghost"
-      aria-label={label}
-      onClick={onClick}
-      className="h-full w-10 px-0"
-    >
-      <Chevron className={direction < 0 ? "rotate-90" : "-rotate-90"} />
-    </Button>
-  );
-}
-
-/**
- * Board E's bottom bar: "‹ 1 of 4 ›" steps through the open review items in
- * reading order, revealing each in the diff, and the page's send controls.
- */
-export function ReviewBar({
-  changeKey,
-  order,
-  children,
-}: {
-  changeKey: ChangeKey;
-  /** Each path's place in the reading order. */
-  order: ReadonlyMap<string, number>;
-  /** The send controls. */
-  children: ReactNode;
-}) {
-  const { stable } = useChangeReview(changeKey);
-  const focus = useContext(FocusContext);
-  const items = useMemo(
-    () =>
-      stable.items
-        .filter((item) => item.state === "open" && !stable.fixing.has(item.id))
-        .toSorted(
-          (a, b) =>
-            (order.get(a.anchor.path) ?? Infinity) - (order.get(b.anchor.path) ?? Infinity) ||
-            (a.anchor.line ?? 0) - (b.anchor.line ?? 0),
-        ),
-    [stable.items, stable.fixing, order],
-  );
-  const subscribe = useCallback(
-    (listener: () => void) => focus?.subscribe(listener) ?? (() => {}),
-    [focus],
-  );
-  const focused = useSyncExternalStore(subscribe, () => focus?.getFocused() ?? null);
-  const at = items.findIndex((item) => item.id === focused);
-  const go = (step: -1 | 1) => {
-    if (items.length === 0) return;
-    const next =
-      at < 0 ? (step > 0 ? 0 : items.length - 1) : (at + step + items.length) % items.length;
-    focus?.reveal(items[next]!);
-  };
-  return (
-    <div
-      data-testid="sc-review-bar"
-      // bb's shell already pads the page above the home indicator and clips the panel, so the bar
-      // takes the shell's colour to run on into that padding. Where bb gives no inset (Android, an
-      // open keyboard) it keeps 1.5rem below the buttons, clear of the screen's rounded corners.
-      className="flex shrink-0 items-center gap-2 border-t border-solid border-border-hairline bg-background px-4 pt-3 pb-[max(0.75rem,calc(1.5rem-var(--bb-content-bottom-inset,0px)))]"
-    >
-      {/* A narrow side panel wraps the send controls under the pager rather than overlapping it. */}
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-        {items.length > 0 ? (
-          <div className="flex h-10 shrink-0 items-center rounded-md border border-solid border-border">
-            <Step direction={-1} label="Previous item" onClick={() => go(-1)} />
-            <span
-              className="px-1 text-[14px] leading-5 whitespace-pre text-foreground"
-              data-testid="sc-review-bar-position"
-            >
-              {at < 0 ? plural(items.length, "item") : `${at + 1} of ${items.length}`}
-            </span>
-            <Step direction={1} label="Next item" onClick={() => go(1)} />
-          </div>
-        ) : null}
-        <span className="min-w-0 flex-1" />
-        {children}
-      </div>
-    </div>
-  );
-}
-
 // ── Progress ───────────────────────────────────────────────────────────
 
 /**
@@ -1139,7 +1044,7 @@ export function GuidedView({
 
   return (
     <ColumnContext.Provider value={column}>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="sc-guided">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-testid="sc-guided">
         <div className="flex min-h-0 min-w-0 flex-1">
           {wide && files ? (
             <Outline

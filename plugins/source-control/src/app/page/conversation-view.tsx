@@ -23,6 +23,7 @@ import { Skeleton } from "../components/ui/skeleton.tsx";
 import { PrMarkdown } from "../pr-markdown.tsx";
 import { GitHubAvatar } from "../review-ui.tsx";
 import { useNow } from "./hooks.ts";
+import { CLEAR_REVIEW_BAR } from "./review-bar.tsx";
 
 // ── code-review's helpers ──────────────────────────────────────────────
 
@@ -426,8 +427,18 @@ export function ConversationView({
   lead?: ReactNode;
 }) {
   return (
-    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
-      <div className="flex max-w-3xl min-w-0 flex-col gap-4 px-4 py-4 text-[12px] leading-4 @3xl:px-6">
+    <div
+      className={cx(
+        "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain",
+        CLEAR_REVIEW_BAR.scroll,
+      )}
+    >
+      <div
+        className={cx(
+          "flex max-w-3xl min-w-0 flex-col gap-4 px-4 pt-4 text-[12px] leading-4 @3xl:px-6",
+          CLEAR_REVIEW_BAR.contentPb4,
+        )}
+      >
         {lead}
         {hasPullRequest ? (
           <Timeline changeKey={changeKey} />

@@ -65,6 +65,7 @@ import { FileTree } from "./file-tree.tsx";
 import { Chevron } from "./icons.tsx";
 import { usePatch, usePatchStore, type PatchEntry, type PatchStore } from "./patches.ts";
 import { RevealRequestContext } from "./hooks.ts";
+import { CLEAR_REVIEW_BAR } from "./review-bar.tsx";
 import { FocusContext, type Spot } from "./review-focus.ts";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 
@@ -930,10 +931,14 @@ export function DiffColumn({
       <div
         ref={scroller}
         data-testid="sc-diff-column"
-        className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain"
+        className={cx(
+          "min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain",
+          CLEAR_REVIEW_BAR.scroll,
+        )}
       >
-        {/* One child: the virtualizer reads the page's height off the first. */}
-        <div>{children}</div>
+        {/* One child: the virtualizer reads the page's height off the first. It keeps room under
+            the last card for the review bar. */}
+        <div className={CLEAR_REVIEW_BAR.content}>{children}</div>
       </div>
     </VirtualizerContext.Provider>
   );
