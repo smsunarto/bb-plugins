@@ -162,6 +162,8 @@ export async function captainHost(options: FakeOptions = {}) {
   /** Threads whose archive fails. */
   const archiveFails = new Set<string>();
   const threads = new Map<string, Thread>();
+  /** `providers.models` calls, and how many of the next ones fail. */
+  const providerModels = { calls: 0, fails: 0 };
   /** The parent of every `threads.list` read, in order, to count crew polls. */
   const threadLists: (string | undefined)[] = [];
   /** Thread metadata by `<threadId> <pluginId>`, as other plugins read it. */
@@ -468,8 +470,16 @@ export async function captainHost(options: FakeOptions = {}) {
     sdk: {
       system: { config: async () => ({ primaryHostId: SERVER_HOST }) as never },
       providers: {
-        models: async () =>
-          ({ models: [{ model: "claude-opus-5-5", displayName: "Claude Opus 5.5" }] }) as never,
+        models: async () => {
+          providerModels.calls += 1;
+          if (providerModels.fails > 0) {
+            providerModels.fails -= 1;
+            throw new Error("provider catalog unavailable");
+          }
+          return {
+            models: [{ model: "claude-opus-5-5", displayName: "Claude Opus 5.5" }],
+          } as never;
+        },
       },
       hosts: {
         get: async ({ hostId }) => ({
@@ -752,6 +762,7 @@ export async function captainHost(options: FakeOptions = {}) {
     archiveFails,
     threads,
     threadLists,
+    providerModels,
     metadata,
     queued,
     released,

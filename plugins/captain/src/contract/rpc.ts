@@ -112,6 +112,9 @@ const crewThread = z
   })
   .strict();
 
+/** A Drive card previews at most this many bytes of its file's head. */
+export const DRIVE_EXCERPT_BYTES = 1_200;
+
 /** One Drive file as an Overview card shows it. */
 const driveFile = z
   .object({
@@ -122,7 +125,7 @@ const driveFile = z
     folder: z.string().nullable(),
     modifiedAt: z.number(),
     /** The file's head, for a Markdown or text preview; null for other files. */
-    excerpt: z.string().nullable(),
+    excerpt: z.string().max(DRIVE_EXCERPT_BYTES).nullable(),
   })
   .strict();
 
@@ -264,6 +267,8 @@ export const captainContract = defineRpcContract({
       .object({
         /** Every file in the Drive, of which `files` is the first slice. */
         total: z.number().int().nonnegative(),
+        /** The listing stopped at its bound: there are more files than `total`. */
+        truncated: z.boolean(),
         files: z.array(driveFile),
         /** Where the Drive folder is, for opening it; null until the storage root is known. */
         folder: z.object({ hostId: z.string(), path: z.string() }).strict().nullable(),

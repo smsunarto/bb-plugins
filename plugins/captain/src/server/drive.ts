@@ -108,6 +108,21 @@ export function createDrive() {
 
   return {
     read,
+    /**
+     * At most `maxBytes` of a file's head, or null when it is missing. The
+     * cache may hold more of it, from a wider read; this never returns more.
+     */
+    head(path: string, maxBytes: number): string | null {
+      const text = read(path, maxBytes);
+      if (text === null || text.length <= maxBytes / 4) return text;
+      const bytes = Buffer.from(text.slice(0, maxBytes), "utf8");
+      if (bytes.byteLength <= maxBytes) return text.slice(0, maxBytes);
+      // A character the cap cut in two is dropped.
+      return bytes
+        .subarray(0, maxBytes)
+        .toString("utf8")
+        .replace(/\uFFFD+$/u, "");
+    },
     /** Size in bytes, or null when missing. */
     size(path: string): number | null {
       const stat = statSync(path, { throwIfNoEntry: false });

@@ -16,7 +16,16 @@ import {
   driveFiles,
   watchDrive,
 } from "./overview.ts";
-import { askItems, crewItems, deferItem, markSeen, needsYouCount, sinceYouLeft } from "./queue.ts";
+import { ensureStorageRoot } from "./commands/deps.ts";
+import {
+  askItems,
+  createCrewReads,
+  crewItems,
+  deferItem,
+  markSeen,
+  needsYouCount,
+  sinceYouLeft,
+} from "./queue.ts";
 
 /** How often a watched banner rechecks the crew for a new or answered interaction. */
 export const CREW_POLL_MS = 10_000;
@@ -32,6 +41,8 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
       throw new Error(`${captainId} is not a live Captain`);
   };
   const modelNames = createModelNames(deps);
+  const crewReads = createCrewReads(deps);
+  const readCrew = (captainId: string) => crewReads.read(captainId);
   const primaryHost = createPrimaryHost(deps);
   const ladderOf = (role: LadderRole) => ({
     role,
@@ -50,11 +61,11 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
     asks: ({ captainId }) => ({ items: askItems(deps, captainId) }),
     crew: async ({ captainId }) => {
       live(captainId);
-      return { items: await crewItems(deps, captainId) };
+      return { items: await crewItems(deps, captainId, readCrew) };
     },
     crewThreads: async ({ captainId }) => {
       live(captainId);
-      return { threads: await crewThreads(deps, modelNames, captainId) };
+      return { threads: await crewThreads(deps, readCrew, modelNames, captainId) };
     },
     drive: ({ captainId }) => {
       live(captainId);
@@ -91,6 +102,7 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
     adopt: async (input) => {
       try {
         const result = await adoptFromMenu(deps, input);
+        crewReads.changed(input.captainId);
         bb.rpc.experimental_invalidate([crewTag(input.captainId), crewOfTag(input.threadId)]);
         return result;
       } catch (error) {
@@ -125,7 +137,7 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
   // answered interaction has no event, so the crew list is rechecked while
   // watched. Both reads share one loop per Captain.
   const captainOf = (read: object) => captainOfRead(deps.registry, read);
-  const crewWatch = createCrewWatch(deps, crewPollMs);
+  const crewWatch = createCrewWatch(deps, crewPollMs, crewReads.changed);
   for (const method of ["crew", "crewThreads"] as const) {
     bb.rpc.experimental_whileWatched(method, (read, signal) => {
       const captainId = captainOf(read);
@@ -136,17 +148,19 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
   // A watched Drive refreshes on the filesystem's own change notifications.
   bb.rpc.experimental_whileWatched("drive", (read, signal) => {
     const captainId = captainOf(read);
-    const dir = captainId === null ? null : deps.registry.driveDir(captainId);
-    if (captainId === null || dir === null) return Promise.resolve();
-    return watchDrive(
-      dir,
+    if (captainId === null) return Promise.resolve();
+    return watchDrive({
+      // The storage root may not be read yet when the watch starts.
+      resolveDir: async () =>
+        (await ensureStorageRoot(deps)) === null ? null : deps.registry.driveDir(captainId),
       signal,
-      () => bb.rpc.experimental_invalidate([driveTag(captainId)]),
-      (line) => bb.log.warn(line),
-    );
+      onChange: () => bb.rpc.experimental_invalidate([driveTag(captainId)]),
+      onLive: (live) => deps.registry.setDriveWatched(captainId, live),
+      warn: (line) => bb.log.warn(line),
+    });
   });
 
-  registerEvents(deps);
+  registerEvents(deps, crewReads.changed);
 }
 
 /** The live Captain a watched read names, or null. */
@@ -161,7 +175,11 @@ function captainOfRead(registry: CommandDeps["registry"], read: object): string 
  * watcher starts it, the last one to leave stops it. Resolves for each
  * watcher when its own `signal` aborts.
  */
-function createCrewWatch(deps: CommandDeps, crewPollMs: number) {
+function createCrewWatch(
+  deps: CommandDeps,
+  crewPollMs: number,
+  changed: (captainId: string) => void,
+) {
   const { bb } = deps;
   const loops = new Map<string, { watchers: number; stop: AbortController }>();
 
@@ -173,7 +191,10 @@ function createCrewWatch(deps: CommandDeps, crewPollMs: number) {
         const shape = threads
           .map((thread) => `${thread.id}:${thread.status}:${thread.hasPendingInteraction}`)
           .join(",");
-        if (last !== null && shape !== last) bb.rpc.experimental_invalidate([crewTag(captainId)]);
+        if (last !== null && shape !== last) {
+          changed(captainId);
+          bb.rpc.experimental_invalidate([crewTag(captainId)]);
+        }
         last = shape;
       } catch (error) {
         if (signal.aborted) return;
@@ -215,12 +236,13 @@ function createCrewWatch(deps: CommandDeps, crewPollMs: number) {
  * is written as it is attached, before its run state or parent next changes,
  * so the same events refresh its row in the thread menus.
  */
-function registerEvents(deps: CommandDeps): void {
+function registerEvents(deps: CommandDeps, changed: (captainId: string) => void): void {
   const { bb } = deps;
   const captainOf = (thread: { id: string; parentThreadId: string | null }) =>
     deps.registry.get(thread.id) ?? deps.registry.get(thread.parentThreadId);
   const refresh = ({ thread }: { thread: { id: string; parentThreadId: string | null } }) => {
     const captain = captainOf(thread);
+    if (captain !== null) changed(captain.threadId);
     bb.rpc.experimental_invalidate(
       captain === null ? [crewOfTag(thread.id)] : [crewTag(captain.threadId), crewOfTag(thread.id)],
     );

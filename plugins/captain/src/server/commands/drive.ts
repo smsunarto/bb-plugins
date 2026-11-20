@@ -117,8 +117,10 @@ export function driveWriteCommand(deps: CommandDeps) {
           ]);
         }
         deps.drive.write(target, content);
-        // The Overview's Drive cards, for a platform whose folder watch is not running.
-        deps.bb.rpc.experimental_invalidate([driveTag(captainId)]);
+        // The Overview's Drive cards; a running folder watch sees the write itself.
+        if (!deps.registry.driveWatched(captainId)) {
+          deps.bb.rpc.experimental_invalidate([driveTag(captainId)]);
+        }
         const bytes = Buffer.byteLength(content);
         return render(
           [{ id: path, ok: true, state: "written", detail: `${bytes} bytes`, data: { bytes } }],

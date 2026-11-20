@@ -1,7 +1,19 @@
-import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, test } from "vitest";
-import { captainContract, crewTag, driveTag } from "../contract/rpc.ts";
+import { captainContract, crewTag, DRIVE_EXCERPT_BYTES, driveTag } from "../contract/rpc.ts";
+import { createDrive } from "./drive.ts";
+import { DRIVE_WALK_MAX, listDrive, watchDrive } from "./overview.ts";
 import { captainHost, newCaptain, SERVER_HOST } from "./test-host.ts";
 
 type Thread = {
@@ -14,12 +26,13 @@ type Thread = {
 };
 type Drive = {
   total: number;
+  truncated: boolean;
   files: { path: string; name: string; folder: string | null; excerpt: string | null }[];
   folder: { hostId: string; path: string } | null;
 };
 
-async function overviewHost() {
-  const host = await captainHost();
+async function overviewHost(options: Parameters<typeof captainHost>[0] = {}) {
+  const host = await captainHost(options);
   const captainId = await newCaptain(host);
   const as = (argv: string[]) => host.harness.behavior.runCli(argv, { threadId: captainId });
   const rpc = (method: string, input: unknown) => host.harness.behavior.callRpc(method, input);
@@ -64,9 +77,9 @@ describe("crewThreads", () => {
         status: "active",
         model: "Claude Opus 5.5",
         task: "BBPLUGINS-2",
-        role: "plan",
+        role: "Plan",
       }),
-      expect.objectContaining({ id: idle, status: "idle", task: "BBPLUGINS-1", role: "implement" }),
+      expect.objectContaining({ id: idle, status: "idle", task: "BBPLUGINS-1", role: "Implement" }),
     ]);
   });
 
@@ -140,38 +153,216 @@ describe("drive", () => {
   });
 });
 
+describe("crew status changes", () => {
+  test("a crew thread going active refreshes the read, which then lists it first", async () => {
+    const { host, as, captainId, crew, invalidations } = await overviewHost();
+    host.addTask("BBPLUGINS-1");
+    host.addTask("BBPLUGINS-2");
+    const first = await dispatch(as, "BBPLUGINS-1");
+    const second = await dispatch(as, "BBPLUGINS-2");
+    host.updateThread(first, { status: "idle", updatedAt: 9_000 });
+    host.updateThread(second, { status: "idle", updatedAt: 2_000 });
+    expect((await crew()).map((thread) => thread.id)).toEqual([first, second]);
+
+    const before = invalidations().length;
+    const active = host.updateThread(second, { status: "active" });
+    await host.harness.behavior.emitThreadEvent("thread.active", {
+      thread: makeThreadResponse({ ...active, parentThreadId: captainId }),
+    } as never);
+    expect(invalidations().slice(before)).toContain(crewTag(captainId));
+    expect((await crew()).map((thread) => [thread.id, thread.status])).toEqual([
+      [second, "active"],
+      [first, "idle"],
+    ]);
+  });
+});
+
 describe("the crew poll", () => {
   test("the banner's and the Overview's watched reads share one poll per Captain", async () => {
-    const { host, captainId, as, invalidations } = await overviewHost();
-    host.addTask("BBPLUGINS-1");
-    const crewThread = await dispatch(as, "BBPLUGINS-1");
+    // A poll interval far longer than the test: each running loop polls exactly once.
+    const { host, captainId } = await overviewHost({ crewPollMs: 60_000 });
     const polls = () => host.threadLists.filter((parent) => parent === captainId).length;
-
+    const start = polls();
     const banner = host.harness.behavior.experimental_watchRpc("crew", { input: { captainId } });
     const overview = host.harness.behavior.experimental_watchRpc("crewThreads", {
       input: { captainId },
     });
-    await settle(30);
-    const start = polls();
-    const began = Date.now();
-    await settle(300);
-    // One loop polls at most once per interval (the test host's is 20ms); load only
-    // slows it. Two loops would poll about twice that.
-    expect(polls() - start).toBeLessThanOrEqual(Math.floor((Date.now() - began) / 20) + 2);
-    expect(polls() - start).toBeGreaterThan(0);
+    await settle();
+    expect(polls() - start).toBe(1);
 
-    // With the banner gone, the Overview's watch still sees a new interaction.
+    // With the banner gone, the loop keeps running for the Overview; with both gone, it stops.
     banner();
-    await settle();
-    const before = invalidations().length;
-    host.updateThread(crewThread, { hasPendingInteraction: true });
-    await settle();
-    expect(invalidations().slice(before)).toContain(crewTag(captainId));
-
     overview();
     await settle();
-    const stopped = polls();
+    const again = host.harness.behavior.experimental_watchRpc("crewThreads", {
+      input: { captainId },
+    });
     await settle();
-    expect(polls()).toBe(stopped);
+    expect(polls() - start).toBe(2);
+    again();
+  });
+});
+
+describe("Drive bounds", () => {
+  test("a card never carries more than the excerpt cap, even from a wide cached read", async () => {
+    const { as, drive } = await overviewHost();
+    const big = `# Big brief\n\n${"é and more text. ".repeat(4_000)}`;
+    // `drive write` caches the whole file, as a crew session build does for CREW.md.
+    expect((await as(["drive", "write", "briefs/BIG.md", "--content", big])).exitCode).toBe(0);
+    const card = (await drive()).files.find((file) => file.path === "briefs/BIG.md");
+    expect(Buffer.byteLength(card?.excerpt ?? "")).toBeLessThanOrEqual(DRIVE_EXCERPT_BYTES);
+    expect(card?.excerpt?.startsWith("# Big brief")).toBe(true);
+    expect(card?.excerpt?.endsWith("\uFFFD")).toBe(false);
+  });
+
+  test("head caps a wide cached read and never splits a character", () => {
+    const dir = mkdtempSync(join(tmpdir(), "captain-drive-"));
+    const file = join(dir, "x.md");
+    writeFileSync(file, "ab".repeat(30_000) + "é".repeat(1_000));
+    const store = createDrive();
+    store.read(file);
+    expect(store.head(file, 1_200)).toBe("ab".repeat(600));
+    writeFileSync(file, `a${"é".repeat(2_000)}`);
+    const head = store.head(file, 1_200) ?? "";
+    expect(Buffer.byteLength(head)).toBeLessThanOrEqual(1_200);
+    expect(head).toBe(`a${"é".repeat(599)}`);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("symlinks are never followed, and a symlink loop does not hang the walk", () => {
+    const dir = mkdtempSync(join(tmpdir(), "captain-drive-"));
+    const outside = mkdtempSync(join(tmpdir(), "captain-outside-"));
+    writeFileSync(join(outside, "secret.md"), "# not the Drive's");
+    writeFileSync(join(dir, "NOTES.md"), "# Notes");
+    symlinkSync(outside, join(dir, "outdir"));
+    symlinkSync(join(outside, "secret.md"), join(dir, "linked.md"));
+    symlinkSync(".", join(dir, "a"));
+    symlinkSync(".", join(dir, "b"));
+    expect(listDrive(dir)).toEqual({
+      files: [expect.objectContaining({ path: "NOTES.md" })],
+      truncated: false,
+    });
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  test("the walk stops at its bound and says so; an unreadable folder skips only itself", () => {
+    const dir = mkdtempSync(join(tmpdir(), "captain-drive-"));
+    writeFileSync(join(dir, "CREW.md"), "# Crew");
+    mkdirSync(join(dir, "locked"));
+    writeFileSync(join(dir, "locked", "x.md"), "x");
+    chmodSync(join(dir, "locked"), 0o000);
+    expect(listDrive(dir).files.map((file) => file.path)).toEqual(["CREW.md"]);
+    chmodSync(join(dir, "locked"), 0o755);
+
+    mkdirSync(join(dir, "many"));
+    for (let index = 0; index < DRIVE_WALK_MAX + 100; index += 1) {
+      writeFileSync(join(dir, "many", `${index}.md`), "");
+    }
+    const listed = listDrive(dir);
+    expect(listed.truncated).toBe(true);
+    expect(listed.files.length).toBeLessThan(DRIVE_WALK_MAX);
+    // Breadth first: the top-level files are read before the big folder.
+    expect(listed.files[0]?.path).toBe("CREW.md");
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("Drive watch", () => {
+  const watched = (dir: () => string | null) => {
+    const changes: number[] = [];
+    const live: boolean[] = [];
+    const abort = new AbortController();
+    const done = watchDrive({
+      resolveDir: async () => dir(),
+      signal: abort.signal,
+      onChange: () => changes.push(Date.now()),
+      onLive: (state) => live.push(state),
+      warn: () => undefined,
+      retryMs: 40,
+      settleMs: 30,
+    });
+    return {
+      changes,
+      live,
+      stop: async () => {
+        abort.abort();
+        await done;
+      },
+    };
+  };
+
+  test("a watch whose folder is missing at start, or is deleted and recreated, starts again", async () => {
+    const root = mkdtempSync(join(tmpdir(), "captain-watch-"));
+    const dir = join(root, "drive");
+    let known: string | null = null;
+    const watch = watched(() => known);
+    // No storage root yet, then no folder yet.
+    await settle(100);
+    known = dir;
+    await settle(100);
+    mkdirSync(dir);
+    await settle(150);
+    const started = watch.changes.length;
+    expect(watch.live).toContain(true);
+    writeFileSync(join(dir, "NOTES.md"), "one");
+    await settle(150);
+    expect(watch.changes.length).toBeGreaterThan(started);
+
+    rmSync(dir, { recursive: true, force: true });
+    await settle(100);
+    mkdirSync(dir);
+    await settle(150);
+    const recreated = watch.changes.length;
+    writeFileSync(join(dir, "NOTES.md"), "two");
+    await settle(150);
+    expect(watch.changes.length).toBeGreaterThan(recreated);
+    await watch.stop();
+    expect(watch.live.at(-1)).toBe(false);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("a steady stream of writes keeps refreshing rather than waiting for a pause", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "captain-watch-"));
+    const watch = watched(() => dir);
+    await settle(60);
+    for (let index = 0; index < 10; index += 1) {
+      writeFileSync(join(dir, "NOTES.md"), String(index));
+      await settle(25);
+    }
+    expect(watch.changes.length).toBeGreaterThanOrEqual(3);
+    await watch.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("a CLI write refreshes once: by itself when unwatched, by the watch when watched", async () => {
+    const { host, as, captainId, invalidations } = await overviewHost();
+    const writes = () => invalidations().filter((tag) => tag === driveTag(captainId)).length;
+    let before = writes();
+    await as(["drive", "write", "briefs/A.md", "--content", "# A"]);
+    await settle(400);
+    expect(writes() - before).toBe(1);
+
+    const stop = host.harness.behavior.experimental_watchRpc("drive", { input: { captainId } });
+    await settle();
+    before = writes();
+    await as(["drive", "write", "briefs/B.md", "--content", "# B"]);
+    await settle(600);
+    expect(writes() - before).toBe(1);
+    stop();
+  });
+});
+
+describe("the provider catalog", () => {
+  test("a failed catalog read is not kept: the next read shows model names", async () => {
+    const { host, as, crew } = await overviewHost();
+    host.addTask("BBPLUGINS-1");
+    await dispatch(as, "BBPLUGINS-1");
+    host.providerModels.fails = 1;
+    expect((await crew())[0]?.model).toBe("claude-opus-5-5");
+    expect((await crew())[0]?.model).toBe("Claude Opus 5.5");
+    const calls = host.providerModels.calls;
+    await crew();
+    expect(host.providerModels.calls).toBe(calls);
   });
 });
