@@ -557,6 +557,96 @@ describe("deletes, names and maintenance limits", () => {
     expect(host.automations.rows.get(first.automationId as string)?.name).toContain(SWEEP.name);
   });
 
+  test("a send past fire's deadline keeps its guard and records its outcome", async () => {
+    const host = await captainHost({ threadDeadlineMs: 20 });
+    const { captainId, owner, routines } = await ownerOf(host);
+    const created = await routines.create(owner, SWEEP);
+    const call = { automationId: created.automationId as string, runId: null };
+    host.busy.add(captainId);
+    let release = () => {};
+    host.threadHolds.send = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await expect(routines.fire(created.id, call)).rejects.toThrow(/no answer yet/);
+    // The queue is still empty: only the guard stops a second message.
+    expect((await routines.fire(created.id, call)).state).toBe("skipped");
+    host.threadHolds.send = null;
+    release();
+    await waitFor(() => host.server.store.routineRuns(created.id).length === 2);
+    expect(routineSends(host, captainId)).toHaveLength(1);
+    expect(host.queued.get(captainId)).toHaveLength(1);
+    expect(
+      host.server.store.routineRuns(created.id).map((run) => [run.status, run.reason]),
+    ).toEqual([
+      ["queued", null],
+      ["skipped", "previous delivery in flight"],
+    ]);
+  });
+
+  test("a Captain lookup that times out is recorded, so a spent one-shot shows missed", async () => {
+    const host = await captainHost({ threadDeadlineMs: 20 });
+    const { owner, routines } = await ownerOf(host);
+    const created = await routines.create(owner, {
+      ...SWEEP,
+      schedule: { at: host.now() + 60_000 },
+    });
+    host.setNow(host.now() + 120_000);
+    let release = () => {};
+    host.threadHolds.get = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await expect(
+      routines.fire(created.id, { automationId: created.automationId as string, runId: null }),
+    ).rejects.toThrow(/did not answer/);
+    host.threadHolds.get = null;
+    release();
+    // Automations disables a once automation after its run.
+    const row = host.automations.rows.get(created.automationId as string);
+    if (row !== undefined) row.enabled = false;
+    expect(host.server.store.routineRuns(created.id)[0]).toMatchObject({
+      status: "failed",
+      reason: expect.stringMatching(/did not answer reading the Captain/),
+    });
+    const stored = host.server.store.routine(created.id);
+    const view = await routines.view(stored as never);
+    expect(view.missed).toBe(true);
+    expect(view.lastRun?.reason).toMatch(/did not answer/);
+  });
+
+  test("a create queued behind a Captain's deletion is refused", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const open = gate(host, ["automations_create"]);
+    const first = routines.create(owner, SWEEP);
+    await waitFor(() => host.automations.inFlight === 1);
+    const second = routines.create(owner, { ...SWEEP, name: "Digest" });
+    const removing = routines.removeCaptain(captainId);
+    open();
+    await first;
+    await expect(second).rejects.toThrow(/no longer live/);
+    await removing;
+    expect(host.server.store.routinesOf(captainId)).toEqual([]);
+    expect(host.automations.rows.size).toBe(0);
+  });
+
+  test("a stopped reconcile reads no further project", async () => {
+    const { host, owner, routines } = await routineHost();
+    await routines.create(owner, SWEEP);
+    host.server.store.addCleanup(
+      { kind: "delete", projectId: "proj_rampage", automationId: "auto_x", routineId: "r9" },
+      "pending",
+      1,
+    );
+    const open = gate(host, ["automations_list"]);
+    const stopping = new AbortController();
+    const pass = routines.maintain(stopping.signal);
+    await waitFor(() => host.automations.inFlight === 1);
+    stopping.abort();
+    open();
+    await pass;
+    const lists = host.automations.calls.filter((c) => c.method === "automations_list");
+    expect(lists).toHaveLength(1);
+  });
+
   test("a slow maintenance item keeps its worker slot past the deadline", async () => {
     const host = await captainHost({ maintenanceDeadlineMs: 5 });
     const { owner, routines } = await ownerOf(host);

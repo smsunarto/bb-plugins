@@ -111,6 +111,8 @@ export type FakeOptions = {
   crewPollMs?: number;
   /** How long one routine maintenance item runs before Captain warns. */
   maintenanceDeadlineMs?: number;
+  /** How long a routine fire waits on one bb thread call. */
+  threadDeadlineMs?: number;
 };
 
 /** The Account Pooler's `status.get` fields Captain reads; null when the pool is not loaded. */
@@ -309,6 +311,11 @@ export async function captainHost(options: FakeOptions = {}) {
   const queued = new Map<string, QueuedRow[]>();
   /** Threads with a turn running: a `queue-if-active` send to one is queued. */
   const busy = new Set<string>();
+  /** While set, `threads.get` or `threads.send` waits for it, as a slow bb would. */
+  const threadHolds: { get: Promise<void> | null; send: Promise<void> | null } = {
+    get: null,
+    send: null,
+  };
   const automations = fakeAutomations(() => clock);
   /** Each send-now, with whether the thread was marked and registered by then. */
   const released: { threadId: string; marked: boolean; registered: boolean }[] = [];
@@ -661,11 +668,14 @@ export async function captainHost(options: FakeOptions = {}) {
           },
         },
         get: async ({ threadId }) => {
+          await threadHolds.get;
           const thread = threads.get(threadId);
           if (thread === undefined) throw new Error(`thread ${threadId} not found`);
           return thread as never;
         },
         send: async (args) => {
+          // Held before the write, as a slow bb is: the message lands when released.
+          await threadHolds.send;
           if (sendFails.has(args.threadId)) throw new Error(`thread ${args.threadId} is busy`);
           const [part] = args.input;
           const text = part !== undefined && part.type === "text" ? part.text : "";
@@ -789,6 +799,9 @@ export async function captainHost(options: FakeOptions = {}) {
     ...(options.maintenanceDeadlineMs === undefined
       ? {}
       : { maintenanceDeadlineMs: options.maintenanceDeadlineMs }),
+    ...(options.threadDeadlineMs === undefined
+      ? {}
+      : { threadDeadlineMs: options.threadDeadlineMs }),
     crewPollMs: options.crewPollMs ?? 20,
   };
   let server = await start(host.bb, startOptions);
@@ -898,6 +911,7 @@ export async function captainHost(options: FakeOptions = {}) {
     metadata,
     queued,
     busy,
+    threadHolds,
     automations,
     /** The Captain's turn ends: its first queued message starts the next turn. */
     drainQueue(threadId: string) {

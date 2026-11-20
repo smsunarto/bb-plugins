@@ -37,16 +37,15 @@ export type RoutinesDeps = {
   defaultTimezone?: string;
   /** How long one maintenance item runs before Captain warns; tests shorten it. */
   maintenanceDeadlineMs?: number;
+  /** How long fire waits on one bb thread call; tests shorten it. */
+  threadDeadlineMs?: number;
 };
 
 /** The Captain a routine belongs to, as the service needs it. */
 export type RoutineOwner = { threadId: string; name: string; homeProjectId: string };
 
-/** Unseen this long while routines ran, a Captain's routines are paused with one ask. */
 /** Maintenance calls in flight at once, and the deadline on each. */
 const MAINTENANCE_CONCURRENCY = 4;
-/** How long fire waits on one bb thread call. */
-const THREAD_DEADLINE_MS = 10_000;
 /** A test run's claim is dropped after this, in case its fire never came. */
 const TEST_RUN_TTL_MS = 24 * 60 * 60_000;
 
@@ -88,6 +87,11 @@ export function createRoutines(deps: RoutinesDeps) {
 
   /** The lock for a Captain's routine names. */
   const deadlineMs = deps.maintenanceDeadlineMs ?? 20_000;
+  const threadDeadlineMs = deps.threadDeadlineMs ?? 10_000;
+  /** Routines whose wake bb has not answered yet; the guard outlives fire's deadline. */
+  const delivering = new Set<string>();
+  /** Captains being removed: a create queued behind the removal is refused. */
+  const removing = new Set<string>();
   const namesKey = (captainId: string) => `names:${captainId}`;
   const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
   const changed = (captainId: string) => bb.rpc.experimental_invalidate([routinesTag(captainId)]);
@@ -251,6 +255,13 @@ export function createRoutines(deps: RoutinesDeps) {
     // Name changes run one at a time per Captain, so a reservation another
     // operation later releases never refuses this one.
     return serial(namesKey(captain.threadId), () => {
+      // Queued behind a removal or an archive: the Captain is no longer live.
+      const live = store.captain(captain.threadId);
+      if (removing.has(captain.threadId) || live === null || live.archivedAt !== null) {
+        throw new Refusal([
+          { reason: `${captain.name} Captain is no longer live`, fix: "no routine was added" },
+        ]);
+      }
       // The insert reserves the name; the routine lock is taken before any
       // await, so reconcile never sees the automation before its id is saved.
       const draft = store.createRoutine({ ...fields, captainId: captain.threadId, at: deps.now() });
@@ -427,11 +438,15 @@ export function createRoutines(deps: RoutinesDeps) {
         "reading the Captain",
       ).catch((error: unknown) => {
         if (isMissing(error)) return null;
+        // Recorded, so a spent one-shot shows as missed with this reason.
+        record(routine, trigger, "failed", message(error));
         throw error;
       });
       if (captainRow === null || thread === null || thread.deletedAt != null) {
         record(routine, trigger, "failed", "Captain deleted");
-        void removeCaptain(routine.captainId, routine.id);
+        void removeCaptain(routine.captainId).catch((error: unknown) =>
+          bb.log.warn(`routines of ${routine.captainId} not removed: ${message(error)}`),
+        );
         throw new Refusal([
           { reason: `${routine.captainId} was deleted`, fix: "its routines are removed" },
         ]);
@@ -448,6 +463,12 @@ export function createRoutines(deps: RoutinesDeps) {
           },
         ]);
       }
+      if (delivering.has(routine.id)) {
+        return {
+          state: "skipped",
+          run: record(routine, trigger, "skipped", "previous delivery in flight"),
+        };
+      }
       const queued = await alreadyQueued(routine);
       if (queued !== false) {
         const reason = queued === "unreadable" ? "queue unreadable" : "previous run still queued";
@@ -459,24 +480,45 @@ export function createRoutines(deps: RoutinesDeps) {
         instruction: routine.instruction,
         why: trigger === "test" ? "as a test run" : "on its schedule",
       })}`;
-      try {
-        // On a timeout the message may still arrive; the run records a failure, never a resend.
-        const result = await bounded(
-          bb.sdk.threads.send({
-            threadId: routine.captainId,
-            mode: "queue-if-active",
-            input: [{ type: "text", text, mentions: [] }],
+      // The guard and the record wait for bb's answer, even past fire's deadline,
+      // so a late send never lets a second one stack behind it.
+      delivering.add(routine.id);
+      const outcome = bb.sdk.threads
+        .send({
+          threadId: routine.captainId,
+          mode: "queue-if-active",
+          input: [{ type: "text", text, mentions: [] }],
+        })
+        .then(
+          (result) => ({
+            status: result.delivery === "queued" ? ("queued" as const) : ("sent" as const),
+            reason: null,
           }),
-          "sending the wake",
-        );
-        const state = result.delivery === "queued" ? "queued" : "sent";
-        return { state, run: record(routine, trigger, state, null) };
+          (error: unknown) => ({ status: "failed" as const, reason: message(error) }),
+        )
+        .then(({ status, reason }) => {
+          const run = record(routine, trigger, status, reason);
+          changed(routine.captainId);
+          return { status, reason, run };
+        })
+        .finally(() => delivering.delete(routine.id));
+      let settled: Awaited<typeof outcome>;
+      try {
+        settled = await bounded(outcome, "sending the wake");
       } catch (error) {
-        record(routine, trigger, "failed", message(error));
         throw new Refusal([
-          { reason: `not sent to the Captain: ${message(error)}`, fix: "the next run tries again" },
+          {
+            reason: `no answer yet: ${message(error)}`,
+            fix: "Captain records the run when bb answers; runs until then are skipped",
+          },
         ]);
       }
+      if (settled.status === "failed") {
+        throw new Refusal([
+          { reason: `not sent to the Captain: ${settled.reason}`, fix: "the next run tries again" },
+        ]);
+      }
+      return { state: settled.status, run: settled.run };
     });
   }
 
@@ -541,14 +583,16 @@ export function createRoutines(deps: RoutinesDeps) {
   }
 
   /** Delete a deleted Captain's routines; an automation not deleted now is queued for cleanup. */
-  async function removeCaptain(captainId: string, inLock?: string): Promise<void> {
+  async function removeCaptain(captainId: string): Promise<void> {
+    // Creates still queued are refused. One already running inserted its row
+    // and holds that routine's lock, so the loop below waits for it.
+    removing.add(captainId);
     for (const routine of store.routinesOf(captainId)) {
       const remove = async () => {
         const latest = store.routine(routine.id);
         if (latest !== null) await retire(latest);
       };
-      if (routine.id === inLock) await remove();
-      else await serial(`routine:${routine.id}`, remove);
+      await serial(`routine:${routine.id}`, remove);
     }
     changed(captainId);
   }
@@ -573,6 +617,7 @@ export function createRoutines(deps: RoutinesDeps) {
     const listed: { projectId: string; automationId: string; routineId: string }[] = [];
     try {
       for (const projectId of projects) {
+        if (signal?.aborted === true) return false;
         for (const row of await automations.listRoutineAutomations(projectId)) {
           listed.push({ projectId, ...row });
         }
@@ -589,6 +634,7 @@ export function createRoutines(deps: RoutinesDeps) {
           if (store.routine(row.routineId)?.automationId === row.automationId) return true;
           const found = { projectId: row.projectId, automationId: row.automationId };
           // Never delete what Captain did not make: the script and env must be exactly its own.
+          // An exact copy is deleted on purpose: it would fire this same routine a second time.
           if (!(await automations.ownedBy(found, row.routineId))) return true;
           await deleteAutomation(found, row.routineId);
           return true;
@@ -714,8 +760,8 @@ export function createRoutines(deps: RoutinesDeps) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<never>((_, reject) => {
       timer = setTimeout(
-        () => reject(new Error(`bb did not answer ${what} in ${THREAD_DEADLINE_MS / 1000}s`)),
-        THREAD_DEADLINE_MS,
+        () => reject(new Error(`bb did not answer ${what} in ${threadDeadlineMs / 1000}s`)),
+        threadDeadlineMs,
       );
     });
     try {

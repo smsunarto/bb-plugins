@@ -25,6 +25,8 @@ export type StartOptions = {
   tasksDeadlineMs?: number;
   /** How long one routine maintenance item runs before Captain warns; tests shorten it. */
   maintenanceDeadlineMs?: number;
+  /** How long a routine fire waits on one bb thread call; tests shorten it. */
+  threadDeadlineMs?: number;
   /** How often a watched banner rechecks the crew; tests shorten it. */
   crewPollMs?: number;
 };
@@ -47,6 +49,9 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     ...(options.maintenanceDeadlineMs === undefined
       ? {}
       : { maintenanceDeadlineMs: options.maintenanceDeadlineMs }),
+    ...(options.threadDeadlineMs === undefined
+      ? {}
+      : { threadDeadlineMs: options.threadDeadlineMs }),
     defaultTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
   const deps: CommandDeps = {
