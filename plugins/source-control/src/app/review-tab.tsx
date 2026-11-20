@@ -15,8 +15,12 @@ import { reviewTabParams, setPlace, useOpenReview, useTabPlace } from "./open-re
 import { RevealRequestContext, ReviewHostContext, type ReviewHost } from "./page/hooks.ts";
 import { PanelReview } from "./page/review-page.tsx";
 import { SOURCE_CONTROL_TAB } from "./thread-info.tsx";
+import { pullRequestTabParams } from "./open-pull-request.tsx";
+import { PullRequestTab } from "./pull-request-tab.tsx";
 
 export function ReviewTab({ threadId, params }: ExperimentalThreadActionTabProps) {
+  const pullRequest = pullRequestTabParams(params);
+  if (pullRequest) return <PullRequestTab threadId={threadId} pr={pullRequest.ref} />;
   const parsed = reviewTabParams(params);
   if (!parsed) return <NoChange />;
   return <ChangeReview threadId={threadId} changeKey={parsed.key} />;

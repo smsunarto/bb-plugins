@@ -437,7 +437,13 @@ export const sourceControlContract = defineRpcContract({
    * `pr:<owner>/<repo>#<n>` or `branch:<GitButler branch id>`.
    */
   legacyChange: {
-    input: z.object({ keys: z.array(z.string().min(1).max(300)).min(1).max(25) }).strict(),
+    input: z
+      .object({
+        keys: z.array(z.string().min(1).max(300)).min(1).max(25),
+        /** The thread asking: a cold GitHub read tries its host first. */
+        threadId: threadIdSchema.optional(),
+      })
+      .strict(),
     output: z.record(
       z.string(),
       z

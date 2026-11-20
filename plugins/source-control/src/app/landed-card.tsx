@@ -19,12 +19,14 @@ import {
   type PluginThreadActionTarget,
 } from "@get-bb/plugin-sdk/app";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PullRequestLink } from "./open-pull-request.tsx";
 import {
   canStillLand,
   commitKey,
   notLanded,
   parseLandedAttributes,
   prKey,
+  prUrl,
   sameCommit,
   sameRef,
   type CommitRef,
@@ -141,6 +143,7 @@ function LandedCard({ target, threadId }: { target: LandedListed; threadId: stri
         {target.prs.map((ref) => (
           <PrRow
             key={prKey(ref)}
+            threadId={threadId}
             refValue={ref}
             read={data?.prs.find((pr) => sameRef(pr.ref, ref))}
           />
@@ -179,15 +182,21 @@ function counted(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-function PrRow({ refValue, read }: { refValue: PrRef; read?: Landed["prs"][number] }) {
+function PrRow({
+  threadId,
+  refValue,
+  read,
+}: {
+  threadId: string;
+  refValue: PrRef;
+  read?: Landed["prs"][number];
+}) {
   const label = read?.title ?? prKey(refValue);
   return (
     <li>
-      <UrlLink
-        href={
-          read?.url ??
-          `https://github.com/${refValue.owner}/${refValue.repo}/pull/${refValue.number}`
-        }
+      <PullRequestLink
+        threadId={threadId}
+        href={read?.url ?? prUrl(refValue)}
         className="flex min-w-0 items-center gap-2 py-1 text-foreground no-underline"
       >
         <Icon
@@ -201,7 +210,7 @@ function PrRow({ refValue, read }: { refValue: PrRef; read?: Landed["prs"][numbe
         <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
           #{refValue.number}
         </span>
-      </UrlLink>
+      </PullRequestLink>
     </li>
   );
 }

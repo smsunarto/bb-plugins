@@ -252,9 +252,13 @@ export function createMoved(deps: {
     },
   };
 
-  /** An old card's target as a Change: by the stored mapping, the checkouts' rows, or GitHub. */
+  /**
+   * An old card's target, or a pull request link, as a Change: by the stored
+   * mapping, the checkouts' rows, or GitHub, read first from `threadId`'s host.
+   */
   async function legacyChange(
     lookup: string,
+    threadId: string | null,
   ): Promise<{ key: ChangeKey | null; problem: string | null }> {
     const stored = store.legacyBranch(lookup) ?? store.legacyBranch(lookup.replace(/^branch:/, ""));
     if (stored) return { key: stored, problem: null };
@@ -270,7 +274,13 @@ export function createMoved(deps: {
     }
     const ref = parsePrReference(lookup.replace(/^pr:/, ""));
     if (!ref) return { key: null, problem: "This card names no pull request." };
-    const outcome = await read(null, repoOf(ref), { kind: "prHead", ref }, null);
+    // The thread's own host first, then every other checkout: a link can name any repository.
+    const placements = threadId
+      ? [...placementsOf(threadId), ...store.checkouts()]
+      : store.checkouts();
+    const outcome = await deps.run(
+      deps.read(null, repoOf(ref), { kind: "prHead", ref }, placements),
+    );
     if (!outcome.ok || outcome.value.kind !== "prHead")
       return {
         key: null,
@@ -283,9 +293,11 @@ export function createMoved(deps: {
 
   const handlers = {
     importFromOldPlugins: () => cutover.run(),
-    legacyChange: async ({ keys }) =>
+    legacyChange: async ({ keys, threadId }) =>
       Object.fromEntries(
-        await Promise.all(keys.map(async (key) => [key, await legacyChange(key)] as const)),
+        await Promise.all(
+          keys.map(async (key) => [key, await legacyChange(key, threadId ?? null)] as const),
+        ),
       ),
     landedCard: async (target) => {
       const first = target.prs[0] ?? target.commits[0];
