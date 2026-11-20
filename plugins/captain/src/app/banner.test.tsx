@@ -49,6 +49,7 @@ function render(
       askId: string;
       answer: string;
     }) => Promise<{ state: "answered"; warnings: string[] }>;
+    panelTabs?: unknown;
   } = {},
 ) {
   const calls: Calls = [];
@@ -76,6 +77,9 @@ function render(
       defer: log("defer", () => ({ snoozedUntil: null, skipOrder: null })),
     } as never,
     ...(options.sdk === undefined ? {} : { sdk: options.sdk as never }),
+    ...(options.panelTabs === undefined
+      ? {}
+      : { experimental_panelTabs: options.panelTabs as never }),
   });
   return { slot, calls, of: (method: string) => calls.filter((call) => call.method === method) };
 }
@@ -695,6 +699,28 @@ test("an errored Captain thread's Retry re-submits its failed turn", async () =>
   expect(retry.textContent).not.toContain("Recommended");
   act(() => retry.click());
   await waitFor(() => expect(retried).toEqual([{ threadId: CAPTAIN }]));
+});
+
+const infoOpen = {
+  open: true,
+  selectedKey: "info",
+  tabs: [{ key: "info", title: "Info", status: null, closable: false, detail: { kind: "info" } }],
+};
+
+test("a Captain's panel already open at mount keeps its tab: that open was before the banner", async () => {
+  const { slot, of } = render(CAPTAIN, [decision], { panelTabs: infoOpen });
+  await waitFor(() => expect(of("asks").length).toBeGreaterThan(0));
+  await new Promise((settle) => setTimeout(settle, 30));
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("a Captain's closed panel is never opened by the banner", async () => {
+  const { slot, of } = render(CAPTAIN, [decision], {
+    panelTabs: { open: false, selectedKey: null, tabs: [] },
+  });
+  await waitFor(() => expect(of("asks").length).toBeGreaterThan(0));
+  await new Promise((settle) => setTimeout(settle, 30));
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
 });
 
 test("a ship panel does not answer on implicit Enter, and its Merge and Hold actions still work", async () => {

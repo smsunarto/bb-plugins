@@ -31,6 +31,8 @@ export type StartOptions = {
   crewPollMs?: number;
   /** How often a watched Drive is scanned; tests shorten it. */
   driveScanMs?: number;
+  /** How often a watched Overview rechecks Tasks; tests shorten it. */
+  tasksPollMs?: number;
 };
 
 /** Wires the plugin; holds no logic of its own. Returns the parts tests drive. */
@@ -88,7 +90,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     }
   });
   bb.cli.register(captainCli(deps));
-  registerRpc(deps, options.crewPollMs, options.driveScanMs);
+  registerRpc(deps, options.crewPollMs, options.driveScanMs, options.tasksPollMs);
   check.register(bb);
   routines.register(bb);
 

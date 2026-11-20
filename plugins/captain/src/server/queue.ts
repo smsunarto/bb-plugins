@@ -31,7 +31,12 @@ export const READ_DEADLINE_MS = 8_000;
  * interaction read, starts as soon as they are listed rather than waiting for
  * Tasks.
  */
-export type CrewSnapshot = { threads: Promise<ListedThread[]>; rows: Promise<CrewRow[]> };
+export type CrewSnapshot = {
+  threads: Promise<ListedThread[]>;
+  rows: Promise<CrewRow[]>;
+  /** Why the rows are empty when Tasks failed them, else null; it settles with `rows`. */
+  rowsError: Promise<string | null>;
+};
 
 /**
  * List the Captain's crew under bb's read deadline, then join their Tasks
@@ -43,23 +48,29 @@ export function readCrewSnapshot(
   captainId: string,
 ): CrewSnapshot {
   const threads = listChildren(deps.bb, captainId, false, AbortSignal.timeout(READ_DEADLINE_MS));
-  const rows = threads.then((listed) =>
+  const read = threads.then((listed) =>
     listed.length === 0
-      ? []
-      : deps.tasks.crewSnapshot(listed.map((thread) => thread.id)).catch((error: unknown) => {
-          if (!(error instanceof TasksError)) throw error;
-          deps.bb.log.warn(`crew read without Tasks: ${error.message}`);
-          return [] as CrewRow[];
-        }),
+      ? { rows: [] as CrewRow[], error: null }
+      : deps.tasks.crewSnapshot(listed.map((thread) => thread.id)).then(
+          (rows) => ({ rows, error: null }),
+          (error: unknown) => {
+            if (!(error instanceof TasksError)) throw error;
+            deps.bb.log.warn(`crew read without Tasks: ${error.message}`);
+            return { rows: [] as CrewRow[], error: error.message };
+          },
+        ),
   );
+  const rows = read.then((result) => result.rows);
+  const rowsError = read.then((result) => result.error);
   // A caller that stops at a failed listing never awaits the rows; the failure is its.
   rows.catch(() => undefined);
-  return { threads, rows };
+  rowsError.catch(() => undefined);
+  return { threads, rows, rowsError };
 }
 
 /**
  * One crew read for every RPC that needs it: the banner's `crew` and the
- * Overview's `crewThreads` carry the same tag, so one change refreshes both
+ * Overview's `tasks` carry the same tag, so one change refreshes both
  * at once. A read in flight is shared by the calls that arrive while it runs;
  * once both its parts settle, the next call reads afresh. `changed` drops a
  * read in flight, so a call after a change never gets the read from before it.

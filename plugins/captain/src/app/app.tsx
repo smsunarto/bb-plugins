@@ -22,7 +22,7 @@ export default definePluginApp((app) => {
     description: "The icon or picture each Captain shows in the sidebar.",
     component: CaptainIconSettings,
   });
-  // A Captain's asks, crew and Drive beside its thread; hidden on every other thread.
+  // A Captain's asks, tasks and Drive beside its thread; hidden on every other thread.
   app.slots.experimental_tab({
     ...CAPTAIN_OVERVIEW_TAB,
     title: "Overview",

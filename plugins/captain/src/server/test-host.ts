@@ -118,6 +118,8 @@ export type FakeOptions = {
   threadDeadlineMs?: number;
   /** How often a watched Drive is scanned. */
   driveScanMs?: number;
+  /** How often a watched Overview rechecks Tasks. */
+  tasksPollMs?: number;
 };
 
 /** The Account Pooler's `status.get` fields Captain reads; null when the pool is not loaded. */
@@ -308,6 +310,8 @@ export async function captainHost(options: FakeOptions = {}) {
     /** Runs after the spawn, before Tasks answers: where bb builds the first session. */
     onSpawn: undefined as ((threadId: string) => Promise<void> | void) | undefined,
     down: options.tasksDown === true,
+    /** Methods that fail while listed; `listTasks:<projectId>` fails one project's list. */
+    failing: new Set<string>(),
   };
   const pushes: { method: string; input: unknown }[] = [];
   /** Messages sent into threads, in order, with the sender exactly as the send passed it. */
@@ -457,6 +461,9 @@ export async function captainHost(options: FakeOptions = {}) {
   ): Promise<unknown> {
     tasks.calls.push({ method, input });
     if (tasks.down) throw new Error("plugin scott-tasks is not loaded");
+    if (tasks.failing.has(method) || tasks.failing.has(`${method}:${String(input["projectId"])}`)) {
+      throw new Error(`${method} is failing`);
+    }
     switch (method) {
       case "listProjects":
         return { projects: tasks.projects };
@@ -504,17 +511,19 @@ export async function captainHost(options: FakeOptions = {}) {
         const project = tasks.projects.find((entry) => entry.id === input["projectId"]);
         const statuses = input["statuses"] as string[] | undefined;
         const search = input["search"] as string | undefined;
+        const matching = tasks.tasks
+          .filter((task) => project !== undefined && task.key.startsWith(`${project.prefix}-`))
+          .filter((task) => statuses === undefined || statuses.includes(task.status))
+          .filter(
+            (task) =>
+              search === undefined || `${task.title}\n${task.description ?? ""}`.includes(search),
+          );
+        // The cursor is the next page's offset, as opaque to Captain as Tasks' own.
+        const start = Number(input["cursor"] ?? 0);
+        const end = start + Number(input["limit"] ?? 100);
         return {
-          tasks: tasks.tasks
-            .filter((task) => project !== undefined && task.key.startsWith(`${project.prefix}-`))
-            .filter((task) => statuses === undefined || statuses.includes(task.status))
-            .filter(
-              (task) =>
-                search === undefined || `${task.title}\n${task.description ?? ""}`.includes(search),
-            )
-            .slice(0, Number(input["limit"] ?? 100))
-            .map(snapshotTask),
-          nextCursor: null,
+          tasks: matching.slice(start, end).map(snapshotTask),
+          nextCursor: end < matching.length ? String(end) : null,
         };
       }
       case "listTaskThreads":
@@ -858,6 +867,7 @@ export async function captainHost(options: FakeOptions = {}) {
       : { threadDeadlineMs: options.threadDeadlineMs }),
     crewPollMs: options.crewPollMs ?? 20,
     driveScanMs: options.driveScanMs ?? 40,
+    tasksPollMs: options.tasksPollMs ?? 40,
   };
   let server = await start(host.bb, startOptions);
   await server.ready;

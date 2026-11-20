@@ -7,7 +7,7 @@ import {
   asksTag,
   captainContract,
   crewTag,
-  type CrewThreadItem,
+  type CaptainTaskItem,
   type DriveFileItem,
 } from "../contract/rpc.ts";
 
@@ -45,15 +45,12 @@ const ship: QueueItem = {
   task: "BBP-44",
 };
 
-const crewThread = (overrides: Partial<CrewThreadItem>): CrewThreadItem => ({
-  id: "thr_crew1",
+const task = (overrides: Partial<CaptainTaskItem>): CaptainTaskItem => ({
+  key: "GAME-5",
   title: "Verify Unity builds",
-  status: "idle",
-  providerId: "claude-code",
-  model: "Claude Opus 5.5",
-  task: "GAME-5",
-  role: "implement",
-  hasPendingInteraction: false,
+  status: "in_progress",
+  ready: false,
+  crew: { threadId: "thr_crew1", role: "Implement", state: "idle" },
   updatedAt: NOW - 3 * 86_400_000,
   ...overrides,
 });
@@ -71,7 +68,14 @@ const file = (path: string, excerpt: string | null = `# ${path}\n\nBody`): Drive
 
 type State = {
   asks: QueueItem[];
-  threads: CrewThreadItem[];
+  tasks: CaptainTaskItem[];
+  /** More open tasks than were read. */
+  tasksTruncated?: boolean;
+  /** Every open task read, when more than the rows. */
+  tasksTotal?: number;
+  crewError?: string | null;
+  /** Repos whose tasks could not be read. */
+  unavailable?: string[];
   files: DriveFileItem[];
   /** Every file in the Drive, when more than the cards. */
   total?: number;
@@ -86,7 +90,6 @@ function render(
     threadId?: string;
     external?: boolean;
     connection?: "connected" | "reconnecting";
-    sidebar?: { id: string; indicator: string }[];
   } = {},
 ) {
   const fails = (method: string) => {
@@ -106,10 +109,16 @@ function render(
           fails("asks");
           return { items: state.asks };
         },
-        crewThreads: () => {
-          calls.push("crewThreads");
-          fails("crewThreads");
-          return { threads: state.threads };
+        tasks: () => {
+          calls.push("tasks");
+          fails("tasks");
+          return {
+            tasks: state.tasks,
+            total: state.tasksTotal ?? state.tasks.length,
+            truncated: state.tasksTruncated ?? false,
+            crewError: state.crewError ?? null,
+            unavailable: state.unavailable ?? [],
+          };
         },
         drive: () => {
           calls.push("drive");
@@ -129,9 +138,6 @@ function render(
       canOpenFileExternally: () => options.external ?? true,
       experimental_panel: { selectTab: () => true },
       ...(options.connection === undefined ? {} : { realtimeConnectionState: options.connection }),
-      ...(options.sidebar === undefined
-        ? {}
-        : { sidebarThreads: { status: "ready", threads: options.sidebar as never } }),
       experimental_panelTabs: {
         open: true,
         selectedKey: "overview",
@@ -146,10 +152,16 @@ function render(
 
 const seeded: State = {
   asks: [decision, ship],
-  threads: [
-    crewThread({ id: "thr_busy", title: "Fix the sidebar", status: "active", task: "BBP-44" }),
-    crewThread({}),
-    crewThread({ id: "thr_review", title: "Review BBP-43", role: "review", task: "BBP-43" }),
+  tasks: [
+    task({
+      key: "BBP-44",
+      title: "Fix the sidebar",
+      status: "in_review",
+      ready: true,
+      crew: { threadId: "thr_busy", role: "Review", state: "working" },
+    }),
+    task({}),
+    task({ key: "BBP-43", title: "Cache the builds", status: "todo", crew: null }),
   ],
   files: [file("CAPTAIN.md"), file("CREW.md"), file("briefs/BBP-43.md")],
 };
@@ -175,7 +187,7 @@ test("the tab shows only on a live Captain's thread", async () => {
   await waitFor(() => expect(other.getByTestId("visible").textContent).toBe("false"));
 });
 
-test("Needs you, Threads and Drive list their items with counts and sublines", async () => {
+test("Needs you, Tasks and Drive list their items with counts and sublines", async () => {
   const { slot } = render(seeded);
   const needs = await section(slot, "Needs you");
   await within(needs).findByText("Pick the cache backend");
@@ -184,10 +196,12 @@ test("Needs you, Threads and Drive list their items with counts and sublines", a
   expect(needs.textContent).toContain("BBP-44 · ship");
   expect(needs.textContent).toContain("3d");
 
-  const threads = await section(slot, "Threads");
-  await within(threads).findByText("Fix the sidebar");
-  expect(threads.textContent).toContain("Threads3");
-  expect(threads.textContent).toContain("Claude Opus 5.5 · GAME-5 · implement · 3d");
+  const tasks = await section(slot, "Tasks");
+  await within(tasks).findByText("Fix the sidebar");
+  expect(tasks.textContent).toContain("Tasks3");
+  expect(tasks.textContent).toContain("Ready to ship · Review working");
+  expect(tasks.textContent).toContain("In progress · Implement idle");
+  expect(tasks.textContent).toContain("BBP-43 Cache the buildsTodo");
 
   const drive = await section(slot, "Drive");
   await within(drive).findByRole("button", { name: "Open briefs/BBP-43.md" });
@@ -195,9 +209,17 @@ test("Needs you, Threads and Drive list their items with counts and sublines", a
   expect(drive.textContent).toContain("BBP-43.mdbriefs");
 });
 
+test("a task opens in Tasks, and its crew thread from the row's link", async () => {
+  const { slot } = render(seeded);
+  const row = await slot.findByRole("link", { name: /BBP-44 Fix the sidebar/u });
+  expect(row.getAttribute("href")).toBe("/plugins/scott-tasks/tasks/task/BBP-44");
+  // A task without crew has no thread link.
+  expect(slot.queryByRole("button", { name: /BBP-43's/u })).toBeNull();
+});
+
 test("rows and cards open their targets", async () => {
   const { slot } = render(seeded);
-  fireEvent.click(await slot.findByRole("button", { name: /Fix the sidebar/u }));
+  fireEvent.click(await slot.findByRole("button", { name: "Open BBP-44's Review thread" }));
   fireEvent.click(await slot.findByRole("button", { name: "Open briefs/BBP-43.md" }));
   fireEvent.click(await slot.findByRole("button", { name: "Open the Drive folder" }));
   expect(slot.inspection.navigateCalls).toEqual([
@@ -246,8 +268,8 @@ test("an ask opens the banner's answer controls, and answering sends it", async 
 
 test("sections collapse and stay collapsed for that thread", async () => {
   const first = render(seeded);
-  const toggle = await within(await section(first.slot, "Threads")).findByRole("button", {
-    name: /Threads/u,
+  const toggle = await within(await section(first.slot, "Tasks")).findByRole("button", {
+    name: /Tasks/u,
   });
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   fireEvent.click(toggle);
@@ -256,27 +278,35 @@ test("sections collapse and stay collapsed for that thread", async () => {
   cleanup();
 
   const again = render(seeded);
-  const threads = await section(again.slot, "Threads");
-  expect(
-    within(threads)
-      .getByRole("button", { name: /Threads/u })
-      .getAttribute("aria-expanded"),
-  ).toBe("false");
+  const tasks = await section(again.slot, "Tasks");
+  expect(within(tasks).getByRole("button", { name: /Tasks/u }).getAttribute("aria-expanded")).toBe(
+    "false",
+  );
   await within(await section(again.slot, "Needs you")).findByText("Pick the cache backend");
   cleanup();
 
   // Another Captain's Overview keeps its own state.
   const other = render(seeded, { threadId: "thr_other" });
-  const otherThreads = await section(other.slot, "Threads");
+  const otherTasks = await section(other.slot, "Tasks");
   expect(
-    within(otherThreads)
-      .getByRole("button", { name: /Threads/u })
-      .getAttribute("aria-expanded"),
+    within(otherTasks).getByRole("button", { name: /Tasks/u }).getAttribute("aria-expanded"),
   ).toBe("true");
 });
 
+test("a Threads section collapsed before Tasks replaced it stays collapsed", async () => {
+  window.localStorage.setItem(
+    `captain:overview:${CAPTAIN}`,
+    JSON.stringify({ needs: false, threads: true, drive: false }),
+  );
+  const { slot } = render(seeded);
+  const tasks = await section(slot, "Tasks");
+  expect(within(tasks).getByRole("button", { name: /Tasks/u }).getAttribute("aria-expanded")).toBe(
+    "false",
+  );
+});
+
 test("an ask or a crew change refreshes its section", async () => {
-  const state: State = { ...seeded, asks: [decision], threads: [crewThread({})] };
+  const state: State = { ...seeded, asks: [decision], tasks: [task({})] };
   const { slot } = render(state);
   const needs = await section(slot, "Needs you");
   await within(needs).findByText("Pick the cache backend");
@@ -290,52 +320,67 @@ test("an ask or a crew change refreshes its section", async () => {
   await waitFor(() => expect(within(needs).queryByText("Pick the cache backend")).toBeNull());
 });
 
-test("a crew thread's status change reorders the rows and redraws its status", async () => {
-  const idle = crewThread({ id: "thr_a", title: "Verify Unity builds" });
-  const other = crewThread({ id: "thr_b", title: "Review BBP-43", updatedAt: NOW });
-  const state: State = { ...seeded, threads: [other, idle] };
+test("a crew change refreshes the tasks: their order and their crew's state", async () => {
+  const review = task({ key: "BBP-43", title: "Review the cache", status: "in_review" });
+  const work = task({ key: "GAME-5", title: "Verify Unity builds" });
+  const state: State = { ...seeded, tasks: [review, work] };
   const { slot } = render(state);
-  const threads = await section(slot, "Threads");
-  await within(threads).findByText("Review BBP-43");
+  const tasks = await section(slot, "Tasks");
+  await within(tasks).findByText("Review the cache");
   const rowNames = () =>
-    within(threads)
-      .getAllByRole("button")
-      .slice(1)
-      .map((row) => row.textContent?.slice(0, 13));
-  const glyph = (title: string) =>
-    within(threads).getByText(title).closest("button")?.querySelector("[data-indicator]") ?? null;
-  expect(rowNames()).toEqual(["Review BBP-43", "Verify Unity "]);
-  expect(glyph("Verify Unity builds")?.getAttribute("data-indicator")).toBe("none");
+    within(tasks)
+      .getAllByRole("link")
+      .map((row) => row.textContent?.slice(0, 6));
+  expect(rowNames()).toEqual(["BBP-43", "GAME-5"]);
 
-  // The server lists active crew first.
-  state.threads = [{ ...idle, status: "active" }, other];
+  // The server orders ready to ship first, then in review.
+  state.tasks = [
+    { ...work, ready: true, crew: { threadId: "thr_crew1", role: "Implement", state: "working" } },
+    review,
+  ];
   await slot.behavior.experimental_invalidateRpc([crewTag(CAPTAIN)]);
-  await waitFor(() => expect(rowNames()).toEqual(["Verify Unity ", "Review BBP-43"]));
-  expect(glyph("Verify Unity builds")?.getAttribute("data-indicator")).not.toBe("none");
+  await waitFor(() => expect(rowNames()).toEqual(["GAME-5", "BBP-43"]));
+  expect(tasks.textContent).toContain("Ready to ship · Implement working");
 });
 
-test("bb's own indicator draws a crew row when the sidebar lists the thread", async () => {
-  const { slot } = render(
-    { ...seeded, threads: [crewThread({ id: "thr_a", title: "Verify Unity builds" })] },
-    { sidebar: [{ id: "thr_a", indicator: "background-command" }] },
-  );
-  const threads = await section(slot, "Threads");
-  const row = (await within(threads).findByText("Verify Unity builds")).closest("button");
-  // An idle thread would draw its provider; bb's listed indicator replaces it.
-  expect(row?.querySelector("[data-indicator]")?.getAttribute("data-indicator")).toBe(
-    "background-command",
-  );
+test("a crew read that failed leaves the tasks listed, labelled", async () => {
+  const { slot } = render({ ...seeded, crewError: "bb did not answer" });
+  const tasks = await section(slot, "Tasks");
+  await within(tasks).findByText("Crew unavailable · bb did not answer");
+  expect(within(tasks).getByText("Fix the sidebar")).not.toBeNull();
+});
+
+test("Tasks counts with + when a repo had more open tasks than were read", async () => {
+  const { slot } = render({ ...seeded, tasksTruncated: true });
+  const tasks = await section(slot, "Tasks");
+  await within(tasks).findByText("Fix the sidebar");
+  expect(tasks.textContent).toContain("Tasks3+");
+  expect(within(tasks).getByText("More in Tasks")).not.toBeNull();
+});
+
+test("Tasks counts every open task, and says how many the rows leave out", async () => {
+  const { slot } = render({ ...seeded, tasksTotal: 140 });
+  const tasks = await section(slot, "Tasks");
+  await within(tasks).findByText("137 more in Tasks");
+  expect(tasks.textContent).toContain("Tasks140");
+});
+
+test("a repo that could not be read is named above the others' tasks", async () => {
+  const { slot } = render({ ...seeded, unavailable: ["rampage"] });
+  const tasks = await section(slot, "Tasks");
+  await within(tasks).findByText("Couldn't load rampage · the other repos are listed");
+  expect(within(tasks).getByText("Fix the sidebar")).not.toBeNull();
 });
 
 test("a failed first read says so with Retry, and Retry loads it", async () => {
-  const state: State = { ...seeded, failing: new Set(["crewThreads"]) };
+  const state: State = { ...seeded, failing: new Set(["tasks"]) };
   const { slot } = render(state);
-  const threads = await section(slot, "Threads");
-  await within(threads).findByText(/Couldn't load · crewThreads unavailable/u);
+  const tasks = await section(slot, "Tasks");
+  await within(tasks).findByText(/Couldn't load · tasks unavailable/u);
   state.failing = new Set();
-  fireEvent.click(within(threads).getByRole("button", { name: "Retry" }));
-  await within(threads).findByText("Fix the sidebar");
-  expect(within(threads).queryByRole("status")).toBeNull();
+  fireEvent.click(within(tasks).getByRole("button", { name: "Retry" }));
+  await within(tasks).findByText("Fix the sidebar");
+  expect(within(tasks).queryByRole("status")).toBeNull();
 });
 
 test("a failed refresh keeps the loaded rows, labelled as not refreshed", async () => {
@@ -393,7 +438,7 @@ function answering(rpc: { asks: () => QueueItem[]; resolveAsk: (input: unknown) 
     rpc: {
       captains: () => ({ ids: [CAPTAIN] }),
       asks: () => ({ items: rpc.asks() }),
-      crewThreads: () => ({ threads: [] }),
+      tasks: () => ({ tasks: [], total: 0, truncated: false, crewError: null, unavailable: [] }),
       drive: () => ({ total: 0, truncated: false, files: [], folder: null }),
       resolveAsk: rpc.resolveAsk,
     } as never,
@@ -470,7 +515,7 @@ test("a refused Other… answer keeps its draft for the next try", async () => {
 });
 
 test("a walk that stopped before finding a file is not an empty Drive", async () => {
-  const { slot } = render({ asks: [], threads: [], files: [], total: 0, truncated: true });
+  const { slot } = render({ asks: [], tasks: [], files: [], total: 0, truncated: true });
   const drive = await section(slot, "Drive");
   await within(drive).findByRole("button", { name: /^More in the Drive/u });
   expect(within(drive).queryByText("The Drive is empty.")).toBeNull();
@@ -485,9 +530,9 @@ test("the Drive says how many files the cards leave out, with + past the walk's 
 });
 
 test("each section has an empty state", async () => {
-  const { slot } = render({ asks: [], threads: [], files: [] });
+  const { slot } = render({ asks: [], tasks: [], files: [] });
   await slot.findByText("Nothing needs you.");
-  await slot.findByText("No crew yet. Dispatch a task to start one.");
+  await slot.findByText("No open tasks in this Captain's repos.");
   await slot.findByText("The Drive is empty.");
 });
 
@@ -499,7 +544,10 @@ test("a hidden tab reads nothing", async () => {
     rpc: {
       captains: () => ({ ids: [CAPTAIN] }),
       asks: () => (calls.push("asks"), { items: [] }),
-      crewThreads: () => (calls.push("crewThreads"), { threads: [] }),
+      tasks: () => (
+        calls.push("tasks"),
+        { tasks: [], total: 0, truncated: false, crewError: null, unavailable: [] }
+      ),
       drive: () => (calls.push("drive"), { total: 0, truncated: false, files: [], folder: null }),
     } as never,
   });

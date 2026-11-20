@@ -38,6 +38,7 @@ import { Button } from "./components/ui/button.tsx";
 import { Icon } from "./components/ui/icon.tsx";
 import { Input } from "./components/ui/input.tsx";
 import { cn } from "./lib/utils.ts";
+import { useOverviewOnOpen } from "./overview-default.ts";
 
 const NO_INPUT = {};
 type ItemUi = { key: string; other: string | null; error: string | null; planOpen: boolean };
@@ -67,9 +68,23 @@ export function NeedsYouBanner() {
 
 function CaptainGate({ threadId }: { threadId: string }) {
   const captains = useRpcQuery({ contract: captainContract, method: "captains", input: NO_INPUT });
-  return captains.data?.ids.includes(threadId) ? (
-    <Banner key={threadId} captainId={threadId} />
-  ) : null;
+  const isCaptain = captains.data === undefined ? null : captains.data.ids.includes(threadId);
+  return (
+    <>
+      <OverviewOnOpen threadId={threadId} isCaptain={isCaptain} />
+      {isCaptain === true ? <Banner key={threadId} captainId={threadId} /> : null}
+    </>
+  );
+}
+
+/**
+ * Rides on the banner's slot, mounted on every thread before bb says which
+ * are Captains, so a panel opened meanwhile still lands on Overview. It
+ * renders nothing.
+ */
+function OverviewOnOpen({ threadId, isCaptain }: { threadId: string; isCaptain: boolean | null }) {
+  useOverviewOnOpen(threadId, isCaptain);
+  return null;
 }
 
 export type Action = { label: string; run: () => void; primary?: boolean; recommended?: boolean };
@@ -721,12 +736,15 @@ export function ActionButton({
   index,
   shortcuts = true,
   bannerKind,
+  className,
 }: {
   action: Action;
   index: number;
   /** False where no key handler answers by number, as outside the banner. */
   shortcuts?: boolean;
   bannerKind?: BannerKind;
+  /** The caller's spacing, such as the Overview's grid; the banner keeps its own. */
+  className?: string;
 }) {
   return (
     <Button
@@ -741,6 +759,7 @@ export function ActionButton({
         bannerKind &&
           action.primary &&
           "bg-(--foreground) text-background hover:bg-(--foreground)/90",
+        className,
       )}
       aria-keyshortcuts={shortcuts && index < 9 ? String(index + 1) : undefined}
       onClick={action.run}
@@ -985,6 +1004,7 @@ export function OtherAnswer({
   onSubmit,
   pending = false,
   showCancel = false,
+  className,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -993,6 +1013,8 @@ export function OtherAnswer({
   /** An answer is sending: Send waits, so one answer goes once. */
   pending?: boolean;
   showCancel?: boolean;
+  /** The caller's spacing, such as the Overview's grid; the banner keeps its own. */
+  className?: string;
 }) {
   const cancelOnEscape = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== "Escape") return;
@@ -1001,7 +1023,7 @@ export function OtherAnswer({
   };
   return (
     <form
-      className={cn("flex min-w-0 items-center gap-1.5", showCancel && "flex-1")}
+      className={cn("flex min-w-0 items-center gap-1.5", showCancel && "flex-1", className)}
       aria-busy={showCancel && pending}
       onSubmit={(event) => {
         event.preventDefault();

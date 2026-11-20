@@ -1,114 +1,201 @@
 import { createHash, type Hash } from "node:crypto";
 import { type Dirent, lstatSync, opendirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import { DRIVE_EXCERPT_BYTES, type CrewThreadItem, type DriveFileItem } from "../contract/rpc.ts";
+import {
+  type CaptainTaskItem,
+  type CREW_STATES,
+  DRIVE_EXCERPT_BYTES,
+  type DriveFileItem,
+} from "../contract/rpc.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { ensureStorageRoot } from "./commands/deps.ts";
-import { isActive, joinCrew } from "./crew.ts";
+import { type CrewThread, isActive, joinCrew } from "./crew.ts";
 import { DRIVE_FILES, isInside, readInside } from "./drive.ts";
-import { READ_DEADLINE_MS, type CrewSnapshot } from "./queue.ts";
-import { ROLE_SPECS } from "./roles.ts";
+import type { CrewSnapshot } from "./queue.ts";
+import { ROLE_SPECS, SHIP_READY_REVIEWS } from "./roles.ts";
+import type { TasksTask } from "./tasks-client.ts";
 
 /**
- * The Overview tab's reads: the Captain's crew as rows, and its Drive as
+ * The Overview tab's reads: the Captain's tasks as rows, and its Drive as
  * cards. Asks come from the banner's own `asks` read.
  */
 
-/** How long a provider's model names are reused before they are read again. */
-const MODEL_NAMES_TTL_MS = 10 * 60_000;
+/** Tasks' page size for open tasks, its own cap. */
+const TASKS_PAGE = 500;
+/** Each repo's open tasks are read up to this many, a page at a time; past it `total` is a floor. */
+export const TASKS_READ_MAX = 2_000;
+/** Rows the section shows, from the top of the ranked set; the count covers the rest. */
+export const TASKS_SHOWN = 100;
+
+/** Rank in the Tasks section: what waits on the user first, then work under way. */
+const RANK: Record<string, number> = { in_review: 1, in_progress: 2, todo: 3, backlog: 4 };
+const rankOf = (task: CaptainTaskItem) => (task.ready ? 0 : (RANK[task.status] ?? 5));
+
+export type CaptainTasks = {
+  tasks: CaptainTaskItem[];
+  total: number;
+  truncated: boolean;
+  crewError: string | null;
+  unavailable: string[];
+};
 
 /**
- * Each crew thread's model, and each provider's model display names. A thread
- * keeps its model for life (a fallback restarts on a new thread), so its model
- * is read once. A provider's catalog is kept for the TTL once read; a read in
- * flight is shared by its concurrent callers only, and a failed or late read
- * is not kept, so the next read asks again.
+ * The Captain's repos' open tasks (done and canceled left out), with the
+ * crew thread on each. Ready to ship, then in review, in progress, todo and
+ * backlog; the most recently updated first within each. The whole set is
+ * ranked, then its top rows returned. A repo whose list fails is named and
+ * the others listed; Tasks failing for every repo fails the read. A crew
+ * failure keeps the tasks without their crew.
  */
-export function createModelNames(deps: Pick<CommandDeps, "bb">, now: () => number = Date.now) {
-  const threadModels = new Map<string, string | null>();
-  const catalogs = new Map<string, { at: number; names: Map<string, string> }>();
-  const reading = new Map<string, Promise<Map<string, string> | null>>();
-
-  function catalog(providerId: string): Promise<Map<string, string> | null> {
-    const kept = catalogs.get(providerId);
-    if (kept !== undefined && now() - kept.at < MODEL_NAMES_TTL_MS) {
-      return Promise.resolve(kept.names);
-    }
-    const inFlight = reading.get(providerId);
-    if (inFlight !== undefined) return inFlight;
-    const read = deps.bb.sdk.providers
-      .models({ providerId, preferCached: true, signal: AbortSignal.timeout(READ_DEADLINE_MS) })
-      .then(
-        (result) => {
-          const names = new Map(result.models.map((model) => [model.model, model.displayName]));
-          catalogs.set(providerId, { at: now(), names });
-          return names;
-        },
-        // Unread: an expired catalog is still better than raw ids.
-        () => kept?.names ?? null,
-      )
-      .finally(() => reading.delete(providerId));
-    reading.set(providerId, read);
-    return read;
-  }
-
-  async function modelOf(threadId: string, signal: AbortSignal): Promise<string | null> {
-    if (threadModels.has(threadId)) return threadModels.get(threadId) ?? null;
-    const model = await deps.bb.sdk.threads
-      .defaultExecutionOptions({ threadId, signal })
-      .then((options) => options?.model ?? null)
-      .catch(() => undefined);
-    // An unreadable model is asked again next read; a missing one is remembered.
-    if (model !== undefined) threadModels.set(threadId, model);
-    return model ?? null;
-  }
-
-  return async (
-    thread: { id: string; providerId: string },
-    signal: AbortSignal,
-  ): Promise<string | null> => {
-    const model = await modelOf(thread.id, signal);
-    if (model === null) return null;
-    return (await catalog(thread.providerId))?.get(model) ?? model;
+export async function captainTasks(
+  deps: Pick<CommandDeps, "registry" | "store" | "tasks">,
+  readCrew: (captainId: string) => CrewSnapshot,
+  captainId: string,
+): Promise<CaptainTasks> {
+  const crewRead = readCrew(captainId);
+  // The crew is read while Tasks answers; its failure is labelled, not fatal.
+  const crew = Promise.all([crewRead.threads, crewRead.rows, crewRead.rowsError]).then(
+    ([threads, rows, error]) => ({ crew: joinCrew(deps, threads, rows), error }),
+    (error: unknown) => ({ crew: [] as CrewThread[], error: (error as Error).message }),
+  );
+  const read = await readOpenTasks(deps, captainId);
+  const [fields, joined] = await Promise.all([
+    deps.tasks.fieldsOf(read.tasks.map((task) => task.id)),
+    crew,
+  ]);
+  const crewOf = crewByTask(joined.crew);
+  const ranked = read.tasks
+    .map((task): CaptainTaskItem => ({
+      key: task.key,
+      title: task.title,
+      status: task.status,
+      ready: (fields.get(task.id) ?? []).some(
+        (field) => field.key === "review" && SHIP_READY_REVIEWS.has(field.value),
+      ),
+      crew: crewOf.get(task.key) ?? null,
+      updatedAt: Date.parse(task.updatedAt) || 0,
+    }))
+    .sort((a, b) => rankOf(a) - rankOf(b) || b.updatedAt - a.updatedAt);
+  return {
+    tasks: ranked.slice(0, TASKS_SHOWN),
+    total: ranked.length,
+    truncated: read.truncated,
+    crewError: joined.error,
+    unavailable: read.unavailable,
   };
 }
 
-export type ModelNames = ReturnType<typeof createModelNames>;
+type OpenTasksRead = { tasks: TasksTask[]; truncated: boolean; unavailable: string[] };
 
 /**
- * The Captain's unarchived crew: active first, then the most recently
- * updated. A Tasks failure keeps every thread and drops only its task.
+ * Every open task in the Captain's repos, each repo paged to `TASKS_READ_MAX`;
+ * a repo with no Tasks project reads none. Repos are read side by side, and
+ * one that fails is named in `unavailable`. When every repo with a project
+ * fails, or Tasks cannot list its projects, the read rejects.
  */
-export async function crewThreads(
-  deps: Pick<CommandDeps, "store">,
-  readCrew: (captainId: string) => CrewSnapshot,
-  modelName: ModelNames,
+async function readOpenTasks(
+  deps: Pick<CommandDeps, "registry" | "tasks">,
   captainId: string,
-): Promise<CrewThreadItem[]> {
-  const crew = readCrew(captainId);
-  const threads = await crew.threads;
-  const signal = AbortSignal.timeout(READ_DEADLINE_MS);
-  // Models need only the threads: they are read while Tasks answers.
-  const [rows, models] = await Promise.all([
-    crew.rows,
-    Promise.all(threads.map((thread) => modelName(thread, signal))),
-  ]);
-  return joinCrew(deps, threads, rows)
-    .map(({ thread, role, rows: own }, index) => ({
-      id: thread.id,
-      title: thread.title ?? thread.titleFallback ?? thread.id,
-      status: thread.status,
-      providerId: thread.providerId,
-      model: models[index] ?? null,
-      task: own[0]?.task.key ?? null,
-      role: role === null ? null : ROLE_SPECS[role].label,
-      hasPendingInteraction: thread.hasPendingInteraction,
-      updatedAt: thread.updatedAt,
-    }))
-    .sort(
-      (a, b) =>
-        Number(isActive(b.status)) - Number(isActive(a.status)) || b.updatedAt - a.updatedAt,
-    );
+): Promise<OpenTasksRead> {
+  const captain = deps.registry.get(captainId);
+  const byPrefix = new Map(
+    (await deps.tasks.listProjects()).map((project) => [project.prefix, project]),
+  );
+  const projects = (captain?.repos ?? []).flatMap((repo) => {
+    const project = byPrefix.get(repo.tasksProjectKey);
+    return project === undefined ? [] : [project];
+  });
+  const settled = await Promise.allSettled(
+    projects.map((project) => readProjectTasks(deps, project.id)),
+  );
+  const read: OpenTasksRead = { tasks: [], truncated: false, unavailable: [] };
+  let failure: unknown = null;
+  settled.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      read.tasks.push(...result.value.tasks);
+      read.truncated ||= result.value.truncated;
+    } else {
+      failure = result.reason;
+      read.unavailable.push(projects[index]?.name ?? "");
+    }
+  });
+  if (projects.length > 0 && read.unavailable.length === projects.length) throw failure;
+  return read;
+}
+
+/** One project's open tasks, following Tasks' cursor up to `TASKS_READ_MAX`. */
+async function readProjectTasks(
+  deps: Pick<CommandDeps, "tasks">,
+  projectId: string,
+): Promise<{ tasks: TasksTask[]; truncated: boolean }> {
+  const tasks: TasksTask[] = [];
+  let cursor: string | undefined;
+  while (tasks.length < TASKS_READ_MAX) {
+    const limit = Math.min(TASKS_PAGE, TASKS_READ_MAX - tasks.length);
+    const page = await deps.tasks.openTasksPage(projectId, limit, cursor);
+    tasks.push(...page.tasks);
+    if (page.nextCursor === null || page.tasks.length === 0) return { tasks, truncated: false };
+    cursor = page.nextCursor;
+  }
+  return { tasks, truncated: true };
+}
+
+/**
+ * What the Tasks rows show from Tasks alone, as one string: a change made
+ * outside the crew, such as in Tasks itself, changes it. A review verdict
+ * moves the task's `updatedAt`, so it counts too, and so does a repo
+ * becoming unreadable or readable again.
+ */
+export async function openTasksSignature(
+  deps: Pick<CommandDeps, "registry" | "tasks">,
+  captainId: string,
+): Promise<string> {
+  const read = await readOpenTasks(deps, captainId);
+  return [
+    ...read.unavailable.map((name) => `!${name}`),
+    ...read.tasks.map((task) => `${task.key}\0${task.status}\0${task.title}\0${task.updatedAt}`),
+  ].join("\n");
+}
+
+/** Each task's crew thread: a busy one before an idle one, then the latest attached. */
+function crewByTask(
+  crew: readonly CrewThread[],
+): Map<string, NonNullable<CaptainTaskItem["crew"]>> {
+  const best = new Map<string, { member: CrewThread; attachedAt: string }>();
+  for (const member of crew) {
+    for (const row of member.rows) {
+      const current = best.get(row.task.key);
+      const busier =
+        current === undefined
+          ? 1
+          : Number(isActive(member.thread.status)) - Number(isActive(current.member.thread.status));
+      if (
+        busier > 0 ||
+        (busier === 0 && current !== undefined && row.attachedAt > current.attachedAt)
+      ) {
+        best.set(row.task.key, { member, attachedAt: row.attachedAt });
+      }
+    }
+  }
+  return new Map(
+    [...best].map(([key, { member }]) => [
+      key,
+      {
+        threadId: member.thread.id,
+        role: member.role === null ? null : ROLE_SPECS[member.role].label,
+        state: crewState(member.thread),
+      },
+    ]),
+  );
+}
+
+function crewState(thread: {
+  status: string;
+  hasPendingInteraction: boolean;
+}): (typeof CREW_STATES)[number] {
+  if (thread.status === "error") return "errored";
+  if (thread.hasPendingInteraction) return "needs-input";
+  return isActive(thread.status) ? "working" : "idle";
 }
 
 /** At most this many cards; the header counts every file. */

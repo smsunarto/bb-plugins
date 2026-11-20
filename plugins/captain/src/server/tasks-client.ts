@@ -88,7 +88,7 @@ export type CrewRow = z.infer<typeof crewRowSchema>;
 /** The statuses of a task still open to work: not done or canceled. */
 const OPEN_STATUSES = ["backlog", "todo", "in_progress", "in_review"];
 
-/** Tasks' own cap on `crewSnapshot` thread ids per call. */
+/** Tasks' own cap on `crewSnapshot` thread ids and `taskFields` task ids per call. */
 const SNAPSHOT_MAX_THREADS = 500;
 
 /** Tasks did not answer, or refused: the message says which. */
@@ -138,6 +138,46 @@ export function createTasksClient(
   }
 
   /** Tasks' mutation envelope: `{ ok: false, error }` is a refusal, not a transport failure. */
+  /** Several tasks' owned-field values, by task id, in calls of at most Tasks' cap; a task with none is absent. */
+  async function fieldsOf(taskIds: readonly string[]): Promise<Map<string, TaskFieldValue[]>> {
+    const fields = new Map<string, TaskFieldValue[]>();
+    for (let start = 0; start < taskIds.length; start += SNAPSHOT_MAX_THREADS) {
+      const { tasks } = await call(
+        "taskFields",
+        { taskIds: taskIds.slice(start, start + SNAPSHOT_MAX_THREADS) },
+        z.object({
+          tasks: z.array(z.object({ taskId: z.string(), fields: z.array(fieldValueSchema) })),
+        }),
+      );
+      for (const row of tasks) fields.set(row.taskId, row.fields);
+    }
+    return fields;
+  }
+
+  /**
+   * One page of a project's open tasks in Tasks' board order, at most `limit`
+   * (Tasks' cap is 500); `nextCursor` reads the next page, null after the last.
+   */
+  async function openTasksPage(
+    projectId: string,
+    limit: number,
+    cursor?: string,
+    search?: string,
+  ): Promise<{ tasks: TasksTask[]; nextCursor: string | null }> {
+    const page = await call(
+      "listTasks",
+      {
+        projectId,
+        statuses: OPEN_STATUSES,
+        limit,
+        ...(cursor === undefined ? {} : { cursor }),
+        ...(search === undefined ? {} : { search }),
+      },
+      z.object({ tasks: z.array(taskSchema), nextCursor: z.string().nullable().optional() }),
+    );
+    return { tasks: page.tasks, nextCursor: page.nextCursor ?? null };
+  }
+
   async function mutate(method: string, input: unknown): Promise<TasksTask> {
     const result = await call(
       method,
@@ -210,19 +250,9 @@ export function createTasksClient(
     },
     /** One project's open tasks (not done or canceled), at most `limit`, in Tasks' board order; `search` matches title or description. */
     async listOpenTasks(projectId: string, limit: number, search?: string): Promise<TasksTask[]> {
-      return (
-        await call(
-          "listTasks",
-          {
-            projectId,
-            statuses: OPEN_STATUSES,
-            limit,
-            ...(search === undefined ? {} : { search }),
-          },
-          z.object({ tasks: z.array(taskSchema) }),
-        )
-      ).tasks;
+      return (await openTasksPage(projectId, limit, undefined, search)).tasks;
     },
+    openTasksPage,
     /** The threads attached to one task, with their live status. */
     async taskThreads(taskId: string): Promise<{ threadId: string; liveStatus: string }[]> {
       return (
@@ -272,15 +302,9 @@ export function createTasksClient(
     },
     /** One task's owned-field values; empty when the task has none or no longer exists. */
     async taskFields(taskId: string): Promise<TaskFieldValue[]> {
-      const { tasks } = await call(
-        "taskFields",
-        { taskIds: [taskId] },
-        z.object({
-          tasks: z.array(z.object({ taskId: z.string(), fields: z.array(fieldValueSchema) })),
-        }),
-      );
-      return tasks.find((row) => row.taskId === taskId)?.fields ?? [];
+      return (await fieldsOf([taskId])).get(taskId) ?? [];
     },
+    fieldsOf,
     async attachThread(input: {
       taskId: string;
       threadId: string;
