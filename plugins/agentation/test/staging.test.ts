@@ -14,8 +14,9 @@ import {
   recoverInterruptedDispatches,
   recoverInterruptedTurnAssignments,
   restageAnnotation,
+  restageThreadAssignments,
+  readRecoverySnapshot,
   restageTurnAssignments,
-  turnAssignmentThreadIds,
 } from "../lib/staging.ts";
 import {
   getAnnotation,
@@ -31,6 +32,25 @@ function freshDb(): Database.Database {
   const db = new Database(":memory:");
   for (const statement of migrations) db.exec(statement);
   return db;
+}
+
+function turnAssignmentThreadIds(db: Database.Database): string[] {
+  const rows = db
+    .prepare(`SELECT DISTINCT thread_id FROM annotation_turn_assignments ORDER BY thread_id`)
+    .all() as Array<{ thread_id: string }>;
+  return rows.map((row) => row.thread_id);
+}
+
+/** Recovery as the server runs it, with the given thread states; returns how many moved. */
+function recover(
+  db: Database.Database,
+  threads: { active?: string[]; missing?: string[] } = {},
+): number {
+  const result = recoverInterruptedTurnAssignments(db, readRecoverySnapshot(db), {
+    active: new Set(threads.active),
+    missing: new Set(threads.missing),
+  });
+  return result.restaged + result.orphaned;
 }
 
 function seed(db: Database.Database, id = "ann_1") {
@@ -334,7 +354,7 @@ test("an assigned annotation can be staged again", () => {
   });
 });
 
-test("an unresolved annotation reappears after its assigned turn", () => {
+test("an annotation the agent never acknowledged reappears after its assigned turn", () => {
   const db = freshDb();
   seed(db);
   const claim = claimStagedAnnotations(db, {
@@ -350,6 +370,218 @@ test("an unresolved annotation reappears after its assigned turn", () => {
     listStagedAnnotations(db).map((annotation) => annotation.id),
     ["ann_1"],
   );
+});
+
+function assignTogether(
+  db: Database.Database,
+  threadId: string,
+  phase: "awaiting-start" | "awaiting-finish",
+) {
+  seed(db, "ann_pending");
+  seed(db, "ann_acked");
+  const claim = claimStagedAnnotations(db, {
+    annotationIds: ["ann_pending", "ann_acked"],
+    threadId,
+  });
+  if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+  completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: phase });
+  setAnnotationStatus(db, { annotationId: "ann_acked", status: "acknowledged", by: "agent" });
+}
+
+function assertAcknowledgedStaysAssigned(db: Database.Database, threadId: string) {
+  assert.deepEqual(
+    listStagedAnnotations(db).map((annotation) => annotation.id),
+    ["ann_pending"],
+  );
+  const kept = getAnnotationRouting(db, "ann_acked");
+  assert.equal(kept?.state, "assigned");
+  assert.equal(kept?.state === "assigned" ? kept.threadId : null, threadId);
+  assert.deepEqual(turnAssignmentThreadIds(db), []);
+}
+
+test("after a turn only the annotations the agent never acknowledged reappear", () => {
+  const db = freshDb();
+  assignTogether(db, "thr_target", "awaiting-finish");
+
+  assert.equal(restageTurnAssignments(db, "thr_target"), 1);
+  assertAcknowledgedStaysAssigned(db, "thr_target");
+});
+
+test("a failed turn also keeps acknowledged annotations assigned", () => {
+  const db = freshDb();
+  assignTogether(db, "thr_target", "awaiting-start");
+
+  assert.equal(restageTurnAssignments(db, "thr_target", { includeAwaitingStart: true }), 1);
+  assertAcknowledgedStaysAssigned(db, "thr_target");
+});
+
+test("restart recovery keeps acknowledged annotations assigned", () => {
+  const db = freshDb();
+  assignTogether(db, "thr_target", "awaiting-finish");
+
+  assert.equal(recover(db), 1);
+  assertAcknowledgedStaysAssigned(db, "thr_target");
+});
+
+function send(
+  db: Database.Database,
+  threadId: string,
+  phase: "awaiting-start" | "awaiting-finish",
+) {
+  const claim = claimStagedAnnotations(db, { annotationIds: ["ann_1"], threadId });
+  if (claim.outcome !== "claimed") return claim;
+  completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: phase });
+  return claim;
+}
+
+function acknowledge(db: Database.Database, annotationId = "ann_1") {
+  setAnnotationStatus(db, { annotationId, status: "acknowledged", by: "agent" });
+}
+
+function assignedThread(db: Database.Database, annotationId = "ann_1") {
+  const routing = getAnnotationRouting(db, annotationId);
+  return routing?.state === "assigned" ? routing.threadId : routing?.state;
+}
+
+test("an annotation acknowledged while staged is pending again once sent", () => {
+  const db = freshDb();
+  seed(db);
+  acknowledge(db);
+
+  const claim = send(db, "thr_T", "awaiting-start");
+  assert.equal(claim.outcome, "claimed");
+  assert.equal(getAnnotation(db, "ann_1")?.status, "pending");
+  assert.equal(restageTurnAssignments(db, "thr_T", { includeAwaitingStart: true }), 1);
+  assert.deepEqual(
+    listStagedAnnotations(db).map((annotation) => annotation.id),
+    ["ann_1"],
+  );
+});
+
+test("restart recovery re-stages an annotation acknowledged before it was sent", () => {
+  const db = freshDb();
+  seed(db);
+  acknowledge(db);
+  send(db, "thr_T", "awaiting-start");
+
+  assert.equal(recover(db), 1);
+  assert.equal(recover(db), 0);
+  assert.equal(assignedThread(db), "staged");
+});
+
+test("staging an acknowledged annotation again ends its acknowledgement", () => {
+  const db = freshDb();
+  seed(db);
+  send(db, "thr_A", "awaiting-finish");
+  acknowledge(db);
+  assert.equal(restageTurnAssignments(db, "thr_A"), 0);
+
+  assert.equal(restageAnnotation(db, "ann_1")?.state, "staged");
+  assert.equal(getAnnotation(db, "ann_1")?.status, "pending");
+  send(db, "thr_B", "awaiting-finish");
+  assert.equal(restageTurnAssignments(db, "thr_B"), 1);
+  assert.equal(assignedThread(db), "staged");
+});
+
+test("a deleted thread mid-turn gives back its acknowledged annotations", () => {
+  const db = freshDb();
+  seed(db);
+  send(db, "thr_gone", "awaiting-finish");
+  acknowledge(db);
+
+  assert.equal(restageThreadAssignments(db, "thr_gone"), 1);
+  assert.equal(assignedThread(db), "staged");
+  assert.equal(getAnnotation(db, "ann_1")?.status, "pending");
+  assert.deepEqual(turnAssignmentThreadIds(db), []);
+});
+
+test("a thread deleted after its turn gives back its acknowledged annotations", () => {
+  const db = freshDb();
+  seed(db);
+  send(db, "thr_gone", "awaiting-finish");
+  acknowledge(db);
+  assert.equal(restageTurnAssignments(db, "thr_gone"), 0);
+  assert.equal(assignedThread(db), "thr_gone");
+
+  assert.equal(restageThreadAssignments(db, "thr_gone"), 1);
+  assert.equal(assignedThread(db), "staged");
+});
+
+test("restart recovery gives back what a missing thread held, acknowledged or not", () => {
+  const db = freshDb();
+  seed(db);
+  send(db, "thr_gone", "awaiting-finish");
+  acknowledge(db);
+  assert.equal(restageTurnAssignments(db, "thr_gone"), 0);
+
+  // An existing thread with no turn left keeps its acknowledged annotation.
+  assert.equal(recover(db), 0);
+  assert.equal(assignedThread(db), "thr_gone");
+
+  assert.equal(recover(db, { missing: ["thr_gone"] }), 1);
+  assert.equal(assignedThread(db), "staged");
+  assert.equal(getAnnotation(db, "ann_1")?.status, "pending");
+});
+
+test("a claim takes staged annotations only, so an assigned one stays with its thread", () => {
+  const db = freshDb();
+  seed(db);
+  send(db, "thr_A", "awaiting-finish");
+  acknowledge(db);
+
+  assert.equal(send(db, "thr_B", "awaiting-finish").outcome, "stale");
+  assert.equal(send(db, "thr_A", "awaiting-finish").outcome, "stale");
+  assert.equal(assignedThread(db), "thr_A");
+  assert.equal(getAnnotation(db, "ann_1")?.status, "acknowledged");
+  assert.equal(
+    (db.prepare(`SELECT COUNT(*) AS n FROM annotation_dispatches`).get() as { n: number }).n,
+    1,
+  );
+});
+
+test("staging again drops the first thread's turn, so its end cannot take the annotation back", () => {
+  const db = freshDb();
+  seed(db);
+  send(db, "thr_A", "awaiting-finish");
+  assert.equal(restageAnnotation(db, "ann_1")?.state, "staged");
+  assert.deepEqual(turnAssignmentThreadIds(db), []);
+
+  // Delivered elsewhere with no turn of its own.
+  const claim = claimStagedAnnotations(db, { annotationIds: ["ann_1"], threadId: "thr_C" });
+  if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+  completeDispatch(db, claim.dispatch.id);
+  assert.equal(restageTurnAssignments(db, "thr_A"), 0);
+  assert.equal(assignedThread(db), "thr_C");
+});
+
+test("recovery leaves a turn assignment rewritten after its snapshot", async () => {
+  const db = freshDb();
+  seed(db);
+  send(db, "thr_T", "awaiting-finish");
+  const snapshot = readRecoverySnapshot(db);
+
+  // While recovery looks thr_T up, its turn ends and the annotation is sent
+  // there again: same annotation and thread, a newer turn.
+  assert.equal(restageTurnAssignments(db, "thr_T"), 1);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  send(db, "thr_T", "awaiting-finish");
+
+  const result = recoverInterruptedTurnAssignments(db, snapshot);
+  assert.deepEqual(result, { restaged: 0, orphaned: 0, keptThreads: 0 });
+  assert.equal(assignedThread(db), "thr_T");
+  assert.deepEqual(turnAssignmentThreadIds(db), ["thr_T"]);
+});
+
+test("recovery counts an active thread as kept only while its snapshot turn remains", () => {
+  const db = freshDb();
+  seed(db);
+  send(db, "thr_T", "awaiting-finish");
+  const snapshot = readRecoverySnapshot(db);
+  // The thread's idle event finished the turn before recovery applied.
+  restageTurnAssignments(db, "thr_T");
+
+  const result = recoverInterruptedTurnAssignments(db, snapshot, { active: new Set(["thr_T"]) });
+  assert.equal(result.keptThreads, 0);
 });
 
 test("a queued annotation waits for its own turn instead of the active turn", () => {
@@ -388,7 +620,7 @@ test("resolving an assigned annotation prevents it from reappearing", () => {
   assert.equal(restageTurnAssignments(db, "thr_target"), 0);
 });
 
-test("restart recovery returns open turn assignments to staging", () => {
+test("restart recovery returns pending turn assignments to staging", () => {
   const db = freshDb();
   seed(db);
   const claim = claimStagedAnnotations(db, {
@@ -398,7 +630,7 @@ test("restart recovery returns open turn assignments to staging", () => {
   if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
   completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: "awaiting-start" });
 
-  assert.equal(recoverInterruptedTurnAssignments(db), 1);
+  assert.equal(recover(db), 1);
   assert.equal(getAnnotationRouting(db, "ann_1")?.state, "staged");
 });
 
@@ -416,7 +648,7 @@ test("restart recovery keeps assignments whose thread is still mid-turn", () => 
   }
   assert.deepEqual(turnAssignmentThreadIds(db), ["thr_busy", "thr_idle"]);
 
-  assert.equal(recoverInterruptedTurnAssignments(db, new Set(["thr_busy"])), 1);
+  assert.equal(recover(db, { active: ["thr_busy"] }), 1);
   assert.equal(getAnnotationRouting(db, "ann_idle")?.state, "staged");
   assert.equal(getAnnotationRouting(db, "ann_busy")?.state, "assigned");
   assert.deepEqual(turnAssignmentThreadIds(db), ["thr_busy"]);

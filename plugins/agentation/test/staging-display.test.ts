@@ -51,7 +51,7 @@ test("a staged annotation shows its resolved thread title instead of the id", ()
       },
       { thr_source: "Agentation polish" },
     ),
-    "thread: Agentation polish",
+    "from Agentation polish",
   );
 });
 
@@ -65,7 +65,7 @@ test("an unavailable thread still identifies the source type", () => {
       },
       {},
     ),
-    "thread: unavailable",
+    "from unavailable thread",
   );
 });
 
@@ -78,8 +78,8 @@ test("a non-thread annotation keeps its route label", () => {
 
 test("an annotation mention identifies its source and feedback", () => {
   assert.equal(
-    annotationMentionLabel(mentionAnnotation, "thread: Agentation polish"),
-    "[thread: Agentation polish] list item → add button to mention in composer",
+    annotationMentionLabel(mentionAnnotation, "from Agentation polish"),
+    "[from Agentation polish] list item → add button to mention in composer",
   );
 
   assert.equal(

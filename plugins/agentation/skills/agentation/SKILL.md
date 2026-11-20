@@ -23,8 +23,20 @@ source context, not the delivery target.
      not call `agentation_get_all_pending`.
    - Otherwise, call `agentation_get_all_pending` before searching the code;
      the annotation already tells you where to look.
-2. Check status and assignment; leave work acknowledged by another thread with
-   that thread. Call `agentation_acknowledge` for each item you take on.
+2. Acknowledge only what was sent to your thread:
+   - **Sent to your thread** (an annotation batch in the human's message, or a
+     mention whose reference says it sends the annotation to this thread): call
+     `agentation_acknowledge` for each item you take on. Acknowledging keeps it
+     assigned to your thread after your turn ends; one you neither acknowledge
+     nor resolve returns to the human's staging area. A sent annotation arrives
+     `pending` even if another agent acknowledged it before, so acknowledge it
+     again.
+   - **Only mentioned** (a reference that says the annotation is not assigned
+     to this thread): another thread holds it, or it is closed. Read it, and
+     reply or resolve if the human asks, but do not acknowledge it. A mention
+     carries no status; read it with `bb agentation show <annotationId>`, which
+     also shows resolved and dismissed annotations.
+   - Leave work acknowledged by another thread with that thread.
 3. Locate the code using the targeting fields below, then make and verify the change.
 4. `agentation_resolve` with a one-line summary of what you changed. The marker
    disappears from every open bb window.
@@ -102,6 +114,7 @@ bb agentation staged [--json]
 bb agentation send <threadId> [annotationId…]
 bb agentation restage <annotationId>
 bb agentation show <annotationId>
+bb agentation acknowledge <annotationId>
 bb agentation resolve <annotationId> fixed the wrapping
 bb agentation dismiss <annotationId> intentional, matches the design system
 bb agentation reply <annotationId> should this be 24px or 16px?

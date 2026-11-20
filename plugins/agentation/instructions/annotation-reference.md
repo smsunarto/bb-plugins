@@ -1,0 +1,1 @@
+This mention points to Agentation annotation `{{id}}`, which is not assigned to this thread: another thread holds it, or it is already closed. Do not acknowledge it. If the user asks you to act on it, read its current status with `bb agentation show {{id}}`, then reply or resolve.

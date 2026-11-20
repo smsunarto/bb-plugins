@@ -1,0 +1,1 @@
+This mention sends Agentation annotation `{{id}}` to this thread. Call `agentation_acknowledge` with that ID if you take it on, so it stays assigned here; otherwise it returns to the human's staging area when your turn ends.

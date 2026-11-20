@@ -78,10 +78,11 @@ import {
   listAnnotationRoutings,
   listStagedAnnotations,
   recoverInterruptedDispatches,
+  readRecoverySnapshot,
   recoverInterruptedTurnAssignments,
   restageAnnotation as restageStoredAnnotation,
+  restageThreadAssignments,
   restageTurnAssignments,
-  turnAssignmentThreadIds,
 } from "./lib/staging.ts";
 import {
   annotationDeliveryModes,
@@ -97,6 +98,18 @@ import { wireLocalServer } from "./lib/local-server-wiring.ts";
 const files = instructionFiles(import.meta.url);
 
 const openStatuses: AnnotationStatus[] = ["pending", "acknowledged"];
+
+/** Thread lookups recovery runs at once at startup. */
+const RECOVERY_CONCURRENCY = 8;
+
+/** Whether a failed `bb.sdk.threads.get` says the thread no longer exists. */
+function isThreadNotFound(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  return (
+    ("code" in error && error.code === "thread_not_found") ||
+    ("status" in error && error.status === 404)
+  );
+}
 
 const configSchema = z.object({
   toolbarEnabled: z.boolean(),
@@ -324,8 +337,16 @@ export default async function plugin(bb: BbPluginApi) {
       const annotation = getAnnotation(db, annotationId);
       if (!annotation) throw new Error(`Annotation ${annotationId} no longer exists.`);
       if (threadId) await assignMentionToThread(annotationId, threadId);
+      // A pill in a new-thread draft has no thread yet: a staged annotation is
+      // assigned to the thread its message creates (message.dispatch below).
+      const routing = getAnnotationRouting(db, annotationId);
+      const assignedHere = threadId
+        ? routing?.state === "assigned" && routing.threadId === threadId
+        : routing?.state === "staged";
       return {
-        context: renderAnnotationMentionContext(annotation, getSession(db, annotation.sessionId)),
+        context: renderAnnotationMentionContext(annotation, getSession(db, annotation.sessionId), {
+          assignedHere,
+        }),
       };
     },
   });
@@ -403,13 +424,22 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
+  // Broadcasts: a change that can set an acknowledged annotation back to
+  // pending (a claim, Stage again, a deleted thread, recovery) sends
+  // `annotations`, so the panel reloads statuses. A change that only moves
+  // routing (delivery confirmed or failed, a turn ending) sends `routing`.
+
+  // A mention assigns a staged annotation to the mentioning thread. One already
+  // assigned stays with its thread, and the mentioning thread gets the context
+  // only: bb resolves a mention again on a retry or a late queue drain, which
+  // must not take it from the thread working on it. To move it, stage it again.
   async function assignMentionToThread(annotationId: string, threadId: string): Promise<void> {
     const phase = await composerTurnPhase(threadId);
     const claim = claimStagedAnnotations(db, { annotationIds: [annotationId], threadId });
     if (claim.outcome === "stale") return;
 
     completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: phase });
-    broadcast({ type: "routing", sessionId: null });
+    broadcast({ type: "annotations", sessionId: null });
     bb.log.info(`assigned mentioned annotation ${annotationId} to ${threadId}`);
   }
 
@@ -418,7 +448,7 @@ export default async function plugin(bb: BbPluginApi) {
     if (count === 0) return;
     broadcast({ type: "routing", sessionId: null });
     bb.log.info(
-      `re-staged ${count} unresolved annotation${count === 1 ? "" : "s"} after ${threadId} finished`,
+      `re-staged ${count} annotation${count === 1 ? "" : "s"} the agent never acknowledged after ${threadId} finished`,
     );
   }
 
@@ -465,8 +495,11 @@ export default async function plugin(bb: BbPluginApi) {
   // assign it. The thread exists by the time its first message is dispatched;
   // assign those annotations there. A start on a running thread queues behind
   // its turn, so it re-stages after the next turn, as a queued send does.
-  // Claims are idempotent across re-attempts. Assignment is bookkeeping and a
-  // throwing hook fails the send, so errors are logged and the send proceeds.
+  // Only staged annotations are claimed, so a re-run of this pass (a drain,
+  // restart, or retry of the same or an older message) finds nothing left and
+  // cannot take an annotation back from the thread now holding it. Assignment
+  // is bookkeeping and a throwing hook fails the send, so errors are logged and
+  // the send proceeds.
   bb.experimental_hooks.on("message.dispatch", ({ thread, input, attempt }) => {
     try {
       const phase =
@@ -484,7 +517,7 @@ export default async function plugin(bb: BbPluginApi) {
         assigned += 1;
       }
       if (assigned > 0) {
-        broadcast({ type: "routing", sessionId: null });
+        broadcast({ type: "annotations", sessionId: null });
         bb.log.info(
           `assigned ${assigned} mentioned annotation${assigned === 1 ? "" : "s"} to ${thread.id}`,
         );
@@ -536,40 +569,67 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.events.on("thread.idle", ({ thread }) => restageAfterTurn(thread.id, false));
   bb.events.on("thread.failed", ({ thread }) => restageAfterTurn(thread.id, true));
+  // A deleted thread leaves no agent to finish what it acknowledged, so
+  // everything assigned to it returns to staging.
   bb.events.on("thread.deleted", ({ thread }) => {
-    publishRestagedAfterTurn(thread.id, true);
+    const count = restageThreadAssignments(db, thread.id);
+    if (count === 0) return;
+    broadcast({ type: "annotations", sessionId: null });
+    bb.log.info(
+      `re-staged ${count} annotation${count === 1 ? "" : "s"} assigned to deleted thread ${thread.id}`,
+    );
   });
 
   // Turn assignments outlive a stop (restart, reload, plugin safe mode), but
   // the thread events in between were missed. Keep those whose thread is still
-  // mid-turn and re-stage the rest. This runs after the handlers above are
-  // registered, so a turn that ends meanwhile is re-staged by its own event.
+  // mid-turn; for any other thread, re-stage the pending annotations and keep
+  // the acknowledged ones. A thread deleted meanwhile gives back everything
+  // assigned to it. This runs after the handlers above are registered, so a
+  // turn that ends meanwhile is re-staged by its own event.
   async function recoverTurnAssignments(): Promise<void> {
-    const threadIds = turnAssignmentThreadIds(db);
-    if (threadIds.length === 0) return;
-    const statuses = await Promise.all(
-      threadIds.map(async (threadId) => {
-        try {
-          const { status } = await bb.sdk.threads.get({ threadId });
-          return { threadId, active: threadTurnInProgress(status) };
-        } catch {
-          return { threadId, active: false };
-        }
-      }),
-    );
-    if (disposed) return;
-    const activeThreadIds = new Set(
-      statuses.filter((status) => status.active).map((status) => status.threadId),
-    );
-    const restaged = recoverInterruptedTurnAssignments(db, activeThreadIds);
-    if (restaged > 0) {
-      broadcast({ type: "routing", sessionId: null });
+    const snapshot = readRecoverySnapshot(db);
+    if (snapshot.threadIds.length === 0) return;
+    const statuses: Array<{ threadId: string; active: boolean; missing: boolean }> = [];
+    // Bounded: acknowledged annotations keep old threads in this list.
+    for (let start = 0; start < snapshot.threadIds.length; start += RECOVERY_CONCURRENCY) {
+      const batch = snapshot.threadIds.slice(start, start + RECOVERY_CONCURRENCY);
+      statuses.push(
+        ...(await Promise.all(
+          batch.map(async (threadId) => {
+            try {
+              const { status } = await bb.sdk.threads.get({ threadId });
+              return { threadId, active: threadTurnInProgress(status), missing: false };
+            } catch (error) {
+              return { threadId, active: false, missing: isThreadNotFound(error) };
+            }
+          }),
+        )),
+      );
+      if (disposed) return;
+    }
+    const idsWhere = (keep: (status: (typeof statuses)[number]) => boolean) =>
+      new Set(statuses.filter(keep).map((status) => status.threadId));
+    const result = recoverInterruptedTurnAssignments(db, snapshot, {
+      active: idsWhere((status) => status.active),
+      missing: idsWhere((status) => status.missing),
+    });
+    if (result.restaged > 0 || result.orphaned > 0) {
+      broadcast({ type: "annotations", sessionId: null });
+    }
+    if (result.restaged > 0) {
       bb.log.warn(
-        `re-staged ${restaged} annotations whose turn ended while Agentation was stopped`,
+        `re-staged ${result.restaged} unacknowledged annotation${result.restaged === 1 ? "" : "s"} whose turn ended while Agentation was stopped`,
       );
     }
-    if (activeThreadIds.size > 0) {
-      bb.log.info(`kept turn assignments for ${activeThreadIds.size} still-active threads`);
+    if (result.orphaned > 0) {
+      bb.log.warn(
+        `re-staged ${result.orphaned} annotation${result.orphaned === 1 ? "" : "s"} assigned to threads deleted while Agentation was stopped`,
+      );
+    }
+    if (result.keptThreads > 0) {
+      bb.log.info(
+        `kept turn assignments for ${result.keptThreads} still-active thread${result.keptThreads === 1 ? "" : "s"}`,
+      );
     }
   }
   recoverTurnAssignments().catch((error: unknown) => {
@@ -661,7 +721,7 @@ export default async function plugin(bb: BbPluginApi) {
       };
     }
 
-    broadcast({ type: "routing", sessionId: null });
+    broadcast({ type: "annotations", sessionId: null });
 
     const instruction = renderAnnotationAssignment(
       claim.dispatch.annotations,
@@ -850,7 +910,7 @@ export default async function plugin(bb: BbPluginApi) {
 
       restageAnnotation(input) {
         const routing = restageStoredAnnotation(db, input.annotationId);
-        if (routing) broadcast({ type: "routing", sessionId: null });
+        if (routing) broadcast({ type: "annotations", sessionId: null });
         return sanitizeJson({ routing });
       },
 
@@ -1388,7 +1448,7 @@ export default async function plugin(bb: BbPluginApi) {
                 hint: "Run `bb agentation pending` to see each annotation's state.",
               });
             }
-            broadcast({ type: "routing", sessionId: null });
+            broadcast({ type: "annotations", sessionId: null });
             return ok(`staged ${id}`);
           },
         }),

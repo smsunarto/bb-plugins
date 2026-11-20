@@ -80,7 +80,11 @@ function describeKind(annotation: StoredAnnotation): string | null {
 }
 
 /** One annotation as a self-contained markdown section. */
-export function renderAnnotation(annotation: StoredAnnotation, index?: number): string {
+export function renderAnnotation(
+  annotation: StoredAnnotation,
+  index?: number,
+  options: { status?: boolean } = {},
+): string {
   const heading =
     index === undefined
       ? `### ${annotation.element} — ${annotation.id}`
@@ -99,7 +103,7 @@ export function renderAnnotation(annotation: StoredAnnotation, index?: number): 
   out += line("Nearby text", annotation.selectedText ? null : annotation.nearbyText?.slice(0, 160));
   out += line("Intent", annotation.intent);
   out += line("Severity", annotation.severity);
-  out += line("Status", annotation.status);
+  if (options.status !== false) out += line("Status", annotation.status);
 
   const kindNote = describeKind(annotation);
   out += line("Layout request", kindNote);
@@ -161,16 +165,26 @@ export function renderAnnotationAssignment(
     sessions,
   });
 
-  return `${markdown}\n\nThe annotations above are the complete batch assigned to this thread. Work only on these annotation IDs. Do not call \`agentation_get_all_pending\`; it can include feedback assigned to other threads. Resolve each item with the \`agentation_resolve\` tool once it is fixed, or use \`agentation_reply\` if you need a decision from me.`;
+  return `${markdown}\n\n${files.read("assignment")}`;
 }
 
-/** Fresh agent-only context for one annotation mention in the composer. */
+/**
+ * Fresh agent-only context for one annotation mention in the composer.
+ * `assignedHere` says whether the mention sent the annotation to the
+ * mentioning thread; otherwise it is a reference to one another thread holds
+ * or one already closed, which the agent must not acknowledge.
+ */
 export function renderAnnotationMentionContext(
   annotation: StoredAnnotation,
   session: Session | null,
+  options: { assignedHere: boolean },
 ): string {
   const page = session ? `${session.route} (${session.id})` : annotation.sessionId;
-  return `## Agentation annotation reference\n\n**Page:** ${page}\n\n${renderAnnotation(annotation)}\n\nThis mention points to Agentation annotation \`${annotation.id}\`. Use that ID with the Agentation tools if the user asks you to act on it.`;
+  const guidance = files.read(
+    options.assignedHere ? "annotation-mention" : "annotation-reference",
+    { id: annotation.id },
+  );
+  return `## Agentation annotation reference\n\n**Page:** ${page}\n\n${renderAnnotation(annotation, undefined, { status: false })}\n\n${guidance}`;
 }
 
 /** One line per annotation, for CLI listings and tool summaries. */

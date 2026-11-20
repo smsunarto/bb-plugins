@@ -220,7 +220,7 @@ describe("planThreadNaming", () => {
         routeLabel: "github panel",
       },
     } as StoredAnnotation;
-    const resolved = `Context for @button (resolved by plugin "agentation"):\n\n${renderAnnotationMentionContext(annotation, null)}`;
+    const resolved = `Context for @button (resolved by plugin "agentation"):\n\n${renderAnnotationMentionContext(annotation, null, { assignedHere: true })}`;
     {
       const result = plan({
         events: [
