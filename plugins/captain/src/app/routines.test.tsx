@@ -2,8 +2,8 @@
 import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import type { RoutineRun, RoutineView } from "../contract/routines.ts";
-import { captainContract, type SaveRoutineResult } from "../contract/rpc.ts";
+import { routinesTag, type RoutineRun } from "../contract/routines.ts";
+import { captainContract, type RoutineRow, type SaveRoutineResult } from "../contract/rpc.ts";
 
 const app = await loadPluginApp(() => import("./app.tsx"));
 const tab = app.tabs.find((each) => each.id === "overview")!;
@@ -12,11 +12,13 @@ beforeEach(() => window.localStorage.clear());
 afterEach(cleanup);
 
 const NOW = Date.now();
+/** When the server takes a Test in these tests. */
+const REQUESTED = NOW + 1_000;
 let captains = 0;
 /** A fresh Captain per test: the Routines UI state is kept per Captain for the page's life. */
 const nextCaptain = () => `thr_captain${++captains}`;
 
-const routine = (overrides: Partial<RoutineView> = {}): RoutineView => ({
+const routine = (overrides: Partial<RoutineRow> = {}): RoutineRow => ({
   id: "r1",
   captainId: "thr_captain",
   name: "Stalled crew sweep",
@@ -33,8 +35,15 @@ const routine = (overrides: Partial<RoutineView> = {}): RoutineView => ({
   done: false,
   missed: false,
   lastRun: null,
+  scheduleLoading: false,
   ...overrides,
 });
+
+/** A routine as a save returns it: the view without the list's loading flag. */
+const saved = (overrides: Partial<RoutineRow>) => {
+  const { scheduleLoading: _, ...view } = routine(overrides);
+  return view;
+};
 
 const paused = routine({
   id: "r2",
@@ -49,9 +58,9 @@ type Calls = { method: string; input: Record<string, unknown> }[];
 function render(
   captainId: string,
   state: {
-    routines: RoutineView[];
+    routines: RoutineRow[];
     runs?: RoutineRun[];
-    save?: (input: Record<string, unknown>) => SaveRoutineResult;
+    save?: (input: Record<string, unknown>) => SaveRoutineResult | Promise<SaveRoutineResult>;
     /** routineAction refuses with this message. */
     refuse?: string;
   },
@@ -74,21 +83,21 @@ function render(
         if (state.refuse !== undefined) throw new Error(state.refuse);
         if (input.action === "delete")
           state.routines = state.routines.filter((each) => each.id !== input.routineId);
-        return { runId: input.action === "run" ? "arun_1" : null };
+        return { runId: input.action === "run" ? "arun_1" : null, requestedAt: REQUESTED };
       },
       saveRoutine: (input: Record<string, unknown>) => {
         log("saveRoutine", input);
         return (
           state.save?.(input) ?? {
             ok: true,
-            routine: routine({ id: "r9", name: String((input.routine as { name: string }).name) }),
+            routine: saved({ id: "r9", name: String((input.routine as { name: string }).name) }),
           }
         );
       },
     } as never,
   });
   const routinesSection = () => slot.findByRole("region", { name: "Routines" });
-  return { slot, calls, routinesSection };
+  return { slot, calls, routinesSection, state };
 }
 
 test("a row shows its schedule in words and next run, or Paused, with a switch", async () => {
@@ -135,7 +144,7 @@ test("a row Automations did not answer says Schedule unavailable, its switch off
   within(section).getByRole("button", { name: "Retry" });
 });
 
-test("an opened routine shows its instruction, when to run and last runs; Test sends one", async () => {
+test("an opened routine shows its instruction, when to run and last runs, each wrapped whole", async () => {
   const captainId = nextCaptain();
   const { routinesSection, calls } = render(captainId, {
     routines: [routine()],
@@ -157,13 +166,46 @@ test("an opened routine shows its instruction, when to run and last runs; Test s
   expect(panel.textContent).toContain("InstructionNudge each crew thread stalled over two hours.");
   expect(panel.textContent).toContain("When to runEvery weekday at 9:00 AM · Europe/Berlin");
   await within(panel).findByText(/Test · Sent/u);
-  within(panel).getByText(/Scheduled · Skipped: previous run still queued/u);
+  const skipped = within(panel).getByText(/Scheduled · Skipped: previous run still queued/u);
+  // The whole entry shows, wrapped, rather than clipped behind a hover title.
+  expect(skipped.className).toContain("break-words");
+  expect(skipped.className).not.toContain("truncate");
   expect(calls).toContainEqual({
     method: "routineRuns",
     input: { captainId, routineId: "r1", limit: 5 },
   });
+});
+
+test("Test shows requested until its run is recorded, then that run's result", async () => {
+  const captainId = nextCaptain();
+  const { routinesSection, slot, state } = render(captainId, {
+    routines: [routine()],
+    // An older test run must not count as this one's result.
+    runs: [{ id: 1, routineId: "r1", trigger: "test", status: "sent", reason: null, at: NOW }],
+  });
+  const section = await routinesSection();
+  fireEvent.click(await within(section).findByRole("button", { name: /Stalled crew sweep/u }));
+  const panel = await within(section).findByTestId("captain-routine-panel");
   fireEvent.click(within(panel).getByRole("button", { name: "Test" }));
-  await within(panel).findByText(/Test sent/u);
+  const outcome = await within(panel).findByTestId("captain-routine-test");
+  expect(outcome.textContent).toBe("Test requested · waiting for it to reach the Captain");
+  state.runs = [
+    {
+      id: 2,
+      routineId: "r1",
+      trigger: "test",
+      status: "skipped",
+      reason: "previous run still queued",
+      at: REQUESTED + 50,
+    },
+    ...(state.runs ?? []),
+  ];
+  await slot.behavior.experimental_invalidateRpc([routinesTag(captainId)]);
+  await waitFor(() =>
+    expect(within(panel).getByTestId("captain-routine-test").textContent).toBe(
+      "Test skipped: previous run still queued",
+    ),
+  );
 });
 
 test("Delete asks first, then removes the routine", async () => {
@@ -256,6 +298,7 @@ test("a refused save shows the server's reasons and keeps what was typed", async
     routines: [routine()],
     save: () => ({
       ok: false,
+      stale: false,
       blockers: [
         { reason: 'routine r1 is already named "Stalled crew sweep"', fix: "pick another --name" },
       ],
@@ -354,4 +397,144 @@ test("editing a one-shot's name sends its stored time back to the millisecond", 
       }),
     }),
   );
+});
+
+test("a row whose live schedule is still loading shows its words, its switch waiting", async () => {
+  const { routinesSection } = render(nextCaptain(), {
+    routines: [routine({ automation: null, scheduleLoading: true })],
+  });
+  const section = await routinesSection();
+  await within(section).findByText("Every weekday at 9:00 AM · loading schedule…");
+  expect((within(section).getByRole("switch") as HTMLButtonElement).disabled).toBe(true);
+});
+
+test("a stale edit is refused with Reload, which starts again from the routine as it is", async () => {
+  const captainId = nextCaptain();
+  const { routinesSection, calls, state, slot } = render(captainId, {
+    routines: [routine()],
+    save: () => ({
+      ok: false,
+      stale: true,
+      blockers: [{ reason: "this routine changed elsewhere", fix: "reload" }],
+    }),
+  });
+  const section = await routinesSection();
+  fireEvent.click(await within(section).findByRole("button", { name: /Stalled crew sweep/u }));
+  fireEvent.click(await within(section).findByRole("button", { name: "Edit" }));
+  const form = await within(section).findByRole("form", { name: "Edit Stalled crew sweep" });
+  fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Renamed" } });
+  fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(calls).toContainEqual({
+      method: "saveRoutine",
+      input: expect.objectContaining({ routineId: "r1", updatedAt: NOW }),
+    }),
+  );
+  const alert = await within(form).findByRole("alert");
+  expect(alert.textContent).toContain("changed elsewhere since you opened it");
+  state.routines = [routine({ name: "Changed elsewhere", updatedAt: NOW + 5 })];
+  await slot.behavior.experimental_invalidateRpc([routinesTag(captainId)]);
+  await waitFor(() => expect(within(section).queryByText("Changed elsewhere")).not.toBeNull());
+  fireEvent.click(within(alert).getByRole("button", { name: "Reload" }));
+  const reloaded = await within(section).findByRole("form", { name: "Edit Changed elsewhere" });
+  expect((within(reloaded).getByLabelText("Name") as HTMLInputElement).value).toBe(
+    "Changed elsewhere",
+  );
+  expect(within(reloaded).queryByRole("alert")).toBeNull();
+});
+
+test("a save that finishes after its draft was replaced leaves the new draft alone", async () => {
+  let finish: (result: SaveRoutineResult) => void = () => {};
+  const { routinesSection } = render(nextCaptain(), {
+    routines: [],
+    save: () => new Promise<SaveRoutineResult>((resolve) => (finish = resolve)),
+  });
+  const section = await routinesSection();
+  fireEvent.click(await within(section).findByRole("button", { name: "New routine" }));
+  let form = await within(section).findByRole("form", { name: "New routine" });
+  fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Draft A" } });
+  fireEvent.change(within(form).getByLabelText("Instruction"), { target: { value: "A" } });
+  fireEvent.click(within(form).getByRole("button", { name: "Create routine" }));
+  fireEvent.click(within(form).getByRole("button", { name: "Cancel" }));
+  fireEvent.click(within(section).getAllByRole("button", { name: "New routine" })[0]!);
+  form = await within(section).findByRole("form", { name: "New routine" });
+  fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Draft B" } });
+  finish({ ok: true, routine: saved({ id: "r9", name: "Draft A" }) });
+  await new Promise((settle) => setTimeout(settle, 50));
+  form = within(section).getByRole("form", { name: "New routine" });
+  expect((within(form).getByLabelText("Name") as HTMLInputElement).value).toBe("Draft B");
+});
+
+test("a refusal stays with its draft when bb remounts the tab", async () => {
+  const captainId = nextCaptain();
+  const refusing = {
+    routines: [] as RoutineRow[],
+    save: (): SaveRoutineResult => ({
+      ok: false,
+      stale: false,
+      blockers: [{ reason: "a Captain has at most 20 routines", fix: "remove one" }],
+    }),
+  };
+  const first = render(captainId, refusing);
+  const section = await first.routinesSection();
+  fireEvent.click(await within(section).findByRole("button", { name: "New routine" }));
+  const form = await within(section).findByRole("form", { name: "New routine" });
+  fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "One more" } });
+  fireEvent.change(within(form).getByLabelText("Instruction"), { target: { value: "x" } });
+  fireEvent.click(within(form).getByRole("button", { name: "Create routine" }));
+  await within(form).findByRole("alert");
+  cleanup();
+  const again = render(captainId, refusing);
+  const alert = await within(await again.routinesSection()).findByRole("alert");
+  expect(alert.textContent).toBe("Not saved · a Captain has at most 20 routines");
+});
+
+test("typing in the form re-renders no row", async () => {
+  const captainId = nextCaptain();
+  const many = Array.from({ length: 20 }, (_, index) =>
+    routine({ id: `r${index + 1}`, name: `Routine ${index + 1}` }),
+  );
+  const { routinesSection } = render(captainId, { routines: many });
+  const section = await routinesSection();
+  await within(section).findByText("Routine 20");
+  fireEvent.click(within(section).getAllByRole("button", { name: "New routine" })[0]!);
+  const form = await within(section).findByRole("form", { name: "New routine" });
+  // `format` is a getter on the prototype; count each read of it.
+  const proto = Intl.DateTimeFormat.prototype;
+  const original = Object.getOwnPropertyDescriptor(proto, "format")!;
+  let reads = 0;
+  Object.defineProperty(proto, "format", {
+    ...original,
+    get(this: Intl.DateTimeFormat) {
+      reads += 1;
+      return original.get!.call(this);
+    },
+  });
+  fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "S" } });
+  await waitFor(() =>
+    expect((within(form).getByLabelText("Name") as HTMLInputElement).value).toBe("S"),
+  );
+  // Each row formats its next run; none ran for a keystroke.
+  Object.defineProperty(proto, "format", original);
+  expect(reads).toBe(0);
+});
+
+test("editing a field clears the last refusal", async () => {
+  const { routinesSection } = render(nextCaptain(), {
+    routines: [],
+    save: () => ({
+      ok: false,
+      stale: false,
+      blockers: [{ reason: 'routine r1 is already named "Sweep"', fix: "rename" }],
+    }),
+  });
+  const section = await routinesSection();
+  fireEvent.click(await within(section).findByRole("button", { name: "New routine" }));
+  const form = await within(section).findByRole("form", { name: "New routine" });
+  fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Sweep" } });
+  fireEvent.change(within(form).getByLabelText("Instruction"), { target: { value: "x" } });
+  fireEvent.click(within(form).getByRole("button", { name: "Create routine" }));
+  await within(form).findByRole("alert");
+  fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Sweep 2" } });
+  await waitFor(() => expect(within(form).queryByRole("alert")).toBeNull());
 });

@@ -260,8 +260,22 @@ const routineDraftSchema = z
 
 const saveRoutineResultSchema = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), routine: routineViewSchema }).strict(),
-  z.object({ ok: z.literal(false), blockers: z.array(blocker) }).strict(),
+  z
+    .object({
+      ok: z.literal(false),
+      blockers: z.array(blocker),
+      /** The routine changed since the form opened; nothing was saved. */
+      stale: z.boolean(),
+    })
+    .strict(),
 ]);
+
+/**
+ * A routine as the Overview lists it: its stored fields at once, with the
+ * live schedule last read from Automations. `scheduleLoading` holds until
+ * the first read for it answers; the read refreshes the list when it does.
+ */
+const routineRowSchema = routineViewSchema.extend({ scheduleLoading: z.boolean() }).strict();
 
 export const captainContract = defineRpcContract({
   /** Each dispatched role's model ladder, as Captain settings edit it. */
@@ -474,7 +488,7 @@ export const captainContract = defineRpcContract({
     input: z.object({ captainId: threadId }).strict(),
     output: z
       .object({
-        routines: z.array(routineViewSchema),
+        routines: z.array(routineRowSchema),
         /** The bb server's time zone: a one-shot's time and a CLI cron default to it. */
         serverTimezone: z.string(),
       })
@@ -498,7 +512,13 @@ export const captainContract = defineRpcContract({
     experimental_description:
       "Pause, resume, test-run or delete one of a Captain's routines, as `bb captain routine pause|resume|run|remove` does.",
     input: z.object({ captainId: threadId, routineId, action: z.enum(ROUTINE_ACTIONS) }).strict(),
-    output: z.object({ runId: z.string().nullable() }).strict(),
+    output: z
+      .object({
+        runId: z.string().nullable(),
+        /** When the server took it: a test's delivery is the first test run recorded from then. */
+        requestedAt: z.number(),
+      })
+      .strict(),
   },
   /**
    * Create a routine, or change one when given its id, with the CLI's
@@ -508,7 +528,13 @@ export const captainContract = defineRpcContract({
     experimental_description:
       "Create a Captain routine, or update one by id, as `bb captain routine add|update` does. Refusals list every blocker and change nothing.",
     input: z
-      .object({ captainId: threadId, routineId: routineId.optional(), routine: routineDraftSchema })
+      .object({
+        captainId: threadId,
+        routineId: routineId.optional(),
+        /** The routine's `updatedAt` the form opened from; a later change refuses the save as stale. */
+        updatedAt: z.number().optional(),
+        routine: routineDraftSchema,
+      })
       .strict(),
     output: saveRoutineResultSchema,
   },
@@ -530,3 +556,4 @@ export type CaptainTaskItem = z.infer<typeof captainTask>;
 export type DriveFileItem = z.infer<typeof driveFile>;
 export type RoutineDraft = z.infer<typeof routineDraftSchema>;
 export type SaveRoutineResult = z.infer<typeof saveRoutineResultSchema>;
+export type RoutineRow = z.infer<typeof routineRowSchema>;

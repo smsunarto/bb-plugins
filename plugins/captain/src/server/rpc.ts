@@ -1,6 +1,7 @@
 import { LADDER_ROLES, type LadderRole } from "../contract/ladder.ts";
 import {
   describeSchedule,
+  routinesTag,
   type Routine,
   type RoutineFields,
   type RoutineView,
@@ -12,6 +13,7 @@ import {
   driveTag,
   LADDERS_TAG,
   type RoutineDraft,
+  type RoutineRow,
   type SaveRoutineResult,
 } from "../contract/rpc.ts";
 import { adoptFromMenu, adoptOptions, crewOf } from "./adopt.ts";
@@ -45,11 +47,6 @@ import {
 export const CREW_POLL_MS = 10_000;
 /** How often a watched Overview rechecks Tasks for a change made outside the crew. */
 export const TASKS_POLL_MS = 30_000;
-/**
- * How long the Routines list waits on Automations for one row's live schedule.
- * The rows come from `data.db`; past this a row shows Schedule unavailable.
- */
-export const ROUTINE_SCHEDULE_WAIT_MS = 1_500;
 /** Runs an opened routine shows. */
 const ROUTINE_RUNS_SHOWN = 5;
 
@@ -353,12 +350,36 @@ function registerEvents(deps: CommandDeps, changed: (captainId: string) => void)
   }
 }
 
+/** A routine's live schedule as Automations last gave it. */
+type LiveSchedule = Pick<RoutineView, "automation" | "automationError" | "done" | "missed">;
+
+const liveOf = (view: RoutineView): LiveSchedule => ({
+  automation: view.automation,
+  automationError: view.automationError,
+  done: view.done,
+  missed: view.missed,
+});
+
 /**
  * The Overview's Routines RPCs over the routine service the CLI uses. Every
  * call names its Captain and is refused for a routine of another one.
+ *
+ * The list never waits on Automations: it answers from `data.db` with the
+ * live schedule last read for each routine, then reads Automations in the
+ * background and refreshes the list's tag when that read changed anything.
  */
 function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
   const serverTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  /** Per Captain, per routine: the live schedule last read. */
+  const schedules = new Map<string, Map<string, LiveSchedule>>();
+  /** Background reads in flight, per Captain; `again` asks for one more pass. */
+  const reading = new Map<string, { again: boolean }>();
+  const known = (captainId: string) => {
+    let map = schedules.get(captainId);
+    if (map === undefined) schedules.set(captainId, (map = new Map()));
+    return map;
+  };
+  const remember = (view: RoutineView) => known(view.captainId).set(view.id, liveOf(view));
   const owned = (captainId: string, routineId: string): Routine => {
     live(captainId);
     const routine = deps.store.routine(routineId);
@@ -366,36 +387,70 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
       throw new Error(`${captainId} has no routine ${routineId}`);
     return routine;
   };
-  /** The row from `data.db` alone, for when Automations does not answer in time. */
-  const unscheduled = (routine: Routine): RoutineView => ({
-    ...routine,
-    when: describeSchedule(routine.schedule, "at" in routine.schedule ? serverTimezone : undefined),
-    automation: null,
-    automationError: "Schedule unavailable: bb Automations did not answer in time",
-    done: false,
-    missed: false,
-    lastRun: deps.store.routineRuns(routine.id, 1)[0] ?? null,
-  });
-  const bounded = async (routine: Routine): Promise<RoutineView> => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const late = new Promise<RoutineView>((resolve) => {
-      timer = setTimeout(() => resolve(unscheduled(routine)), ROUTINE_SCHEDULE_WAIT_MS);
-    });
-    try {
-      return await Promise.race([deps.routines.view(routine), late]);
-    } finally {
-      clearTimeout(timer);
+  const row = (routine: Routine): RoutineRow => {
+    const last = schedules.get(routine.captainId)?.get(routine.id);
+    return {
+      ...routine,
+      when: describeSchedule(
+        routine.schedule,
+        "at" in routine.schedule ? serverTimezone : undefined,
+      ),
+      lastRun: deps.store.routineRuns(routine.id, 1)[0] ?? null,
+      ...(last ?? { automation: null, automationError: null, done: false, missed: false }),
+      scheduleLoading: last === undefined,
+    };
+  };
+  /** Read every routine's live schedule; refresh the list when one changed. */
+  const readSchedules = (captainId: string): void => {
+    const running = reading.get(captainId);
+    if (running !== undefined) {
+      running.again = true;
+      return;
     }
+    const pass = { again: false };
+    reading.set(captainId, pass);
+    const once = async () => {
+      const routines = deps.store.routinesOf(captainId);
+      const views = await Promise.all(
+        routines.map((routine) => deps.routines.view(routine).catch(() => null)),
+      );
+      const map = known(captainId);
+      let moved = false;
+      for (const id of map.keys()) {
+        if (!routines.some((routine) => routine.id === id)) map.delete(id);
+      }
+      for (const view of views) {
+        if (view === null) continue;
+        const next = liveOf(view);
+        if (JSON.stringify(next) === JSON.stringify(map.get(view.id))) continue;
+        map.set(view.id, next);
+        moved = true;
+      }
+      if (moved) deps.bb.rpc.experimental_invalidate([routinesTag(captainId)]);
+    };
+    void (async () => {
+      try {
+        do {
+          pass.again = false;
+          await once();
+        } while (pass.again);
+      } finally {
+        reading.delete(captainId);
+      }
+    })().catch((error: unknown) =>
+      deps.bb.log.warn(`routine schedules of ${captainId}: ${(error as Error).message}`),
+    );
   };
   const refused = (error: unknown): SaveRoutineResult => {
-    if (error instanceof Refusal) return { ok: false, blockers: error.blockers };
+    if (error instanceof Refusal) return { ok: false, blockers: error.blockers, stale: false };
     throw error;
   };
   return {
-    routines: async ({ captainId }: { captainId: string }) => {
+    routines: ({ captainId }: { captainId: string }) => {
       live(captainId);
-      const rows = deps.store.routinesOf(captainId);
-      return { routines: await Promise.all(rows.map(bounded)), serverTimezone };
+      const rows = deps.store.routinesOf(captainId).map(row);
+      readSchedules(captainId);
+      return { routines: rows, serverTimezone };
     },
     routineRuns: ({
       captainId,
@@ -419,8 +474,12 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
       action: "pause" | "resume" | "run" | "delete";
     }) => {
       const routine = owned(captainId, routineId);
+      const requestedAt = deps.now();
       try {
-        return { runId: (await deps.routines.act(routine, action)).runId };
+        const result = await deps.routines.act(routine, action);
+        if (result.view === null) schedules.get(captainId)?.delete(routineId);
+        else remember(result.view);
+        return { runId: result.runId, requestedAt };
       } catch (error) {
         if (error instanceof Refusal) throw new Error(error.message, { cause: error });
         throw error;
@@ -429,26 +488,44 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
     saveRoutine: async ({
       captainId,
       routineId,
+      updatedAt,
       routine: draft,
     }: {
       captainId: string;
       routineId?: string | undefined;
+      updatedAt?: number | undefined;
       routine: RoutineDraft;
     }): Promise<SaveRoutineResult> => {
       try {
         if (routineId === undefined) {
           live(captainId);
-          const row = deps.store.captain(captainId);
-          if (row === null) throw new Error(`${captainId} is not a live Captain`);
+          const captain = deps.store.captain(captainId);
+          if (captain === null) throw new Error(`${captainId} is not a live Captain`);
           const owner = {
-            threadId: row.threadId,
-            name: row.name,
-            homeProjectId: row.homeProjectId,
+            threadId: captain.threadId,
+            name: captain.name,
+            homeProjectId: captain.homeProjectId,
           };
-          return { ok: true, routine: await deps.routines.create(owner, draft) };
+          const created = await deps.routines.create(owner, draft);
+          remember(created);
+          return { ok: true, routine: created };
         }
         const before = owned(captainId, routineId);
-        return { ok: true, routine: await deps.routines.update(before, changes(before, draft)) };
+        if (updatedAt !== undefined && updatedAt !== before.updatedAt) {
+          return {
+            ok: false,
+            stale: true,
+            blockers: [
+              {
+                reason: "this routine changed elsewhere since the form opened",
+                fix: "reload the form and make the edit again",
+              },
+            ],
+          };
+        }
+        const updated = await deps.routines.update(before, changes(before, draft));
+        remember(updated);
+        return { ok: true, routine: updated };
       } catch (error) {
         return refused(error);
       }

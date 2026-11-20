@@ -30,7 +30,7 @@ import {
   type RoutineRun,
   type RoutineView,
 } from "../contract/routines.ts";
-import { captainContract, type RoutineDraft } from "../contract/rpc.ts";
+import { captainContract, type RoutineDraft, type RoutineRow } from "../contract/rpc.ts";
 import { TAP } from "./banner.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Input } from "./components/ui/input.tsx";
@@ -46,7 +46,7 @@ import { Switch } from "./components/ui/switch.tsx";
 import { Textarea } from "./components/ui/textarea.tsx";
 import { cn } from "./lib/utils.ts";
 
-export type RoutinesListing = { routines: RoutineView[]; serverTimezone: string };
+export type RoutinesListing = { routines: RoutineRow[]; serverTimezone: string };
 
 /** Schedules the form offers by name; anything else is a custom cron. */
 const PRESET_CRONS = ["0 9 * * 1-5", "0 9 * * *", "0 10 * * 1", "0 16 * * 5", "0 * * * *"];
@@ -58,8 +58,12 @@ type Field = "name" | "instruction" | "preset" | "cron" | "timezone" | "at";
 
 /** What the form holds while it is open: text as typed, not yet parsed. */
 type Draft = {
+  /** Tells drafts apart, so a save that finishes late lands only on its own draft. */
+  key: number;
   /** Null for a new routine. */
   routineId: string | null;
+  /** The routine's `updatedAt` this edit opened from; null for a new routine. */
+  updatedAt: number | null;
   name: string;
   instruction: string;
   /** A preset cron, `custom` or `once`. */
@@ -73,23 +77,27 @@ type Draft = {
    * the stored time is sent back unchanged until the date field is edited.
    */
   atMs: number | null;
+  /** Why the last save of this draft was refused, kept with it through a remount. */
+  refusal: readonly string[];
+  /** The last save was refused because the routine changed elsewhere. */
+  stale: boolean;
 };
 
 /**
- * One Captain's Routines state: the open row, the form, a pending delete
- * confirmation and the field being typed in. Kept outside the components: bb
- * remounts a panel tab when its width crosses a breakpoint, and a half-typed
- * routine must keep its text and focus through that.
+ * One Captain's Routines list state: the open row, a pending delete
+ * confirmation, each row's last failed action and Test requests. Kept outside
+ * the components: bb remounts a panel tab when its width crosses a
+ * breakpoint, and none of this may reset under the user.
  */
 type RoutinesUi = {
   open: string | null;
-  form: Draft | null;
   confirm: string | null;
-  focus: { field: Field; start: number | null; end: number | null } | null;
-  /** The last failed action per routine, kept here so a row restored after a failed delete shows it. */
+  /** The last failed action per routine, so a row restored after a failed delete shows it. */
   errors: Readonly<Record<string, string>>;
+  /** When the server took each routine's last Test, until the panel closes. */
+  tests: Readonly<Record<string, number>>;
 };
-const CLOSED: RoutinesUi = { open: null, form: null, confirm: null, focus: null, errors: {} };
+const CLOSED: RoutinesUi = { open: null, confirm: null, errors: {}, tests: {} };
 const uiStates = new Map<string, RoutinesUi>();
 const uiListeners = new Set<() => void>();
 function patchUi(captainId: string, patch: Partial<RoutinesUi>): void {
@@ -104,13 +112,53 @@ function useRoutinesUi(captainId: string): RoutinesUi {
   return useSyncExternalStore(subscribeUi, () => uiStates.get(captainId) ?? CLOSED);
 }
 
+/**
+ * One Captain's open form: its draft and the field being typed in. A store
+ * apart from the list's, so a keystroke re-renders the form and not the rows.
+ */
+type FormState = {
+  draft: Draft;
+  focus: { field: Field; start: number | null; end: number | null } | null;
+};
+const formStates = new Map<string, FormState>();
+const formListeners = new Set<() => void>();
+let draftKeys = 0;
+function setForm(captainId: string, next: FormState | null): void {
+  if (next === null) formStates.delete(captainId);
+  else formStates.set(captainId, next);
+  for (const listener of formListeners) listener();
+}
+function patchDraft(captainId: string, key: number, patch: Partial<Draft>): void {
+  const current = formStates.get(captainId);
+  if (current === undefined || current.draft.key !== key) return;
+  setForm(captainId, { ...current, draft: { ...current.draft, ...patch } });
+}
+function subscribeForm(listener: () => void): () => void {
+  formListeners.add(listener);
+  return () => formListeners.delete(listener);
+}
+const NEW = "new";
+/** Which form is open: `new`, a routine id, or null. A string, so typing changes nothing here. */
+function useFormTarget(captainId: string): string | null {
+  return useSyncExternalStore(subscribeForm, () => {
+    const draft = formStates.get(captainId)?.draft;
+    return draft === undefined ? null : (draft.routineId ?? NEW);
+  });
+}
+function useForm(captainId: string): FormState | null {
+  return useSyncExternalStore(subscribeForm, () => formStates.get(captainId) ?? null);
+}
+
 const browserTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
 /** Open the form for a new routine, its Name field focused. */
 function startNew(captainId: string): void {
-  patchUi(captainId, {
-    form: {
+  patchUi(captainId, { confirm: null });
+  setForm(captainId, {
+    draft: {
+      key: ++draftKeys,
       routineId: null,
+      updatedAt: null,
       name: "",
       instruction: "",
       preset: PRESET_CRONS[0] as string,
@@ -118,19 +166,37 @@ function startNew(captainId: string): void {
       timezone: browserTimezone(),
       at: "",
       atMs: null,
+      refusal: [],
+      stale: false,
     },
-    confirm: null,
     focus: { field: "name", start: null, end: null },
   });
 }
+
+/** Open the form on a routine as it is now, its Name field focused. */
+function startEdit(captainId: string, routine: RoutineView): void {
+  patchUi(captainId, { confirm: null });
+  setForm(captainId, {
+    draft: editDraft(routine),
+    focus: { field: "name", start: null, end: null },
+  });
+}
+
+const EDIT_BASE = (routine: RoutineView) => ({
+  key: ++draftKeys,
+  routineId: routine.id,
+  updatedAt: routine.updatedAt,
+  name: routine.name,
+  instruction: routine.instruction,
+  refusal: [] as readonly string[],
+  stale: false,
+});
 
 function editDraft(routine: RoutineView): Draft {
   const schedule = routine.schedule;
   if ("at" in schedule) {
     return {
-      routineId: routine.id,
-      name: routine.name,
-      instruction: routine.instruction,
+      ...EDIT_BASE(routine),
       preset: ONCE,
       cron: PRESET_CRONS[0] as string,
       timezone: browserTimezone(),
@@ -139,9 +205,7 @@ function editDraft(routine: RoutineView): Draft {
     };
   }
   return {
-    routineId: routine.id,
-    name: routine.name,
-    instruction: routine.instruction,
+    ...EDIT_BASE(routine),
     preset: PRESET_CRONS.includes(schedule.cron) ? schedule.cron : CUSTOM,
     cron: schedule.cron,
     timezone: schedule.timezone,
@@ -187,14 +251,15 @@ function draftWords(draft: Draft, now: number): { text: string; problem: boolean
 }
 
 /** A time as rows show it, in the browser's zone. */
+const WHEN_FORMAT = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
 function formatWhen(at: number): string {
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(at));
+  return WHEN_FORMAT.format(new Date(at));
 }
 
 /** The schedule in words; a one-shot in the browser's zone, as the form takes it. */
@@ -214,7 +279,7 @@ function lastRunLine(routine: RoutineView): { text: string; failed: boolean } | 
 }
 
 /** What a row's subline says, and whether its switch applies. */
-function rowState(routine: RoutineView): {
+function rowState(routine: RoutineRow): {
   line: string;
   problem: boolean;
   enabled: boolean | null;
@@ -222,6 +287,8 @@ function rowState(routine: RoutineView): {
   // A one-shot's words start "Once, …"; one that ran reads "Ran once, …".
   if (routine.done)
     return { line: whenOf(routine).replace(/^Once/u, "Ran once"), problem: false, enabled: null };
+  if (routine.scheduleLoading)
+    return { line: `${whenOf(routine)} · loading schedule…`, problem: false, enabled: null };
   if (routine.missed)
     return { line: "Missed its one run · give it a new time", problem: true, enabled: null };
   const automation = routine.automation;
@@ -240,6 +307,8 @@ const RUN_STATUS: Record<RoutineRun["status"], string> = {
 
 /** The Overview's controls on its 4px grid: 32px tall, 44px under a coarse pointer. */
 const CONTROL = cn(TAP, "h-8 leading-4");
+/** A Schedule option: 44px tall on a touch or compact layout. */
+const OPTION = "max-md:min-h-11 pointer-coarse:min-h-11";
 
 /** + in the section header: opens the form for a new routine. */
 export function NewRoutineButton({
@@ -281,10 +350,11 @@ export function RoutinesBody({
   onRetry: () => void;
 }) {
   const ui = useRoutinesUi(captainId);
-  const creating = ui.form !== null && ui.form.routineId === null;
+  const target = useFormTarget(captainId);
+  const creating = target === NEW;
   return (
     <div className="flex min-w-0 flex-col">
-      {creating ? <RoutineForm captainId={captainId} draft={ui.form as Draft} /> : null}
+      {creating ? <RoutineForm captainId={captainId} latest={null} /> : null}
       {listing.routines.length === 0 ? (
         creating ? null : (
           <div className="flex min-w-0 flex-col items-start gap-2 px-2 py-2">
@@ -311,6 +381,7 @@ export function RoutinesBody({
               captainId={captainId}
               routine={routine}
               ui={ui}
+              editing={target === routine.id}
               visible={visible}
               onRetry={onRetry}
             />
@@ -351,17 +422,19 @@ function RoutineRow({
   captainId,
   routine,
   ui,
+  editing,
   visible,
   onRetry,
 }: {
   captainId: string;
-  routine: RoutineView;
+  routine: RoutineRow;
   ui: RoutinesUi;
+  /** This routine's edit form is open. */
+  editing: boolean;
   visible: boolean;
   onRetry: () => void;
 }) {
   const open = ui.open === routine.id;
-  const editing = ui.form?.routineId === routine.id;
   const panel = useId();
   const state = rowState(routine);
   const action = useRoutineAction(captainId);
@@ -370,16 +443,16 @@ function RoutineRow({
     const { [routine.id]: _, ...rest } = uiStates.get(captainId)?.errors ?? {};
     patchUi(captainId, { errors: text === null ? rest : { ...rest, [routine.id]: text } });
   };
-  const [notice, setNotice] = useState<string | null>(null);
   const last = lastRunLine(routine);
   const run = (kind: RoutineAction) => {
     if (error !== null) setError(null);
-    setNotice(null);
     if (kind === "delete") patchUi(captainId, { confirm: null, open: null });
     void action.mutate({ captainId, routineId: routine.id, action: kind }).then(
-      () =>
+      ({ requestedAt }) =>
         kind === "run"
-          ? setNotice("Test sent · the Captain gets it in a few seconds and does the work for real")
+          ? patchUi(captainId, {
+              tests: { ...uiStates.get(captainId)?.tests, [routine.id]: requestedAt },
+            })
           : undefined,
       (failure: unknown) => setError((failure as Error).message),
     );
@@ -392,7 +465,11 @@ function RoutineRow({
           type="button"
           aria-expanded={open}
           aria-controls={panel}
-          onClick={() => patchUi(captainId, { open: open ? null : routine.id, confirm: null })}
+          onClick={() => {
+            // Closing a row forgets its Test request; its runs stay listed.
+            const { [routine.id]: _, ...tests } = uiStates.get(captainId)?.tests ?? {};
+            patchUi(captainId, { open: open ? null : routine.id, confirm: null, tests });
+          }}
           className={cn(
             TAP,
             "flex min-w-0 flex-1 items-start gap-2 rounded-lg px-2 py-2 text-start outline-none hover:bg-muted/40 focus-visible:outline-1",
@@ -449,7 +526,7 @@ function RoutineRow({
           data-testid="captain-routine-panel"
         >
           {editing ? (
-            <RoutineForm captainId={captainId} draft={ui.form as Draft} />
+            <RoutineForm captainId={captainId} latest={routine} />
           ) : (
             <RoutineDetails
               captainId={captainId}
@@ -457,8 +534,8 @@ function RoutineRow({
               state={state}
               confirming={ui.confirm === routine.id}
               pending={pendingAction}
+              testedAt={ui.tests[routine.id] ?? null}
               visible={visible}
-              notice={notice}
               run={run}
               onRetry={onRetry}
             />
@@ -484,8 +561,8 @@ function RoutineDetails({
   state,
   confirming,
   pending,
+  testedAt,
   visible,
-  notice,
   run,
   onRetry,
 }: {
@@ -496,11 +573,18 @@ function RoutineDetails({
   confirming: boolean;
   /** The action on its way to the server, if any. */
   pending: { action: RoutineAction } | undefined;
+  /** When the server took this panel's last Test; null when none was pressed. */
+  testedAt: number | null;
   visible: boolean;
-  notice: string | null;
   run: (action: RoutineAction) => void;
   onRetry: () => void;
 }) {
+  const runs = useRpcQuery({
+    contract: captainContract,
+    method: "routineRuns",
+    input: { captainId, routineId: routine.id, limit: 5 },
+    enabled: visible,
+  });
   return (
     <>
       {routine.automationError === null ? null : (
@@ -536,7 +620,7 @@ function RoutineDetails({
         ) : null}
       </Detail>
       <Detail label="Last runs">
-        <RoutineRuns captainId={captainId} routineId={routine.id} visible={visible} />
+        <RoutineRuns runs={runs} />
       </Detail>
       {confirming ? (
         <fieldset
@@ -599,13 +683,7 @@ function RoutineDetails({
             size="sm"
             variant="outline"
             className={cn(CONTROL, "gap-1 px-3")}
-            onClick={() =>
-              patchUi(captainId, {
-                form: editDraft(routine),
-                confirm: null,
-                focus: { field: "name", start: null, end: null },
-              })
-            }
+            onClick={() => startEdit(captainId, routine)}
           >
             <Icon name="Edit" aria-hidden className="size-4" />
             Edit
@@ -622,9 +700,7 @@ function RoutineDetails({
           </Button>
         </div>
       )}
-      {notice === null ? null : (
-        <output className="block min-w-0 break-words text-muted-foreground">{notice}</output>
-      )}
+      {testedAt === null ? null : <TestOutcome testedAt={testedAt} runs={runs.data?.runs} />}
     </>
   );
 }
@@ -638,22 +714,18 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** An opened routine's last five runs, newest first. */
-function RoutineRuns({
-  captainId,
-  routineId,
-  visible,
-}: {
-  captainId: string;
-  routineId: string;
-  visible: boolean;
-}) {
-  const runs = useRpcQuery({
-    contract: captainContract,
-    method: "routineRuns",
-    input: { captainId, routineId, limit: 5 },
-    enabled: visible,
-  });
+type RunsRead = {
+  data: { runs: RoutineRun[] } | undefined;
+  error: { message: string } | null;
+};
+
+function runText(run: RoutineRun): string {
+  const reason = run.reason === null ? "" : `: ${run.reason}`;
+  return `${formatWhen(run.at)} · ${run.trigger === "test" ? "Test" : "Scheduled"} · ${RUN_STATUS[run.status]}${reason}`;
+}
+
+/** An opened routine's last five runs, newest first, each wrapped whole. */
+function RoutineRuns({ runs }: { runs: RunsRead }) {
   if (runs.data === undefined) {
     return runs.error === null ? (
       <span aria-busy className="h-4 w-1/2 animate-pulse rounded bg-muted" />
@@ -665,22 +737,50 @@ function RoutineRuns({
     return <p className="m-0 text-muted-foreground">None yet · a new routine waits for its time</p>;
   return (
     <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Last runs">
-      {runs.data.runs.map((run) => {
-        const text = `${formatWhen(run.at)} · ${run.trigger === "test" ? "Test" : "Scheduled"} · ${RUN_STATUS[run.status]}${run.reason === null ? "" : `: ${run.reason}`}`;
-        return (
-          <li
-            key={run.id}
-            className={cn(
-              "min-w-0 truncate tabular-nums",
-              run.status === "failed" ? "text-destructive" : "text-foreground",
-            )}
-            title={text}
-          >
-            {text}
-          </li>
-        );
-      })}
+      {runs.data.runs.map((run) => (
+        <li
+          key={run.id}
+          className={cn(
+            "min-w-0 break-words tabular-nums",
+            run.status === "failed" ? "text-destructive" : "text-foreground",
+          )}
+        >
+          {runText(run)}
+        </li>
+      ))}
     </ul>
+  );
+}
+
+const TEST_OUTCOME: Record<RoutineRun["status"], string> = {
+  sent: "Test sent · the Captain is running it, for real",
+  queued: "Test queued · the Captain runs it after its current turn",
+  skipped: "Test skipped",
+  failed: "Test failed",
+};
+
+/**
+ * What became of the panel's last Test: requested until fire records a test
+ * run from that time on, then that run's delivery state and reason.
+ */
+function TestOutcome({ testedAt, runs }: { testedAt: number; runs: RoutineRun[] | undefined }) {
+  const run = runs?.findLast((each) => each.trigger === "test" && each.at >= testedAt);
+  const text =
+    run === undefined
+      ? "Test requested · waiting for it to reach the Captain"
+      : `${TEST_OUTCOME[run.status]}${run.reason === null ? "" : `: ${run.reason}`}`;
+  const problem = run !== undefined && (run.status === "failed" || run.status === "skipped");
+  return (
+    <output
+      aria-live="polite"
+      data-testid="captain-routine-test"
+      className={cn(
+        "block min-w-0 break-words",
+        problem ? "text-destructive" : "text-muted-foreground",
+      )}
+    >
+      {text}
+    </output>
   );
 }
 
@@ -695,18 +795,40 @@ function allTimezones(): string[] {
 /**
  * Create or edit one routine: Name, Instruction, Schedule and Time zone, with
  * the schedule in words as it is typed and the server's reasons when a save
- * is refused. Its text and focus live in `uiStates`, so a remount keeps them.
+ * is refused. Its draft, refusal and focus live in `formStates`, so a remount
+ * keeps them; a save lands only on the draft it was made from.
  */
-function RoutineForm({ captainId, draft }: { captainId: string; draft: Draft }) {
+function RoutineForm({
+  captainId,
+  latest,
+}: {
+  captainId: string;
+  /** The routine as the list has it now, for Reload after a stale save; null for a new one. */
+  latest: RoutineView | null;
+}) {
+  const form = useForm(captainId);
+  if (form === null) return null;
+  return <DraftForm captainId={captainId} draft={form.draft} latest={latest} />;
+}
+
+function DraftForm({
+  captainId,
+  draft,
+  latest,
+}: {
+  captainId: string;
+  draft: Draft;
+  latest: RoutineView | null;
+}) {
   const id = useId();
   const root = useRef<HTMLFormElement>(null);
   const save = useRpcMutation({ contract: captainContract, method: "saveRoutine" });
-  const [refusal, setRefusal] = useState<string[]>([]);
+  // An edit answers the last refusal; until then it stays, through remounts too.
   const set = (patch: Partial<Draft>) =>
-    patchUi(captainId, { form: { ...(uiStates.get(captainId)?.form ?? draft), ...patch } });
+    patchDraft(captainId, draft.key, { refusal: [], stale: false, ...patch });
   // Put focus back where it was when bb remounted the tab, caret and all.
   useLayoutEffect(() => {
-    const focus = uiStates.get(captainId)?.focus;
+    const focus = formStates.get(captainId)?.focus;
     if (focus === null || focus === undefined) return;
     const field = root.current?.querySelector<HTMLElement>(`[data-routine-field="${focus.field}"]`);
     if (field === null || field === undefined) return;
@@ -719,14 +841,20 @@ function RoutineForm({ captainId, draft }: { captainId: string; draft: Draft }) 
       field.setSelectionRange(focus.start, focus.end ?? focus.start);
     }
   }, [captainId]);
+  /** Record the focused field without notifying: focus alone re-renders nothing. */
+  const keepFocus = (focus: FormState["focus"]) => {
+    const current = formStates.get(captainId);
+    if (current !== undefined && current.draft.key === draft.key)
+      formStates.set(captainId, { ...current, focus });
+  };
   const track = (field: Field) => ({
     "data-routine-field": field,
     onFocus: (event: FocusEvent<HTMLElement>) => remember(field, event.currentTarget),
     onSelect: (event: SyntheticEvent<HTMLElement>) => remember(field, event.currentTarget),
     // Focus moving to another element forgets the field; an unmount has no related target.
     onBlur: (event: FocusEvent<HTMLElement>) => {
-      if (event.relatedTarget !== null && uiStates.get(captainId)?.focus?.field === field)
-        patchUi(captainId, { focus: null });
+      if (event.relatedTarget !== null && formStates.get(captainId)?.focus?.field === field)
+        keepFocus(null);
     },
   });
   const remember = (field: Field, element: HTMLElement) => {
@@ -742,12 +870,11 @@ function RoutineForm({ captainId, draft }: { captainId: string; draft: Draft }) 
     } catch {
       // Inputs such as datetime-local have no selection.
     }
-    uiStates.set(captainId, {
-      ...(uiStates.get(captainId) ?? CLOSED),
-      focus: { field, start, end },
-    });
+    keepFocus({ field, start, end });
   };
-  const close = () => patchUi(captainId, { form: null, focus: null });
+  const close = () => {
+    if (formStates.get(captainId)?.draft.key === draft.key) setForm(captainId, null);
+  };
   // When the form opened is near enough for "that time has passed".
   const [now] = useState(Date.now);
   const words = draftWords(draft, now);
@@ -756,11 +883,13 @@ function RoutineForm({ captainId, draft }: { captainId: string; draft: Draft }) 
     draft.instruction.trim() !== "" &&
     !(draft.preset === ONCE && Number.isNaN(Date.parse(draft.at)));
   const submit = () => {
-    setRefusal([]);
+    const key = draft.key;
+    set({ refusal: [], stale: false });
     void save
       .mutate({
         captainId,
         ...(draft.routineId === null ? {} : { routineId: draft.routineId }),
+        ...(draft.updatedAt === null ? {} : { updatedAt: draft.updatedAt }),
         routine: {
           name: draft.name,
           instruction: draft.instruction,
@@ -769,11 +898,27 @@ function RoutineForm({ captainId, draft }: { captainId: string; draft: Draft }) 
       })
       .then(
         (result) => {
-          if (!result.ok) return setRefusal(result.blockers.map((blocker) => blocker.reason));
-          return patchUi(captainId, { form: null, focus: null, open: result.routine.id });
+          // Only the draft this save came from: a later draft keeps its own text.
+          if (formStates.get(captainId)?.draft.key !== key) return undefined;
+          if (!result.ok)
+            return patchDraft(captainId, key, {
+              refusal: result.blockers.map((blocker) => blocker.reason),
+              stale: result.stale,
+            });
+          setForm(captainId, null);
+          return patchUi(captainId, { open: result.routine.id });
         },
-        (failure: unknown) => setRefusal([(failure as Error).message]),
+        (failure: unknown) =>
+          patchDraft(captainId, key, { refusal: [(failure as Error).message], stale: false }),
       );
+  };
+  /** Start the edit again from the routine as it is now. */
+  const reload = () => {
+    if (latest === null) return;
+    setForm(captainId, {
+      draft: editDraft(latest),
+      focus: { field: "name", start: null, end: null },
+    });
   };
   const label = "text-xs leading-4 font-medium text-muted-foreground";
   const field = cn(TAP, "h-8 text-sm");
@@ -850,12 +995,16 @@ function RoutineForm({ captainId, draft }: { captainId: string; draft: Draft }) 
           <SelectContent className="max-w-[min(32rem,calc(100vw-2rem))]">
             <SelectGroup>
               {PRESET_CRONS.map((cron) => (
-                <SelectItem key={cron} value={cron}>
+                <SelectItem key={cron} value={cron} className={OPTION}>
                   {describeCron(cron)}
                 </SelectItem>
               ))}
-              <SelectItem value={CUSTOM}>Custom cron…</SelectItem>
-              <SelectItem value={ONCE}>Once, at a time…</SelectItem>
+              <SelectItem value={CUSTOM} className={OPTION}>
+                Custom cron…
+              </SelectItem>
+              <SelectItem value={ONCE} className={OPTION}>
+                Once, at a time…
+              </SelectItem>
             </SelectGroup>
           </SelectContent>
         </Select>
@@ -918,18 +1067,37 @@ function RoutineForm({ captainId, draft }: { captainId: string; draft: Draft }) 
       >
         {words.problem ? words.text : `When to run · ${words.text}`}
       </output>
-      {refusal.length === 0 ? null : (
-        <ul
+      {draft.refusal.length === 0 ? null : (
+        <div
           role="alert"
           aria-label="Not saved"
-          className="m-0 flex list-none flex-col gap-1 p-0 text-destructive"
+          className="flex min-w-0 flex-col gap-1 text-destructive"
         >
-          {refusal.map((reason) => (
-            <li key={reason} className="min-w-0 break-words">
-              Not saved · {reason}
-            </li>
-          ))}
-        </ul>
+          {draft.stale ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="min-w-0 break-words">
+                Not saved · changed elsewhere since you opened it
+              </span>
+              {latest === null ? null : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className={cn(CONTROL, "px-3")}
+                  onClick={reload}
+                >
+                  Reload
+                </Button>
+              )}
+            </div>
+          ) : (
+            draft.refusal.map((reason) => (
+              <p key={reason} className="m-0 min-w-0 break-words">
+                Not saved · {reason}
+              </p>
+            ))
+          )}
+        </div>
       )}
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Button
