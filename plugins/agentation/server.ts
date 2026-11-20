@@ -337,8 +337,16 @@ export default async function plugin(bb: BbPluginApi) {
       const annotation = getAnnotation(db, annotationId);
       if (!annotation) throw new Error(`Annotation ${annotationId} no longer exists.`);
       if (threadId) await assignMentionToThread(annotationId, threadId);
+      // A pill in a new-thread draft has no thread yet: a staged annotation is
+      // assigned to the thread its message creates (message.dispatch below).
+      const routing = getAnnotationRouting(db, annotationId);
+      const assignedHere = threadId
+        ? routing?.state === "assigned" && routing.threadId === threadId
+        : routing?.state === "staged";
       return {
-        context: renderAnnotationMentionContext(annotation, getSession(db, annotation.sessionId)),
+        context: renderAnnotationMentionContext(annotation, getSession(db, annotation.sessionId), {
+          assignedHere,
+        }),
       };
     },
   });
@@ -574,9 +582,10 @@ export default async function plugin(bb: BbPluginApi) {
 
   // Turn assignments outlive a stop (restart, reload, plugin safe mode), but
   // the thread events in between were missed. Keep those whose thread is still
-  // mid-turn and re-stage the rest; a thread deleted meanwhile gives back all
-  // of its assignments. This runs after the handlers above are registered, so
-  // a turn that ends meanwhile is re-staged by its own event.
+  // mid-turn; for any other thread, re-stage the pending annotations and keep
+  // the acknowledged ones. A thread deleted meanwhile gives back everything
+  // assigned to it. This runs after the handlers above are registered, so a
+  // turn that ends meanwhile is re-staged by its own event.
   async function recoverTurnAssignments(): Promise<void> {
     const snapshot = readRecoverySnapshot(db);
     if (snapshot.threadIds.length === 0) return;

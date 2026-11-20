@@ -93,8 +93,8 @@ draft and submits it with the provider and environment selected in the composer.
 Each row names the page the annotation was captured on, such as `from <thread>`.
 If the agent finishes its turn without acknowledging or resolving an annotation,
 it returns to staging. An annotation the agent acknowledged stays with that
-thread until it is resolved, the thread is deleted, or you stage it again with
-the panel's **Stage again** or `bb agentation restage <annotationId>`.
+thread until it is resolved or dismissed, the thread is deleted, or you stage it
+again with the panel's **Stage again** or `bb agentation restage <annotationId>`.
 Mentioning an assigned annotation in another thread, or in a new thread's
 draft, gives that thread its details but leaves it assigned where it is; stage
 it again to send it elsewhere. Staging it again sets it back to pending, so the

@@ -241,9 +241,10 @@ test("a mention in another thread gives the context and leaves the annotation wh
     const signals = harness.inspection.realtimeSignals.length;
 
     const { context } = await resolve(annotationMentionItemId("ann_1", "thr_B"));
-    assert.match(context, /ann_1/u);
     // Status is read through the tools, so the context cannot contradict it.
     assert.doesNotMatch(context, /Status/u);
+    // thr_B's agent is told the annotation is not its own to acknowledge.
+    assert.match(context, /not assigned to this thread[\s\S]*Do not acknowledge it/u);
     assert.deepEqual(await view(), { status: "acknowledged", holder: "thr_A" });
     assert.equal(dispatchRows(), 1);
     assert.deepEqual(signalTypes(harness, signals), []);
@@ -261,12 +262,14 @@ test("a retried mention cannot take the annotation from the thread now holding i
     assert.deepEqual(await staged(), ["ann_1"]);
 
     const signals = harness.inspection.realtimeSignals.length;
-    await resolve(annotationMentionItemId("ann_1", "thr_B"));
+    const sent = await resolve(annotationMentionItemId("ann_1", "thr_B"));
+    assert.match(sent.context, /sends Agentation annotation `ann_1` to this thread/u);
     assert.deepEqual(signalTypes(harness, signals), ["annotations"]);
     await acknowledge();
 
     // bb retries thread A's message with its original mentions.
-    await resolve(annotationMentionItemId("ann_1", "thr_A"));
+    const retried = await resolve(annotationMentionItemId("ann_1", "thr_A"));
+    assert.match(retried.context, /not assigned to this thread[\s\S]*Do not acknowledge it/u);
     assert.deepEqual(await view(), { status: "acknowledged", holder: "thr_B" });
   }, idleSdk());
 });
@@ -279,7 +282,8 @@ test("mentioning an annotation in the thread holding it keeps the acknowledgemen
     const signals = harness.inspection.realtimeSignals.length;
 
     // A follow-up in thr_A's composer, steered into the turn or after it.
-    await resolve(annotationMentionItemId("ann_1", "thr_A"));
+    const { context } = await resolve(annotationMentionItemId("ann_1", "thr_A"));
+    assert.match(context, /sends Agentation annotation `ann_1` to this thread/u);
     assert.equal(dispatchRows(), 1);
     assert.equal(harness.inspection.realtimeSignals.length, signals);
     await harness.emitThreadEvent("thread.idle", idle(thread));
@@ -294,6 +298,8 @@ test("a new thread's pill for an acknowledged staged annotation starts a fresh a
     // bb resolves the pill when it creates the thread, before the hook runs.
     const { context } = await resolve(annotationMentionItemId("ann_1", null));
     assert.doesNotMatch(context, /Status/u);
+    // New-thread Send all delivers through these pills, so they count as sent.
+    assert.match(context, /sends Agentation annotation `ann_1` to this thread/u);
 
     const thread = makeThreadResponse({ id: "thr_new", status: "pending" });
     const signals = harness.inspection.realtimeSignals.length;
@@ -306,6 +312,39 @@ test("a new thread's pill for an acknowledged staged annotation starts a fresh a
     assert.deepEqual(signalTypes(harness, turnEnd), ["routing"]);
     assert.deepEqual(await staged(), ["ann_1"]);
   });
+});
+
+test("a mention of a resolved annotation tells the agent not to acknowledge it", async () => {
+  await withHost(async ({ harness, resolve, view }) => {
+    await harness.callAgentTool("agentation_resolve", { annotationId: "ann_1", summary: "fixed" });
+    const { context } = await resolve(annotationMentionItemId("ann_1", "thr_B"));
+    assert.match(context, /not assigned to this thread[\s\S]*Do not acknowledge it/u);
+    assert.match(context, /bb agentation show ann_1/u);
+    assert.equal((await view()).status, "resolved");
+  }, idleSdk());
+});
+
+test("a staged annotation mentioned in an idle thread returns to the chip when that turn ends unacknowledged", async () => {
+  await withHost(async ({ harness, resolve, staged }) => {
+    await resolve(annotationMentionItemId("ann_1", "thr_B"));
+    assert.deepEqual(await staged(), []);
+    await harness.emitThreadEvent("thread.idle", idle(makeThreadResponse({ id: "thr_B" })));
+    assert.deepEqual(await staged(), ["ann_1"]);
+  }, idleSdk());
+});
+
+test("a staged annotation mentioned in a busy thread waits for its own turn", async () => {
+  await withHost(async ({ harness, resolve, staged }) => {
+    await resolve(annotationMentionItemId("ann_1", "thr_B"));
+    // The turn already running ends first.
+    await harness.emitThreadEvent("thread.idle", idle(makeThreadResponse({ id: "thr_B" })));
+    assert.deepEqual(await staged(), []);
+    await harness.emitThreadEvent("thread.active", {
+      thread: makeThreadResponse({ id: "thr_B", status: "active" }),
+    });
+    await harness.emitThreadEvent("thread.idle", idle(makeThreadResponse({ id: "thr_B" })));
+    assert.deepEqual(await staged(), ["ann_1"]);
+  }, idleSdk("active"));
 });
 
 test("a chip send delivers the annotation as pending and asks the agent to acknowledge", async () => {
@@ -439,6 +478,32 @@ test("recovery gives back a deleted thread's acknowledged annotation and keeps a
       "re-staged 1 annotation assigned to threads deleted while Agentation was stopped",
     ]);
     assert.deepEqual(signalTypes(host.harness), ["annotations"]);
+  } finally {
+    await host.harness.lifecycle.dispose();
+  }
+});
+
+test("recovery keeps a live turn on an active thread and re-stages a pending one whose turn ended", async () => {
+  const host = await restartWith(
+    (db) => {
+      sendDirect(db, "ann_1", "thr_busy");
+      sendDirect(db, "ann_2", "thr_done");
+    },
+    async (threadId) =>
+      makeThreadResponse({ id: threadId, status: threadId === "thr_busy" ? "active" : "idle" }),
+  );
+  try {
+    const { view } = inspect(host);
+    assert.deepEqual(await view("ann_1"), { status: "pending", holder: "thr_busy" });
+    assert.deepEqual(await view("ann_2"), { status: "pending", holder: "staged" });
+    assert.deepEqual(recoveryLogs(host), [
+      "re-staged 1 unacknowledged annotation whose turn ended while Agentation was stopped",
+      "kept turn assignments for 1 still-active thread",
+    ]);
+
+    // The kept turn finishes normally once its thread goes idle.
+    await host.harness.emitThreadEvent("thread.idle", idle(makeThreadResponse({ id: "thr_busy" })));
+    assert.deepEqual(await view("ann_1"), { status: "pending", holder: "staged" });
   } finally {
     await host.harness.lifecycle.dispose();
   }

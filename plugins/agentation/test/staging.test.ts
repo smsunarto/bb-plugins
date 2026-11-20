@@ -354,7 +354,7 @@ test("an assigned annotation can be staged again", () => {
   });
 });
 
-test("an unresolved annotation reappears after its assigned turn", () => {
+test("an annotation the agent never acknowledged reappears after its assigned turn", () => {
   const db = freshDb();
   seed(db);
   const claim = claimStagedAnnotations(db, {
@@ -539,6 +539,21 @@ test("a claim takes staged annotations only, so an assigned one stays with its t
   );
 });
 
+test("staging again drops the first thread's turn, so its end cannot take the annotation back", () => {
+  const db = freshDb();
+  seed(db);
+  send(db, "thr_A", "awaiting-finish");
+  assert.equal(restageAnnotation(db, "ann_1")?.state, "staged");
+  assert.deepEqual(turnAssignmentThreadIds(db), []);
+
+  // Delivered elsewhere with no turn of its own.
+  const claim = claimStagedAnnotations(db, { annotationIds: ["ann_1"], threadId: "thr_C" });
+  if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+  completeDispatch(db, claim.dispatch.id);
+  assert.equal(restageTurnAssignments(db, "thr_A"), 0);
+  assert.equal(assignedThread(db), "thr_C");
+});
+
 test("recovery leaves a turn assignment rewritten after its snapshot", async () => {
   const db = freshDb();
   seed(db);
@@ -605,7 +620,7 @@ test("resolving an assigned annotation prevents it from reappearing", () => {
   assert.equal(restageTurnAssignments(db, "thr_target"), 0);
 });
 
-test("restart recovery returns open turn assignments to staging", () => {
+test("restart recovery returns pending turn assignments to staging", () => {
   const db = freshDb();
   seed(db);
   const claim = claimStagedAnnotations(db, {

@@ -244,14 +244,26 @@ test("a thread assignment is self-contained and preserves React context", () => 
   assert.match(output, /complete batch assigned to this thread/);
   assert.match(output, /Work only on these annotation IDs/);
   assert.match(output, /Do not call `agentation_get_all_pending`/);
+  assert.match(output, /Call `agentation_acknowledge` for each item you take on/);
 });
 
-test("an annotation mention resolves to current agent-only context", () => {
-  const output = renderAnnotationMentionContext(stored(), null);
+test("a mention that sends the annotation asks the agent to acknowledge it", () => {
+  const output = renderAnnotationMentionContext(stored(), null, { assignedHere: true });
 
   assert.match(output, /## Agentation annotation reference/);
   assert.match(output, /### button — ann_1/);
-  assert.match(output, /points to Agentation annotation `ann_1`/);
+  assert.match(output, /sends Agentation annotation `ann_1` to this thread/);
+  assert.match(output, /Call `agentation_acknowledge`/);
+  assert.doesNotMatch(output, /Status/);
+});
+
+test("a mention of an annotation held elsewhere tells the agent not to acknowledge it", () => {
+  const output = renderAnnotationMentionContext(stored(), null, { assignedHere: false });
+
+  assert.match(output, /`ann_1`, which is not assigned to this thread/);
+  assert.match(output, /Do not acknowledge it/);
+  assert.match(output, /bb agentation show ann_1/);
+  assert.doesNotMatch(output, /Status/);
 });
 
 test("the one-line form carries id, status, and owner", () => {
