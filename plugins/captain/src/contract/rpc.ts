@@ -299,8 +299,9 @@ export const captainContract = defineRpcContract({
     ]),
   },
   /**
-   * The Captain each thread is crew of on a task, keyed by thread id; null for
-   * any other thread. Read from `data.db` alone, for every thread menu row.
+   * The Captain each thread is live crew of on a task, keyed by thread id; null
+   * for any other thread: its role record from `data.db`, else a live Tasks
+   * attachment under a Captain parent. One batched read for the thread menu rows.
    */
   crewOf: {
     input: z.object({ keys: z.array(z.string().min(1).max(200)).max(500) }).strict(),

@@ -337,6 +337,12 @@ export async function captainHost(options: FakeOptions = {}) {
           nextCursor: null,
         };
       }
+      case "listTaskThreads":
+        return {
+          taskThreads: tasks.taskThreads
+            .filter((row) => row.taskId === input["taskId"])
+            .map(({ threadId, liveStatus }) => ({ threadId, liveStatus })),
+        };
       case "createTask": {
         const project = tasks.projects.find((entry) => entry.id === input["projectId"]);
         if (project === undefined) return { ok: false, error: { message: "project not found" } };

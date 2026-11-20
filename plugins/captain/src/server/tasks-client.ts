@@ -223,6 +223,18 @@ export function createTasksClient(
         )
       ).tasks;
     },
+    /** The threads attached to one task, with their live status. */
+    async taskThreads(taskId: string): Promise<{ threadId: string; liveStatus: string }[]> {
+      return (
+        await call(
+          "listTaskThreads",
+          { taskId },
+          z.object({
+            taskThreads: z.array(z.object({ threadId: z.string(), liveStatus: z.string() })),
+          }),
+        )
+      ).taskThreads;
+    },
     async createTask(input: {
       projectId: string;
       title: string;

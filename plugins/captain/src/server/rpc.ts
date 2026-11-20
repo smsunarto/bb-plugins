@@ -68,8 +68,7 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
       const counts = await Promise.all(ids.map((id) => needsYouCount(deps, id)));
       return Object.fromEntries(ids.map((id, index) => [id, counts[index] ?? 0]));
     },
-    crewOf: ({ keys }) =>
-      Object.fromEntries([...new Set(keys)].map((id) => [id, crewOf(deps, id)?.threadId ?? null])),
+    crewOf: ({ keys }) => crewOf(deps, keys),
     adoptOptions: ({ threadId }) => adoptOptions(deps, threadId),
     adopt: async (input) => {
       try {
