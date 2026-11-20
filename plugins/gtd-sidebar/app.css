@@ -166,25 +166,26 @@
   overflow-y: auto;
 }
 
-/* Mark the end of the rows before the scroll clearance. Offset the marker
-   only by the part of the viewport covered by the footer. */
-[data-gtd-thread-scroll-end] {
-  position: relative;
-  top: var(--gtd-thread-bottom-inset);
-  width: 1px;
-  height: 0;
-  overflow-anchor: none;
-}
-
 [data-gtd-thread-scroll-clearance] {
+  position: relative;
   height: var(--gtd-thread-end-padding);
   overflow-anchor: none;
+  pointer-events: none;
+}
+
+/* Measure the clipped part of a strip ending at the last row plus the
+   footer inset. The strip takes no space from the rows or clearance. */
+[data-gtd-thread-scroll-end] {
+  position: absolute;
+  bottom: calc(100% - var(--gtd-thread-bottom-inset));
+  width: 1px;
+  height: var(--gtd-thread-fade-length);
 }
 
 [data-gtd-thread-more-below] {
   mask-image: linear-gradient(
     to bottom,
-    black calc(100% - var(--gtd-thread-end-padding)),
+    black calc(100% - var(--gtd-thread-bottom-inset) - var(--gtd-thread-fade-depth)),
     transparent calc(100% - var(--gtd-thread-bottom-inset))
   );
 }

@@ -117,19 +117,29 @@ export function ThreadInbox(props: PluginThreadListProps) {
   );
 }
 
-function observeThreadScrollEnd(end: HTMLDivElement | null) {
-  const scroller = end?.parentElement;
+// A half-pixel step across the usual 32px strip. The observer only reports
+// while the strip crosses the edge or layout moves it.
+const threadFadeThresholds = Array.from({ length: 65 }, (_, index) => index / 64);
+
+function observeThreadScrollFade(end: HTMLDivElement | null) {
+  const scroller = end?.closest<HTMLElement>('[data-gtd-thread-scroll="compact"]');
   if (!end || !scroller) return;
-  // A shelf fold or virtualized row can move the end without a scroll event.
   const observer = new IntersectionObserver(
-    ([entry]) => {
-      if (entry) scroller.toggleAttribute("data-gtd-thread-more-below", !entry.isIntersecting);
+    (entries) => {
+      const entry = entries.at(-1);
+      if (!entry?.rootBounds) return;
+      const { bottom, height } = entry.boundingClientRect;
+      const clipped = Math.max(0, bottom - entry.rootBounds.bottom);
+      scroller.style.setProperty("--gtd-thread-fade-depth", `${Math.min(clipped, height)}px`);
+      scroller.toggleAttribute("data-gtd-thread-more-below", clipped > 0);
     },
-    { root: scroller },
+    { root: scroller, threshold: threadFadeThresholds },
   );
   observer.observe(end);
   return () => {
     observer.disconnect();
+    observer.takeRecords();
+    scroller.style.removeProperty("--gtd-thread-fade-depth");
     scroller.removeAttribute("data-gtd-thread-more-below");
   };
 }
@@ -607,10 +617,9 @@ function InboxList({
               )}
             </InboxContent>
             {isCompactViewport ? (
-              <>
-                <div ref={observeThreadScrollEnd} data-gtd-thread-scroll-end="" aria-hidden />
-                <div data-gtd-thread-scroll-clearance="" aria-hidden />
-              </>
+              <div data-gtd-thread-scroll-clearance="" aria-hidden>
+                <div ref={observeThreadScrollFade} data-gtd-thread-scroll-end="" />
+              </div>
             ) : null}
           </RowMenuArea>
         </div>
