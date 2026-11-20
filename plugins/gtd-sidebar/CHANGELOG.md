@@ -4,6 +4,12 @@
 
 ### Patch Changes
 
+- A live Captain's row leads with its Captain icon instead of the machine
+  globe: Captain's default glyph, or the icon or picture set with
+  `bb captain icon` or in Captain settings, read in one batch from Captain's
+  `icons` RPC. Rows keep the globe while the read loads, when Captain is
+  disabled or the read fails, and for Captain's crew threads.
+
 - Background agents no longer rename threads. Codex's memory-consolidation
   agent renamed threads to "Consolidate agent memories" after their turn
   ended. A thread's agent now renames it only while a turn runs, once per

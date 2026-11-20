@@ -126,12 +126,16 @@ function CaptainIconRow({
         </span>
         <form className="flex min-w-0 flex-wrap items-center gap-2" onSubmit={submit}>
           {/* What the typed name draws; bb's question mark when it has no icon by that name. */}
-          <Icon
-            name={normalizeIconName(typed) ?? UNKNOWN_ICON}
-            fallback={UNKNOWN_ICON}
-            className="size-4 shrink-0 text-muted-foreground"
-            aria-hidden
-          />
+          {typed.trim() === "" ? (
+            <span className="size-4 shrink-0" aria-hidden />
+          ) : (
+            <Icon
+              name={normalizeIconName(typed) ?? UNKNOWN_ICON}
+              fallback={UNKNOWN_ICON}
+              className="size-4 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
+          )}
           <Input
             value={typed}
             onChange={(event) => setTyped(event.target.value)}
