@@ -2,14 +2,19 @@ import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 
 /**
  * Slides the active highlight from the old tab to the new one when the user
- * taps or swipes to a tab in the phone pager: pinned circles beside a
- * one-chip viewport.
+ * taps, clicks, or swipes to a tab of the same size in the right panel's tab
+ * pager: pinned circles beside a one-chip viewport. bb shows the pager in
+ * place of the toolbar whenever the window is 767px wide or narrower, with a
+ * mouse or a finger.
  *
- * The desktop toolbar switches instantly. Its tabs differ in width (28px icon
- * pills beside labeled tabs), and bb swaps the panel's content on the click's
- * frame. A highlight flying between them stretched and shrank across the
- * icons for 200ms behind content that had already changed, which read as the
- * tab expanding rather than moving (BBP-49).
+ * - **One size:** the highlight never changes width or shape in flight. It
+ *   glides between tabs of one size, such as two pinned circles or two chips
+ *   of one width, and only translates. A switch between sizes, such as a
+ *   circle and a chip, is instant: a highlight stretching between them read as
+ *   the tab expanding (BBP-49).
+ * - **Desktop toolbar:** wider windows show bb's toolbar, which always switches
+ *   instantly. Its icon and labeled tabs differ in width, and bb swaps the
+ *   panel's content on the click's frame.
  *
  * bb paints the active tab's fill on its `[data-tab-pill]` and flips
  * `aria-pressed` on the pill's button in place as the selection moves. When a
@@ -19,21 +24,19 @@ import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
  * from the old pill's fill to the new one's. The new pill's own fill is hidden
  * during the flight (`[data-monokai-tab-glide-target]`) and returns when it lands.
  *
- * bb steps the pager's chip row with an inline `translateX`, resizes its
- * viewport to the chip, and hides the chip it leaves. During the flight the
- * row slides from its old offset, the viewport eases to its new width, and
- * the chip leaving stays visible, so a swipe reads as the labels moving under
- * one fill.
+ * bb steps the pager's chip row with an inline `translateX` and hides the chip
+ * it leaves. During a flight between chips the row slides from its old offset
+ * and the chip leaving stays visible, so a swipe reads as the labels moving
+ * under one fill.
  *
  * - **Pointer only:** a keyboard shortcut, a new tab, or a closed tab switches
  *   instantly. Tab shortcuts fire many times a day; motion there reads as lag.
  * - **Interruption:** a switch mid-flight starts from where the highlight is.
  * - **Reduced motion:** no slide.
  * - **Private contracts:** `mobile-panel-tab-pager`, its
- *   `mobile-panel-tab-viewport`, the viewport's inline `width`, its row's
- *   inline `transform`, and each chip wrapper's inline `visibility`;
- *   `[data-tab-pill] > button[aria-pressed]`; and the active pill's computed
- *   fill (background colour, clip box, radius).
+ *   `mobile-panel-tab-viewport`, its row's inline `transform`, and each chip
+ *   wrapper's inline `visibility`; `[data-tab-pill] > button[aria-pressed]`;
+ *   and the active pill's computed fill (background colour, clip box, radius).
  */
 const PAGER = '[data-testid="mobile-panel-tab-pager"]';
 const VIEWPORT_ID = "mobile-panel-tab-viewport";
@@ -77,11 +80,6 @@ interface Box {
   left: number;
 }
 
-interface Span {
-  left: number;
-  right: number;
-}
-
 /** A box as a `clip-path` inset from the edges of `host`. */
 const insetOf = (box: Box, host: Box, radius: string) =>
   `inset(${box.top - host.top}px ${host.right - box.right}px ${host.bottom - box.bottom}px ${
@@ -114,20 +112,6 @@ function computedTranslateX(transform: string) {
   return Number.parseFloat(values[2]!.split(",")[values[1] === undefined ? 4 : 12] ?? "0") || 0;
 }
 
-/** The `width: …px` of an inline style, or null. */
-const widthOf = (style: string | null) => {
-  const match = /(?:^|;)\s*width:\s*([\d.]+)px/.exec(style ?? "");
-  return match === null ? null : Number(match[1]);
-};
-
-/** A box limited to the horizontal span of the region clipping it. */
-function clipTo(box: Box, region: Span | null): Box {
-  if (region === null) return box;
-  const left = Math.min(Math.max(box.left, region.left), region.right);
-  const right = Math.max(Math.min(box.right, region.right), left);
-  return { ...box, left, right };
-}
-
 /** Where a pill's fill paints: its border box, inset to its background clip. */
 function fillOf(pill: Element, computed: CSSStyleDeclaration): Box {
   const { top, right, bottom, left } = pill.getBoundingClientRect();
@@ -146,10 +130,18 @@ function fillOf(pill: Element, computed: CSSStyleDeclaration): Box {
   };
 }
 
+/**
+ * Whether two boxes have one size. A flight between them only translates the
+ * highlight; between sizes it would stretch, so the switch is instant.
+ */
+const sameSize = (a: Box, b: Box) =>
+  Math.abs(a.right - a.left - (b.right - b.left)) < 0.5 &&
+  Math.abs(a.bottom - a.top - (b.bottom - b.top)) < 0.5;
+
 const glideAnimation = (element: Element) =>
   element.getAnimations?.().find((animation) => animation.id === GLIDE);
 
-/** The phone pager's row and viewport, now and before bb last stepped them. */
+/** The pager's row and viewport, now and before bb last stepped them. */
 interface PagerStep {
   viewport: HTMLElement;
   viewportRect: DOMRect;
@@ -158,13 +150,11 @@ interface PagerStep {
   rowNow: number;
   rowStart: number;
   rowEnd: number;
-  widthStart: number | null;
-  widthEnd: number | null;
 }
 
 /**
- * Where a pager's row and viewport start from: the running glide's current
- * value, the old inline style bb replaced this frame, or where they are.
+ * Where a pager's row starts from: the running glide's current value, the old
+ * inline style bb replaced this frame, or where it is.
  */
 function pagerStep(
   pager: Element,
@@ -184,56 +174,39 @@ function pagerStep(
   } else if (row !== null && oldStyles.has(row)) {
     rowStart = translateXOf(oldStyles.get(row) ?? null);
   }
-  const widthEnd = widthOf(viewport.getAttribute("style"));
-  let widthStart = widthEnd;
-  if (glideAnimation(viewport) !== undefined) widthStart = viewportRect.width;
-  else if (oldStyles.has(viewport)) widthStart = widthOf(oldStyles.get(viewport) ?? null);
-  return { viewport, viewportRect, row, rowNow, rowStart, rowEnd, widthStart, widthEnd };
+  return { viewport, viewportRect, row, rowNow, rowStart, rowEnd };
 }
 
 /**
- * A pill's fill, clipped to its region. In the pager, `at` places it as the row
- * and viewport stood before bb stepped them ("start") or where they come to rest
- * ("end"), whatever a running glide draws now.
+ * Where a pill's fill rests. A pinned circle's is its own box. bb rests the
+ * active chip at the viewport's left edge, so a chip's is that slot at the
+ * chip's own size, however far bb has stepped the row: a step can land a frame
+ * after the switch.
  */
-function boxOf(pill: Element, step: PagerStep | null, at: "start" | "end", win: Window): Box {
-  const region = pill.closest(VIEWPORT);
-  const fill = fillOf(pill, win.getComputedStyle(pill));
-  if (step === null || region !== step.viewport) {
-    return clipTo(fill, region?.getBoundingClientRect() ?? null);
-  }
-  const shift = (at === "start" ? step.rowStart : step.rowEnd) - step.rowNow;
-  const width = (at === "start" ? step.widthStart : step.widthEnd) ?? step.viewportRect.width;
+function boxOf(pill: Element, fill: Box, step: PagerStep | null): Box {
+  if (step === null || pill.closest(VIEWPORT) !== step.viewport) return fill;
   const { left } = step.viewportRect;
-  return clipTo(
-    { ...fill, left: fill.left + shift, right: fill.right + shift },
-    { left, right: left + width },
-  );
+  return { ...fill, left, right: left + fill.right - fill.left };
 }
 
-/** Slides the pager's row and eases its viewport from where they were. */
+/**
+ * Slides the pager's row from where it was. The chips are one size, so the
+ * viewport keeps its width.
+ */
 function animatePager(step: PagerStep, from: Element, timing: KeyframeAnimationOptions) {
-  const animations: Animation[] = [];
-  const { row, rowStart, rowEnd, viewport, widthStart, widthEnd } = step;
-  if (row !== null && rowStart !== rowEnd) {
+  const { row, rowStart, rowEnd } = step;
+  if (row === null || rowStart === rowEnd) return [];
+  const animations = [
+    row.animate(
+      [{ transform: `translateX(${rowStart}px)` }, { transform: `translateX(${rowEnd}px)` }],
+      timing,
+    ),
+  ];
+  // bb hides the chip it leaves at once; keep it on screen while it slides out.
+  const leaving = from.parentElement;
+  if (leaving?.parentElement === row && leaving.style.visibility === "hidden") {
     animations.push(
-      row.animate(
-        [{ transform: `translateX(${rowStart}px)` }, { transform: `translateX(${rowEnd}px)` }],
-        timing,
-      ),
-    );
-    // bb hides the chip it leaves at once; keep it on screen while it slides out.
-    const leaving = from.parentElement;
-    if (leaving?.parentElement === row && leaving.style.visibility === "hidden") {
-      animations.push(
-        leaving.animate([{ visibility: "visible" }, { visibility: "visible" }], timing),
-      );
-    }
-  }
-  if (widthStart !== null && widthEnd !== null && widthStart !== widthEnd) {
-    // The header row relayouts for the flight so the new-tab button moves with the chip.
-    animations.push(
-      viewport.animate([{ width: `${widthStart}px` }, { width: `${widthEnd}px` }], timing),
+      leaving.animate([{ visibility: "visible" }, { visibility: "visible" }], timing),
     );
   }
   return animations;
@@ -310,13 +283,18 @@ export function mountPanelTabGlide({
     const host = pager.getBoundingClientRect();
     const toComputed = win.getComputedStyle(to);
     const step = pagerStep(pager, oldStyles, win);
-    const end = boxOf(to, step, "end", win);
+    const end = boxOf(to, fillOf(to, toComputed), step);
     const previous = flights.get(pager);
     const current =
       previous?.ghost.isConnected === true
         ? boxOfInset(win.getComputedStyle(previous.ghost).clipPath, host)
         : null;
-    const start = current ?? boxOf(from, step, "start", win);
+    const start = current ?? boxOf(from, fillOf(from, win.getComputedStyle(from)), step);
+    // The highlight never changes size in flight: between sizes, switch instantly.
+    if (!sameSize(start, end)) {
+      land(pager);
+      return;
+    }
     const background = previous?.ghost.style.backgroundColor || toComputed.backgroundColor;
     const radius = toComputed.borderTopLeftRadius || "0px";
     land(pager);

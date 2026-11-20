@@ -46,11 +46,12 @@
 
 ## Panel tab glide
 
-- `app/panel-tab-glide.ts` slides the right panel's active highlight after a tap or swipe in the phone pager, under any palette. Keyboard switches, new tabs, closed tabs, and reduced motion stay instant.
-- The desktop toolbar (`[data-sidebar-split-tab-group]`) switches instantly. Its icon and labeled tabs differ in width and bb swaps the content on the click's frame, so a highlight flying between them stretched across the icons behind content that had already changed (BBP-49). Do not glide it again without a design that keeps the fill one tab wide.
-- On the phone, bb steps the pager's chip row with an inline `translateX` and resizes its viewport, sometimes a frame after the switch. The script animates both from their old inline styles, and a step during a flight retargets it.
-- The highlight is the toolbar's last child, a `span`, so the theme's `[mobile-panel-tab-pager] > div:first-child` rules keep matching the pinned views. Prepending it resized the pinned circles and made bb re-measure the pager.
-- Private contracts: `mobile-panel-tab-pager`, `mobile-panel-tab-viewport` with its inline `width`, its row's inline `transform`, each chip wrapper's inline `visibility`, and `[data-tab-pill] > button[aria-pressed]` flipped in place. `test/panel-tab-glide.test.ts` covers them; recheck in a browser after bb upgrades.
+- `app/panel-tab-glide.ts` slides the right panel's active highlight after a tap, click, or swipe in bb's tab pager, under any palette. bb shows the pager instead of the toolbar whenever the window is 767px wide or narrower, mouse or touch, so do not treat it as phone-only. Keyboard switches, new tabs, closed tabs, and reduced motion stay instant.
+- **One size:** the highlight never changes width or shape in flight. It glides only between tabs of one size, such as two pinned circles or two chips of one width, and only translates. A switch between sizes, such as a circle and a chip, is instant. A highlight stretching between sizes read as the tab expanding (BBP-49).
+- **Desktop toolbar:** `[data-sidebar-split-tab-group]` always switches instantly. Its icon and labeled tabs differ in width, and bb swaps the content on the click's frame.
+- bb steps the pager's chip row with an inline `translateX`, sometimes a frame after the switch. The script slides the row from its old inline style, and a step during a flight retargets it.
+- The highlight is the pager's last child, a `span`, so the theme's `[mobile-panel-tab-pager] > div:first-child` rules keep matching the pinned views. Prepending it resized the pinned circles and made bb re-measure the pager.
+- Private contracts: `mobile-panel-tab-pager`, `mobile-panel-tab-viewport`, its row's inline `transform`, each chip wrapper's inline `visibility`, and `[data-tab-pill] > button[aria-pressed]` flipped in place. `test/panel-tab-glide.test.ts` covers them; recheck in a browser after bb upgrades.
 
 ## Palette-independent files
 
