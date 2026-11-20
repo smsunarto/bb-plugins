@@ -1,6 +1,6 @@
 import { definePluginApp, experimental_THREAD_ACTION_GROUPS } from "@get-bb/plugin-sdk/app";
 import { ADOPT_ICON, ADOPT_LABEL, AdoptOverlay, adoptItem, useAdoptData } from "./adopt.tsx";
-import { NeedsYouBanner } from "./banner.tsx";
+import { CAPTAIN_OVERVIEW_TAB, NeedsYouBanner } from "./banner.tsx";
 import { CaptainIconSettings } from "./icon-settings.tsx";
 import { OverviewTab, useOverviewVisible } from "./overview.tsx";
 import { CrewModelsSettings } from "./settings.tsx";
@@ -24,9 +24,7 @@ export default definePluginApp((app) => {
   });
   // A Captain's asks, crew and Drive beside its thread; hidden on every other thread.
   app.slots.experimental_tab({
-    context: { kind: "thread" },
-    availability: "fixed",
-    id: "overview",
+    ...CAPTAIN_OVERVIEW_TAB,
     title: "Overview",
     icon: "LayoutList",
     component: OverviewTab,
