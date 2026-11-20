@@ -1,6 +1,7 @@
 // What pressing a control does, for the glyph at its end and its tooltip.
 // Only actions that leave the block are named: an answer to the agent, a link,
 // a copy. Set only changes the block, where its effect shows anyway.
+import { pullRequestUrlKey } from "@bb-plugins/review-request";
 import type { Action } from "../../core/types";
 import type { Answers } from "../runtime";
 
@@ -11,7 +12,10 @@ const GLYPHS = [
   ["copy", "Copy"],
 ] as const satisfies readonly (readonly [Action["type"], string])[];
 
-export type ActionGlyph = (typeof GLYPHS)[number][1];
+/** The glyph of a link that opens a pull request's Review beside the thread, not a page on the web. */
+const REVIEW_GLYPH = "GitPullRequest";
+
+export type ActionGlyph = (typeof GLYPHS)[number][1] | typeof REVIEW_GLYPH;
 
 /** Glyphs that name an action: a control draws one only for that action, so it never promises another. */
 export const ACTION_GLYPHS: ReadonlySet<string> = new Set(GLYPHS.map(([, glyph]) => glyph));
@@ -48,12 +52,20 @@ export interface ActionIntent {
  * shows (its label): an answer or copy of that same text is not quoted
  * again, and the hint says where it goes instead. A link is always spelled
  * out, since its label can say anything. Taking a picked answer back out
- * runs nothing else, so it is the only line.
+ * runs nothing else, so it is the only line. With `review` (a block in a
+ * thread), a link to a pull request itself says it opens in Review, where
+ * LiveUi opens it when Source Control takes it.
  */
-export function actionIntent(actions: readonly Action[], { send = "none", shown }: { send?: SendEffect; shown?: string } = {}): ActionIntent {
+export function actionIntent(
+  actions: readonly Action[],
+  { send = "none", shown, review = false }: { send?: SendEffect; shown?: string; review?: boolean } = {},
+): ActionIntent {
   const answers = send !== "none" && actions.some((action) => action.type === "send");
   if (answers && send === "withdraw") return { glyph: "Sent", hint: "Take it out of your message" };
-  const glyph = GLYPHS.find(([type]) => (type === "send" ? answers : actions.some((action) => action.type === type)))?.[1] ?? null;
+  const inReview = (action: Action) => (review && action.type === "openUrl" ? reviewKey(action.url) : null);
+  const links = actions.filter((action) => action.type === "openUrl");
+  const first = GLYPHS.find(([type]) => (type === "send" ? answers : actions.some((action) => action.type === type)))?.[1] ?? null;
+  const glyph = first === "ExternalLink" && links.every((link) => inReview(link) !== null) ? REVIEW_GLYPH : first;
   const visible = shown === undefined ? null : words(shown);
   const lines = actions.flatMap((action) => {
     switch (action.type) {
@@ -62,6 +74,8 @@ export function actionIntent(actions: readonly Action[], { send = "none", shown 
         if (send === "stage") return [words(action.text) === visible ? "Add to your message" : `Add “${clip(action.text)}” to your message`];
         return [words(action.text) === visible ? "Send as your reply" : `Send “${clip(action.text)}”`];
       case "openUrl": {
+        const key = inReview(action);
+        if (key !== null) return [`Open ${key} in Review`];
         const url = openableLink(action.url);
         if (url === null) return [`Can't open ${clip(action.url)}: only http and https links open`];
         // Without a user name and password, as browsers show addresses: `https://github.com@evil.com/` reads `https://evil.com/`.
@@ -76,6 +90,12 @@ export function actionIntent(actions: readonly Action[], { send = "none", shown 
     }
   });
   return { glyph, hint: lines.length === 0 ? null : lines.join("\n") };
+}
+
+/** `owner/repo#n` for a link to a pull request itself, as LiveUi opens it; null for any other link. */
+function reviewKey(url: string): string | null {
+  const link = openableLink(url);
+  return link === null ? null : pullRequestUrlKey(link.href);
 }
 
 /** `text` as a label reads: whitespace runs as one space, and no closing full stop ("Go with BullMQ." is Decision's "Go with BullMQ"). */

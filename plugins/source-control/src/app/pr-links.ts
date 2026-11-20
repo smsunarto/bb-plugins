@@ -9,6 +9,8 @@
  * The same content script answers other plugins' asks to open a pull
  * request's review (`@bb-plugins/review-request`): GenUI's link buttons and
  * Tasks' PR pill, which are not plain links or must name their own thread.
+ * A taken ask always ends in the Review or, through the caller's fallback,
+ * on GitHub.
  *
  * A content script has no side panel, so each thread lends it one:
  * `usePullRequestLinks`, called by the existing Change strip's `useVisible`,
@@ -21,28 +23,57 @@
  */
 import {
   REVIEW_REQUEST_ATTRIBUTE,
+  isPlainClick,
   takePullRequestReviews,
   type PullRequestReviewRequest,
 } from "@bb-plugins/review-request";
 import { useBbContext, type ExperimentalThreadContextSegmentInput } from "@get-bb/plugin-sdk/app";
 import { useLayoutEffect } from "react";
 import { parsePrLink, prLookup } from "../core/watch.ts";
-import { isPlainClick, knownPullRequest, useOpenPullRequest } from "./open-pull-request.tsx";
+import { knownPullRequest, useOpenPullRequest } from "./open-pull-request.tsx";
 
-/** How long an ask waits for its thread to come into view (Tasks opens the thread after asking). */
+/** How long an ask waits for its thread to come into view before the caller opens GitHub. */
 export const PENDING_MS = 10_000;
 
 type Opener = { readonly threadId: string; readonly open: (href: string) => boolean };
 
 /** The opener of the thread in view, lent by that thread's pane. */
 let lent: Opener | null = null;
-/** An ask taken for a thread not yet in view: the thread's pane opens it when it lends. */
-let pending: { readonly url: string; readonly threadId: string; readonly until: number } | null =
-  null;
+
+/**
+ * Asks taken for threads not yet in view, by thread: the caller is opening
+ * the thread. Each ends once: its thread's pane opens the Review, or the
+ * caller's fallback opens GitHub.
+ */
+type Waiting = {
+  readonly url: string;
+  readonly fallback: () => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+};
+const waiting = new Map<string, Waiting>();
+
+/** Ends `threadId`'s waiting ask: opens it with `open`, or else falls back to GitHub. */
+function settle(threadId: string, open: ((href: string) => boolean) | null): void {
+  const ask = waiting.get(threadId);
+  if (!ask) return;
+  waiting.delete(threadId);
+  clearTimeout(ask.timer);
+  if (!open?.(ask.url)) ask.fallback();
+}
+
+/** Drops `threadId`'s waiting ask without opening anything: the reader went elsewhere. */
+function abandon(threadId: string): void {
+  const ask = waiting.get(threadId);
+  if (!ask) return;
+  waiting.delete(threadId);
+  clearTimeout(ask.timer);
+}
 
 /**
  * The Change strip lends this thread's opener while the route shows the
- * thread, and opens an ask that was waiting for it.
+ * thread. It opens the ask waiting for this thread, falling back to GitHub
+ * when the tab is declined, and drops asks for other threads: the reader
+ * went somewhere else.
  */
 export function usePullRequestLinks({ threadId }: ExperimentalThreadContextSegmentInput): void {
   const open = useOpenPullRequest(threadId);
@@ -51,11 +82,8 @@ export function usePullRequestLinks({ threadId }: ExperimentalThreadContextSegme
     if (!inView) return;
     const mine: Opener = { threadId, open };
     lent = mine;
-    const waiting = pending?.threadId === threadId ? pending : null;
-    if (waiting) {
-      pending = null;
-      if (waiting.until > Date.now()) open(waiting.url);
-    }
+    settle(threadId, open);
+    for (const other of waiting.keys()) if (other !== threadId) abandon(other);
     return () => {
       if (lent === mine) lent = null;
     };
@@ -63,30 +91,29 @@ export function usePullRequestLinks({ threadId }: ExperimentalThreadContextSegme
 }
 
 /**
- * Answers another plugin's ask inside its dispatch: true when the review
- * opens, or will once the named thread comes into view. False for anything
- * that is not a link to a pull request itself, one Source Control recently
- * could not show, and an ask for a thread that is not in view and that the
- * caller will not open, so the caller opens GitHub.
+ * Answers another plugin's ask inside its dispatch: true when the Review
+ * opens now, or when the caller is opening the thread and gave a fallback
+ * for a Review that cannot open after all. False, so the caller opens
+ * GitHub, for anything that is not a link to a pull request itself, one
+ * Source Control recently could not show, a declined tab, and an ask for a
+ * thread that is not in view and that the caller will not open.
  */
-export function takeReviewRequest(
-  { url, threadId, navigating }: PullRequestReviewRequest,
-  now = Date.now(),
-): boolean {
+export function takeReviewRequest({
+  url,
+  threadId,
+  navigating,
+  fallback,
+}: PullRequestReviewRequest): boolean {
   const ref = parsePrLink(url);
   if (!ref) return false;
   if (lent?.threadId === threadId) return lent.open(url);
-  if (!navigating) return false;
-  const known = knownPullRequest(prLookup(ref), now);
+  if (!navigating || !fallback) return false;
+  const known = knownPullRequest(prLookup(ref));
   if (known && "problem" in known) return false;
-  pending = { url, threadId, until: now + PENDING_MS };
+  abandon(threadId);
+  const timer = setTimeout(() => settle(threadId, null), PENDING_MS);
+  waiting.set(threadId, { url, fallback, timer });
   return true;
-}
-
-/** Tests only: forget the lent opener and any waiting ask. */
-export function resetPullRequestLinks(): void {
-  lent = null;
-  pending = null;
 }
 
 const OURS = '[data-bb-plugin="source-control"]';
@@ -99,7 +126,8 @@ export function mountPullRequestLinks(document: Document, signal: AbortSignal): 
   const stop = new AbortController();
   const stopAll = () => {
     stop.abort();
-    pending = null;
+    // Stopped mid-ask: each caller still opens GitHub.
+    for (const threadId of waiting.keys()) settle(threadId, null);
   };
   signal.addEventListener("abort", stopAll, { once: true });
   const onClick = (event: MouseEvent) => {
@@ -115,7 +143,7 @@ export function mountPullRequestLinks(document: Document, signal: AbortSignal): 
     event.stopPropagation();
   };
   document.addEventListener("click", onClick, { capture: true, signal: stop.signal });
-  takePullRequestReviews((request) => takeReviewRequest(request), stop.signal, view);
+  takePullRequestReviews(takeReviewRequest, stop.signal, view);
   return () => {
     signal.removeEventListener("abort", stopAll);
     stopAll();

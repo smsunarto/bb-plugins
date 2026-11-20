@@ -36,9 +36,6 @@ export const RESOLVE_MS = 8_000;
 /** How long a pull request Source Control could not show goes straight to GitHub. */
 export const MISS_MS = 60_000;
 
-/** A primary click with no modifier: the one a link may take over. */
-export { isPlainClick };
-
 // ── What this window knows about each pull request ─────────────────────
 
 /** A pull request's Change, or why Source Control cannot show it. */

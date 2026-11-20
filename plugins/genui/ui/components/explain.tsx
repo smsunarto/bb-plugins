@@ -285,7 +285,7 @@ interface RowChoice {
 }
 
 function ListItem({ row, leading, choice }: { row: ListRow; leading: Leading; choice: RowChoice }) {
-  const { run } = useUiRuntime();
+  const { run, threadId } = useUiRuntime();
   const rise = useEntrance<HTMLLIElement>(RISE);
   const [running, setRunning] = useState(false);
   const icon = rowIcon(row);
@@ -298,7 +298,7 @@ function ListItem({ row, leading, choice }: { row: ListRow; leading: Leading; ch
   const pressed = replies && choice.pressed;
   const interactive = (replies || others.length > 0) && !closed;
   const { target } = useAnswers();
-  const { glyph, hint } = actionIntent(row.actions, { send: sendEffect(target, replies && !closed, pressed), shown: row.title });
+  const { glyph, hint } = actionIntent(row.actions, { send: sendEffect(target, replies && !closed, pressed), shown: row.title, review: threadId !== null });
 
   const content = (
     <>

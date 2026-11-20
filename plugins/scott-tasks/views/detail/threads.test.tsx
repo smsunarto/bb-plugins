@@ -138,13 +138,18 @@ describe("task detail pull request pills", () => {
     expect(slot.navigateCalls).toEqual([]);
   });
 
-  async function renderPill() {
+  async function renderPill(liveStatus = "working") {
     const slot = renderSlot(
       app.navPanels[0]!,
       { subPath: "task/TSK-5" },
       {
         openUrl: () => true,
         rpc: detailRpc({
+          listTaskThreads: () => ({
+            taskThreads: [
+              { ...taskThreadRow(THREAD_ROW_ID, "thr_worker000", "Worker"), liveStatus },
+            ],
+          }),
           statusForThread: (input: unknown) =>
             statusRows(input, () =>
               changeRow({ number: 12, title: "Ship the PR pill", state: "open" }),
@@ -170,10 +175,28 @@ describe("task detail pull request pills", () => {
       const { slot, link } = await renderPill();
       expect(link.hasAttribute(REVIEW_REQUEST_ATTRIBUTE)).toBe(true);
       expect(fireEvent.click(link)).toBe(false);
-      expect(taker.asks).toEqual([
+      expect(taker.asks).toMatchObject([
         { url: "https://github.com/acme/bb/pull/12", threadId: "thr_worker000", navigating: true },
       ]);
       expect(slot.navigateCalls).toEqual([{ method: "toThread", threadId: "thr_worker000" }]);
+      // Source Control could not open the Review after all: the pill's fallback opens GitHub.
+      taker.asks[0]!.fallback!();
+      expect(slot.navigateCalls).toEqual([
+        { method: "toThread", threadId: "thr_worker000" },
+        { method: "openUrl", url: "https://github.com/acme/bb/pull/12" },
+      ]);
+    } finally {
+      taker.stop();
+    }
+  });
+
+  it("leaves an archived thread's pill to GitHub without asking", async () => {
+    const taker = sourceControlTakes(true);
+    try {
+      const { slot, link } = await renderPill("archived");
+      expect(fireEvent.click(link)).toBe(true);
+      expect(taker.asks).toEqual([]);
+      expect(slot.navigateCalls).toEqual([]);
     } finally {
       taker.stop();
     }

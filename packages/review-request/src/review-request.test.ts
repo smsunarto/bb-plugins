@@ -2,13 +2,14 @@ import { describe, expect, test } from "bun:test";
 import {
   PULL_REQUEST_REVIEW_EVENT,
   isPlainClick,
+  pullRequestUrlKey,
   requestPullRequestReview,
   takePullRequestReviews,
   type PullRequestReviewRequest,
 } from "./review-request.ts";
 
 const URL = "https://github.com/acme/app/pull/7";
-const ask = { url: URL, threadId: "thr_1", navigating: true } as const;
+const ask = { url: URL, threadId: "thr_1", navigating: false } as const;
 
 describe("requestPullRequestReview", () => {
   test("is not taken when nothing listens", () => {
@@ -41,6 +42,36 @@ describe("requestPullRequestReview", () => {
     expect(requestPullRequestReview(ask, target)).toBe(false);
   });
 
+  test("a navigating request without a fallback is read as one for the thread in view", () => {
+    const target = new EventTarget();
+    const seen: PullRequestReviewRequest[] = [];
+    takePullRequestReviews(
+      (request) => (seen.push(request), true),
+      new AbortController().signal,
+      target,
+    );
+    requestPullRequestReview({ url: URL, threadId: "thr_1", navigating: true }, target);
+    expect(seen).toEqual([{ url: URL, threadId: "thr_1", navigating: false }]);
+  });
+
+  test("a navigating request's fallback reaches the taker and runs at most once", () => {
+    const target = new EventTarget();
+    let taken: PullRequestReviewRequest | null = null;
+    takePullRequestReviews(
+      (request) => ((taken = request), true),
+      new AbortController().signal,
+      target,
+    );
+    let opened = 0;
+    expect(
+      requestPullRequestReview({ ...ask, navigating: true, fallback: () => opened++ }, target),
+    ).toBe(true);
+    expect(taken!.navigating).toBe(true);
+    taken!.fallback!();
+    taken!.fallback!();
+    expect(opened).toBe(1);
+  });
+
   test("ignores a malformed request", () => {
     const target = new EventTarget();
     let called = false;
@@ -70,4 +101,14 @@ test("isPlainClick takes only an unmodified primary click", () => {
   expect(isPlainClick({ ...plain, altKey: true })).toBe(false);
   expect(isPlainClick({ ...plain, button: 1 })).toBe(false);
   expect(isPlainClick({ ...plain, defaultPrevented: true })).toBe(false);
+});
+
+test("pullRequestUrlKey reads only a pull request's own page", () => {
+  expect(pullRequestUrlKey(URL)).toBe("acme/app#7");
+  expect(pullRequestUrlKey("https://www.github.com/acme/app/pull/7/")).toBe("acme/app#7");
+  expect(pullRequestUrlKey("https://github.com/acme/app/pull/7/files")).toBeNull();
+  expect(pullRequestUrlKey("https://github.com/acme/app/pull/7#discussion_r1")).toBeNull();
+  expect(pullRequestUrlKey("https://github.com/acme/app/issues/7")).toBeNull();
+  expect(pullRequestUrlKey("http://github.com/acme/app/pull/7")).toBeNull();
+  expect(pullRequestUrlKey("https://github.com/acme/app/pull/0")).toBeNull();
 });

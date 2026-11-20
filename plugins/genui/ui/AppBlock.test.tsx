@@ -257,6 +257,8 @@ describe("an app on screen", () => {
     let taken = true;
     const stop = new AbortController();
     takePullRequestReviews((ask) => (asks.push(ask), taken), stop.signal);
+    // The reader's click in the frame activates the host window too.
+    vi.stubGlobal("navigator", { ...navigator, userActivation: { isActive: true } });
     try {
       openUrl.mockClear();
       const post = mount({ kind: "thread", threadId: "thr_pr", messageId: "m", fence: 0, reply: 0, send: vi.fn() });
@@ -270,6 +272,25 @@ describe("an app on screen", () => {
       taken = false;
       post({ type: "openLink", url: PR });
       expect(asks).toHaveLength(2);
+      expect(openUrl).toHaveBeenCalledTimes(2);
+    } finally {
+      stop.abort();
+    }
+  });
+
+  it("asks Source Control only inside the reader's click: a message the app posts on its own opens a browser tab", () => {
+    const PR = "https://github.com/acme/api/pull/12";
+    const asks: PullRequestReviewRequest[] = [];
+    const stop = new AbortController();
+    takePullRequestReviews((ask) => (asks.push(ask), true), stop.signal);
+    try {
+      openUrl.mockClear();
+      const post = mount({ kind: "thread", threadId: "thr_pr", messageId: "m", fence: 0, reply: 0, send: vi.fn() });
+      vi.stubGlobal("navigator", { ...navigator, userActivation: { isActive: false } });
+      post({ type: "openLink", url: PR });
+      vi.stubGlobal("navigator", { ...navigator, userActivation: undefined });
+      post({ type: "openLink", url: PR });
+      expect(asks).toEqual([]);
       expect(openUrl).toHaveBeenCalledTimes(2);
     } finally {
       stop.abort();

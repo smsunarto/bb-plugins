@@ -46,13 +46,19 @@ const CHECK_TONE: Record<ThreadPullRequestInfo["checks"][number]["id"], string> 
 };
 
 function ThreadPullRequestPill({
-  threadId,
   status,
+  reviewable,
+  openThread,
+  openOnGitHub,
+  threadId,
 }: {
-  threadId: string;
   status: ThreadPullRequest;
+  /** Whether the thread can show a Review: an archived thread is read-only. */
+  reviewable: boolean;
+  openThread: () => void;
+  openOnGitHub: (url: string) => void;
+  threadId: string;
 }) {
-  const navigate = useBbNavigate();
   if (status.kind === "pullRequest") {
     const { pullRequest } = status;
     const meta = PR_STATE_META[pullRequest.state];
@@ -66,14 +72,21 @@ function ThreadPullRequestPill({
             target="_blank"
             rel="noopener noreferrer"
             // A plain click opens the PR's Review beside its thread when Source Control takes the
-            // ask; otherwise, and on a modified or middle click, the link goes to GitHub.
+            // ask, and GitHub if that Review cannot open after all. A modified or middle click, an
+            // archived thread, and an ask nothing takes go to GitHub as a plain link.
             {...{ [REVIEW_REQUEST_ATTRIBUTE]: "" }}
             onClick={(event) => {
-              if (!isPlainClick(event)) return;
-              if (!requestPullRequestReview({ url: pullRequest.url, threadId, navigating: true }))
-                return;
+              if (!reviewable || !isPlainClick(event)) return;
+              const { url } = pullRequest;
+              const taken = requestPullRequestReview({
+                url,
+                threadId,
+                navigating: true,
+                fallback: () => openOnGitHub(url),
+              });
+              if (!taken) return;
               event.preventDefault();
-              navigate.toThread(threadId);
+              openThread();
             }}
             aria-label={`Pull request #${pullRequest.number}: ${summary}`}
             className={cn(
@@ -187,7 +200,13 @@ function ThreadCard({
           {thread.presetName} · attached {formatRelativeTime(thread.attachedAt)}
         </div>
       </div>
-      <ThreadPullRequestPill threadId={thread.threadId} status={pullRequest} />
+      <ThreadPullRequestPill
+        status={pullRequest}
+        reviewable={thread.liveStatus !== "archived"}
+        openThread={() => navigate.toThread(thread.threadId)}
+        openOnGitHub={(url) => void navigate.openUrl(url)}
+        threadId={thread.threadId}
+      />
       <Button
         variant="link"
         size="sm"

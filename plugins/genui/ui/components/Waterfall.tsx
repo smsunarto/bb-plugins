@@ -13,6 +13,7 @@ import { formatAmount, formatBytes, formatMs, niceTicks } from "../../core/perf-
 import { ancestry, PHASE_LABEL, PHASES, readWaterfall, type PhaseName, type Span, type Waterfall as WaterfallData } from "../../core/waterfall";
 import { ACCENT, optionalText, TONE_TEXT, type Props } from "../values";
 import { actionIntent } from "./action-logic";
+import { useUiRuntime } from "../runtime";
 import { TONE_STROKE } from "./chartKit";
 import { ErrorLine } from "./display";
 import { WithTooltip } from "./iconButton";
@@ -383,6 +384,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 function Detail({ data, span }: { data: WaterfallData; span: Span }) {
   const openUrl = useOpenUrl();
+  const reviewLinks = useUiRuntime().threadId !== null;
   const parents = ancestry(data.spans, span.index);
   const childTime = span.children.reduce((sum, child) => sum + (data.spans[child].end - data.spans[child].start), 0);
   const request = span.request;
@@ -394,7 +396,7 @@ function Detail({ data, span }: { data: WaterfallData; span: Span }) {
           <span className="shrink-0 font-mono text-[11px] font-medium text-muted-foreground">{request.method}</span>
           <span className="min-w-0 flex-1 break-all font-mono text-[11px] text-foreground">{request.url}</span>
           {/^https?:\/\//i.test(request.url) ? (
-            <ActionHint hint={actionIntent([{ kind: "action", type: "openUrl", url: request.url }]).hint}>
+            <ActionHint hint={actionIntent([{ kind: "action", type: "openUrl", url: request.url }], { review: reviewLinks }).hint}>
               <Button
                 type="button"
                 variant="link"

@@ -38,7 +38,7 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => ({
   useRpc: () => ({ call: vi.fn() }),
   useSettings: () => useSyncExternalStore(settings.subscribe, settings.get),
   Markdown: ({ content }: { content: string }) => <p>{content}</p>,
-  experimental_Icon: () => <span aria-hidden="true" />,
+  experimental_Icon: ({ name }: { name?: string }) => <span aria-hidden="true" data-icon={name} />,
   UrlLink: ({ href, className, children }: { href: string; className?: string; children: ReactNode }) => (
     <a href={href} className={className}>
       {children}
@@ -243,6 +243,35 @@ describe("a button opening a pull request", () => {
     await act(async () => undefined);
     expect(asks).toHaveLength(1);
     expect(openUrl).toHaveBeenCalledWith(PR);
+  });
+
+  it("keeps a modified click on GitHub when an awaited action runs before the link", async () => {
+    sourceControl(true);
+    // The clipboard write settles on a later task, after any timer the click set.
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText: () => new Promise<void>((done) => setTimeout(done, 5)) } });
+    render("ui", "closed", `Button("Copy and review", [Copy("x"), OpenUrl("${PR}")])`, "pr-awaited:assistant:1");
+    click({ ctrlKey: true });
+    await act(async () => new Promise((done) => setTimeout(done, 20)));
+    expect(asks).toEqual([]);
+    expect(openUrl).toHaveBeenCalledWith(PR);
+  });
+
+  it("opens GitHub on a middle click without asking", async () => {
+    sourceControl(true);
+    render("ui", "closed", code, "pr-middle:assistant:1");
+    act(() => {
+      container.querySelector("button")!.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+    });
+    await act(async () => undefined);
+    expect(asks).toEqual([]);
+    expect(openUrl).toHaveBeenCalledWith(PR);
+  });
+
+  it("shows the pull request glyph, not the web link glyph", () => {
+    render("ui", "closed", code, "pr-glyph:assistant:1");
+    const button = container.querySelector("button")!;
+    expect(button.querySelector('[data-icon="GitPullRequest"]')).not.toBeNull();
+    expect(button.querySelector('[data-icon="ExternalLink"]')).toBeNull();
   });
 
   it("opens GitHub on a modified click without asking", async () => {

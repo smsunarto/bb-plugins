@@ -165,6 +165,7 @@ export function Entity({ props }: { props: Props }) {
   const depth = useContext(CardDepthContext);
   const fade = useEntrance<HTMLDivElement>(FADE);
   const openUrl = useOpenUrl();
+  const reviewLinks = useUiRuntime().threadId !== null;
   const name = text(props.name).trim();
   const kind = entityKind(props.kind);
   const note = optionalText(props.note)?.trim() || null;
@@ -345,7 +346,7 @@ export function Entity({ props }: { props: Props }) {
               {facts.length === 0 ? null : <KeyValue props={{ pairs: props.facts ?? null }} />}
               {link === null ? null : (
                 <DialogFooter>
-                  <ActionHint hint={actionIntent([{ kind: "action", type: "openUrl", url: link.href }]).hint}>
+                  <ActionHint hint={actionIntent([{ kind: "action", type: "openUrl", url: link.href }], { review: reviewLinks }).hint}>
                     <BaseButton type="button" size="sm" onClick={() => openUrl(link.href)} className="min-w-0">
                       <span className="truncate">Open {domainOf(link)}</span>
                       <Icon name="ExternalLink" aria-hidden />

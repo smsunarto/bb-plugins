@@ -280,7 +280,7 @@ export function Button({ props }: { props: Props }) {
 }
 
 function ButtonView({ props }: { props: Props }) {
-  const { run } = useUiRuntime();
+  const { run, threadId } = useUiRuntime();
   const choice = useContext(ChoiceContext);
   // Inside a nested tile, buttons sit on a tinted surface beside siblings that
   // carry the same action: a filled button per tile is too loud.
@@ -308,14 +308,17 @@ function ButtonView({ props }: { props: Props }) {
   const { glyph, hint } = actionIntent(intended, {
     send: sendEffect(target, picks, pressed),
     shown: clipped ? undefined : label,
+    review: threadId !== null,
   });
   // The spec's icon says what the button is about, the glyph at its end what
   // pressing it does; a picked choice shows a check instead. An unknown name
   // draws nothing, and an action's glyph is never the spec's icon: it would
   // show twice, or promise another action.
   const named = props.icon === undefined ? null : resolveIconName(text(props.icon));
-  const icon = pressed ? "Check" : named === null || ACTION_GLYPHS.has(named) ? null : named;
+  const icon = pressed ? "Check" : named === null || ACTION_GLYPHS.has(named) || named === glyph ? null : named;
   const others = actions.filter((action) => action.type !== "send");
+  // A middle click on a button that opens a link opens it on the web, as it would on a link.
+  const webLink = others.find((action) => action.type === "openUrl");
   return (
     <ActionHint hint={hint}>
       <BaseButton
@@ -328,6 +331,15 @@ function ButtonView({ props }: { props: Props }) {
         onPointerEnter={measure}
         onFocus={measure}
         {...(picks ? keepTyping : undefined)}
+        onAuxClick={
+          webLink === undefined
+            ? undefined
+            : (event) => {
+                if (event.button !== 1) return;
+                event.preventDefault();
+                void run([webLink], { plain: false });
+              }
+        }
         onClick={async () => {
           setRunning(true);
           try {

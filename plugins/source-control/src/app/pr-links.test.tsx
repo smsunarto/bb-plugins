@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 import { changeKeySchema } from "../core/ids.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { REVIEW_REQUEST_ATTRIBUTE, requestPullRequestReview } from "@bb-plugins/review-request";
+import {
+  REVIEW_REQUEST_ATTRIBUTE,
+  pullRequestUrlKey,
+  requestPullRequestReview,
+} from "@bb-plugins/review-request";
 import { rememberChange, rememberMiss, resetKnownPullRequests } from "./open-pull-request.tsx";
-import { PENDING_MS, resetPullRequestLinks, takeReviewRequest } from "./pr-links.ts";
+import { parsePrLink, prKey } from "../core/watch.ts";
+import { PENDING_MS } from "./pr-links.ts";
 
 // The app's own registrations: the script that takes the click, and the segment that lends it a panel.
 const app = await loadPluginApp(() => import("./app.tsx"));
@@ -36,7 +41,7 @@ afterEach(() => {
   cleanup();
   document.body.replaceChildren();
   resetKnownPullRequests();
-  resetPullRequestLinks();
+  vi.useRealTimers();
 });
 
 function Pane({ threadId }: { threadId: string }) {
@@ -44,9 +49,9 @@ function Pane({ threadId }: { threadId: string }) {
   return visible ? <span>shown</span> : null;
 }
 
-/** A thread pane, with the route on `routeThread`. */
-function pane(routeThread: string | null = "thr_a", openTab = () => true) {
-  return renderSlot({ component: Pane as never }, { threadId: "thr_a" } as never, {
+/** `threadId`'s pane, with the route on `routeThread`. */
+function pane(routeThread: string | null = "thr_a", openTab = () => true, threadId = routeThread) {
+  return renderSlot({ component: Pane as never }, { threadId } as never, {
     experimental_rpcContract: sourceControlContract,
     pluginId: "source-control",
     context: { threadId: routeThread },
@@ -133,7 +138,7 @@ test("where the thread has no side panel, the link goes to GitHub", () => {
 });
 
 test("a pane whose thread the route does not show takes no click", () => {
-  const slot = pane("thr_other");
+  const slot = pane("thr_other", () => true, "thr_a");
   fireEvent.click(markdownLink(PR));
   expect(reachedBb).toEqual([PR]);
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
@@ -154,8 +159,23 @@ test("once the script stops, every click reaches bb", () => {
 });
 
 // ── Other plugins' asks (Tasks' PR pill, GenUI's buttons) ─────────────
+// Each test joins the real asker (`requestPullRequestReview`) to the real
+// taker (this app's content script and pane). A click always opens
+// something: the Review, or GitHub through the caller's fallback.
 
 const OPENS_PR_TAB = [{ method: "openTab", options: { params: { pr: "acme/api#12" } } }];
+
+/** A caller that opens the thread itself, as Tasks' pill does, counting its GitHub fallbacks. */
+function opener(threadId = "thr_a") {
+  const github: string[] = [];
+  const taken = requestPullRequestReview({
+    url: PR,
+    threadId,
+    navigating: true,
+    fallback: () => github.push(PR),
+  });
+  return { taken, github };
+}
 
 test("an ask for the thread in view opens its Review at once", () => {
   const slot = pane();
@@ -164,68 +184,120 @@ test("an ask for the thread in view opens its Review at once", () => {
 });
 
 test("an ask from a caller that opens the thread is taken, and opens once the thread is in view", () => {
-  expect(requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: true })).toBe(true);
+  const ask = opener();
+  expect(ask.taken).toBe(true);
   const slot = pane();
   expect(slot.inspection.experimental_panelCalls).toMatchObject(OPENS_PR_TAB);
+  expect(ask.github).toEqual([]);
+});
+
+test("a taken ask whose pane declines the tab falls back to GitHub", () => {
+  const ask = opener();
+  expect(ask.taken).toBe(true);
+  pane("thr_a", () => false);
+  expect(ask.github).toEqual([PR]);
+});
+
+test("a taken ask whose thread never shows falls back to GitHub, and a late pane opens nothing", () => {
+  vi.useFakeTimers();
+  const ask = opener();
+  vi.advanceTimersByTime(PENDING_MS - 1);
+  expect(ask.github).toEqual([]);
+  vi.advanceTimersByTime(1);
+  expect(ask.github).toEqual([PR]);
+  const slot = pane();
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+  expect(ask.github).toEqual([PR]);
 });
 
 test("a waiting ask opens once: the thread's next visit opens nothing", () => {
-  requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: true });
+  vi.useFakeTimers();
+  const ask = opener();
   pane().unmount();
   const again = pane();
+  vi.advanceTimersByTime(PENDING_MS);
   expect(again.inspection.experimental_panelCalls).toEqual([]);
+  expect(ask.github).toEqual([]);
 });
 
-test("a waiting ask its thread took too long to show is dropped", () => {
-  expect(
-    takeReviewRequest(
-      { url: PR, threadId: "thr_a", navigating: true },
-      Date.now() - PENDING_MS - 1,
-    ),
-  ).toBe(true);
-  const slot = pane();
-  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+test("asks wait per thread: each thread opens its own, and going elsewhere drops the rest", () => {
+  vi.useFakeTimers();
+  const first = opener("thr_a");
+  const second = opener("thr_b");
+  const slot = pane("thr_a");
+  expect(slot.inspection.experimental_panelCalls).toMatchObject(OPENS_PR_TAB);
+  // The reader went to thr_a, not thr_b: thr_b's ask neither opens later nor sends them to GitHub.
+  slot.unmount();
+  const later = pane("thr_b");
+  vi.advanceTimersByTime(PENDING_MS);
+  expect(later.inspection.experimental_panelCalls).toEqual([]);
+  expect(first.github).toEqual([]);
+  expect(second.github).toEqual([]);
 });
 
-test("an ask for a thread not in view, from a caller that will not open it, goes to GitHub", () => {
+test("an ask without a fallback, or that will not open its thread, is taken only for the thread in view", () => {
   const slot = pane();
   expect(requestPullRequestReview({ url: PR, threadId: "thr_b", navigating: false })).toBe(false);
+  expect(requestPullRequestReview({ url: PR, threadId: "thr_b", navigating: true })).toBe(false);
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
 });
 
 test("an ask for another thread the caller opens waits for that thread, not the one in view", () => {
   const slot = pane();
-  expect(requestPullRequestReview({ url: PR, threadId: "thr_b", navigating: true })).toBe(true);
+  expect(opener("thr_b").taken).toBe(true);
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
 });
 
 test("asks Source Control cannot take go to GitHub: no pull request, a recent miss, no side panel", () => {
-  expect(
-    requestPullRequestReview({ url: `${PR}/files`, threadId: "thr_a", navigating: true }),
-  ).toBe(false);
+  const files = requestPullRequestReview({
+    url: `${PR}/files`,
+    threadId: "thr_a",
+    navigating: true,
+    fallback: () => {},
+  });
+  expect(files).toBe(false);
   rememberMiss("pr:acme/api#12", "No access.");
-  expect(requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: true })).toBe(false);
+  expect(opener().taken).toBe(false);
   resetKnownPullRequests();
   pane("thr_a", () => false);
-  expect(requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: true })).toBe(false);
+  expect(opener().taken).toBe(false);
 });
 
 test("a link that asks for its own review is left to its owner", () => {
   const slot = pane();
-  const owner = document.createElement("span");
-  owner.setAttribute(REVIEW_REQUEST_ATTRIBUTE, "");
-  document.body.append(owner);
-  fireEvent.click(markdownLink(PR, owner));
+  // As Tasks draws its pill: the attribute on the anchor itself.
+  const link = markdownLink(PR);
+  link.setAttribute(REVIEW_REQUEST_ATTRIBUTE, "");
+  fireEvent.click(link);
   expect(reachedBb).toEqual([PR]);
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
 });
 
-test("once the script stops, no ask is taken and a waiting one is dropped", () => {
-  requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: true });
+test("once the script stops, a waiting ask falls back to GitHub and no new ask is taken", () => {
+  const ask = opener();
   stop.abort();
-  expect(requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: true })).toBe(false);
+  expect(ask.github).toEqual([PR]);
+  expect(opener().taken).toBe(false);
   const slot = pane();
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("callers and Source Control agree on which links are a pull request itself", () => {
+  for (const url of [
+    PR,
+    `${PR}/`,
+    "https://www.github.com/acme/api/pull/12",
+    `${PR}/files`,
+    `${PR}#issuecomment-1`,
+    `${PR}?w=1`,
+    "https://github.com/acme/api/issues/12",
+    "http://github.com/acme/api/pull/12",
+    "https://github.com/acme/api/pull/0",
+    "https://gitlab.com/acme/api/pull/12",
+  ]) {
+    const ref = parsePrLink(url);
+    expect(pullRequestUrlKey(url), url).toBe(ref ? prKey(ref) : null);
+  }
 });
 
 test("routing adds no invisible context segment", () => {

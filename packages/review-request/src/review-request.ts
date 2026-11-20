@@ -9,6 +9,12 @@
  * known inside the click: when nothing takes it (Source Control is disabled
  * or not installed, or cannot show that pull request) the caller opens
  * GitHub as before, so no click is lost to a popup blocker.
+ *
+ * A click always opens something. Source Control takes an ask only when it
+ * can open the Review now, or, for a caller that is bringing the thread into
+ * view, when it can call the caller's `fallback` if the Review never opens:
+ * the thread's pane does not show in time, declines the tab, or the ask is
+ * dropped. A request without a fallback is taken only for the thread in view.
  */
 
 /** The window event a request travels as. */
@@ -32,6 +38,12 @@ export type PullRequestReviewRequest = {
    * in view.
    */
   readonly navigating: boolean;
+  /**
+   * Opens the pull request on GitHub. Required with `navigating`: Source
+   * Control calls it, at most once, when a taken request cannot open the
+   * Review after all.
+   */
+  readonly fallback?: () => void;
 };
 
 /**
@@ -70,11 +82,38 @@ export function takePullRequestReviews(
   );
 }
 
+/** A request as the taker reads it: `navigating` only with a fallback to keep the click's promise. */
 function readRequest(detail: unknown): PullRequestReviewRequest | null {
   if (typeof detail !== "object" || detail === null) return null;
-  const { url, threadId, navigating } = detail as Record<string, unknown>;
+  const { url, threadId, navigating, fallback } = detail as Record<string, unknown>;
   if (typeof url !== "string" || typeof threadId !== "string" || threadId === "") return null;
-  return { url, threadId, navigating: navigating === true };
+  if (navigating !== true || typeof fallback !== "function") {
+    return { url, threadId, navigating: false };
+  }
+  let called = false;
+  const once = () => {
+    if (called) return;
+    called = true;
+    (fallback as () => void)();
+  };
+  return { url, threadId, navigating: true, fallback: once };
+}
+
+const NAME = "[A-Za-z0-9_.-]+";
+const PULL_REQUEST_URL = new RegExp(
+  `^https://(?:www\\.)?github\\.com/(${NAME})/(${NAME})/pull/(\\d+)/?$`,
+);
+
+/**
+ * `owner/repo#number` for a link to a pull request's own page, the links
+ * Source Control opens in Review; null for anything else, such as a file or
+ * comment deep link. Source Control's `parsePrLink` reads the same links.
+ */
+export function pullRequestUrlKey(url: string): string | null {
+  const match = PULL_REQUEST_URL.exec(url.trim());
+  if (!match) return null;
+  const number = Number(match[3]);
+  return Number.isSafeInteger(number) && number > 0 ? `${match[1]}/${match[2]}#${number}` : null;
 }
 
 type Click = {
