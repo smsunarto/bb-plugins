@@ -1,5 +1,5 @@
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { createTasksStore } from "../db";
 import { deliverCommentToLatestAgent } from ".";
 
@@ -16,6 +16,8 @@ function setup(
       },
     },
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => host.harness.lifecycle.dispose());
   const db = host.bb.storage.database();
   const store = createTasksStore(db);
   const project = store.createProject({

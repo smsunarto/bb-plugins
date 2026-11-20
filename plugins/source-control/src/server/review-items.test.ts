@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { succeeded, type Problem, type PullRequest } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
@@ -40,7 +40,9 @@ const timeline = (body: string) => ({
 
 /** Review items whose GitHub answers each conversation read with the next of `answers`. */
 function setup(answers: (string | Problem)[]) {
-  const { bb } = createFakePluginHost({ pluginId: "source-control" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "source-control" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   const store = openStore(bb);
   store.setForge(KEY, succeeded(PR, 0));
   let now = 1_000;

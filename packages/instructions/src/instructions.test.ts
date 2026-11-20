@@ -1,13 +1,17 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fill, instructionFiles, placeholders } from "./instructions.ts";
 
+const roots: string[] = [];
+after(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
+
 function plugin(files: Record<string, string>) {
   const root = mkdtempSync(join(tmpdir(), "bb-plugins-instructions-"));
+  roots.push(root);
   writeFileSync(join(root, "package.json"), '{"name":"fixture"}');
   for (const [name, text] of Object.entries(files)) {
     const path = join(root, "instructions", `${name}.md`);

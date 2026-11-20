@@ -1,5 +1,5 @@
 // `bb sauce` through the plugin host: argument parsing, the thread rule, and result shapes.
-import { expect, test } from "bun:test";
+import { expect, onTestFinished, test } from "bun:test";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 
 import { fraction, milliseconds, parseStep, render } from "../src/server/cli.ts";
@@ -12,6 +12,8 @@ function cli() {
     pluginId: "sauce",
     agentSkillIds: ["sauce-live"],
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   registerSauce(bb, fake.deps);
   const run = (argv: string[], threadId: string | null = "thr_a") =>
     harness.runCli(argv, threadId ? { threadId } : {});

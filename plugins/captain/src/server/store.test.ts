@@ -1,5 +1,5 @@
 import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 import { ROUTINES_PER_CAPTAIN } from "../contract/routines.ts";
 import { Refusal } from "./output.ts";
 import plugin from "./server.ts";
@@ -21,6 +21,8 @@ test("migrations apply once, a second open changes nothing, and rows survive a r
 
   openStore(host.bb);
   const reloaded = await host.harness.lifecycle.reload(plugin);
+  // Reloaded outside `host.reload()`, so the test host cannot dispose it: its storage is ours to remove.
+  onTestFinished(() => reloaded.harness.lifecycle.dispose());
   const again = openStore(reloaded.bb);
 
   const db = reloaded.bb.storage.database();

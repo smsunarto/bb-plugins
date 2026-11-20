@@ -1,9 +1,10 @@
-import { expect, test } from "bun:test";
+import { expect, onTestFinished, test } from "bun:test";
 import {
   chmodSync,
   statSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -176,6 +177,7 @@ test("a stopped plugin still lists its tool files", () => {
 
 test("a symlinked directory cannot reach files outside the plugin", () => {
   const outside = mkdtempSync(join(tmpdir(), "prompt-editor-outside-"));
+  onTestFinished(() => rmSync(outside, { recursive: true, force: true }));
   writeFileSync(join(outside, "secret.md"), "secret\n");
   const p = plugin({ "instructions/open.md": "Open.\n" });
   symlinkSync(outside, join(p.rootDir, "skills"));

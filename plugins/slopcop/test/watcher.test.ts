@@ -2,13 +2,17 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { afterAll, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import plugin from "../server";
 
 // The watcher's startup and its polling pass, against a real `gh` process:
 // each test points the ghPath setting at a shell script that prints what the
 // real `gh` prints in that situation.
-const scripts = mkdtempSync(join(tmpdir(), "slopcop-gh-"));
+// Made in beforeAll, not at import, so a run that skips every test creates nothing.
+let scripts = "";
+beforeAll(() => {
+  scripts = mkdtempSync(join(tmpdir(), "slopcop-gh-"));
+});
 afterAll(() => rmSync(scripts, { recursive: true, force: true }));
 
 const SIGNED_OUT = `To get started with GitHub CLI, please run:  gh auth login

@@ -1,15 +1,14 @@
-import { afterEach } from "bun:test";
+import { onTestFinished } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { InstalledPlugin } from "../server/lib/agent-text.ts";
 
-const roots: string[] = [];
-afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
-
 export function plugin(files: Record<string, string>, overrides: Partial<InstalledPlugin> = {}) {
   const root = mkdtempSync(join(tmpdir(), "prompt-editor-"));
-  roots.push(root);
+  // Per test, not a module-level afterEach: bun runs this module once, so such a
+  // hook would bind to the first test file that imports it and miss the rest.
+  onTestFinished(() => rmSync(root, { recursive: true, force: true }));
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), content);

@@ -8,10 +8,11 @@ import {
   makeHostResponse,
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
-import { mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { afterAll } from "vitest";
 import type { z } from "zod";
 import { start } from "./server.ts";
 
@@ -269,8 +270,24 @@ export function fakeAutomations(now: () => number = Date.now) {
   return Object.assign(state, { call });
 }
 
+/**
+ * Every host this test file built. After its last test each one is disposed,
+ * which removes the SDK harness's storage, and its root is removed, so no
+ * temp directory outlives the run.
+ */
+const built: { root: string; dispose(): Promise<void> }[] = [];
+afterAll(async () => {
+  for (const { root, dispose } of built.splice(0)) {
+    await dispose().catch(() => undefined);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 export async function captainHost(options: FakeOptions = {}) {
   const root = mkdtempSync(join(tmpdir(), "captain-test-"));
+  // Registered before anything can throw; `dispose` is bound once the fake host exists.
+  const entry: (typeof built)[number] = { root, dispose: async () => undefined };
+  built.push(entry);
   const storageRoot = join(root, "thread-storage");
   const captainsDir = join(root, "Captains");
   const bbProjects = options.bbProjects ?? [
@@ -825,6 +842,10 @@ export async function captainHost(options: FakeOptions = {}) {
       },
     },
   });
+  /** The host a reload made current, whose `bb.log` the reloaded plugin writes to. */
+  let current = host;
+  // Bound before startup, so a start that throws still has its fake host disposed.
+  entry.dispose = () => current.harness.lifecycle.dispose();
   const startOptions = {
     captainsDir,
     now: () => clock,
@@ -855,8 +876,6 @@ export async function captainHost(options: FakeOptions = {}) {
       await server.audienceReady;
     });
   }
-  /** The host a reload made current, whose `bb.log` the reloaded plugin writes to. */
-  let current = host;
   /** Every `bb.log` line of the current plugin instance. */
   const logs = () => current.harness.inspection.logEntries;
   /** Call an RPC on the current plugin instance, the reloaded one after `reload`. */

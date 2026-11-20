@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, onTestFinished, test } from "bun:test";
 import {
   createFakePluginHost,
   makeHostResponse,
@@ -46,6 +46,8 @@ async function load() {
       environments: { get: async () => ({ id: "env_1", hostId: LINUX }) as never },
     },
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => host.harness.lifecycle.dispose());
   await plugin(host.bb);
   return host;
 }
@@ -121,6 +123,8 @@ test("saved rules survive a plugin reload", async () => {
   const { harness } = await load();
   await saveAll(harness, [rule("a", "Persisted.", { providers: ["codex"] })]);
   const reloaded = await harness.reload(plugin);
+  // The reload's instance owns the storage now, so it is the one to dispose.
+  onTestFinished(() => reloaded.harness.lifecycle.dispose());
   expect(await reloaded.harness.callRpc("rules")).toEqual({
     revision: 1,
     rules: [rule("a", "Persisted.", { providers: ["codex"] })],

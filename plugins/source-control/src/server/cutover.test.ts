@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { WatchRead } from "../core/watch.ts";
 import { createCutover, legacyBranchId } from "./cutover.ts";
@@ -59,7 +59,7 @@ function exported() {
 
 function setup(answers: Record<string, unknown>, initialInstructions = "") {
   const calls: string[] = [];
-  const { bb } = createFakePluginHost({
+  const { bb, harness } = createFakePluginHost({
     pluginId: "source-control",
     sdk: {
       plugins: {
@@ -76,6 +76,8 @@ function setup(answers: Record<string, unknown>, initialInstructions = "") {
       },
     },
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   const store = openStore(bb);
   const watcher = createPrWatcher({
     bb,

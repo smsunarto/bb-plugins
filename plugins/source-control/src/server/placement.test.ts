@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { Effect } from "effect";
 import { createPlacements } from "./placement.ts";
@@ -6,7 +6,7 @@ import { HOST_REMOVED, openStore } from "./store.ts";
 
 /** A thread whose ready environment is on host_gone; bb answers for the machine as `machine` says. */
 function world(machine: () => Promise<unknown>) {
-  const { bb } = createFakePluginHost({
+  const { bb, harness } = createFakePluginHost({
     pluginId: "source-control",
     sdk: {
       threads: {
@@ -18,6 +18,8 @@ function world(machine: () => Promise<unknown>) {
       hosts: { get: machine as never },
     },
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   const store = openStore(bb);
   const placements = createPlacements({ bb, store, now: () => 1 });
   const settle = () => Effect.runPromise(placements.settle("thr_a")).then((each) => each.where);

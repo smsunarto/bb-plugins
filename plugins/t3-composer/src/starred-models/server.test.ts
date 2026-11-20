@@ -1,5 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import plugin from "../../server";
 import { changeStarredModels, MAX_STARRED_MODELS } from "./contract";
 
@@ -8,6 +8,8 @@ const sol = { providerId: "codex", model: "gpt-6.1-sol" };
 
 async function host() {
   const { bb, harness } = createFakePluginHost({ pluginId: "t3-composer" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   await plugin(bb);
   return harness;
 }

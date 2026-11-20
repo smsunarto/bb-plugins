@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { onTestFinished } from "bun:test";
 import type { InstalledPlugin } from "../server/lib/agent-text.ts";
 import plugin from "../../server/server.ts";
 
@@ -23,6 +24,8 @@ export async function host(
       },
     } as never,
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   await plugin(bb);
   return { call: harness.behavior.callRpc.bind(harness.behavior), reloads };
 }
