@@ -379,7 +379,15 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
     if (map === undefined) schedules.set(captainId, (map = new Map()));
     return map;
   };
-  const remember = (view: RoutineView) => known(view.captainId).set(view.id, liveOf(view));
+  /** Store a routine's live schedule; publish the list when it changed, as a reader may hold the old one. */
+  const remember = (view: RoutineView): boolean => {
+    const map = known(view.captainId);
+    const next = liveOf(view);
+    if (JSON.stringify(next) === JSON.stringify(map.get(view.id))) return false;
+    map.set(view.id, next);
+    deps.bb.rpc.experimental_invalidate([routinesTag(view.captainId)]);
+    return true;
+  };
   const owned = (captainId: string, routineId: string): Routine => {
     live(captainId);
     const routine = deps.store.routine(routineId);
@@ -400,7 +408,7 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
       scheduleLoading: last === undefined,
     };
   };
-  /** Read every routine's live schedule; refresh the list when one changed. */
+  /** Read every routine's live schedule, publishing each as it arrives, so a slow one holds back none. */
   const readSchedules = (captainId: string): void => {
     const running = reading.get(captainId);
     if (running !== undefined) {
@@ -411,22 +419,13 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
     reading.set(captainId, pass);
     const once = async () => {
       const routines = deps.store.routinesOf(captainId);
-      const views = await Promise.all(
-        routines.map((routine) => deps.routines.view(routine).catch(() => null)),
-      );
       const map = known(captainId);
-      let moved = false;
       for (const id of map.keys()) {
         if (!routines.some((routine) => routine.id === id)) map.delete(id);
       }
-      for (const view of views) {
-        if (view === null) continue;
-        const next = liveOf(view);
-        if (JSON.stringify(next) === JSON.stringify(map.get(view.id))) continue;
-        map.set(view.id, next);
-        moved = true;
-      }
-      if (moved) deps.bb.rpc.experimental_invalidate([routinesTag(captainId)]);
+      await Promise.all(
+        routines.map((routine) => deps.routines.view(routine).then(remember, () => false)),
+      );
     };
     void (async () => {
       try {

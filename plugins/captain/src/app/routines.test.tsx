@@ -538,3 +538,25 @@ test("editing a field clears the last refusal", async () => {
   fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Sweep 2" } });
   await waitFor(() => expect(within(form).queryByRole("alert")).toBeNull());
 });
+
+test("the form's fields lock while its save is on its way", async () => {
+  let finish: (result: SaveRoutineResult) => void = () => {};
+  const { routinesSection } = render(nextCaptain(), {
+    routines: [],
+    save: () => new Promise<SaveRoutineResult>((resolve) => (finish = resolve)),
+  });
+  const section = await routinesSection();
+  fireEvent.click(await within(section).findByRole("button", { name: "New routine" }));
+  const form = await within(section).findByRole("form", { name: "New routine" });
+  fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Sweep" } });
+  fireEvent.change(within(form).getByLabelText("Instruction"), { target: { value: "x" } });
+  fireEvent.click(within(form).getByRole("button", { name: "Create routine" }));
+  const instruction = within(form).getByLabelText("Instruction") as HTMLTextAreaElement;
+  await waitFor(() => expect(instruction.closest("fieldset")?.disabled).toBe(true));
+  finish({
+    ok: false,
+    stale: false,
+    blockers: [{ reason: "refused", fix: "x" }],
+  });
+  await waitFor(() => expect(instruction.closest("fieldset")?.disabled).toBe(false));
+});

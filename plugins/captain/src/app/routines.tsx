@@ -936,127 +936,130 @@ function DraftForm({
         if (ready && !save.isPending) submit();
       }}
     >
-      <div className="flex min-w-0 flex-col gap-1">
-        <label htmlFor={`${id}-name`} className={label}>
-          Name
-        </label>
-        <Input
-          id={`${id}-name`}
-          value={draft.name}
-          maxLength={ROUTINE_NAME_MAX}
-          placeholder="Stalled crew sweep"
-          className={field}
-          onChange={(event) => {
-            set({ name: event.target.value });
-            remember("name", event.currentTarget);
-          }}
-          {...track("name")}
-        />
-      </div>
-      <div className="flex min-w-0 flex-col gap-1">
-        <label htmlFor={`${id}-instruction`} className={label}>
-          Instruction
-        </label>
-        <Textarea
-          id={`${id}-instruction`}
-          value={draft.instruction}
-          rows={4}
-          maxLength={ROUTINE_INSTRUCTION_MAX}
-          placeholder="What the Captain does on each run"
-          className="min-h-24 resize-y text-sm"
-          onChange={(event) => {
-            set({ instruction: event.target.value });
-            remember("instruction", event.currentTarget);
-          }}
-          {...track("instruction")}
-        />
-        <span className="self-end text-muted-foreground tabular-nums">
-          {draft.instruction.length} / {ROUTINE_INSTRUCTION_MAX}
-        </span>
-      </div>
-      <div className="flex min-w-0 flex-col gap-1">
-        <label htmlFor={`${id}-preset`} className={label}>
-          Schedule
-        </label>
-        <Select
-          value={draft.preset}
-          onValueChange={(preset) =>
-            // Custom starts from the preset it replaces, so the user edits a working cron.
-            set(
-              preset === CUSTOM && PRESET_CRONS.includes(draft.preset)
-                ? { preset, cron: draft.preset }
-                : { preset },
-            )
-          }
-        >
-          <SelectTrigger id={`${id}-preset`} className={field} {...track("preset")}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="max-w-[min(32rem,calc(100vw-2rem))]">
-            <SelectGroup>
-              {PRESET_CRONS.map((cron) => (
-                <SelectItem key={cron} value={cron} className={OPTION}>
-                  {describeCron(cron)}
-                </SelectItem>
-              ))}
-              <SelectItem value={CUSTOM} className={OPTION}>
-                Custom cron…
-              </SelectItem>
-              <SelectItem value={ONCE} className={OPTION}>
-                Once, at a time…
-              </SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        {draft.preset === CUSTOM ? (
-          <Input
-            aria-label="Cron"
-            value={draft.cron}
-            placeholder="0 9 * * 1-5"
-            spellCheck={false}
-            className={cn(field, "font-mono")}
-            onChange={(event) => {
-              set({ cron: event.target.value });
-              remember("cron", event.currentTarget);
-            }}
-            {...track("cron")}
-          />
-        ) : null}
-        {draft.preset === ONCE ? (
-          <Input
-            aria-label="Date and time"
-            type="datetime-local"
-            value={draft.at}
-            className={field}
-            onChange={(event) => set({ at: event.target.value })}
-            {...track("at")}
-          />
-        ) : null}
-      </div>
-      {draft.preset === ONCE ? null : (
+      {/* Fields lock while a save is on its way: an edit typed meanwhile would not be the one saved. */}
+      <fieldset disabled={save.isPending} className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
         <div className="flex min-w-0 flex-col gap-1">
-          <label htmlFor={`${id}-timezone`} className={label}>
-            Time zone
+          <label htmlFor={`${id}-name`} className={label}>
+            Name
           </label>
           <Input
-            id={`${id}-timezone`}
-            value={draft.timezone}
-            list={`${id}-timezones`}
-            spellCheck={false}
+            id={`${id}-name`}
+            value={draft.name}
+            maxLength={ROUTINE_NAME_MAX}
+            placeholder="Stalled crew sweep"
             className={field}
             onChange={(event) => {
-              set({ timezone: event.target.value });
-              remember("timezone", event.currentTarget);
+              set({ name: event.target.value });
+              remember("name", event.currentTarget);
             }}
-            {...track("timezone")}
+            {...track("name")}
           />
-          <datalist id={`${id}-timezones`}>
-            {allTimezones().map((zone) => (
-              <option key={zone} value={zone} aria-label={zone} />
-            ))}
-          </datalist>
         </div>
-      )}
+        <div className="flex min-w-0 flex-col gap-1">
+          <label htmlFor={`${id}-instruction`} className={label}>
+            Instruction
+          </label>
+          <Textarea
+            id={`${id}-instruction`}
+            value={draft.instruction}
+            rows={4}
+            maxLength={ROUTINE_INSTRUCTION_MAX}
+            placeholder="What the Captain does on each run"
+            className="min-h-24 resize-y text-sm"
+            onChange={(event) => {
+              set({ instruction: event.target.value });
+              remember("instruction", event.currentTarget);
+            }}
+            {...track("instruction")}
+          />
+          <span className="self-end text-muted-foreground tabular-nums">
+            {draft.instruction.length} / {ROUTINE_INSTRUCTION_MAX}
+          </span>
+        </div>
+        <div className="flex min-w-0 flex-col gap-1">
+          <label htmlFor={`${id}-preset`} className={label}>
+            Schedule
+          </label>
+          <Select
+            value={draft.preset}
+            onValueChange={(preset) =>
+              // Custom starts from the preset it replaces, so the user edits a working cron.
+              set(
+                preset === CUSTOM && PRESET_CRONS.includes(draft.preset)
+                  ? { preset, cron: draft.preset }
+                  : { preset },
+              )
+            }
+          >
+            <SelectTrigger id={`${id}-preset`} className={field} {...track("preset")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-w-[min(32rem,calc(100vw-2rem))]">
+              <SelectGroup>
+                {PRESET_CRONS.map((cron) => (
+                  <SelectItem key={cron} value={cron} className={OPTION}>
+                    {describeCron(cron)}
+                  </SelectItem>
+                ))}
+                <SelectItem value={CUSTOM} className={OPTION}>
+                  Custom cron…
+                </SelectItem>
+                <SelectItem value={ONCE} className={OPTION}>
+                  Once, at a time…
+                </SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          {draft.preset === CUSTOM ? (
+            <Input
+              aria-label="Cron"
+              value={draft.cron}
+              placeholder="0 9 * * 1-5"
+              spellCheck={false}
+              className={cn(field, "font-mono")}
+              onChange={(event) => {
+                set({ cron: event.target.value });
+                remember("cron", event.currentTarget);
+              }}
+              {...track("cron")}
+            />
+          ) : null}
+          {draft.preset === ONCE ? (
+            <Input
+              aria-label="Date and time"
+              type="datetime-local"
+              value={draft.at}
+              className={field}
+              onChange={(event) => set({ at: event.target.value })}
+              {...track("at")}
+            />
+          ) : null}
+        </div>
+        {draft.preset === ONCE ? null : (
+          <div className="flex min-w-0 flex-col gap-1">
+            <label htmlFor={`${id}-timezone`} className={label}>
+              Time zone
+            </label>
+            <Input
+              id={`${id}-timezone`}
+              value={draft.timezone}
+              list={`${id}-timezones`}
+              spellCheck={false}
+              className={field}
+              onChange={(event) => {
+                set({ timezone: event.target.value });
+                remember("timezone", event.currentTarget);
+              }}
+              {...track("timezone")}
+            />
+            <datalist id={`${id}-timezones`}>
+              {allTimezones().map((zone) => (
+                <option key={zone} value={zone} aria-label={zone} />
+              ))}
+            </datalist>
+          </div>
+        )}
+      </fieldset>
       <output
         aria-live="polite"
         data-testid="captain-routine-words"

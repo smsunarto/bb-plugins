@@ -372,7 +372,13 @@ describe("the Overview's routines", () => {
     const list = async () =>
       (
         (await rpc("routines", { captainId })) as {
-          routines: { id: string; name: string; when: string; automation: unknown }[];
+          routines: {
+            id: string;
+            name: string;
+            when: string;
+            automation: unknown;
+            scheduleLoading: boolean;
+          }[];
           serverTimezone: string;
         }
       ).routines;
@@ -538,6 +544,44 @@ describe("the Overview's routines", () => {
       scheduleLoading: false,
       automation: expect.objectContaining({ enabled: true }),
     });
+  });
+
+  test("each row's live schedule is published as it arrives; a slow one holds back none", async () => {
+    const { host, captainId, list } = await routinesHost();
+    const captain = host.server.store.captain(captainId)!;
+    await host.server.routines.create(captain, SWEEP);
+    const slow = await host.server.routines.create(captain, { ...SWEEP, name: "Digest" });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    // Hold only the Digest routine's lookup.
+    const call = host.automations.call;
+    host.automations.call = async (method, input) => {
+      if (method === "automations_get" && input["automationId"] === slow.automationId) await held;
+      return call(method, input);
+    };
+    await list();
+    await vi.waitFor(async () =>
+      expect((await list()).map((row) => [row.name, row.scheduleLoading])).toEqual([
+        [SWEEP.name, false],
+        ["Digest", true],
+      ]),
+    );
+    release();
+    await vi.waitFor(async () =>
+      expect((await list()).every((row) => !row.scheduleLoading)).toBe(true),
+    );
+  });
+
+  test("a write that changes the cached schedule publishes the list again", async () => {
+    const { host, captainId, rpc, save } = await routinesHost();
+    await save(SWEEP);
+    const before = host.harness.inspection.experimental_rpcInvalidations.length;
+    // The service publishes before the RPC caches its result; the cache change publishes too.
+    await rpc("routineAction", { captainId, routineId: "r1", action: "pause" });
+    const tags = host.harness.inspection.experimental_rpcInvalidations.slice(before);
+    expect(
+      tags.filter((each) => each?.includes(routinesTag(captainId))).length,
+    ).toBeGreaterThanOrEqual(2);
   });
 
   test("with Automations down, a row says its schedule is unavailable", async () => {
