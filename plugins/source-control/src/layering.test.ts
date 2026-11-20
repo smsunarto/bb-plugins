@@ -61,7 +61,9 @@ test("core and contract stay free of the SDK's runtime-specific entry points", (
     const source = readFileSync(file, "utf8");
     for (const specifier of specifiers(source).filter((name) => !name.startsWith("."))) {
       const core = relative(SRC, file).startsWith("core");
-      const allowed = core ? ["zod"] : ["zod", "@get-bb/plugin-sdk"];
+      // The pull request link grammar Source Control shares with the plugins that ask it for a Review.
+      const shared = "@bb-plugins/review-request/pull-request-url";
+      const allowed = core ? ["zod", shared] : ["zod", "@get-bb/plugin-sdk", shared];
       if (!allowed.includes(specifier))
         violations.push(`${relative(SRC, file)} imports ${specifier}`);
     }

@@ -7,6 +7,8 @@ import { changeKeySchema } from "../core/ids.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import {
   REVIEW_REQUEST_ATTRIBUTE,
+  isPullRequestReviewAvailable,
+  onPullRequestReviewAvailabilityChange,
   pullRequestUrlKey,
   requestPullRequestReview,
 } from "@bb-plugins/review-request";
@@ -220,19 +222,43 @@ test("a waiting ask opens once: the thread's next visit opens nothing", () => {
   expect(ask.github).toEqual([]);
 });
 
-test("asks wait per thread: each thread opens its own, and going elsewhere drops the rest", () => {
+test("the latest ask wins: an earlier thread's pane opens nothing and leaves the latest waiting", () => {
   vi.useFakeTimers();
   const first = opener("thr_a");
   const second = opener("thr_b");
-  const slot = pane("thr_a");
-  expect(slot.inspection.experimental_panelCalls).toMatchObject(OPENS_PR_TAB);
-  // The reader went to thr_a, not thr_b: thr_b's ask neither opens later nor sends them to GitHub.
-  slot.unmount();
-  const later = pane("thr_b");
+  // thr_a's pane shows late, from the first click: the reader has since asked for thr_b.
+  const early = pane("thr_a");
+  expect(early.inspection.experimental_panelCalls).toEqual([]);
+  early.unmount();
+  const latest = pane("thr_b");
+  expect(latest.inspection.experimental_panelCalls).toMatchObject(OPENS_PR_TAB);
   vi.advanceTimersByTime(PENDING_MS);
-  expect(later.inspection.experimental_panelCalls).toEqual([]);
   expect(first.github).toEqual([]);
   expect(second.github).toEqual([]);
+});
+
+test("a cached pull request whose pane declines the tab falls back like any other", () => {
+  rememberChange("pr:acme/api#12", KEY);
+  const ask = opener();
+  expect(ask.taken).toBe(true);
+  const slot = pane("thr_a", () => false);
+  expect(ask.github).toEqual([PR]);
+  // Not the review page: the caller offers GitHub.
+  expect(slot.inspection.navigateCalls).toEqual([]);
+});
+
+test("callers can ask whether Review opens beside a thread now, and hear when that changes", () => {
+  const changes = vi.fn();
+  const listening = new AbortController();
+  onPullRequestReviewAvailabilityChange(changes, listening.signal);
+  expect(isPullRequestReviewAvailable("thr_a")).toBe(false);
+  const slot = pane();
+  expect(isPullRequestReviewAvailable("thr_a")).toBe(true);
+  expect(isPullRequestReviewAvailable("thr_b")).toBe(false);
+  slot.unmount();
+  expect(isPullRequestReviewAvailable("thr_a")).toBe(false);
+  expect(changes).toHaveBeenCalledTimes(2);
+  listening.abort();
 });
 
 test("an ask without a fallback, or that will not open its thread, is taken only for the thread in view", () => {
@@ -275,7 +301,10 @@ test("a link that asks for its own review is left to its owner", () => {
 
 test("once the script stops, a waiting ask falls back to GitHub and no new ask is taken", () => {
   const ask = opener();
+  pane("thr_b");
+  expect(isPullRequestReviewAvailable("thr_b")).toBe(true);
   stop.abort();
+  expect(isPullRequestReviewAvailable("thr_b")).toBe(false);
   expect(ask.github).toEqual([PR]);
   expect(opener().taken).toBe(false);
   const slot = pane();

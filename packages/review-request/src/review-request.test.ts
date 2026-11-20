@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   PULL_REQUEST_REVIEW_EVENT,
+  answerPullRequestReviewAvailability,
   isPlainClick,
+  isPullRequestReviewAvailable,
+  onPullRequestReviewAvailabilityChange,
   pullRequestUrlKey,
   requestPullRequestReview,
   takePullRequestReviews,
@@ -111,4 +114,26 @@ test("pullRequestUrlKey reads only a pull request's own page", () => {
   expect(pullRequestUrlKey("https://github.com/acme/app/issues/7")).toBeNull();
   expect(pullRequestUrlKey("http://github.com/acme/app/pull/7")).toBeNull();
   expect(pullRequestUrlKey("https://github.com/acme/app/pull/0")).toBeNull();
+});
+
+test("availability: unknown without Source Control, its answer while it runs, and its change notices", () => {
+  const target = new EventTarget();
+  expect(isPullRequestReviewAvailable("thr_1", target)).toBe(false);
+  const stop = new AbortController();
+  let inView = "thr_1";
+  const changed = answerPullRequestReviewAvailability(
+    (threadId) => threadId === inView,
+    stop.signal,
+    target,
+  );
+  let notices = 0;
+  onPullRequestReviewAvailabilityChange(() => notices++, stop.signal, target);
+  expect(isPullRequestReviewAvailable("thr_1", target)).toBe(true);
+  expect(isPullRequestReviewAvailable("thr_2", target)).toBe(false);
+  inView = "thr_2";
+  changed();
+  expect(notices).toBe(1);
+  expect(isPullRequestReviewAvailable("thr_2", target)).toBe(true);
+  stop.abort();
+  expect(isPullRequestReviewAvailable("thr_2", target)).toBe(false);
 });

@@ -28,6 +28,7 @@ import { ACTION_GLYPHS, actionIntent, sendEffect } from "./action-logic";
 import { Radio } from "./fields";
 import { reducedMotion, useEntrance, type Entrance } from "./motion";
 import { keepTyping } from "../keepTyping";
+import { useReviewLinks } from "../reviewLinks";
 
 export const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
@@ -280,7 +281,8 @@ export function Button({ props }: { props: Props }) {
 }
 
 function ButtonView({ props }: { props: Props }) {
-  const { run, threadId } = useUiRuntime();
+  const { run } = useUiRuntime();
+  const reviewLinks = useReviewLinks();
   const choice = useContext(ChoiceContext);
   // Inside a nested tile, buttons sit on a tinted surface beside siblings that
   // carry the same action: a filled button per tile is too loud.
@@ -308,7 +310,7 @@ function ButtonView({ props }: { props: Props }) {
   const { glyph, hint } = actionIntent(intended, {
     send: sendEffect(target, picks, pressed),
     shown: clipped ? undefined : label,
-    review: threadId !== null,
+    review: reviewLinks,
   });
   // The spec's icon says what the button is about, the glyph at its end what
   // pressing it does; a picked choice shows a check instead. An unknown name

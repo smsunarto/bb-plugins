@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import {
   REVIEW_REQUEST_ATTRIBUTE,
@@ -21,6 +21,10 @@ if (!window.matchMedia) {
     dispatchEvent: () => false,
   });
 }
+
+// bb's own toasts: the host provides sonner to plugin apps.
+const toast = vi.hoisted(() => vi.fn());
+vi.mock("sonner", () => ({ toast }));
 
 const app = await loadPluginApp(() => import("../../app"));
 
@@ -179,8 +183,19 @@ describe("task detail pull request pills", () => {
         { url: "https://github.com/acme/bb/pull/12", threadId: "thr_worker000", navigating: true },
       ]);
       expect(slot.navigateCalls).toEqual([{ method: "toThread", threadId: "thr_worker000" }]);
-      // Source Control could not open the Review after all: the pill's fallback opens GitHub.
+      // Source Control could not open the Review after all, after the click: the pill offers
+      // GitHub in a toast, whose action click may open a window. It opens nothing itself.
+      toast.mockClear();
       taker.asks[0]!.fallback!();
+      expect(slot.navigateCalls).toEqual([{ method: "toThread", threadId: "thr_worker000" }]);
+      expect(toast).toHaveBeenCalledTimes(1);
+      const [message, options] = toast.mock.calls[0] as [
+        string,
+        { action: { label: string; onClick: () => void } },
+      ];
+      expect(message).toBe("Couldn't open Review for #12");
+      expect(options.action.label).toBe("Open on GitHub");
+      options.action.onClick();
       expect(slot.navigateCalls).toEqual([
         { method: "toThread", threadId: "thr_worker000" },
         { method: "openUrl", url: "https://github.com/acme/bb/pull/12" },

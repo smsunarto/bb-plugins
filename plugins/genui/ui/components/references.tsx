@@ -50,6 +50,7 @@ import {
 } from "./references-model";
 import { ExpandButton, useViewer } from "./viewer";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useReviewLinks } from "../reviewLinks";
 
 // ---------------------------------------------------------------------------
 // Shared
@@ -165,7 +166,7 @@ export function Entity({ props }: { props: Props }) {
   const depth = useContext(CardDepthContext);
   const fade = useEntrance<HTMLDivElement>(FADE);
   const openUrl = useOpenUrl();
-  const reviewLinks = useUiRuntime().threadId !== null;
+  const reviewLinks = useReviewLinks();
   const name = text(props.name).trim();
   const kind = entityKind(props.kind);
   const note = optionalText(props.note)?.trim() || null;

@@ -15,6 +15,14 @@
  * view, when it can call the caller's `fallback` if the Review never opens:
  * the thread's pane does not show in time, declines the tab, or the ask is
  * dropped. A request without a fallback is taken only for the thread in view.
+ * The fallback runs after the click, when a browser no longer lets a page
+ * open a window, so it offers GitHub (a toast with an action) rather than
+ * opening it.
+ *
+ * Callers that describe a control before it is pressed (GenUI's hints) ask
+ * whether Review can open beside a thread now (`isPullRequestReviewAvailable`)
+ * and re-ask when Source Control reports a change
+ * (`onPullRequestReviewAvailabilityChange`).
  */
 
 /** The window event a request travels as. */
@@ -39,9 +47,10 @@ export type PullRequestReviewRequest = {
    */
   readonly navigating: boolean;
   /**
-   * Opens the pull request on GitHub. Required with `navigating`: Source
-   * Control calls it, at most once, when a taken request cannot open the
-   * Review after all.
+   * Offers the pull request on GitHub, such as a toast whose action opens
+   * it. Required with `navigating`: Source Control calls it, at most once
+   * and after the click, when a taken request cannot open the Review after
+   * all. It must not open a window itself: the click's activation is gone.
    */
   readonly fallback?: () => void;
 };
@@ -99,21 +108,56 @@ function readRequest(detail: unknown): PullRequestReviewRequest | null {
   return { url, threadId, navigating: true, fallback: once };
 }
 
-const NAME = "[A-Za-z0-9_.-]+";
-const PULL_REQUEST_URL = new RegExp(
-  `^https://(?:www\\.)?github\\.com/(${NAME})/(${NAME})/pull/(\\d+)/?$`,
-);
+export { parsePullRequestUrl, pullRequestUrlKey, type PullRequestUrl } from "./pull-request-url";
+
+// ── Whether Review can open beside a thread now ────────────────────────
+
+/** The window event that asks, cancelled by Source Control when the answer is yes. */
+export const REVIEW_AVAILABLE_EVENT = "bb-plugins:pull-request-review-available";
+/** The window event Source Control sends when the answer may have changed. */
+export const REVIEW_AVAILABILITY_EVENT = "bb-plugins:pull-request-review-availability";
 
 /**
- * `owner/repo#number` for a link to a pull request's own page, the links
- * Source Control opens in Review; null for anything else, such as a file or
- * comment deep link. Source Control's `parsePrLink` reads the same links.
+ * Whether Source Control can open a pull request's Review beside `threadId`
+ * now: it is running and the thread's pane is in view. False when unknown.
  */
-export function pullRequestUrlKey(url: string): string | null {
-  const match = PULL_REQUEST_URL.exec(url.trim());
-  if (!match) return null;
-  const number = Number(match[3]);
-  return Number.isSafeInteger(number) && number > 0 ? `${match[1]}/${match[2]}#${number}` : null;
+export function isPullRequestReviewAvailable(
+  threadId: string,
+  target: EventTarget = window,
+): boolean {
+  const event = new CustomEvent(REVIEW_AVAILABLE_EVENT, { detail: { threadId }, cancelable: true });
+  return !target.dispatchEvent(event);
+}
+
+/** Calls `listener` whenever Source Control reports availability may have changed, until `signal` aborts. */
+export function onPullRequestReviewAvailabilityChange(
+  listener: () => void,
+  signal: AbortSignal,
+  target: EventTarget = window,
+): void {
+  target.addEventListener(REVIEW_AVAILABILITY_EVENT, listener, { signal });
+}
+
+/**
+ * Source Control's side of availability: `available` answers each ask
+ * inside its dispatch, until `signal` aborts. Returns the function to call
+ * when the answer may have changed.
+ */
+export function answerPullRequestReviewAvailability(
+  available: (threadId: string) => boolean,
+  signal: AbortSignal,
+  target: EventTarget = window,
+): () => void {
+  target.addEventListener(
+    REVIEW_AVAILABLE_EVENT,
+    (event) => {
+      if (!(event instanceof CustomEvent)) return;
+      const threadId: unknown = (event.detail as { threadId?: unknown } | null)?.threadId;
+      if (typeof threadId === "string" && available(threadId)) event.preventDefault();
+    },
+    { signal },
+  );
+  return () => target.dispatchEvent(new Event(REVIEW_AVAILABILITY_EVENT));
 }
 
 type Click = {

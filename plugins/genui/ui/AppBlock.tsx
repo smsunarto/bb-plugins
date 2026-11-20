@@ -5,7 +5,6 @@
 // variables. While the fence streams, a second frame draws the markup written
 // so far without running any of it. The documents and their bootstrap are in
 // appDocument.ts; what a frame may post back is checked in appBridge.ts.
-import { requestPullRequestReview } from "@bb-plugins/review-request";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
 import { experimental_saveFile, useBbNavigate } from "@get-bb/plugin-sdk/app";
@@ -341,10 +340,7 @@ function AppFrame({
         void answers.stage(QUESTION, message.text === null ? null : { text: message.text, selection: true });
         return;
       case "openLink":
-        // A plain click on a pull request's link opens its Review beside the thread, when Source Control
-        // takes it. Only during the reader's own click: the frame's script could post this message
-        // itself, and without a click it gets no more than a browser tab, as before.
-        if (message.plain && target.kind === "thread" && hasUserActivation() && requestPullRequestReview({ url: message.url, threadId: target.threadId, navigating: false })) return;
+        // Always the browser, never Review: the app's own script chose this link, not BB.
         if (!navigate.openUrl(message.url)) toast.error(`Couldn't open ${message.url}`);
         return;
       case "escape":
@@ -443,9 +439,4 @@ function AppFrame({
       </dialog>
     </AnswersContext>
   );
-}
-
-/** Whether the window is inside a reader's click or key press (an app frame's click activates its host too). */
-function hasUserActivation(): boolean {
-  return navigator.userActivation?.isActive === true;
 }

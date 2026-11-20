@@ -43,6 +43,7 @@ import { keepTyping } from "../keepTyping";
 import { Badge } from "@/components/ui/badge";
 import { Toggle } from "@/components/ui/toggle";
 import { IconButton } from "./iconButton";
+import { useReviewLinks } from "../reviewLinks";
 
 /** Outline buttons sit on the page color, as inputs.tsx's quiet buttons do. */
 const QUIET = "bg-background";
@@ -285,7 +286,8 @@ interface RowChoice {
 }
 
 function ListItem({ row, leading, choice }: { row: ListRow; leading: Leading; choice: RowChoice }) {
-  const { run, threadId } = useUiRuntime();
+  const { run } = useUiRuntime();
+  const reviewLinks = useReviewLinks();
   const rise = useEntrance<HTMLLIElement>(RISE);
   const [running, setRunning] = useState(false);
   const icon = rowIcon(row);
@@ -298,7 +300,7 @@ function ListItem({ row, leading, choice }: { row: ListRow; leading: Leading; ch
   const pressed = replies && choice.pressed;
   const interactive = (replies || others.length > 0) && !closed;
   const { target } = useAnswers();
-  const { glyph, hint } = actionIntent(row.actions, { send: sendEffect(target, replies && !closed, pressed), shown: row.title, review: threadId !== null });
+  const { glyph, hint } = actionIntent(row.actions, { send: sendEffect(target, replies && !closed, pressed), shown: row.title, review: reviewLinks });
 
   const content = (
     <>

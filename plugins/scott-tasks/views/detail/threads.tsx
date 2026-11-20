@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   REVIEW_REQUEST_ATTRIBUTE,
   isPlainClick,
@@ -71,18 +72,24 @@ function ThreadPullRequestPill({
             href={pullRequest.url}
             target="_blank"
             rel="noopener noreferrer"
-            // A plain click opens the PR's Review beside its thread when Source Control takes the
-            // ask, and GitHub if that Review cannot open after all. A modified or middle click, an
-            // archived thread, and an ask nothing takes go to GitHub as a plain link.
+            // A plain click opens the PR's Review beside its thread when Source Control takes
+            // the ask, and offers GitHub in a toast if that Review cannot open after all. A
+            // modified or middle click, an archived thread, and an ask nothing takes go to
+            // GitHub as a plain link.
             {...{ [REVIEW_REQUEST_ATTRIBUTE]: "" }}
             onClick={(event) => {
               if (!reviewable || !isPlainClick(event)) return;
-              const { url } = pullRequest;
+              const { url, number } = pullRequest;
               const taken = requestPullRequestReview({
                 url,
                 threadId,
                 navigating: true,
-                fallback: () => openOnGitHub(url),
+                // After the click, a browser opens no window on its own: the toast's action
+                // click does. The thread stays in view.
+                fallback: () =>
+                  toast(`Couldn't open Review for #${number}`, {
+                    action: { label: "Open on GitHub", onClick: () => openOnGitHub(url) },
+                  }),
               });
               if (!taken) return;
               event.preventDefault();

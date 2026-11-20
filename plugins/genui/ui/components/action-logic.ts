@@ -62,7 +62,18 @@ export function actionIntent(
 ): ActionIntent {
   const answers = send !== "none" && actions.some((action) => action.type === "send");
   if (answers && send === "withdraw") return { glyph: "Sent", hint: "Take it out of your message" };
-  const inReview = (action: Action) => (review && action.type === "openUrl" ? reviewKey(action.url) : null);
+  // Each link parsed once, for its glyph and its line: the address, and its pull request in Review.
+  const parsed = new Map<Action, { readonly url: URL | null; readonly review: string | null }>();
+  const parse = (action: Extract<Action, { type: "openUrl" }>) => {
+    let entry = parsed.get(action);
+    if (entry === undefined) {
+      const url = openableLink(action.url);
+      entry = { url, review: review && url !== null ? pullRequestUrlKey(url.href) : null };
+      parsed.set(action, entry);
+    }
+    return entry;
+  };
+  const inReview = (action: Action) => (action.type === "openUrl" ? parse(action).review : null);
   const links = actions.filter((action) => action.type === "openUrl");
   const first = GLYPHS.find(([type]) => (type === "send" ? answers : actions.some((action) => action.type === type)))?.[1] ?? null;
   const glyph = first === "ExternalLink" && links.every((link) => inReview(link) !== null) ? REVIEW_GLYPH : first;
@@ -74,9 +85,9 @@ export function actionIntent(
         if (send === "stage") return [words(action.text) === visible ? "Add to your message" : `Add “${clip(action.text)}” to your message`];
         return [words(action.text) === visible ? "Send as your reply" : `Send “${clip(action.text)}”`];
       case "openUrl": {
-        const key = inReview(action);
+        // This call's own parse: dropping credentials below changes nothing else.
+        const { url, review: key } = parse(action);
         if (key !== null) return [`Open ${key} in Review`];
-        const url = openableLink(action.url);
         if (url === null) return [`Can't open ${clip(action.url)}: only http and https links open`];
         // Without a user name and password, as browsers show addresses: `https://github.com@evil.com/` reads `https://evil.com/`.
         url.username = "";
@@ -90,12 +101,6 @@ export function actionIntent(
     }
   });
   return { glyph, hint: lines.length === 0 ? null : lines.join("\n") };
-}
-
-/** `owner/repo#n` for a link to a pull request itself, as LiveUi opens it; null for any other link. */
-function reviewKey(url: string): string | null {
-  const link = openableLink(url);
-  return link === null ? null : pullRequestUrlKey(link.href);
 }
 
 /** `text` as a label reads: whitespace runs as one space, and no closing full stop ("Go with BullMQ." is Decision's "Go with BullMQ"). */

@@ -5,7 +5,7 @@ import type { Root } from "react-dom/client";
 import type * as PluginSdkApp from "@get-bb/plugin-sdk/app";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExperimentalCodeFenceRendererProps, PluginSettingsState } from "@get-bb/plugin-sdk/app";
-import { takePullRequestReviews, type PullRequestReviewRequest } from "@bb-plugins/review-request";
+import { answerPullRequestReviewAvailability, takePullRequestReviews, type PullRequestReviewRequest } from "@bb-plugins/review-request";
 import { SlotFence } from "./SlotFence";
 
 /** The plugin's settings as BB serves them: a store its subscribers re-render from, like BB's query. */
@@ -267,8 +267,22 @@ describe("a button opening a pull request", () => {
     expect(openUrl).toHaveBeenCalledWith(PR);
   });
 
-  it("shows the pull request glyph, not the web link glyph", () => {
+  it("names the link, with the web link glyph, while Review is not available beside the thread", () => {
+    render("ui", "closed", code, "pr-unknown:assistant:1");
+    const button = container.querySelector("button")!;
+    expect(button.querySelector('[data-icon="ExternalLink"]')).not.toBeNull();
+    expect(button.querySelector('[data-icon="GitPullRequest"]')).toBeNull();
+  });
+
+  it("shows the pull request glyph, not the web link glyph, once Source Control says Review is available", () => {
+    let available = false;
+    const changed = answerPullRequestReviewAvailability((threadId) => available && threadId === "orbit", (stop = new AbortController()).signal);
     render("ui", "closed", code, "pr-glyph:assistant:1");
+    expect(container.querySelector('button [data-icon="ExternalLink"]')).not.toBeNull();
+    act(() => {
+      available = true;
+      changed();
+    });
     const button = container.querySelector("button")!;
     expect(button.querySelector('[data-icon="GitPullRequest"]')).not.toBeNull();
     expect(button.querySelector('[data-icon="ExternalLink"]')).toBeNull();

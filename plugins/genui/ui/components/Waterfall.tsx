@@ -13,13 +13,13 @@ import { formatAmount, formatBytes, formatMs, niceTicks } from "../../core/perf-
 import { ancestry, PHASE_LABEL, PHASES, readWaterfall, type PhaseName, type Span, type Waterfall as WaterfallData } from "../../core/waterfall";
 import { ACCENT, optionalText, TONE_TEXT, type Props } from "../values";
 import { actionIntent } from "./action-logic";
-import { useUiRuntime } from "../runtime";
 import { TONE_STROKE } from "./chartKit";
 import { ErrorLine } from "./display";
 import { WithTooltip } from "./iconButton";
 import { ActionHint, FOCUS_RING } from "./inputs";
 import { CHART_DRAW_MS, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight, type Entrance } from "./motion";
 import { Frame, gridLines, Heading, Quiet, useOpenUrl } from "./perfKit";
+import { useReviewLinks } from "../reviewLinks";
 
 /** Rows shown before "Show N more", and how many each press adds. */
 const ROW_PAGE = 60;
@@ -384,7 +384,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 function Detail({ data, span }: { data: WaterfallData; span: Span }) {
   const openUrl = useOpenUrl();
-  const reviewLinks = useUiRuntime().threadId !== null;
+  const reviewLinks = useReviewLinks();
   const parents = ancestry(data.spans, span.index);
   const childTime = span.children.reduce((sum, child) => sum + (data.spans[child].end - data.spans[child].start), 0);
   const request = span.request;

@@ -5,7 +5,8 @@
   "description": "Ask Source Control, from another plugin, to open a pull request's Review tab.",
   "type": "module",
   "exports": {
-    ".": "./src/review-request.ts"
+    ".": "./src/review-request.ts",
+    "./pull-request-url": "./src/pull-request-url.ts"
   },
   "devDependencies": {
     "bun-types": "^1.4.0",

@@ -229,7 +229,7 @@ var href=link.getAttribute("href").trim();
 if(href==="")return;
 event.preventDefault();
 if(href.charAt(0)==="#")location.hash=href;
-else if(/^https:/i.test(href))openLink(href,!(event.metaKey||event.ctrlKey||event.shiftKey||event.altKey));else refuse("link");
+else if(/^https:/i.test(href))genui.openLink(href);else refuse("link");
 });
 addEventListener("keydown",function(event){if(event.key==="Escape"&&!event.defaultPrevented)post({type:"escape"});});
 var gesture=false;
@@ -244,17 +244,16 @@ var value=text==null?"":String(text).trim().slice(0,${MAX_ANSWER_LENGTH}).trim()
 post({type:"answer",text:value===""?null:value});
 return true;
 },
-openLink:function(url){return openLink(url);}
-};
-function openLink(url,plain){
+openLink:function(url){
 var link;
 try{link=new URL(String(url));}catch(error){return false;}
 if(link.protocol!=="https:"||link.href.length>${MAX_URL_LENGTH})return false;
 if(!inGesture()){refuse("openLink");return false;}
 if(standalone)openWindow.call(window,link.href,"_blank","noopener");
-else post(plain===false?{type:"openLink",url:link.href,plain:false}:{type:"openLink",url:link.href});
+else post({type:"openLink",url:link.href});
 return true;
 }
+};
 Object.defineProperty(genui,"reducedMotion",{get:reduced,enumerable:true});
 Object.defineProperty(window,"genui",{value:Object.freeze(genui),enumerable:true});`;
 

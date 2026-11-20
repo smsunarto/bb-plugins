@@ -111,12 +111,6 @@ describe("parseAppMessage", () => {
     expect(parseAppMessage({ source: "genui-app", type: "openLink", url: "https://example.com/a b" })).toEqual({
       type: "openLink",
       url: "https://example.com/a%20b",
-      plain: true,
-    });
-    expect(parseAppMessage({ source: "genui-app", type: "openLink", url: "https://example.com/", plain: false })).toEqual({
-      type: "openLink",
-      url: "https://example.com/",
-      plain: false,
     });
     expect(parseAppMessage({ source: "genui-app", type: "escape" })).toEqual({ type: "escape" });
   });
@@ -251,47 +245,18 @@ describe("an app on screen", () => {
     expect(openUrl).toHaveBeenCalledWith("https://example.com/docs");
   });
 
-  it("asks Source Control to open a pull request link's Review beside the thread, and opens GitHub when it can't", () => {
+  it("opens an app's pull request link in the browser, never in Review, even inside the reader's click", () => {
     const PR = "https://github.com/acme/api/pull/12";
     const asks: PullRequestReviewRequest[] = [];
-    let taken = true;
     const stop = new AbortController();
-    takePullRequestReviews((ask) => (asks.push(ask), taken), stop.signal);
-    // The reader's click in the frame activates the host window too.
+    takePullRequestReviews((ask) => (asks.push(ask), true), stop.signal);
     vi.stubGlobal("navigator", { ...navigator, userActivation: { isActive: true } });
     try {
       openUrl.mockClear();
       const post = mount({ kind: "thread", threadId: "thr_pr", messageId: "m", fence: 0, reply: 0, send: vi.fn() });
       post({ type: "openLink", url: PR });
-      expect(asks).toEqual([{ url: PR, threadId: "thr_pr", navigating: false }]);
-      expect(openUrl).not.toHaveBeenCalled();
-      // A modified click inside the app keeps the link on GitHub.
-      post({ type: "openLink", url: PR, plain: false });
-      expect(asks).toHaveLength(1);
-      expect(openUrl).toHaveBeenLastCalledWith(PR);
-      taken = false;
-      post({ type: "openLink", url: PR });
-      expect(asks).toHaveLength(2);
-      expect(openUrl).toHaveBeenCalledTimes(2);
-    } finally {
-      stop.abort();
-    }
-  });
-
-  it("asks Source Control only inside the reader's click: a message the app posts on its own opens a browser tab", () => {
-    const PR = "https://github.com/acme/api/pull/12";
-    const asks: PullRequestReviewRequest[] = [];
-    const stop = new AbortController();
-    takePullRequestReviews((ask) => (asks.push(ask), true), stop.signal);
-    try {
-      openUrl.mockClear();
-      const post = mount({ kind: "thread", threadId: "thr_pr", messageId: "m", fence: 0, reply: 0, send: vi.fn() });
-      vi.stubGlobal("navigator", { ...navigator, userActivation: { isActive: false } });
-      post({ type: "openLink", url: PR });
-      vi.stubGlobal("navigator", { ...navigator, userActivation: undefined });
-      post({ type: "openLink", url: PR });
       expect(asks).toEqual([]);
-      expect(openUrl).toHaveBeenCalledTimes(2);
+      expect(openUrl).toHaveBeenCalledWith(PR);
     } finally {
       stop.abort();
     }

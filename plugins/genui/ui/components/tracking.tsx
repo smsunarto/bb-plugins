@@ -50,6 +50,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { IconButton } from "./iconButton";
+import { useReviewLinks } from "../reviewLinks";
 
 /** Cards a column shows before "N more", and how many each press adds. */
 const COLUMN_PAGE = 8;
@@ -277,7 +278,7 @@ function LiveDot({ agents }: { agents: number }) {
 function Card({ card, today, open, onToggle }: { card: BoardCard; today: number; open: boolean; onToggle: () => void }) {
   const rise = useEntrance<HTMLLIElement>(RISE);
   const openUrl = useOpenUrl();
-  const reviewLinks = useUiRuntime().threadId !== null;
+  const reviewLinks = useReviewLinks();
   const late = cardLate(card, today);
   const detailId = useId();
   const shownLabels = card.labels.slice(0, CARD_LABELS);

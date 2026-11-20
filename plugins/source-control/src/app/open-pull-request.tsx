@@ -29,7 +29,7 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import { parsePrLink, parsePrReference, prKey, prLookup, type PrRef } from "../core/watch.ts";
 import type { sourceControlContract } from "../contract/rpc.ts";
-import { REVIEW_TAB, useOpenReview } from "./open-review.ts";
+import { REVIEW_TAB, useOpenReview, type OpenReviewOptions } from "./open-review.ts";
 
 /** How long a Review tab looks for a pull request's Change before it offers GitHub. */
 export const RESOLVE_MS = 8_000;
@@ -118,9 +118,12 @@ export function pullRequestTabParams(params: unknown): { ref: PrRef } | null {
  * took the link: false for anything that is not a link to a pull request
  * itself, for one Source Control recently could not show, and where there
  * is no side panel, so the caller lets the link go to GitHub. Never waits.
- * One stable function.
+ * With `page: false` a known pull request also returns false where there is
+ * no side panel, instead of opening the review page. One stable function.
  */
-export function useOpenPullRequest(threadId: string): (href: string) => boolean {
+export function useOpenPullRequest(
+  threadId: string,
+): (href: string, options?: OpenReviewOptions) => boolean {
   const openReview = useOpenReview(threadId);
   const panel = useAppPanel();
   const latest = useRef(panel);
@@ -128,15 +131,12 @@ export function useOpenPullRequest(threadId: string): (href: string) => boolean 
     latest.current = panel;
   });
   return useMemo(
-    () => (href: string) => {
+    () => (href: string, options?: OpenReviewOptions) => {
       const ref = parsePrLink(href);
       if (!ref) return false;
       const known = knownPullRequest(prLookup(ref));
       if (known && "problem" in known) return false;
-      if (known) {
-        openReview({ key: known.key });
-        return true;
-      }
+      if (known) return openReview({ key: known.key }, options);
       return latest.current.openTab({
         tab: REVIEW_TAB,
         params: { pr: prKey(ref).toLowerCase() },

@@ -23,6 +23,7 @@
  */
 import {
   REVIEW_REQUEST_ATTRIBUTE,
+  answerPullRequestReviewAvailability,
   isPlainClick,
   takePullRequestReviews,
   type PullRequestReviewRequest,
@@ -31,49 +32,58 @@ import { useBbContext, type ExperimentalThreadContextSegmentInput } from "@get-b
 import { useLayoutEffect } from "react";
 import { parsePrLink, prLookup } from "../core/watch.ts";
 import { knownPullRequest, useOpenPullRequest } from "./open-pull-request.tsx";
+import type { OpenReviewOptions } from "./open-review.ts";
 
 /** How long an ask waits for its thread to come into view before the caller opens GitHub. */
 export const PENDING_MS = 10_000;
 
-type Opener = { readonly threadId: string; readonly open: (href: string) => boolean };
+type Open = (href: string, options?: OpenReviewOptions) => boolean;
+type Opener = { readonly threadId: string; readonly open: Open };
 
 /** The opener of the thread in view, lent by that thread's pane. */
 let lent: Opener | null = null;
+/** Tells callers whether Review can open beside a thread may have changed; set while the script runs. */
+let availabilityChanged: (() => void) | null = null;
+
+function lend(opener: Opener | null): void {
+  lent = opener;
+  availabilityChanged?.();
+}
 
 /**
- * Asks taken for threads not yet in view, by thread: the caller is opening
- * the thread. Each ends once: its thread's pane opens the Review, or the
- * caller's fallback opens GitHub.
+ * The latest ask taken for a thread not yet in view: the caller is opening
+ * the thread. A newer ask replaces it, since the reader asked for something
+ * else since. It ends once: its thread's pane opens the Review, or the
+ * caller's fallback offers GitHub.
  */
-type Waiting = {
+let waiting: {
+  readonly threadId: string;
   readonly url: string;
   readonly fallback: () => void;
   readonly timer: ReturnType<typeof setTimeout>;
-};
-const waiting = new Map<string, Waiting>();
+} | null = null;
 
-/** Ends `threadId`'s waiting ask: opens it with `open`, or else falls back to GitHub. */
-function settle(threadId: string, open: ((href: string) => boolean) | null): void {
-  const ask = waiting.get(threadId);
+/** Ends the waiting ask: opens it with `open`, or else falls back. */
+function settle(open: Open | null): void {
+  const ask = waiting;
   if (!ask) return;
-  waiting.delete(threadId);
+  waiting = null;
   clearTimeout(ask.timer);
-  if (!open?.(ask.url)) ask.fallback();
+  // Inside a pane, never the review page: the caller's fallback offers GitHub instead.
+  if (!open?.(ask.url, { page: false })) ask.fallback();
 }
 
-/** Drops `threadId`'s waiting ask without opening anything: the reader went elsewhere. */
-function abandon(threadId: string): void {
-  const ask = waiting.get(threadId);
-  if (!ask) return;
-  waiting.delete(threadId);
-  clearTimeout(ask.timer);
+/** Forgets the waiting ask without opening anything: a newer ask replaced it. */
+function supersede(): void {
+  if (waiting) clearTimeout(waiting.timer);
+  waiting = null;
 }
 
 /**
  * The Change strip lends this thread's opener while the route shows the
- * thread. It opens the ask waiting for this thread, falling back to GitHub
- * when the tab is declined, and drops asks for other threads: the reader
- * went somewhere else.
+ * thread, and opens the ask waiting for this thread, falling back when the
+ * tab is declined. A pane for another thread leaves the waiting ask alone:
+ * it may be the route before the caller's navigation lands.
  */
 export function usePullRequestLinks({ threadId }: ExperimentalThreadContextSegmentInput): void {
   const open = useOpenPullRequest(threadId);
@@ -81,11 +91,10 @@ export function usePullRequestLinks({ threadId }: ExperimentalThreadContextSegme
   useLayoutEffect(() => {
     if (!inView) return;
     const mine: Opener = { threadId, open };
-    lent = mine;
-    settle(threadId, open);
-    for (const other of waiting.keys()) if (other !== threadId) abandon(other);
+    lend(mine);
+    if (waiting?.threadId === threadId) settle(open);
     return () => {
-      if (lent === mine) lent = null;
+      if (lent === mine) lend(null);
     };
   }, [inView, threadId, open]);
 }
@@ -106,13 +115,13 @@ export function takeReviewRequest({
 }: PullRequestReviewRequest): boolean {
   const ref = parsePrLink(url);
   if (!ref) return false;
-  if (lent?.threadId === threadId) return lent.open(url);
+  if (lent?.threadId === threadId) return lent.open(url, { page: false });
   if (!navigating || !fallback) return false;
   const known = knownPullRequest(prLookup(ref));
   if (known && "problem" in known) return false;
-  abandon(threadId);
-  const timer = setTimeout(() => settle(threadId, null), PENDING_MS);
-  waiting.set(threadId, { url, fallback, timer });
+  supersede();
+  const timer = setTimeout(() => settle(null), PENDING_MS);
+  waiting = { threadId, url, fallback, timer };
   return true;
 }
 
@@ -125,9 +134,12 @@ export function mountPullRequestLinks(document: Document, signal: AbortSignal): 
   if (!view || signal.aborted) return () => {};
   const stop = new AbortController();
   const stopAll = () => {
+    const changed = availabilityChanged;
+    availabilityChanged = null;
     stop.abort();
-    // Stopped mid-ask: each caller still opens GitHub.
-    for (const threadId of waiting.keys()) settle(threadId, null);
+    // Stopped mid-ask: the caller still offers GitHub. And Review is no longer available anywhere.
+    settle(null);
+    changed?.();
   };
   signal.addEventListener("abort", stopAll, { once: true });
   const onClick = (event: MouseEvent) => {
@@ -144,6 +156,11 @@ export function mountPullRequestLinks(document: Document, signal: AbortSignal): 
   };
   document.addEventListener("click", onClick, { capture: true, signal: stop.signal });
   takePullRequestReviews(takeReviewRequest, stop.signal, view);
+  availabilityChanged = answerPullRequestReviewAvailability(
+    (threadId) => lent?.threadId === threadId,
+    stop.signal,
+    view,
+  );
   return () => {
     signal.removeEventListener("abort", stopAll);
     stopAll();

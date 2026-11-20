@@ -4,6 +4,7 @@
  * landed), a host (which may read GitHub for them) and the app (which draws
  * the landed card). Ported from `plugins/code-review/src/shared/{schema,landed}.ts`.
  */
+import { parsePullRequestUrl } from "@bb-plugins/review-request/pull-request-url";
 import { z } from "zod";
 
 const NAME = "[A-Za-z0-9_.-]+";
@@ -73,10 +74,9 @@ export function parsePrReference(text: string): PrRef | null {
  * `#issuecomment-…`, a query) names a place only GitHub shows, so it is null.
  */
 export function parsePrLink(href: string): PrRef | null {
-  const match = PR_LINK.exec(href.trim());
-  return match ? parsePrReference(`${match[1]}/${match[2]}#${match[3]}`) : null;
+  // The grammar other plugins share, so they agree on which links open in Review.
+  return parsePullRequestUrl(href);
 }
-const PR_LINK = new RegExp(`^https://(?:www\\.)?github\\.com/(${NAME})/(${NAME})/pull/(\\d+)/?$`);
 
 /** A pull request's own page on GitHub. */
 export const prUrl = (ref: PrRef) =>
