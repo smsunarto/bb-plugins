@@ -14,6 +14,7 @@ const captainId = /\/threads\/(thr_[\w-]+)$/u.exec(url.pathname)?.[1];
 assert(captainId, "Use a thread URL");
 
 const shortDetail = "Use the shared cache.";
+const longAskTitle = "Choose the rollout strategy for the workspace notification cache migration";
 const longOptions = [
   "Roll out in small waves with a rollback checkpoint after each batch",
   "Switch every workspace immediately",
@@ -67,7 +68,7 @@ async function seed(context: BrowserContext, name: string, detail: string) {
                 : name === "mobile-queue"
                   ? {
                       ...ask,
-                      text: "Choose the rollout strategy for the workspace notification cache migration",
+                      text: longAskTitle,
                       options: longOptions,
                     }
                   : ask,
@@ -205,6 +206,26 @@ async function assertMobileQueue(banner: Locator) {
   const strip = banner.getByRole("tablist");
   const tabs = strip.getByRole("tab");
   assert.equal(await tabs.count(), 5);
+  const firstTab = strip.getByRole("tab", { name: new RegExp(longAskTitle, "u") });
+  const tabLabel = firstTab.getByText(longAskTitle, { exact: true });
+  assert.ok(
+    await tabLabel.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return (
+        style.webkitLineClamp === "2" &&
+        node.clientHeight <= 2 * Number.parseFloat(style.lineHeight) &&
+        node.scrollHeight > node.clientHeight
+      );
+    }),
+    "the long tab label uses at most two lines and keeps its full accessible name",
+  );
+  assert.ok(
+    await banner.getByRole("tabpanel").getByText(longAskTitle, { exact: true }).isVisible(),
+  );
+  assert.deepEqual(
+    await tabs.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height)),
+    [44, 44, 44, 44, 44],
+  );
   assert.ok(
     await strip.evaluate((node) => node.scrollWidth > node.clientWidth),
     "only the tab strip scrolls horizontally",
@@ -228,10 +249,26 @@ async function assertMobileQueue(banner: Locator) {
     true,
     "all choices fit without horizontal scrolling",
   );
+  const gridBounds = await choices.boundingBox();
+  assert.ok(gridBounds);
   for (const label of longOptions) {
     const choice = choices.getByRole("button", { name: new RegExp(label, "u") });
     const labelSpan = choice.getByText(label, { exact: true });
-    assert.equal(await labelSpan.evaluate((node) => node.scrollWidth <= node.clientWidth), true);
+    const fit = await labelSpan.evaluate((node) => ({
+      horizontal: node.scrollWidth <= node.clientWidth,
+      vertical: node.scrollHeight <= node.clientHeight,
+    }));
+    assert.ok(fit.horizontal, `answer label is horizontally clipped: ${label}`);
+    assert.ok(fit.vertical, `answer label is vertically clipped: ${label}`);
+    const bounds = await choice.boundingBox();
+    assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44, `44 px target: ${label}`);
+    assert.ok(
+      bounds.x >= gridBounds.x &&
+        bounds.y >= gridBounds.y &&
+        bounds.x + bounds.width <= gridBounds.x + gridBounds.width &&
+        bounds.y + bounds.height <= gridBounds.y + gridBounds.height,
+      `answer button fits within the grid: ${label}`,
+    );
     await choice.tap({ trial: true });
   }
   await tabs.last().tap();

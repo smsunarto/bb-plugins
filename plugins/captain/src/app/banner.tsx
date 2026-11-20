@@ -679,7 +679,7 @@ function QueueTabs({
               <Icon name={BANNER_ICONS[bannerKind(entry)]} aria-hidden data-icon="inline-start" />
               <span
                 title={tabTitle(entry)}
-                className="min-w-0 truncate [unicode-bidi:plaintext] max-sm:wrap-anywhere max-sm:text-start max-sm:whitespace-normal"
+                className="min-w-0 truncate [unicode-bidi:plaintext] max-sm:line-clamp-2 max-sm:wrap-anywhere max-sm:text-start max-sm:whitespace-normal"
               >
                 {tabTitle(entry)}
               </span>
