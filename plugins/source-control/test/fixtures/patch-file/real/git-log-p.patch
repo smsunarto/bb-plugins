@@ -1,0 +1,100 @@
+commit 56214838a55fb6f3f32c2b880ff43ee026c3dbe0
+Author: Scott Sunarto <github@smsunarto.com>
+Date:   Mon Nov 16 04:07:16 2026 -0800
+
+    build: cache each package's typecheck with incremental tsc
+    
+    Each typecheck script writes its .tsbuildinfo to node_modules/.cache/tsc, so a
+    repeat typecheck skips re-checking unchanged lib .d.ts files. CI starts cold and
+    is unaffected.
+
+diff --git a/plugins/source-control/package.json b/plugins/source-control/package.json
+index 192f656a5..26e873b17 100644
+--- a/plugins/source-control/package.json
++++ b/plugins/source-control/package.json
+@@ -95,7 +95,7 @@
+     "dev": "bb plugin dev .",
+     "build": "bb plugin build .",
+     "lint": "oxlint",
+-    "typecheck": "tsc --noEmit",
++    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-source-control.tsbuildinfo",
+     "test": "vitest run --config vitest.config.ts",
+     "clean": "rm -rf dist"
+   }
+
+commit 7592ac8401ecc261722012115a8f463b8ccf9f30
+Author: Scott Sunarto <github@smsunarto.com>
+Date:   Sun Nov 15 22:03:08 2026 -0800
+
+    fix(source-control): harden PR image resolution after review
+    
+    - Image reads try every gh account and never change which account bb
+      remembers for a repository (F2).
+    - A committed file's ref may hold slashes: the PR's head and base branches
+      are tried first, then up to four splits; LFS's media host is accepted (F3, F7).
+    - Signed reads queue per repository; a request waits at most 8 s, then answers
+      the failed state while the shared read finishes for the next load (F4, F5).
+    - The rewrite is one bounded linear scan that skips code, suggestion blocks,
+      comments and escapes, and balances parentheses in a destination (F8, F11).
+    - Results are cached per image identity and repository, not per URL (F9).
+    - An image never shown to be private goes to its own URL when no account can
+      sign it (F10, partial: the app does not know repository visibility).
+    - No permanent minimum size on routed images (F6).
+    - The description test renders the rewritten Markdown and checks real images.
+
+diff --git a/plugins/source-control/package.json b/plugins/source-control/package.json
+index 5facb5a63..192f656a5 100644
+--- a/plugins/source-control/package.json
++++ b/plugins/source-control/package.json
+@@ -78,12 +78,14 @@
+     "@get-bb/plugin-sdk": "0.6.132",
+     "@pierre/diffs": "^1.2.9",
+     "@testing-library/react": "16.3.2",
++    "@types/markdown-it": "^14.1.2",
+     "@types/node": "^22.0.0",
+     "@types/react": "^19.0.0",
+     "@types/react-dom": "^19.0.0",
+     "better-sqlite3": "^12.0.0",
+     "jsdom": "25.0.1",
+     "lightningcss": "1.33.0",
++    "markdown-it": "^14.3.3",
+     "react": "19.2.8",
+     "react-dom": "19.2.8",
+     "typescript": "^6.0.0",
+
+commit a1d89007709416178eafda2ae113015df5c118ee
+Author: Scott Sunarto <github@smsunarto.com>
+Date:   Sun Nov 15 15:22:55 2026 -0800
+
+    refactor(source-control): use shared kit Button, Badge, Tooltip, Popover, ToggleGroup and Collapsible
+
+diff --git a/plugins/source-control/package.json b/plugins/source-control/package.json
+index 50bfc8063..5facb5a63 100644
+--- a/plugins/source-control/package.json
++++ b/plugins/source-control/package.json
+@@ -53,10 +53,17 @@
+     "@bb-plugins/instructions": "workspace:*",
+     "@radix-ui/react-avatar": "^1.1.11",
+     "@radix-ui/react-checkbox": "^1.3.11",
++    "@radix-ui/react-collapsible": "^1.2.1",
+     "@radix-ui/react-dialog": "^1.1.19",
+     "@radix-ui/react-dropdown-menu": "^2.1.20",
++    "@radix-ui/react-label": "^2.1.17",
++    "@radix-ui/react-popover": "^1.3.1",
+     "@radix-ui/react-select": "^2.3.3",
++    "@radix-ui/react-slot": "^1.5.0",
+     "@radix-ui/react-tabs": "^1.1.17",
++    "@radix-ui/react-toggle": "^1.2.1",
++    "@radix-ui/react-toggle-group": "^1.2.1",
++    "@radix-ui/react-tooltip": "^1.4.1",
+     "@tanstack/virtual-core": "3.17.11",
+     "class-variance-authority": "^0.7.1",
+     "clsx": "^2.1.1",
+@@ -67,6 +74,7 @@
+     "zod": "^4.4.3"
+   },
+   "devDependencies": {
++    "@bb-plugins/ui": "workspace:*",
+     "@get-bb/plugin-sdk": "0.6.132",
+     "@pierre/diffs": "^1.2.9",
+     "@testing-library/react": "16.3.2",

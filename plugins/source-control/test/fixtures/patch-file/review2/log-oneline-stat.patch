@@ -1,0 +1,53 @@
+f277771 second: edit, delete, add
+ f.txt      | 3 ++-
+ g.txt      | 1 -
+ sp ace.txt | 1 +
+ 3 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/f.txt b/f.txt
+index aedc0ee..b236982 100644
+--- a/f.txt
++++ b/f.txt
+@@ -1,4 +1,5 @@
+ one
+ 
+-two
++TWO
+ three
++four
+diff --git a/g.txt b/g.txt
+deleted file mode 100644
+index 587be6b..0000000
+--- a/g.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-x
+diff --git a/sp ace.txt b/sp ace.txt
+new file mode 100644
+index 0000000..8ba3a16
+--- /dev/null
++++ b/sp ace.txt	
+@@ -0,0 +1 @@
++n
+053c1a8 first commit
+ f.txt | 4 ++++
+ g.txt | 1 +
+ 2 files changed, 5 insertions(+)
+
+diff --git a/f.txt b/f.txt
+new file mode 100644
+index 0000000..aedc0ee
+--- /dev/null
++++ b/f.txt
+@@ -0,0 +1,4 @@
++one
++
++two
++three
+diff --git a/g.txt b/g.txt
+new file mode 100644
+index 0000000..587be6b
+--- /dev/null
++++ b/g.txt
+@@ -0,0 +1 @@
++x

@@ -1,0 +1,196 @@
+diff --git old/a/ina.txt new/a/ina.txt
+index fbbee86..cd964df 100644
+--- old/a/ina.txt
++++ new/a/ina.txt
+@@ -1,2 +1,2 @@
+ alpha
+-beta
++BETA
+diff --git old/b/inb.txt new/b/inb.txt
+index fbbee86..cd964df 100644
+--- old/b/inb.txt
++++ new/b/inb.txt
+@@ -1,2 +1,2 @@
+ alpha
+-beta
++BETA
+diff --git old/barecr.txt new/barecr.txt
+index 2d04ccf..16a40a7 100644
+--- old/barecr.txt
++++ new/barecr.txt
+@@ -1,3 +1,4 @@
+-barecr line
++barecr LINE
+ next
+ third
++fourth
+diff --git old/copy.txt new/copy.txt
+new file mode 100644
+index 0000000..515da32
+--- /dev/null
++++ new/copy.txt
+@@ -0,0 +1,40 @@
++1
++2
++3
++4
++five
++6
++7
++8
++9
++10
++11
++12
++13
++14
++15
++16
++17
++18
++19
++20
++21
++22
++23
++24
++25
++26
++27
++28
++29
++30
++31
++32
++33
++34
++thirty-five
++36
++37
++38
++39
++40
+diff --git old/crlf.txt new/crlf.txt
+index 365cc6b..269f32e 100644
+--- old/crlf.txt
++++ new/crlf.txt
+@@ -1,3 +1,3 @@
+ l1
+-l2
++L2
+ l3
+diff --git old/dir b/x y.txt new/dir b/x y.txt
+index 4cb29ea..ddc897f 100644
+--- old/dir b/x y.txt	
++++ new/dir b/x y.txt	
+@@ -1,3 +1,3 @@
+ one
+-two
++TWO
+ three
+diff --git old/empty.txt new/empty.txt
+new file mode 100644
+index 0000000..e69de29
+diff --git old/gone.txt new/gone.txt
+deleted file mode 100644
+index 2743e77..0000000
+--- old/gone.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-will go
+diff --git old/keep.txt new/keep.txt
+index 1c99002..515da32 100644
+--- old/keep.txt
++++ new/keep.txt
+@@ -2,7 +2,7 @@
+ 2
+ 3
+ 4
+-5
++five
+ 6
+ 7
+ 8
+@@ -32,7 +32,7 @@
+ 32
+ 33
+ 34
+-35
++thirty-five
+ 36
+ 37
+ 38
+diff --git old/link new/link
+index 1764325..38b9a4b 120000
+--- old/link
++++ new/link
+@@ -1 +1 @@
+-keep.txt
+\ No newline at end of file
++q.sql
+\ No newline at end of file
+diff --git old/logo.bin new/logo.bin
+index d58a159..f9b93ac 100644
+Binary files old/logo.bin and new/logo.bin differ
+diff --git old/mode.sh new/mode.sh
+old mode 100644
+new mode 100755
+diff --git old/pure.txt new/moved pure.txt
+similarity index 100%
+rename from pure.txt
+rename to moved pure.txt
+diff --git old/nonl.txt new/nonl.txt
+index 2802503..9e4948b 100644
+--- old/nonl.txt
++++ new/nonl.txt
+@@ -1 +1 @@
+-no newline at end
+\ No newline at end of file
++no newline at END
+\ No newline at end of file
+diff --git old/q.sql new/q.sql
+index 5c54008..c4e877b 100644
+--- old/q.sql
++++ new/q.sql
+@@ -1,3 +1,3 @@
+--- drop table x;
+ select 1;
+ -- keep
++++ b/added line
+diff --git "old/quo\"te.txt" "new/quo\"te.txt"
+index bca70f3..73c52c3 100644
+--- "old/quo\"te.txt"
++++ "new/quo\"te.txt"
+@@ -1 +1 @@
+-q
++Q
+diff --git old/ren.txt new/renamed.txt
+similarity index 95%
+rename from ren.txt
+rename to renamed.txt
+index e8823e1..9bf6424 100644
+--- old/ren.txt
++++ new/renamed.txt
+@@ -7,7 +7,7 @@
+ 7
+ 8
+ 9
+-10
++ten
+ 11
+ 12
+ 13
+diff --git old/submod new/submod
+new file mode 160000
+index 0000000..1111111
+--- /dev/null
++++ new/submod
+@@ -0,0 +1 @@
++Subproject commit 1111111111111111111111111111111111111111
+diff --git "old/\303\274n\303\257/f\303\257le.txt" "new/\303\274n\303\257/f\303\257le.txt"
+index 4ae8ef0..765140b 100644
+--- "old/\303\274n\303\257/f\303\257le.txt"
++++ "new/\303\274n\303\257/f\303\257le.txt"
+@@ -1 +1 @@
+-u
++U

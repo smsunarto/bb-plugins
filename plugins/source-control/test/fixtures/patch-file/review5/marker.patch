@@ -1,0 +1,7 @@
+diff --git a/shown.txt b/shown.txt
+--- a/shown.txt
++++ b/shown.txt
+@@ -1 +1 @@
+-b
+\ arbitrary-marker
++c

@@ -1,0 +1,9 @@
+Submodule a-library 4a8063a..9351d4f:
+  > two
+diff --git i/z-file w/z-file
+index 3367afd..3e75765 100644
+--- i/z-file
++++ w/z-file
+@@ -1 +1 @@
+-old
++new

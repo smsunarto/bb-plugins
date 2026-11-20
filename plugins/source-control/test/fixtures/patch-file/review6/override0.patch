@@ -1,0 +1,23 @@
+From 7286c78d7d3ee2b80b500e76d7ef87e0a387742d Mon Sep 17 00:00:00 2001
+From: John Smith <john@example.org>
+Date: Thu, 19 Nov 2026 20:35:53 -0800
+Subject: [PATCH] Change 0
+
+[PATCH] real
+From: B <b@local>
+
+---
+ simple | 1 +
+ 1 file changed, 1 insertion(+)
+ create mode 100644 simple
+
+diff --git a/simple b/simple
+new file mode 100644
+index 0000000..d95f3ad
+--- /dev/null
++++ b/simple
+@@ -0,0 +1 @@
++content
+-- 
+2.56.0
+

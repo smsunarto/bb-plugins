@@ -1,0 +1,358 @@
+commit f4207f7e69b042447f7662b021fcf5d1e49b5a98
+Author: Scott Sunarto
+The guard turned b4/lore mbox series (From git@z …) into text; mbox From
+lines with a date now start a message. A click in BB's preview rechecks as
+a poll would, keeping validators and a running read, and the bare preview
+after a failed first read rechecks too. Pin the guard's new fallbacks:
+stray text before lost lines, svn property hunks, custom log formats.
+
+diff --git a/plugins/source-control/src/app/patch-file-fuzz.test.ts b/plugins/source-control/src/app/patch-file-fuzz.test.ts
+index 2c43bfad7..426757b69 100644
+--- a/plugins/source-control/src/app/patch-file-fuzz.test.ts
++++ b/plugins/source-control/src/app/patch-file-fuzz.test.ts
+@@ -120,7 +120,7 @@ function sourceChanges(text: string) {
+ }
+ 
+ const hasMessages = (text: string) =>
+-  /^(?:From [0-9a-f]{40} |commit [0-9a-f]{7,})/m.test(text) || /^GIT binary patch$/m.test(text);
++  /^(?:From \S+ .*\d{4}$|commit [0-9a-f]{7,})/m.test(text) || /^GIT binary patch$/m.test(text);
+ 
+ function checkFaithful(text: string): void {
+   const read = readPatchFile(text);
+diff --git a/plugins/source-control/src/app/patch-file-opener.test.tsx b/plugins/source-control/src/app/patch-file-opener.test.tsx
+index 704b17ba4..6479262d1 100644
+--- a/plugins/source-control/src/app/patch-file-opener.test.tsx
++++ b/plugins/source-control/src/app/patch-file-opener.test.tsx
+@@ -440,6 +440,28 @@ describe("review round 3", () => {
+     expect(screen.queryByTestId("sc-patch-file-notice")).toBeNull();
+   });
+ 
++  test("a click in BB's preview checks the file as a poll would, validators kept", async () => {
++    const sent: (string | undefined)[] = [];
++    vi.stubGlobal(
++      "fetch",
++      vi.fn(async (_url: string, init: RequestInit) => {
++        sent.push(sentTag(init));
++        return sentTag(init) === '"1"'
++          ? new Response(null, { status: 304 })
++          : new Response("--- a/x.txt\n+++ b/x.txt\n@@ -1 +1 @@\n-a\n", {
++              headers: { etag: '"1"' },
++            });
++      }),
++    );
++    function Preview() {
++      return <button type="button">Copy file contents</button>;
++    }
++    renderSlot(opener, { path: "work/change.patch", source: STORAGE, Original: Preview });
++    await screen.findByTestId("sc-patch-file-notice");
++    fireEvent.click(screen.getByRole("button", { name: "Copy file contents" }));
++    await waitFor(() => expect(sent).toEqual([undefined, '"1"']));
++  });
++
+   test("files named toString and __proto__ open like any other", async () => {
+     open(file("toString") + file("__proto__"));
+     await waitFor(() => expect(paths()).toEqual(["toString", "__proto__"]));
+diff --git a/plugins/source-control/src/app/patch-file-opener.tsx b/plugins/source-control/src/app/patch-file-opener.tsx
+index bb4c2da48..387d31971 100644
+--- a/plugins/source-control/src/app/patch-file-opener.tsx
++++ b/plugins/source-control/src/app/patch-file-opener.tsx
+@@ -298,7 +298,9 @@ function usePatchFile(url: string | null) {
+       : loaded.url === url
+         ? loaded.value
+         : { state: "loading" };
+-  return { loaded: value, refresh, refreshing, slow };
++  /** Read again, as a poll would: keeps the validators and leaves a running read alone. */
++  const recheck = useCallback(() => void load(false), [load]);
++  return { loaded: value, refresh, recheck, refreshing, slow };
+ }
+ 
+ /** A patch store already holding every file, keyed by entry: a path may show twice. */
+@@ -515,10 +517,10 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
+       source.experimental_hostId,
+     ],
+   );
+-  const { loaded, refresh, refreshing, slow } = usePatchFile(url);
+-  // BB's preview has its own Refresh, which reloads only its text: read the file again with it.
++  const { loaded, refresh, recheck, refreshing, slow } = usePatchFile(url);
++  // BB's preview has its own Refresh, which reloads only its text: check the file again with it.
+   const onPreviewClick = (event: MouseEvent<HTMLElement>) => {
+-    if ((event.target as Element).closest("button")) refresh();
++    if ((event.target as Element).closest("button")) recheck();
+   };
+   const [asText, setAsText] = useState(false);
+   const root = useRef<HTMLDivElement>(null);
+@@ -529,7 +531,9 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
+ 
+   if (loaded.state === "text")
+     return loaded.reason === null ? (
+-      <Original />
++      <div className="h-full min-h-0" onClickCapture={onPreviewClick}>
++        <Original />
++      </div>
+     ) : (
+       // BB's preview below has its own Refresh, and the poll brings the diff back once the file reads.
+       <div className="flex h-full min-h-0 flex-col" data-testid="sc-patch-file-text">
+diff --git a/plugins/source-control/src/core/patch-file.test.ts b/plugins/source-control/src/core/patch-file.test.ts
+index 78669bc87..5d6d24917 100644
+--- a/plugins/source-control/src/core/patch-file.test.ts
++++ b/plugins/source-control/src/core/patch-file.test.ts
+@@ -610,3 +610,27 @@ describe("review round 3", () => {
+     );
+   });
+ });
++
++describe("review round 3 corpus", () => {
++  const read = (name: string) => readPatchFile(fixture(`review3/${name}`));
++
++  test("an mbox series with b4's From lines starts a section per message", () => {
++    const result = read("mbox-series.patch");
++    if (!result.ok) throw new Error(result.reason);
++    expect(result.read.commits.map((c) => [c.subject, c.id, c.files.length])).toEqual([
++      ["Rework files: rename, add, delete", null, 4],
++      ["Add logo and a fourth line", null, 2],
++    ]);
++  });
++
++  test.each([
++    // The parser takes the stray text as the file's end; the guard finds the + and - after it.
++    ["under-stray-extra.patch", "Line 9 reads as a hunk line, but no file's hunk holds it."],
++    // An svn property change has no hunk the diff view can draw.
++    ["svn-props.diff", "Line 16 reads as a hunk line, but no file's hunk holds it."],
++    // A custom git log format has no commit line to start a message at: its "- " body reads as lost lines.
++    ["log-custom-format.patch", "Line 14 reads as a hunk line, but no file's hunk holds it."],
++  ])("%s reads as text: %s", (name, reason) => {
++    expect(read(name)).toEqual({ ok: false, reason });
++  });
++});
+diff --git a/plugins/source-control/src/core/patch-file.ts b/plugins/source-control/src/core/patch-file.ts
+index f399e75bd..d17e9467f 100644
+--- a/plugins/source-control/src/core/patch-file.ts
++++ b/plugins/source-control/src/core/patch-file.ts
+@@ -55,9 +55,15 @@ export type PatchFile = {
+ 
+ export type PatchRead = { ok: true; read: PatchFile } | { ok: false; reason: string };
+ 
+-/** `git format-patch`'s mail separator, with its fixed date, and `git log`'s commit line, its hash maybe abbreviated. */
++/**
++ * Where a commit starts: `git format-patch`'s mail separator with its fixed
++ * date, `git log`'s commit line (its hash maybe abbreviated), or any mbox
++ * `From ` line with a date, as b4 and lore write a series.
++ */
+ const COMMIT_START =
+-  /^(?:From ([0-9a-f]{40}|[0-9a-f]{64}) Mon Sep 17 00:00:00 2001$|commit ([0-9a-f]{7,64})\b)/;
++  /^(?:From ([0-9a-f]{40}|[0-9a-f]{64}) Mon Sep 17 00:00:00 2001$|commit ([0-9a-f]{7,64})\b|From \S+ (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d \d{4}$)/;
++/** A mail header line, after an mbox `From ` line such as b4's and lore's `From git@z …`. */
++const MAIL_FIELD = /^[A-Za-z-]+:/;
+ /** What follows `git log`'s commit line, so a message line reading "commit 1a2b…" is not one. */
+ const LOG_FIELD = /^(?:Merge|Author|AuthorDate|Commit|CommitDate|Date):/;
+ const HUNK = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/;
+@@ -352,7 +358,8 @@ function emptyCommit(): PatchFileCommit {
+ function commitStarts(lines: string[], index: number): boolean {
+   const match = COMMIT_START.exec(lines[index]!);
+   if (!match) return false;
+-  return match[1] !== undefined || LOG_FIELD.test(lines[index + 1] ?? "");
++  if (match[1] !== undefined) return true;
++  return (match[2] === undefined ? MAIL_FIELD : LOG_FIELD).test(lines[index + 1] ?? "");
+ }
+ 
+ /** Whether a git file is still in its extended header, before its `---`/`+++` pair. */
+@@ -695,7 +702,7 @@ function readHeader(
+   const meta: Meta = emptyCommit();
+   const first = COMMIT_START.exec(lines[start]!)!;
+   meta.id = first[1] ?? first[2] ?? null;
+-  if (!first[1]) {
++  if (first[2] !== undefined) {
+     const next = readLogHeader(lines, start + 1, meta);
+     meta.authorName = nameOf(meta.author);
+     return { meta, next, boundary: null };
+diff --git a/plugins/source-control/test/fixtures/patch-file/review3/log-custom-format.patch b/plugins/source-control/test/fixtures/patch-file/review3/log-custom-format.patch
+new file mode 100644
+index 000000000..cd5a9106e
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review3/log-custom-format.patch
+@@ -0,0 +1,36 @@
++366af38 three
++
++
++
++diff --git a/f b/f
++index 6178079..f2ad6c7 100644
++--- a/f
+++++ b/f
++@@ -1 +1 @@
++-b
+++c
++81864a7 two
++
++- bullet one
+++ plus thing
++-- dash
++
++
++diff --git a/f b/f
++index 7898192..6178079 100644
++--- a/f
+++++ b/f
++@@ -1 +1 @@
++-a
+++b
++75cc060 one
++
++
++
++diff --git a/f b/f
++new file mode 100644
++index 0000000..7898192
++--- /dev/null
+++++ b/f
++@@ -0,0 +1 @@
+++a
+diff --git a/plugins/source-control/test/fixtures/patch-file/review3/mbox-series.patch b/plugins/source-control/test/fixtures/patch-file/review3/mbox-series.patch
+new file mode 100644
+index 000000000..6ea66abcd
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review3/mbox-series.patch
+@@ -0,0 +1,80 @@
++From git@z Thu Jan  1 00:00:00 1970
++From: =?UTF-8?q?Ada=20L=C3=B6velace?= <ada@example.com>
++Date: Fri, 2 Jan 2026 03:04:05 +0000
++Subject: [PATCH 1/2] Rework files: rename, add, delete
++
++---
++ added.ts                             | 2 ++
++ before.md => dir with space/after.md | 0
++ gone.txt                             | 1 -
++ keep.txt                             | 2 +-
++ 4 files changed, 3 insertions(+), 2 deletions(-)
++ create mode 100644 added.ts
++ rename before.md => dir with space/after.md (100%)
++ delete mode 100644 gone.txt
++
++diff --git a/added.ts b/added.ts
++new file mode 100644
++index 0000000..07f33c4
++--- /dev/null
+++++ b/added.ts
++@@ -0,0 +1,2 @@
+++new
+++file
++diff --git a/before.md b/dir with space/after.md
++similarity index 100%
++rename from before.md
++rename to dir with space/after.md
++diff --git a/gone.txt b/gone.txt
++deleted file mode 100644
++index 3367afd..0000000
++--- a/gone.txt
+++++ /dev/null
++@@ -1 +0,0 @@
++-old
++diff --git a/keep.txt b/keep.txt
++index 4cb29ea..f04eb26 100644
++--- a/keep.txt
+++++ b/keep.txt
++@@ -1,3 +1,3 @@
++ one
++-two
+++2
++ three
++-- 
++2.56.0
++
++
++From git@z Thu Jan  1 00:00:00 1970
++From: =?UTF-8?q?Ada=20L=C3=B6velace?= <ada@example.com>
++Date: Fri, 2 Jan 2026 03:04:05 +0000
++Subject: [PATCH 2/2] Add logo and a fourth line
++
++---
++ keep.txt |   1 +
++ logo.png | Bin 0 -> 17 bytes
++ 2 files changed, 1 insertion(+)
++ create mode 100644 logo.png
++
++diff --git a/keep.txt b/keep.txt
++index f04eb26..ea14db2 100644
++--- a/keep.txt
+++++ b/keep.txt
++@@ -1,3 +1,4 @@
++ one
++ 2
++ three
+++four
++diff --git a/logo.png b/logo.png
++new file mode 100644
++index 0000000000000000000000000000000000000000..50fba21381a3e7cbed46a8f6faf6f43f51639012
++GIT binary patch
++literal 17
++YcmeAS@N?(olHy`uWJ=1+ODw7c03qlEG5`Po
++
++literal 0
++HcmV?d00001
++
++-- 
++2.56.0
++
+diff --git a/plugins/source-control/test/fixtures/patch-file/review3/svn-props.diff b/plugins/source-control/test/fixtures/patch-file/review3/svn-props.diff
+new file mode 100644
+index 000000000..28bf2e80d
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review3/svn-props.diff
+@@ -0,0 +1,17 @@
++Index: x.txt
++===================================================================
++--- x.txt	(revision 1)
+++++ x.txt	(working copy)
++@@ -1,4 +1,4 @@
++ one
++ 
++-two
+++TWO
++ three
++
++Property changes on: x.txt
++___________________________________________________________________
++Added: svn:executable
++## -0,0 +1 ##
+++*
++\ No newline at end of property
+diff --git a/plugins/source-control/test/fixtures/patch-file/review3/under-stray-extra.patch b/plugins/source-control/test/fixtures/patch-file/review3/under-stray-extra.patch
+new file mode 100644
+index 000000000..6f264d5fc
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review3/under-stray-extra.patch
+@@ -0,0 +1,10 @@
++diff --git a/f.txt b/f.txt
++--- a/f.txt
+++++ b/f.txt
++@@ -1,2 +1,2 @@
++ a
++-b
+++B
++some stray text
+++extra after stray
++-more
+
+commit d62ae76c4e5f30058c83e2d8699ebe7e89e4ce35
+Author: Scott Sunarto
+diff --git a/plugins/source-control/src/app/page/guided-view.tsx b/plugins/source-control/src/app/page/guided-view.tsx
+index 53aac85b4..422acb720 100644
+--- a/plugins/source-control/src/app/page/guided-view.tsx
++++ b/plugins/source-control/src/app/page/guided-view.tsx
+@@ -581,6 +581,7 @@ const OutlineRow = memo(function OutlineRow({
+         type="button"
+         aria-current={current ? "location" : undefined}
+         aria-expanded={expanded}
++        title={title}
+         data-testid="sc-outline-row"
+         data-group={id}
+         onClick={() => (expanded ? onCollapse() : onExpand(id))}
+@@ -601,7 +602,7 @@ const OutlineRow = memo(function OutlineRow({
+         </span>
+         <span
+           className={cx(
+-            "min-w-0 flex-1 text-[13px] leading-5",
++            "min-w-0 flex-1 truncate text-[13px] leading-5",
+             current
+               ? "font-semibold text-foreground"
+               : done

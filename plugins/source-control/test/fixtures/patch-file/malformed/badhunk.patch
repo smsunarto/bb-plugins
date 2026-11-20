@@ -1,0 +1,7 @@
+diff --git a/f.txt b/f.txt
+index 1..2 100644
+--- a/f.txt
++++ b/f.txt
+@@ garbage @@
+-b
++B

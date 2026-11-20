@@ -1,0 +1,59 @@
+commit f277771
+Author: T <t@e.x>
+Date:   Thu Nov 19 18:33:55 2026 -0800
+
+    second: edit, delete, add
+
+diff --git a/f.txt b/f.txt
+index aedc0ee..b236982 100644
+--- a/f.txt
++++ b/f.txt
+@@ -1,4 +1,5 @@
+ one
+ 
+-two
++TWO
+ three
++four
+diff --git a/g.txt b/g.txt
+deleted file mode 100644
+index 587be6b..0000000
+--- a/g.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-x
+diff --git a/sp ace.txt b/sp ace.txt
+new file mode 100644
+index 0000000..8ba3a16
+--- /dev/null
++++ b/sp ace.txt	
+@@ -0,0 +1 @@
++n
+
+commit 053c1a8
+Author: T <t@e.x>
+Date:   Thu Nov 19 18:33:55 2026 -0800
+
+    first commit
+    
+    Body with a diff-like line:
+    - bullet one
+    + plus line
+
+diff --git a/f.txt b/f.txt
+new file mode 100644
+index 0000000..aedc0ee
+--- /dev/null
++++ b/f.txt
+@@ -0,0 +1,4 @@
++one
++
++two
++three
+diff --git a/g.txt b/g.txt
+new file mode 100644
+index 0000000..587be6b
+--- /dev/null
++++ b/g.txt
+@@ -0,0 +1 @@
++x

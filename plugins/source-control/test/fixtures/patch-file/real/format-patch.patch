@@ -1,0 +1,563 @@
+From e3becc5cc0b22ee131726a20633cae58a94316ad Mon Sep 17 00:00:00 2001
+From: Scott Sunarto <github@smsunarto.com>
+Date: Thu, 19 Nov 2026 18:42:00 -0800
+Subject: [PATCH 1/2] fix(source-control): draw blank context, read trimmed
+ signatures and diff -r binary names (BBP-51 review 2)
+
+A blank hunk line standing for context is drawn as that context line, so
+Pierre's lines match the header counts. A + or - line after a finished hunk,
+across blank lines or a signature, sends the file to text with a reason; a
+signature without its trailing space still ends the mail. Binary lines split
+in one pass and undo GNU's shell quoting; an unclear split reads as text.
+Keys are path plus occurrence so they hold across re-reads; quoted paths no
+longer overflow the stack; any parser failure returns a reason.
+---
+ .../review2/blank-context-last.patch          |  8 +++
+ .../patch-file/review2/blank-context.patch    |  8 +++
+ .../patch-file/review2/gnu-ru-binary.diff     | 14 ++++
+ .../patch-file/review2/gnu-ru-names.diff      | 17 +++++
+ .../review2/gnu-suppress-blank-empty.diff     | 10 +++
+ .../patch-file/review2/log-abbrev.patch       | 59 +++++++++++++++
+ .../patch-file/review2/log-fuller-stat.patch  | 72 +++++++++++++++++++
+ .../patch-file/review2/log-oneline-stat.patch | 53 ++++++++++++++
+ .../patch-file/review2/plain-binary-and.diff  |  1 +
+ .../patch-file/review2/r1-badheader.patch     |  5 ++
+ .../patch-file/review2/sig-nospace.patch      |  9 +++
+ .../patch-file/review2/trailing-bullets.patch | 10 +++
+ .../review2/two-hunks-blank-late.patch        | 14 ++++
+ .../review2/under-blank-extra.patch           | 10 +++
+ 14 files changed, 290 insertions(+)
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/blank-context-last.patch
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/blank-context.patch
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/gnu-ru-binary.diff
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/gnu-ru-names.diff
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/gnu-suppress-blank-empty.diff
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/log-abbrev.patch
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/log-fuller-stat.patch
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/log-oneline-stat.patch
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/plain-binary-and.diff
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/r1-badheader.patch
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/sig-nospace.patch
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/trailing-bullets.patch
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/two-hunks-blank-late.patch
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/under-blank-extra.patch
+
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/blank-context-last.patch b/plugins/source-control/test/fixtures/patch-file/review2/blank-context-last.patch
+new file mode 100644
+index 000000000..22502ee82
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/blank-context-last.patch
+@@ -0,0 +1,8 @@
++diff --git a/f.txt b/f.txt
++--- a/f.txt
+++++ b/f.txt
++@@ -1,3 +1,3 @@
++ a
++-b
+++B
++
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/blank-context.patch b/plugins/source-control/test/fixtures/patch-file/review2/blank-context.patch
+new file mode 100644
+index 000000000..f8823bc53
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/blank-context.patch
+@@ -0,0 +1,8 @@
++diff --git a/f.txt b/f.txt
++--- a/f.txt
+++++ b/f.txt
++@@ -1,3 +1,3 @@
++ a
++
++-b
+++B
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/gnu-ru-binary.diff b/plugins/source-control/test/fixtures/patch-file/review2/gnu-ru-binary.diff
+new file mode 100644
+index 000000000..f1549652d
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/gnu-ru-binary.diff
+@@ -0,0 +1,14 @@
++Binary files 'a/my file.bin' and 'b/my file.bin' differ
++Binary files a/plain.bin and b/plain.bin differ
++Binary files 'a/x and y.bin' and 'b/x and y.bin' differ
++diff -ru a/x.txt b/x.txt
++--- a/x.txt	2026-11-19 18:17:13.139676546 -0800
+++++ b/x.txt	2026-11-19 18:17:13.139676546 -0800
++@@ -1,6 +1,6 @@
++ one
++ 
++-two
+++TWO
++ three
++ 
++ five
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/gnu-ru-names.diff b/plugins/source-control/test/fixtures/patch-file/review2/gnu-ru-names.diff
+new file mode 100644
+index 000000000..c96137877
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/gnu-ru-names.diff
+@@ -0,0 +1,17 @@
++Binary files "d1/it's.bin" and "d2/it's.bin" differ
++Binary files 'd1/my file.bin' and 'd2/my file.bin' differ
++Binary files d1/plain.bin and d2/plain.bin differ
++Binary files 'd1/q"uote.bin' and 'd2/q"uote.bin' differ
++Binary files 'd1/tab'$'\t''here.bin' and 'd2/tab'$'\t''here.bin' differ
++Binary files 'd1/x and y.bin' and 'd2/x and y.bin' differ
++diff -ru d1/x.txt d2/x.txt
++--- d1/x.txt	2026-11-19 18:33:55.537833826 -0800
+++++ d2/x.txt	2026-11-19 18:33:55.537833826 -0800
++@@ -1,6 +1,6 @@
++ one
++ 
++-two
+++TWO
++ three
++ 
++ five
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/gnu-suppress-blank-empty.diff b/plugins/source-control/test/fixtures/patch-file/review2/gnu-suppress-blank-empty.diff
+new file mode 100644
+index 000000000..423433da1
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/gnu-suppress-blank-empty.diff
+@@ -0,0 +1,10 @@
++--- a/x.txt	2026-11-19 18:17:13.139676546 -0800
+++++ b/x.txt	2026-11-19 18:17:13.139676546 -0800
++@@ -1,6 +1,6 @@
++ one
++
++-two
+++TWO
++ three
++
++ five
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/log-abbrev.patch b/plugins/source-control/test/fixtures/patch-file/review2/log-abbrev.patch
+new file mode 100644
+index 000000000..f382d4319
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/log-abbrev.patch
+@@ -0,0 +1,59 @@
++commit f277771
++Author: T <t@e.x>
++Date:   Thu Nov 19 18:33:55 2026 -0800
++
++    second: edit, delete, add
++
++diff --git a/f.txt b/f.txt
++index aedc0ee..b236982 100644
++--- a/f.txt
+++++ b/f.txt
++@@ -1,4 +1,5 @@
++ one
++ 
++-two
+++TWO
++ three
+++four
++diff --git a/g.txt b/g.txt
++deleted file mode 100644
++index 587be6b..0000000
++--- a/g.txt
+++++ /dev/null
++@@ -1 +0,0 @@
++-x
++diff --git a/sp ace.txt b/sp ace.txt
++new file mode 100644
++index 0000000..8ba3a16
++--- /dev/null
+++++ b/sp ace.txt	
++@@ -0,0 +1 @@
+++n
++
++commit 053c1a8
++Author: T <t@e.x>
++Date:   Thu Nov 19 18:33:55 2026 -0800
++
++    first commit
++    
++    Body with a diff-like line:
++    - bullet one
++    + plus line
++
++diff --git a/f.txt b/f.txt
++new file mode 100644
++index 0000000..aedc0ee
++--- /dev/null
+++++ b/f.txt
++@@ -0,0 +1,4 @@
+++one
+++
+++two
+++three
++diff --git a/g.txt b/g.txt
++new file mode 100644
++index 0000000..587be6b
++--- /dev/null
+++++ b/g.txt
++@@ -0,0 +1 @@
+++x
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/log-fuller-stat.patch b/plugins/source-control/test/fixtures/patch-file/review2/log-fuller-stat.patch
+new file mode 100644
+index 000000000..195314f42
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/log-fuller-stat.patch
+@@ -0,0 +1,72 @@
++commit f277771ce300ac821fbe1893a43bfdc4d09e0a1d
++Author:     T <t@e.x>
++AuthorDate: Thu Nov 19 18:33:55 2026 -0800
++Commit:     T <t@e.x>
++CommitDate: Thu Nov 19 18:33:55 2026 -0800
++
++    second: edit, delete, add
++---
++ f.txt      | 3 ++-
++ g.txt      | 1 -
++ sp ace.txt | 1 +
++ 3 files changed, 3 insertions(+), 2 deletions(-)
++
++diff --git a/f.txt b/f.txt
++index aedc0ee..b236982 100644
++--- a/f.txt
+++++ b/f.txt
++@@ -1,4 +1,5 @@
++ one
++ 
++-two
+++TWO
++ three
+++four
++diff --git a/g.txt b/g.txt
++deleted file mode 100644
++index 587be6b..0000000
++--- a/g.txt
+++++ /dev/null
++@@ -1 +0,0 @@
++-x
++diff --git a/sp ace.txt b/sp ace.txt
++new file mode 100644
++index 0000000..8ba3a16
++--- /dev/null
+++++ b/sp ace.txt	
++@@ -0,0 +1 @@
+++n
++
++commit 053c1a87afbbbfebe2a07d446aff508c1ee50207
++Author:     T <t@e.x>
++AuthorDate: Thu Nov 19 18:33:55 2026 -0800
++Commit:     T <t@e.x>
++CommitDate: Thu Nov 19 18:33:55 2026 -0800
++
++    first commit
++    
++    Body with a diff-like line:
++    - bullet one
++    + plus line
++---
++ f.txt | 4 ++++
++ g.txt | 1 +
++ 2 files changed, 5 insertions(+)
++
++diff --git a/f.txt b/f.txt
++new file mode 100644
++index 0000000..aedc0ee
++--- /dev/null
+++++ b/f.txt
++@@ -0,0 +1,4 @@
+++one
+++
+++two
+++three
++diff --git a/g.txt b/g.txt
++new file mode 100644
++index 0000000..587be6b
++--- /dev/null
+++++ b/g.txt
++@@ -0,0 +1 @@
+++x
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/log-oneline-stat.patch b/plugins/source-control/test/fixtures/patch-file/review2/log-oneline-stat.patch
+new file mode 100644
+index 000000000..dce13c8ad
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/log-oneline-stat.patch
+@@ -0,0 +1,53 @@
++f277771 second: edit, delete, add
++ f.txt      | 3 ++-
++ g.txt      | 1 -
++ sp ace.txt | 1 +
++ 3 files changed, 3 insertions(+), 2 deletions(-)
++
++diff --git a/f.txt b/f.txt
++index aedc0ee..b236982 100644
++--- a/f.txt
+++++ b/f.txt
++@@ -1,4 +1,5 @@
++ one
++ 
++-two
+++TWO
++ three
+++four
++diff --git a/g.txt b/g.txt
++deleted file mode 100644
++index 587be6b..0000000
++--- a/g.txt
+++++ /dev/null
++@@ -1 +0,0 @@
++-x
++diff --git a/sp ace.txt b/sp ace.txt
++new file mode 100644
++index 0000000..8ba3a16
++--- /dev/null
+++++ b/sp ace.txt	
++@@ -0,0 +1 @@
+++n
++053c1a8 first commit
++ f.txt | 4 ++++
++ g.txt | 1 +
++ 2 files changed, 5 insertions(+)
++
++diff --git a/f.txt b/f.txt
++new file mode 100644
++index 0000000..aedc0ee
++--- /dev/null
+++++ b/f.txt
++@@ -0,0 +1,4 @@
+++one
+++
+++two
+++three
++diff --git a/g.txt b/g.txt
++new file mode 100644
++index 0000000..587be6b
++--- /dev/null
+++++ b/g.txt
++@@ -0,0 +1 @@
+++x
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/plain-binary-and.diff b/plugins/source-control/test/fixtures/patch-file/review2/plain-binary-and.diff
+new file mode 100644
+index 000000000..27f84280b
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/plain-binary-and.diff
+@@ -0,0 +1 @@
++Binary files a/x and y.bin and b/x and y.bin differ
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/r1-badheader.patch b/plugins/source-control/test/fixtures/patch-file/review2/r1-badheader.patch
+new file mode 100644
+index 000000000..1372f761b
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/r1-badheader.patch
+@@ -0,0 +1,5 @@
++diff --git a/x.txt b/x.txt
++--- a/x.txt
+++++ b/x.txt
++@@ -x,y +1,3 @@
++ one
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/sig-nospace.patch b/plugins/source-control/test/fixtures/patch-file/review2/sig-nospace.patch
+new file mode 100644
+index 000000000..93a0daffd
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/sig-nospace.patch
+@@ -0,0 +1,9 @@
++diff --git a/f.txt b/f.txt
++--- a/f.txt
+++++ b/f.txt
++@@ -1,2 +1,2 @@
++ a
++-b
+++B
++--
++2.43.0
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/trailing-bullets.patch b/plugins/source-control/test/fixtures/patch-file/review2/trailing-bullets.patch
+new file mode 100644
+index 000000000..5b7d67f5d
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/trailing-bullets.patch
+@@ -0,0 +1,10 @@
++diff --git a/f.txt b/f.txt
++--- a/f.txt
+++++ b/f.txt
++@@ -1,2 +1,2 @@
++ a
++-b
+++B
++
++- a markdown bullet after the diff
++- another
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/two-hunks-blank-late.patch b/plugins/source-control/test/fixtures/patch-file/review2/two-hunks-blank-late.patch
+new file mode 100644
+index 000000000..8a87a106e
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/two-hunks-blank-late.patch
+@@ -0,0 +1,14 @@
++diff --git a/f.txt b/f.txt
++--- a/f.txt
+++++ b/f.txt
++@@ -1,2 +1,2 @@
++ a
++-b
+++B
++@@ -10,2 +10,2 @@
++ x
++-y
+++Y
++
++
+++late
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/under-blank-extra.patch b/plugins/source-control/test/fixtures/patch-file/review2/under-blank-extra.patch
+new file mode 100644
+index 000000000..730041d7b
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/under-blank-extra.patch
+@@ -0,0 +1,10 @@
++diff --git a/f.txt b/f.txt
++--- a/f.txt
+++++ b/f.txt
++@@ -1,2 +1,2 @@
++ a
++-b
+++B
++
+++extra one
+++extra two
+-- 
+2.56.0
+
+
+From bc792cbe49e4ff43896f7a8ef85cf2d0513180ba Mon Sep 17 00:00:00 2001
+From: Scott Sunarto <github@smsunarto.com>
+Date: Thu, 19 Nov 2026 18:51:34 -0800
+Subject: [PATCH 2/2] fix(source-control): let a format-patch MIME boundary end
+ the patch (BBP-51 review 2)
+
+format-patch --attach and --inline close with a --boundary-- line after the
+last hunk; the new check for lines past a finished hunk read it as a lost
+deletion and sent the file to text.
+---
+ .../review2/format-patch-attach.patch         | 55 +++++++++++++++++++
+ .../review2/format-patch-inline.patch         | 55 +++++++++++++++++++
+ 2 files changed, 110 insertions(+)
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/format-patch-attach.patch
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/format-patch-inline.patch
+
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/format-patch-attach.patch b/plugins/source-control/test/fixtures/patch-file/review2/format-patch-attach.patch
+new file mode 100644
+index 000000000..1bacbc364
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/format-patch-attach.patch
+@@ -0,0 +1,55 @@
++From f277771ce300ac821fbe1893a43bfdc4d09e0a1d Mon Sep 17 00:00:00 2001
++From: T <t@e.x>
++Date: Thu, 19 Nov 2026 18:33:55 -0800
++Subject: [PATCH] second: edit, delete, add
++MIME-Version: 1.0
++Content-Type: multipart/mixed; boundary="------------2.56.0"
++
++This is a multi-part message in MIME format.
++--------------2.56.0
++Content-Type: text/plain; charset=UTF-8; format=fixed
++Content-Transfer-Encoding: 8bit
++
++---
++ f.txt      | 3 ++-
++ g.txt      | 1 -
++ sp ace.txt | 1 +
++ 3 files changed, 3 insertions(+), 2 deletions(-)
++ delete mode 100644 g.txt
++ create mode 100644 sp ace.txt
++
++
++--------------2.56.0
++Content-Type: text/x-patch; name="0001-second-edit-delete-add.patch"
++Content-Transfer-Encoding: 8bit
++Content-Disposition: attachment; filename="0001-second-edit-delete-add.patch"
++
++diff --git a/f.txt b/f.txt
++index aedc0ee..b236982 100644
++--- a/f.txt
+++++ b/f.txt
++@@ -1,4 +1,5 @@
++ one
++ 
++-two
+++TWO
++ three
+++four
++diff --git a/g.txt b/g.txt
++deleted file mode 100644
++index 587be6b..0000000
++--- a/g.txt
+++++ /dev/null
++@@ -1 +0,0 @@
++-x
++diff --git a/sp ace.txt b/sp ace.txt
++new file mode 100644
++index 0000000..8ba3a16
++--- /dev/null
+++++ b/sp ace.txt	
++@@ -0,0 +1 @@
+++n
++
++--------------2.56.0--
++
++
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/format-patch-inline.patch b/plugins/source-control/test/fixtures/patch-file/review2/format-patch-inline.patch
+new file mode 100644
+index 000000000..d3fe24742
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/format-patch-inline.patch
+@@ -0,0 +1,55 @@
++From f277771ce300ac821fbe1893a43bfdc4d09e0a1d Mon Sep 17 00:00:00 2001
++From: T <t@e.x>
++Date: Thu, 19 Nov 2026 18:33:55 -0800
++Subject: [PATCH] second: edit, delete, add
++MIME-Version: 1.0
++Content-Type: multipart/mixed; boundary="------------2.56.0"
++
++This is a multi-part message in MIME format.
++--------------2.56.0
++Content-Type: text/plain; charset=UTF-8; format=fixed
++Content-Transfer-Encoding: 8bit
++
++---
++ f.txt      | 3 ++-
++ g.txt      | 1 -
++ sp ace.txt | 1 +
++ 3 files changed, 3 insertions(+), 2 deletions(-)
++ delete mode 100644 g.txt
++ create mode 100644 sp ace.txt
++
++
++--------------2.56.0
++Content-Type: text/x-patch; name="0001-second-edit-delete-add.patch"
++Content-Transfer-Encoding: 8bit
++Content-Disposition: inline; filename="0001-second-edit-delete-add.patch"
++
++diff --git a/f.txt b/f.txt
++index aedc0ee..b236982 100644
++--- a/f.txt
+++++ b/f.txt
++@@ -1,4 +1,5 @@
++ one
++ 
++-two
+++TWO
++ three
+++four
++diff --git a/g.txt b/g.txt
++deleted file mode 100644
++index 587be6b..0000000
++--- a/g.txt
+++++ /dev/null
++@@ -1 +0,0 @@
++-x
++diff --git a/sp ace.txt b/sp ace.txt
++new file mode 100644
++index 0000000..8ba3a16
++--- /dev/null
+++++ b/sp ace.txt	
++@@ -0,0 +1 @@
+++n
++
++--------------2.56.0--
++
++
+-- 
+2.56.0
+

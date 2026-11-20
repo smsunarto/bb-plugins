@@ -1,0 +1,54 @@
+commit 5b6545a5d03cfb5b93c46a153f446dbf122d05ad
+Author: Ada Lövelace <ada@example.com>
+Date:   Fri Jan 2 03:04:05 2026 +0000
+
+    Add logo and a fourth line
+
+diff --git a/keep.txt b/keep.txt
+index f04eb26..ea14db2 100644
+--- a/keep.txt
++++ b/keep.txt
+@@ -1,3 +1,4 @@
+ one
+ 2
+ three
++four
+diff --git a/logo.png b/logo.png
+new file mode 100644
+index 0000000..50fba21
+Binary files /dev/null and b/logo.png differ
+
+commit a97a0f96e718208d9111a63688e332a9e3d7651e
+Author: Ada Lövelace <ada@example.com>
+Date:   Fri Jan 2 03:04:05 2026 +0000
+
+    Rework files: rename, add, delete
+
+diff --git a/added.ts b/added.ts
+new file mode 100644
+index 0000000..07f33c4
+--- /dev/null
++++ b/added.ts
+@@ -0,0 +1,2 @@
++new
++file
+diff --git a/before.md b/dir with space/after.md
+similarity index 100%
+rename from before.md
+rename to dir with space/after.md
+diff --git a/gone.txt b/gone.txt
+deleted file mode 100644
+index 3367afd..0000000
+--- a/gone.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-old
+diff --git a/keep.txt b/keep.txt
+index 4cb29ea..f04eb26 100644
+--- a/keep.txt
++++ b/keep.txt
+@@ -1,3 +1,3 @@
+ one
+-two
++2
+ three

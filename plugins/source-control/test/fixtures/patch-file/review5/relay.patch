@@ -1,0 +1,43 @@
+From 4d29460ecd075e2c62b20539e77081291c335d11 Mon Sep 17 00:00:00 2001
+From: Relay <relay@example.test>
+Date: Thu, 19 Nov 2026 17:57:34 -0800
+Subject: [PATCH] odd names
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+From: Tést Üser <t@e.x>
+
+---
+ "quo\"te.txt"                       | 1 +
+ "tab\there.txt"                     | 1 +
+ "\303\274n\303\257/f\303\257le.txt" | 1 +
+ 3 files changed, 3 insertions(+)
+ create mode 100644 "quo\"te.txt"
+ create mode 100644 "tab\there.txt"
+ create mode 100644 "\303\274n\303\257/f\303\257le.txt"
+
+diff --git "a/quo\"te.txt" "b/quo\"te.txt"
+new file mode 100644
+index 0000000..bca70f3
+--- /dev/null
++++ "b/quo\"te.txt"
+@@ -0,0 +1 @@
++q
+diff --git "a/tab\there.txt" "b/tab\there.txt"
+new file mode 100644
+index 0000000..718f4d2
+--- /dev/null
++++ "b/tab\there.txt"
+@@ -0,0 +1 @@
++t
+diff --git "a/\303\274n\303\257/f\303\257le.txt" "b/\303\274n\303\257/f\303\257le.txt"
+new file mode 100644
+index 0000000..4ae8ef0
+--- /dev/null
++++ "b/\303\274n\303\257/f\303\257le.txt"
+@@ -0,0 +1 @@
++u
+-- 
+2.56.0
+

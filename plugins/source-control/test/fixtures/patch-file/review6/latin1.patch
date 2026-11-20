@@ -1,0 +1,7 @@
+diff --git 1/legacy-before 2/legacy-after
+index 6f83395..030ede5 100644
+--- 1/legacy-before
++++ 2/legacy-after
+@@ -1 +1 @@
+-café
++cafè

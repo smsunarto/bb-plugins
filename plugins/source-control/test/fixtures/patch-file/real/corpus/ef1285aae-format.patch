@@ -1,0 +1,81 @@
+From ef1285aae02ae33c920d41891fb1b4bcdda8ac8f Mon Sep 17 00:00:00 2001
+From: Scott <github@smsunarto.com>
+Date: Wed, 18 Nov 2026 15:24:49 -0800
+Subject: [PATCH] style(monokai): scale trigger-anchored popovers from their
+ trigger (#175)
+
+Radix popper content (popovers, menus, submenus, selects, tooltips, hover
+cards) now takes its transform-origin from --radix-popper-transform-origin,
+so bb's existing zoom animations grow from the trigger instead of the
+centre. bb 0.49 sets no origin on most surfaces and its hover-card/menubar
+origin utilities compile to invalid CSS. Dialogs and sheets are untouched.
+---
+ plugins/monokai/scripts/bb-monokai.template.css | 12 ++++++++++++
+ plugins/monokai/scripts/generate-theme.ts       |  4 ++++
+ plugins/monokai/themes/bb-monokai.css           | 12 ++++++++++++
+ 3 files changed, 28 insertions(+)
+
+diff --git a/plugins/monokai/scripts/bb-monokai.template.css b/plugins/monokai/scripts/bb-monokai.template.css
+index cb3b47e44..a8dfc1aba 100644
+--- a/plugins/monokai/scripts/bb-monokai.template.css
++++ b/plugins/monokai/scripts/bb-monokai.template.css
+@@ -1629,6 +1629,18 @@
+   }
+ }
+ 
++/* Trigger-anchored surfaces scale in and out from their trigger, not their
++ * centre. Every Radix popover, menu, submenu, select, tooltip, and hover card
++ * renders its content as the direct child of the popper wrapper, which
++ * publishes the trigger-facing point as --radix-popper-transform-origin. The
++ * per-component --radix-*-content-transform-origin names alias it. bb 0.49
++ * sets no origin on most of them, and its hover-card and menubar origin
++ * utilities compile to invalid CSS. Dialogs and sheets have no popper wrapper,
++ * so they keep their centre. Only the origin changes; bb owns the motion. */
++.dark [data-radix-popper-content-wrapper] > [data-side] {
++  transform-origin: var(--radix-popper-transform-origin);
++}
++
+ /* The model picker's sticky group headings ("Model", "Reasoning") paint
+  * bg-background to cover rows scrolling under them, but they sit on a
+  * bg-popover surface, so the header strip reads one ramp step lighter than
+diff --git a/plugins/monokai/scripts/generate-theme.ts b/plugins/monokai/scripts/generate-theme.ts
+index 0372271bc..d98fea1b5 100644
+--- a/plugins/monokai/scripts/generate-theme.ts
++++ b/plugins/monokai/scripts/generate-theme.ts
+@@ -629,6 +629,10 @@ const requiredRules: Array<{
+     selector: '.dark .bg-popover > .border-b input[aria-label="Search models"]',
+     declarations: { "background-color": "transparent" },
+   },
++  {
++    selector: ".dark [data-radix-popper-content-wrapper] > [data-side]",
++    declarations: { "transform-origin": "var(--radix-popper-transform-origin)" },
++  },
+   {
+     selector: '.dark [data-sidebar="panel"]',
+     declarations: { "border-color": "var(--sidebar-border)" },
+diff --git a/plugins/monokai/themes/bb-monokai.css b/plugins/monokai/themes/bb-monokai.css
+index 3a71548c7..12ace8d37 100644
+--- a/plugins/monokai/themes/bb-monokai.css
++++ b/plugins/monokai/themes/bb-monokai.css
+@@ -1631,6 +1631,18 @@
+   }
+ }
+ 
++/* Trigger-anchored surfaces scale in and out from their trigger, not their
++ * centre. Every Radix popover, menu, submenu, select, tooltip, and hover card
++ * renders its content as the direct child of the popper wrapper, which
++ * publishes the trigger-facing point as --radix-popper-transform-origin. The
++ * per-component --radix-*-content-transform-origin names alias it. bb 0.49
++ * sets no origin on most of them, and its hover-card and menubar origin
++ * utilities compile to invalid CSS. Dialogs and sheets have no popper wrapper,
++ * so they keep their centre. Only the origin changes; bb owns the motion. */
++.dark [data-radix-popper-content-wrapper] > [data-side] {
++  transform-origin: var(--radix-popper-transform-origin);
++}
++
+ /* The model picker's sticky group headings ("Model", "Reasoning") paint
+  * bg-background to cover rows scrolling under them, but they sit on a
+  * bg-popover surface, so the header strip reads one ramp step lighter than
+-- 
+2.56.0
+

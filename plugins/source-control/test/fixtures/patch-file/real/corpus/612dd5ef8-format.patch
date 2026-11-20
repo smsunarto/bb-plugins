@@ -1,0 +1,163 @@
+From 612dd5ef8cd12fb5b0aa652006d2c980a1df1c53 Mon Sep 17 00:00:00 2001
+From: Scott <github@smsunarto.com>
+Date: Wed, 18 Nov 2026 15:44:54 -0800
+Subject: [PATCH] fix(captain): drop shortcut hints from the Needs you banner
+ (#176)
+
+* fix(captain): drop shortcut hints from the Needs you banner
+
+The number keycaps on answers and the framed L/S letters on Later/Skip
+no longer render. The keys and aria-keyshortcuts are unchanged. Later and
+Skip drop their aria-label, which only covered the split mnemonic word.
+
+* test(captain): check the Later/Skip labels, not their DOM shape
+
+The hint test asserted zero children, so wrapping the unchanged label in a
+span would fail it. It now checks the label text and that no element inside
+the button frames part of it.
+---
+ plugins/captain/src/app/banner.test.tsx | 30 +++++++++++++++
+ plugins/captain/src/app/banner.tsx      | 49 ++-----------------------
+ 2 files changed, 34 insertions(+), 45 deletions(-)
+
+diff --git a/plugins/captain/src/app/banner.test.tsx b/plugins/captain/src/app/banner.test.tsx
+index 74127b395..ae2b4627a 100644
+--- a/plugins/captain/src/app/banner.test.tsx
++++ b/plugins/captain/src/app/banner.test.tsx
+@@ -130,6 +130,36 @@ test("keys: a number answers, S skips, L hides it, Enter on the banner picks the
+   );
+ });
+ 
++test("the keys work without a visible hint: no keycap, number or framed letter renders", async () => {
++  const { slot } = render(CAPTAIN, [decision]);
++  const card = await slot.findByTestId("captain-needs-you");
++  act(() => card.focus());
++  const answers = ["Redis", "SQLite", "No cache"].map((name) =>
++    slot.getByRole("button", { name: new RegExp(name, "u") }),
++  );
++  answers.forEach((button, index) => {
++    expect(button.getAttribute("aria-keyshortcuts")).toBe(String(index + 1));
++    expect(button.textContent).not.toMatch(/\d/u);
++  });
++  const later = slot.getByRole("button", { name: "Later" });
++  const skip = slot.getByRole("button", { name: "Skip" });
++  expect(later.getAttribute("aria-keyshortcuts")).toBe("L");
++  expect(skip.getAttribute("aria-keyshortcuts")).toBe("S");
++  for (const button of [...answers, later, skip]) {
++    expect(button.querySelector("[aria-hidden]")).toBeNull();
++  }
++  // The label reads whole, and no element inside the button frames a part of
++  // it, such as its first letter; a span wrapping the whole word is fine.
++  for (const [button, label] of [
++    [later, "Later"],
++    [skip, "Skip"],
++  ] as const) {
++    expect(button.textContent).toBe(label);
++    const framed = [...button.querySelectorAll("*")].filter((each) => each.textContent !== label);
++    expect(framed.map((each) => each.textContent)).toEqual([]);
++  }
++});
++
+ test("Enter picks the recommended option only when the banner itself has focus", async () => {
+   const { slot, of } = render(CAPTAIN, [decision]);
+   const card = await slot.findByTestId("captain-needs-you");
+diff --git a/plugins/captain/src/app/banner.tsx b/plugins/captain/src/app/banner.tsx
+index 6dce1abd3..45b7288b4 100644
+--- a/plugins/captain/src/app/banner.tsx
++++ b/plugins/captain/src/app/banner.tsx
+@@ -144,7 +144,7 @@ function Queue({
+       onBlur={() => {
+         toggleGone.current = false;
+       }}
+-      className="group flex min-w-0 flex-col gap-2 px-3 py-2 text-xs outline-none focus-visible:outline-1"
++      className="flex min-w-0 flex-col gap-2 px-3 py-2 text-xs outline-none focus-visible:outline-1"
+     >
+       {/* On touch, the gap keeps Skip's 44px target, which reaches below its row, clear of More's. */}
+       <div className="flex min-w-0 flex-col gap-0.5 pointer-coarse:gap-4">
+@@ -350,13 +350,10 @@ function Heading({
+             variant="ghost"
+             className={cn(TAP, DEFER)}
+             aria-keyshortcuts="L"
+-            aria-label="Later"
+             aria-description="Hide for an hour"
+             onClick={defer.later}
+           >
+-            <span>
+-              <Mnemonic>L</Mnemonic>ater
+-            </span>
++            Later
+           </Button>
+           <Button
+             type="button"
+@@ -364,13 +361,10 @@ function Heading({
+             variant="ghost"
+             className={cn(TAP, DEFER)}
+             aria-keyshortcuts="S"
+-            aria-label="Skip"
+             aria-description="Move to the back of the queue"
+             onClick={defer.skip}
+           >
+-            <span>
+-              <Mnemonic>S</Mnemonic>kip
+-            </span>
++            Skip
+           </Button>
+         </span>
+       ) : null}
+@@ -388,11 +382,10 @@ function ActionButton({ action, index }: { action: Action; index: number }) {
+       type="button"
+       size="sm"
+       variant={action.primary ? "default" : "outline"}
+-      className={cn(TAP, "relative h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal")}
++      className={cn(TAP, "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal")}
+       aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
+       onClick={action.run}
+     >
+-      <KeyHint>{index + 1}</KeyHint>
+       <span className="min-w-0 text-start break-words [unicode-bidi:plaintext]">
+         {action.label}
+       </span>
+@@ -403,40 +396,6 @@ function ActionButton({ action, index }: { action: Action; index: number }) {
+   );
+ }
+ 
+-/**
+- * An answer's key: a small keycap over the button's corner while the banner
+- * has focus, never on a coarse (touch) pointer. It lies over the button
+- * rather than beside its label, so showing it moves nothing and a mouse press
+- * that focuses the banner still lands on the control it began on. The border
+- * is the muted text colour, so the keycap stays outlined over the filled
+- * recommended button too.
+- */
+-function KeyHint({ children }: { children: ReactNode }) {
+-  return (
+-    <span
+-      aria-hidden
+-      className="pointer-events-none absolute -start-1.5 -top-1.5 hidden rounded-sm border border-muted-foreground bg-surface-raised-solid px-1 text-[0.625rem] leading-3.5 font-normal text-muted-foreground tabular-nums not-pointer-coarse:group-focus-within:block"
+-    >
+-      {children}
+-    </span>
+-  );
+-}
+-
+-/**
+- * Later's and Skip's key is their first letter, framed as a keycap when
+- * KeyHint shows. The outline is drawn inside a pixel of padding, so it never
+- * reaches the next glyph, and takes no room: nothing moves under the pointer. The word stays one span, so the button's
+- * gap cannot part the letter from it; each button still names itself, as an
+- * accessibility tree may read the split word as two.
+- */
+-function Mnemonic({ children }: { children: ReactNode }) {
+-  return (
+-    <span className="rounded-sm px-px -outline-offset-1 outline-muted-foreground not-pointer-coarse:group-focus-within:outline">
+-      {children}
+-    </span>
+-  );
+-}
+-
+ /**
+  * Captains' Markdown, quieted to a secondary line. Overriding `--foreground`
+  * mutes every element bb's renderer colours with it (paragraphs, lists, bold,
+-- 
+2.56.0
+
