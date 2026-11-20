@@ -2,7 +2,9 @@ import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
 import { join } from "node:path";
 import { callerCaptain, readCallerFile } from "../caller.ts";
 import { DRIVE_FILE_MAX_BYTES, DrivePathError, resolveDrivePath } from "../drive.ts";
+import { driveTag } from "../../contract/rpc.ts";
 import { guard, Refusal, render } from "../output.ts";
+import { driveSignature } from "../overview.ts";
 import { CAPTAIN_OPTION, ensureStorageRoot, JSON_OPTION, type CommandDeps } from "./deps.ts";
 
 const PATH = {
@@ -17,7 +19,7 @@ async function drivePath(
   ctx: PluginCliContext,
   path: string,
   captainOption: string | undefined,
-): Promise<string> {
+): Promise<{ file: string; captainId: string }> {
   const captain = await callerCaptain(deps.bb, deps.registry, ctx, {
     captain: captainOption,
     crew: true,
@@ -29,7 +31,10 @@ async function drivePath(
     ]);
   }
   try {
-    return resolveDrivePath(join(root, captain.threadId), path);
+    return {
+      file: resolveDrivePath(join(root, captain.threadId), path),
+      captainId: captain.threadId,
+    };
   } catch (error) {
     if (!(error instanceof DrivePathError)) throw error;
     throw new Refusal([
@@ -47,7 +52,7 @@ export function driveReadCommand(deps: CommandDeps) {
       const json = input.options.json;
       return guard("captain drive read", json, async () => {
         const path = input.positionals.path;
-        const file = await drivePath(deps, ctx, path, input.options.captain);
+        const { file } = await drivePath(deps, ctx, path, input.options.captain);
         const size = deps.drive.size(file);
         if (size === null) {
           throw new Refusal([
@@ -98,7 +103,7 @@ export function driveWriteCommand(deps: CommandDeps) {
       const json = input.options.json;
       return guard("captain drive write", json, async () => {
         const path = input.positionals.path;
-        const target = await drivePath(deps, ctx, path, input.options.captain);
+        const { file: target, captainId } = await drivePath(deps, ctx, path, input.options.captain);
         const source = input.options.file;
         const content =
           source === undefined
@@ -113,6 +118,13 @@ export function driveWriteCommand(deps: CommandDeps) {
           ]);
         }
         deps.drive.write(target, content);
+        // The Overview's Drive cards, at once, for every watcher; a running
+        // scan takes the Drive as now for its baseline, so it does not refresh
+        // the same write again.
+        if (deps.registry.driveBaseline(captainId) !== undefined) {
+          deps.registry.setDriveBaseline(captainId, await driveSignature(deps, captainId));
+        }
+        deps.bb.rpc.experimental_invalidate([driveTag(captainId)]);
         const bytes = Buffer.byteLength(content);
         return render(
           [{ id: path, ok: true, state: "written", detail: `${bytes} bytes`, data: { bytes } }],
