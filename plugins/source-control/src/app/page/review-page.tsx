@@ -592,8 +592,8 @@ function TabBody({
     );
   if (!revision)
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cx("flex flex-col gap-4 px-4 py-4 @3xl:px-6", CLEAR_REVIEW_BAR)}>
+      <div className={cx("min-h-0 flex-1 overflow-y-auto", CLEAR_REVIEW_BAR.scroll)}>
+        <div className={cx("flex flex-col gap-4 px-4 pt-4 @3xl:px-6", CLEAR_REVIEW_BAR.contentPb4)}>
           {lead}
           {description}
           <p

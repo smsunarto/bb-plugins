@@ -11,10 +11,12 @@ import {
   useRef,
   useSyncExternalStore,
   type ReactNode,
+  type RefObject,
 } from "react";
 import type { ChangeKey } from "../../core/ids.ts";
 import { Button } from "../components/ui/button.tsx";
-import { plural } from "../format.ts";
+import { surface } from "../components/ui/surface.ts";
+import { cx, plural } from "../format.ts";
 import { useChangeReview } from "../review-data.ts";
 import { Chevron } from "./icons.tsx";
 import { FocusContext } from "./review-focus.ts";
@@ -23,10 +25,41 @@ import { FocusContext } from "./review-focus.ts";
 const SPACE = "--sc-review-bar-space";
 
 /**
- * Pads a scroller's content by the room the bar takes, so its last lines can
- * scroll above the bar. Unset (no bar), the padding is 0.
+ * The classes that keep a scroller's content clear of the bar; with no bar
+ * they add nothing. `scroll` goes on the scroller, so focus and scroll-into-view
+ * stop above the pill. `content` pads a scroller's content that has no bottom
+ * padding of its own; `contentPb4` replaces `pb-4`, keeping its 16px under
+ * the room the bar takes.
  */
-export const CLEAR_REVIEW_BAR = "pb-(--sc-review-bar-space)";
+export const CLEAR_REVIEW_BAR = {
+  scroll: "scroll-pb-[var(--sc-review-bar-space,0px)]",
+  content: "pb-[var(--sc-review-bar-space,0px)]",
+  contentPb4: "pb-[calc(1rem+var(--sc-review-bar-space,0px))]",
+} as const;
+
+/**
+ * Sets `--sc-review-bar-space` on the bar's host to the height of `float`,
+ * the bar with its gap from the bottom, for as long as the bar is mounted.
+ * The border box is observed, so a change of the bottom inset (the gap) moves
+ * the reserve with the pill.
+ */
+export function useReserveSpace(float: RefObject<HTMLElement | null>) {
+  useLayoutEffect(() => {
+    const element = float.current;
+    const host = element?.parentElement;
+    // An engine without ResizeObserver reserves no room; the bar still floats.
+    if (!element || !host || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const height = entry?.borderBoxSize[0]?.blockSize;
+      if (height !== undefined) host.style.setProperty(SPACE, `${Math.ceil(height)}px`);
+    });
+    observer.observe(element, { box: "border-box" });
+    return () => {
+      observer.disconnect();
+      host.style.removeProperty(SPACE);
+    };
+  }, [float]);
+}
 
 function Step({
   direction,
@@ -43,8 +76,9 @@ function Step({
       variant="ghost"
       aria-label={label}
       onClick={onClick}
-      // 32px drawn; a finger gets 44px, out to the pill's edge.
-      className="relative size-8 px-0 max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:-inset-1.5"
+      // 32px drawn; a finger gets 44px, out to the pill's edge. Any coarse pointer, not only a
+      // phone's: the bar shows by its container's width, so a tablet's narrow panel has it too.
+      className="relative size-8 px-0 pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5"
     >
       <Chevron className={direction < 0 ? "rotate-90" : "-rotate-90"} />
     </Button>
@@ -57,7 +91,7 @@ function Step({
  *
  * Render it as a child of a `relative` element that also holds the review's
  * scrollers: it floats over that element's bottom edge and sets
- * `--sc-review-bar-space` on it, which `CLEAR_REVIEW_BAR` reads.
+ * `--sc-review-bar-space` on it, which the scrollers read through `CLEAR_REVIEW_BAR`.
  */
 export function ReviewBar({
   changeKey,
@@ -97,21 +131,7 @@ export function ReviewBar({
   };
 
   const float = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const element = float.current;
-    const host = element?.parentElement;
-    // An engine without ResizeObserver (tests) reserves no room.
-    if (!element || !host || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => {
-      const height = entry?.borderBoxSize[0]?.blockSize;
-      if (height !== undefined) host.style.setProperty(SPACE, `${Math.ceil(height)}px`);
-    });
-    observer.observe(element);
-    return () => {
-      observer.disconnect();
-      host.style.removeProperty(SPACE);
-    };
-  }, []);
+  useReserveSpace(float);
 
   return (
     <div
@@ -120,12 +140,17 @@ export function ReviewBar({
       // above the home indicator; where it gives no inset (Android, an open keyboard) the pill keeps
       // 1.5rem clear of the screen's rounded corners. Where the page itself runs under the home
       // indicator (--plugin-page-bottom-inset), the pill rises by that too.
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-3 pt-2 pb-[calc(max(0.75rem,calc(1.5rem-var(--bb-content-bottom-inset,0px)))+var(--plugin-page-bottom-inset,0px))]"
+      className="@container pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-3 pt-2 pb-[calc(max(0.75rem,calc(1.5rem-var(--bb-content-bottom-inset,0px)))+var(--plugin-page-bottom-inset,0px))]"
     >
       <div
         data-testid="sc-review-bar"
-        // Sized to its controls; a narrow panel wraps the send controls under the pager.
-        className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1.5 rounded-xl max-md:pointer-coarse:gap-y-3 border border-solid border-border bg-popover p-1.5 text-popover-foreground shadow-lg"
+        // Sized to its controls: one row where they fit, else the send controls stack under the
+        // pager in a column as wide as the wider of the two. Rows sit 12px apart under a coarse
+        // pointer, so the hit areas above and below the gap don't overlap.
+        className={cx(
+          surface.edge,
+          "pointer-events-auto flex w-fit max-w-full flex-col items-center gap-x-2 gap-y-1.5 rounded-xl bg-popover p-1.5 text-popover-foreground shadow-lg pointer-coarse:gap-y-3 @[30rem]:flex-row @[30rem]:flex-wrap @[30rem]:justify-center",
+        )}
       >
         {items.length > 0 ? (
           <div className="flex shrink-0 items-center">

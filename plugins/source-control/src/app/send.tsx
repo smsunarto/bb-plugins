@@ -510,10 +510,13 @@ export function githubBlocked(number: number | null, problem: Problem | null): s
 }
 
 const SEGMENT = "min-w-0 rounded-sm data-[state=on]:font-semibold";
-/** Desktop's tab row, or the floating review bar, whose controls a finger gets 44px of. */
+/**
+ * Desktop's tab row, or the floating review bar, whose controls a finger gets 44px of under any
+ * coarse pointer: the bar shows by its container's width, so a tablet's narrow panel has it too.
+ */
 const SEGMENT_SIZE = {
   row: "h-6 px-3 text-[12px] leading-4",
-  bar: "relative h-7 px-3 text-[13px] leading-5 max-md:pointer-coarse:px-4 max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:inset-x-0 max-md:pointer-coarse:after:-inset-y-2",
+  bar: "relative h-7 px-3 text-[13px] leading-5 pointer-coarse:px-4 pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-2",
 } as const;
 type ControlSize = keyof typeof SEGMENT_SIZE;
 
@@ -1093,8 +1096,9 @@ export const SendControls = memo(function SendControls({
     <div
       className={cx(
         "flex min-w-0 flex-wrap items-center self-center",
-        // In the floating bar the pill sizes to its controls and centres a wrapped row.
-        bar ? "justify-center gap-2" : "ms-auto justify-end gap-3 py-1",
+        // In the floating bar the pill sizes to its controls and centres a wrapped row; wrapped rows
+        // sit 12px apart under a coarse pointer so their 44px hit areas don't overlap.
+        bar ? "justify-center gap-2 pointer-coarse:gap-y-3" : "ms-auto justify-end gap-3 py-1",
       )}
       data-testid="sc-send-controls"
     >
@@ -1115,14 +1119,14 @@ export const SendControls = memo(function SendControls({
               size="sm"
               variant="default"
               data-testid="sc-send"
-              // Matches the destination toggle's 32px; on a phone the pseudo-element makes the tap target
-              // 40px tall in the tab row, 44px in the bar.
+              // Matches the destination toggle's 32px. The pseudo-element makes the tap target 40px
+              // tall in a phone's tab row, and 44px in the bar under any coarse pointer.
               className={cx(
                 PRIMARY,
-                "relative h-8 gap-2 max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:inset-x-0",
+                "relative h-8 gap-2",
                 bar
-                  ? "text-[13px] [&_svg]:size-3.5 max-md:pointer-coarse:after:-inset-y-1.5"
-                  : "[&_svg]:size-3 max-md:pointer-coarse:after:-inset-y-1",
+                  ? "text-[13px] [&_svg]:size-3.5 pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5"
+                  : "[&_svg]:size-3 max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:inset-x-0 max-md:pointer-coarse:after:-inset-y-1",
               )}
             >
               {destination === "agent" ? <Robot size={13} /> : null}
