@@ -2,8 +2,8 @@
 //
 // bun test fires no `exit` or `beforeExit` event, so the root goes in a global
 // afterAll. With --isolate bun reloads this file for each test file in the same
-// process: each load claims a root and its afterAll removes it and clears the
-// marker, so the next file claims a fresh one.
+// process: each load claims a root and its afterAll removes it and restores the
+// environment, so the next file claims a fresh one.
 import { claimTestTmpRoot } from "./test-tmp-root.mjs";
 
 const release = claimTestTmpRoot();
