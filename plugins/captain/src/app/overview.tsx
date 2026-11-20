@@ -1,5 +1,5 @@
 /**
- * The Overview tab beside a Captain thread: what needs you, the crew, and the
+ * The Overview tab beside a Captain thread: what needs you, its tasks, and the
  * Drive, as stacked sections that collapse. Asks come from the banner's own
  * read, so an answer in either place updates both. Reads run only while the
  * tab shows; bb keeps a hidden tab mounted.
@@ -7,17 +7,11 @@
 import {
   Markdown,
   experimental_Icon as Icon,
-  experimental_useSidebarThreads as useSidebarThreads,
   useRealtimeConnectionState,
-  type PluginSidebarThreadIndicator,
-  experimental_ProviderIcon as ProviderIcon,
-  experimental_ThreadStatusGlyph as ThreadStatusGlyph,
-  experimental_resolveThreadStatus as resolveThreadStatus,
   experimental_useAppPanel as useAppPanel,
   experimental_useCanOpenFileExternally as useCanOpenFileExternally,
   experimental_usePanelTabs as usePanelTabs,
   experimental_usePluginId as usePluginId,
-  experimental_useProviders as useProviders,
   experimental_useRpcQuery as useRpcQuery,
   experimental_useTabVisible as useTabVisible,
   type ExperimentalThreadTabProps,
@@ -35,14 +29,13 @@ import {
   type ReactNode,
 } from "react";
 import { age, isSending, orderQueue, type QueueItem } from "../contract/queue.ts";
-import { captainContract, type CrewThreadItem, type DriveFileItem } from "../contract/rpc.ts";
+import { captainContract, type CaptainTaskItem, type DriveFileItem } from "../contract/rpc.ts";
 import { ActionButton, OtherAnswer, TAP, itemActions, useItemCommands, useNow } from "./banner.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 import { Preview } from "./preview.tsx";
 
 const NO_INPUT = {};
-const NO_ACTIVITY = { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0 };
 
 /** Shown only on a live Captain's thread: one shared, cached read of the Captain ids. */
 export function useOverviewVisible({ threadId }: ExperimentalThreadTabProps): boolean {
@@ -50,17 +43,17 @@ export function useOverviewVisible({ threadId }: ExperimentalThreadTabProps): bo
   return captains.data?.ids.includes(threadId) ?? false;
 }
 
-type SectionId = "needs" | "threads" | "drive";
+type SectionId = "needs" | "tasks" | "drive";
 type Collapsed = Record<SectionId, boolean>;
-const OPEN: Collapsed = { needs: false, threads: false, drive: false };
+const OPEN: Collapsed = { needs: false, tasks: false, drive: false };
 
 export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
   const visible = useTabVisible();
   const input = useMemo(() => ({ captainId: threadId }), [threadId]);
   const asks = useRpcQuery({ contract: captainContract, method: "asks", input, enabled: visible });
-  const crew = useRpcQuery({
+  const tasks = useRpcQuery({
     contract: captainContract,
-    method: "crewThreads",
+    method: "tasks",
     input,
     enabled: visible,
   });
@@ -77,7 +70,7 @@ export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
     () => (asks.data === undefined ? undefined : orderQueue(asks.data.items, now)),
     [asks.data, now],
   );
-  const indicators = useCrewIndicators();
+  const listed = tasks.data;
   const drived = drive.data;
 
   return (
@@ -109,27 +102,18 @@ export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
           </ReadState>
         </Section>
         <Section
-          id="threads"
-          title="Threads"
-          count={crew.data?.threads.length}
-          collapsed={collapsed.threads}
+          id="tasks"
+          title="Tasks"
+          count={
+            listed === undefined
+              ? undefined
+              : `${listed.tasks.length}${listed.truncated ? "+" : ""}`
+          }
+          collapsed={collapsed.tasks}
           onToggle={toggle}
         >
-          <ReadState read={crew} rows={3}>
-            {crew.data === undefined ? null : crew.data.threads.length === 0 ? (
-              <Empty>No crew yet. Dispatch a task to start one.</Empty>
-            ) : (
-              <ul className="m-0 flex list-none flex-col p-0">
-                {crew.data.threads.map((thread) => (
-                  <CrewRow
-                    key={thread.id}
-                    thread={thread}
-                    now={now}
-                    indicator={indicators.get(thread.id) ?? null}
-                  />
-                ))}
-              </ul>
-            )}
+          <ReadState read={tasks} rows={3}>
+            {listed === undefined ? null : <TasksBody listing={listed} />}
           </ReadState>
         </Section>
         <Section
@@ -185,19 +169,6 @@ function DriveBody({ threadId, listing }: { threadId: string; listing: DriveList
  */
 const CARD_GRID =
   "grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] max-md:grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2";
-
-/**
- * bb's own status for each thread its sidebar lists, the indicator its rows
- * draw, by thread id. A crew thread the sidebar has not loaded falls back to
- * the row's own status (see CrewRow).
- */
-function useCrewIndicators(): Map<string, PluginSidebarThreadIndicator> {
-  const { threads } = useSidebarThreads();
-  return useMemo(
-    () => new Map(threads.map((thread) => [thread.id, thread.indicator] as const)),
-    [threads],
-  );
-}
 
 type Read = {
   data: unknown;
@@ -311,7 +282,8 @@ function readCollapsed(key: string): Collapsed {
     if (stored === null || typeof stored !== "object") return OPEN;
     return {
       needs: stored.needs === true,
-      threads: stored.threads === true,
+      // Tasks took the place of Threads: a collapsed Threads stays collapsed.
+      tasks: stored.tasks === true || (stored as { threads?: unknown }).threads === true,
       drive: stored.drive === true,
     };
   } catch {
@@ -560,86 +532,138 @@ function AskIcon({ item }: { item: QueueItem }) {
   );
 }
 
-/**
- * One crew thread; it opens the thread. Its glyph is bb's own indicator when
- * the sidebar lists the thread, else one resolved from the thread's run state
- * (which cannot show background work or queued messages), else the provider.
- */
-function CrewRow({
-  thread,
-  now,
-  indicator: listed,
-}: {
-  thread: CrewThreadItem;
-  now: number;
-  indicator: PluginSidebarThreadIndicator | null;
-}) {
-  const navigate = useBbNavigate();
-  const provider = useProviders().providers.find((each) => each.id === thread.providerId);
-  const status = resolveThreadStatus({
-    thread: {
-      activity: NO_ACTIVITY,
-      hasPendingInteraction: thread.hasPendingInteraction,
-      isUnread: false,
-      parentThreadId: null,
-      queuedWork: "none",
-      runtimeStatus: thread.status as never,
-      status: thread.status as never,
-    },
-    hiddenThreads: [],
-    hasUnsubmittedDraft: false,
-    rowStatus: null,
-  });
-  const indicator = listed ?? status.indicator;
-  const busy = status.isWorking || thread.hasPendingInteraction;
-  const sub = [thread.model, thread.task, thread.role, age(now, thread.updatedAt)]
-    .filter((part): part is string => Boolean(part))
-    .join(" · ");
+type TaskListing = { tasks: CaptainTaskItem[]; truncated: boolean; crewError: string | null };
+
+/** The task rows, and a line when the crew could not be read alongside them. */
+function TasksBody({ listing }: { listing: TaskListing }) {
   return (
-    <li className="flex min-w-0">
-      <button
-        type="button"
-        onClick={() => navigate.toThread(thread.id)}
+    <>
+      {listing.crewError === null ? null : (
+        <output className="block truncate px-2 py-1 text-xs leading-4 text-muted-foreground">
+          Crew unavailable · {listing.crewError}
+        </output>
+      )}
+      {listing.tasks.length === 0 ? (
+        <Empty>No open tasks in this Captain's repos.</Empty>
+      ) : (
+        <ul className="m-0 flex list-none flex-col p-0">
+          {listing.tasks.map((task) => (
+            <TaskRow key={task.key} task={task} />
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  in_review: "In review",
+  in_progress: "In progress",
+  todo: "Todo",
+  backlog: "Backlog",
+};
+const CREW_LABEL: Record<NonNullable<CaptainTaskItem["crew"]>["state"], string> = {
+  working: "working",
+  "needs-input": "needs input",
+  errored: "errored",
+  idle: "idle",
+};
+
+/** One task; it opens in Tasks. Its crew thread, when it has one, opens from the trailing link. */
+function TaskRow({ task }: { task: CaptainTaskItem }) {
+  const navigate = useBbNavigate();
+  const status = task.ready ? "Ready to ship" : (STATUS_LABEL[task.status] ?? task.status);
+  const crew = task.crew;
+  const role = crew?.role ?? "Crew";
+  const crewText = crew === null ? null : `${role} ${CREW_LABEL[crew.state]}`;
+  const sub = crewText === null ? status : `${status} · ${crewText}`;
+  return (
+    <li className="flex min-w-0 items-start">
+      <a
+        href={`/plugins/scott-tasks/tasks/task/${encodeURIComponent(task.key)}`}
         className={cn(
           TAP,
-          "flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1.5 text-start outline-none hover:bg-muted/40 focus-visible:outline-1",
+          "flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-2 text-start no-underline outline-none hover:bg-muted/40 focus-visible:outline-1",
         )}
       >
-        <span
-          className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted-foreground"
-          title={status.label ?? (thread.status === "error" ? "Errored" : undefined)}
-          data-indicator={thread.status === "error" ? "error" : indicator}
-        >
-          {thread.status === "error" ? (
-            <Icon name="AlertTriangle" aria-label="Errored" className="size-4 text-destructive" />
-          ) : indicator !== "none" ? (
-            <ThreadStatusGlyph indicator={indicator} size="compact" />
-          ) : (
-            <ProviderIcon
-              providerKind="agent"
-              provider={provider ?? { id: thread.providerId }}
-              aria-hidden
-              className="size-4"
-            />
-          )}
-        </span>
+        <TaskStatusGlyph status={task.status} ready={task.ready} />
         <span className="flex min-w-0 flex-1 flex-col">
-          <span
-            className={cn(
-              "truncate [unicode-bidi:plaintext]",
-              busy ? "text-foreground" : "text-muted-foreground",
-            )}
-            title={thread.title}
-          >
-            {thread.title}
+          <span className="truncate leading-5 text-foreground" title={`${task.key} ${task.title}`}>
+            <span className="text-muted-foreground tabular-nums">{task.key}</span>{" "}
+            <span className="[unicode-bidi:plaintext]">{task.title}</span>
           </span>
-          {/* One line, cut at its end: a wrap would start a line with its separator. */}
-          <span className="truncate text-xs text-muted-foreground tabular-nums" title={sub}>
-            {sub}
+          <span className="truncate text-xs leading-4 text-muted-foreground" title={sub}>
+            {status}
+            {crewText === null ? null : (
+              <>
+                {" · "}
+                <span className={crew?.state === "errored" ? "text-destructive" : undefined}>
+                  {crewText}
+                </span>
+              </>
+            )}
           </span>
         </span>
-      </button>
+      </a>
+      {crew === null ? null : (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          aria-label={`Open ${task.key}'s ${role} thread`}
+          className={cn(TAP, "mt-2 me-1 size-8 shrink-0 text-muted-foreground")}
+          onClick={() => navigate.toThread(crew.threadId)}
+        >
+          <Icon name="MessageSquare" aria-hidden className="size-4" />
+        </Button>
+      )}
     </li>
+  );
+}
+
+/**
+ * A task's status in Tasks' own glyphs: a dashed ring for backlog, a ring for
+ * todo, a quarter for in progress, three quarters for in review. Ready to ship
+ * shows the merge mark the ship ask uses.
+ */
+function TaskStatusGlyph({ status, ready }: { status: string; ready: boolean }) {
+  const box = "mt-0.5 flex size-4 shrink-0 items-center justify-center";
+  if (ready) {
+    return (
+      <span className={box} title="Ready to ship">
+        <Icon name="GitMerge" aria-hidden className="size-4 text-success" />
+      </span>
+    );
+  }
+  const ring = (dashed: boolean) => (
+    <circle
+      cx="8"
+      cy="8"
+      r="6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      {...(dashed ? { strokeDasharray: "2 2.2" } : {})}
+    />
+  );
+  const tone =
+    status === "in_progress"
+      ? "text-attention"
+      : status === "in_review"
+        ? "text-timeline-accent"
+        : "text-muted-foreground";
+  return (
+    <span className={box} title={STATUS_LABEL[status] ?? status}>
+      <svg viewBox="0 0 16 16" aria-hidden className={cn("size-4", tone)}>
+        {ring(status === "backlog")}
+        {status === "in_progress" ? (
+          <path d="M8 8 L8 3.5 A4.5 4.5 0 0 1 12.5 8 Z" fill="currentColor" />
+        ) : null}
+        {status === "in_review" ? (
+          <path d="M8 8 L8 3.5 A4.5 4.5 0 1 1 3.5 8 Z" fill="currentColor" />
+        ) : null}
+      </svg>
+    </span>
   );
 }
 

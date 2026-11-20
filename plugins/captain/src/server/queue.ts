@@ -59,7 +59,7 @@ export function readCrewSnapshot(
 
 /**
  * One crew read for every RPC that needs it: the banner's `crew` and the
- * Overview's `crewThreads` carry the same tag, so one change refreshes both
+ * Overview's `tasks` carry the same tag, so one change refreshes both
  * at once. A read in flight is shared by the calls that arrive while it runs;
  * once both its parts settle, the next call reads afresh. `changed` drops a
  * read in flight, so a call after a change never gets the read from before it.

@@ -10,9 +10,9 @@ import { Refusal } from "./output.ts";
 import { startCaptain } from "./commands/new.ts";
 import { captainIcons, setCaptainIcon } from "./icon.ts";
 import {
-  createModelNames,
+  captainTasks,
   createPrimaryHost,
-  crewThreads,
+  openTasksSignature,
   driveFiles,
   driveSignature,
   watchDrive,
@@ -29,6 +29,8 @@ import {
 
 /** How often a watched banner rechecks the crew for a new or answered interaction. */
 export const CREW_POLL_MS = 10_000;
+/** How often a watched Overview rechecks Tasks for a change made outside the crew. */
+export const TASKS_POLL_MS = 30_000;
 
 /**
  * The banner's RPCs. Logic lives in `queue.ts` and `asks.ts`, shared with the
@@ -38,13 +40,13 @@ export function registerRpc(
   deps: CommandDeps,
   crewPollMs: number = CREW_POLL_MS,
   driveScanMs?: number,
+  tasksPollMs: number = TASKS_POLL_MS,
 ): void {
   const { bb } = deps;
   const live = (captainId: string) => {
     if (deps.registry.get(captainId) === null)
       throw new Error(`${captainId} is not a live Captain`);
   };
-  const modelNames = createModelNames(deps);
   const crewReads = createCrewReads(deps);
   const readCrew = (captainId: string) => crewReads.read(captainId);
   const primaryHost = createPrimaryHost(deps);
@@ -67,9 +69,9 @@ export function registerRpc(
       live(captainId);
       return { items: await crewItems(deps, captainId, readCrew) };
     },
-    crewThreads: async ({ captainId }) => {
+    tasks: ({ captainId }) => {
       live(captainId);
-      return { threads: await crewThreads(deps, readCrew, modelNames, captainId) };
+      return captainTasks(deps, readCrew, captainId);
     },
     drive: ({ captainId }) => {
       live(captainId);
@@ -138,7 +140,12 @@ export function registerRpc(
   });
 
   const captainOf = (read: object) => captainOfRead(deps.registry, read);
-  registerCrewWatch(deps, captainOf, createCrewWatch(deps, crewPollMs, crewReads.changed));
+  registerCrewWatch(
+    deps,
+    captainOf,
+    createCrewWatch(deps, crewPollMs, crewReads.changed),
+    (captainId, signal) => watchTasks(deps, captainId, signal, tasksPollMs, crewReads.changed),
+  );
   registerDriveScan(deps, captainOf, driveScanMs);
 
   registerEvents(deps, crewReads.changed);
@@ -148,18 +155,47 @@ export function registerRpc(
 /**
  * A watched banner or Overview: bb's thread events cover run states; a new or
  * answered interaction has no event, so the crew list is rechecked while
- * watched. Both reads share one loop per Captain.
+ * watched. Both reads share one loop per Captain. The Overview's tasks also
+ * recheck Tasks, for a change made outside the crew.
  */
 function registerCrewWatch(
   deps: CommandDeps,
   captainOf: (read: object) => string | null,
   crewWatch: (captainId: string, signal: AbortSignal) => Promise<void>,
+  tasksWatch: (captainId: string, signal: AbortSignal) => Promise<void>,
 ): void {
-  for (const method of ["crew", "crewThreads"] as const) {
-    deps.bb.rpc.experimental_whileWatched(method, (read, signal) => {
+  for (const method of ["crew", "tasks"] as const) {
+    deps.bb.rpc.experimental_whileWatched(method, async (read, signal) => {
       const captainId = captainOf(read);
-      return captainId === null ? Promise.resolve() : crewWatch(captainId, signal);
+      if (captainId === null) return;
+      if (method === "crew") return crewWatch(captainId, signal);
+      await Promise.all([crewWatch(captainId, signal), tasksWatch(captainId, signal)]);
     });
+  }
+}
+
+/**
+ * While a Captain's tasks read is watched, compare its open tasks every
+ * `pollMs` and refresh the crew tag when they changed. A failed check is
+ * skipped; the read itself labels Tasks being down.
+ */
+async function watchTasks(
+  deps: CommandDeps,
+  captainId: string,
+  signal: AbortSignal,
+  pollMs: number,
+  changed: (captainId: string) => void,
+): Promise<void> {
+  let last: string | null = null;
+  while (!signal.aborted) {
+    const now = await openTasksSignature(deps, captainId).catch(() => null);
+    if (signal.aborted) return;
+    if (now !== null && last !== null && now !== last) {
+      changed(captainId);
+      deps.bb.rpc.experimental_invalidate([crewTag(captainId)]);
+    }
+    if (now !== null) last = now;
+    await sleep(pollMs, signal);
   }
 }
 

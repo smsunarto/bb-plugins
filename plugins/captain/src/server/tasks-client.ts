@@ -88,7 +88,7 @@ export type CrewRow = z.infer<typeof crewRowSchema>;
 /** The statuses of a task still open to work: not done or canceled. */
 const OPEN_STATUSES = ["backlog", "todo", "in_progress", "in_review"];
 
-/** Tasks' own cap on `crewSnapshot` thread ids per call. */
+/** Tasks' own cap on `crewSnapshot` thread ids and `taskFields` task ids per call. */
 const SNAPSHOT_MAX_THREADS = 500;
 
 /** Tasks did not answer, or refused: the message says which. */
@@ -138,6 +138,22 @@ export function createTasksClient(
   }
 
   /** Tasks' mutation envelope: `{ ok: false, error }` is a refusal, not a transport failure. */
+  /** Several tasks' owned-field values, by task id, in calls of at most Tasks' cap; a task with none is absent. */
+  async function fieldsOf(taskIds: readonly string[]): Promise<Map<string, TaskFieldValue[]>> {
+    const fields = new Map<string, TaskFieldValue[]>();
+    for (let start = 0; start < taskIds.length; start += SNAPSHOT_MAX_THREADS) {
+      const { tasks } = await call(
+        "taskFields",
+        { taskIds: taskIds.slice(start, start + SNAPSHOT_MAX_THREADS) },
+        z.object({
+          tasks: z.array(z.object({ taskId: z.string(), fields: z.array(fieldValueSchema) })),
+        }),
+      );
+      for (const row of tasks) fields.set(row.taskId, row.fields);
+    }
+    return fields;
+  }
+
   async function mutate(method: string, input: unknown): Promise<TasksTask> {
     const result = await call(
       method,
@@ -272,15 +288,9 @@ export function createTasksClient(
     },
     /** One task's owned-field values; empty when the task has none or no longer exists. */
     async taskFields(taskId: string): Promise<TaskFieldValue[]> {
-      const { tasks } = await call(
-        "taskFields",
-        { taskIds: [taskId] },
-        z.object({
-          tasks: z.array(z.object({ taskId: z.string(), fields: z.array(fieldValueSchema) })),
-        }),
-      );
-      return tasks.find((row) => row.taskId === taskId)?.fields ?? [];
+      return (await fieldsOf([taskId])).get(taskId) ?? [];
     },
+    fieldsOf,
     async attachThread(input: {
       taskId: string;
       threadId: string;

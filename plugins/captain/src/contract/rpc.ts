@@ -96,18 +96,28 @@ export const DEFERRABLE_KEY = /^(ask|blocked|health):[A-Za-z0-9_:.-]{1,200}$/u;
 /** A Captain's name: one line of at most this many characters. */
 export const CAPTAIN_NAME_MAX = 80;
 
-/** One crew thread as the Overview's Threads section lists it. */
-const crewThread = z
+/** What a task's crew thread is doing, as the Overview's Tasks rows label it. */
+export const CREW_STATES = ["working", "needs-input", "errored", "idle"] as const;
+
+/** One open task of the Captain's repos as the Overview's Tasks section lists it. */
+const captainTask = z
   .object({
-    id: threadId,
+    key: z.string(),
     title: z.string(),
+    /** Tasks' status: backlog, todo, in_progress or in_review. */
     status: z.string(),
-    providerId: z.string(),
-    /** The model's display name, else its id; null when bb did not say. */
-    model: z.string().nullable(),
-    task: z.string().nullable(),
-    role: z.string().nullable(),
-    hasPendingInteraction: z.boolean(),
+    /** Its review passed or was skipped: it waits only on shipping. */
+    ready: z.boolean(),
+    /** The crew thread on it, the live one first; null when none is attached. */
+    crew: z
+      .object({
+        threadId,
+        /** The crew role's label, such as Implement; null when it is not known. */
+        role: z.string().nullable(),
+        state: z.enum(CREW_STATES),
+      })
+      .strict()
+      .nullable(),
     updatedAt: z.number(),
   })
   .strict();
@@ -254,10 +264,22 @@ export const captainContract = defineRpcContract({
     output: z.object({ items: z.array(z.union([blockedItem, healthItem])) }).strict(),
     tags: ({ captainId }) => [crewTag(captainId)],
   },
-  /** The Overview's Threads: the Captain's unarchived crew, read live from bb and Tasks. */
-  crewThreads: {
+  /**
+   * The Overview's Tasks: its repos' open tasks, those waiting on the user
+   * first, each with its crew thread. Carries the crew tag, so a crew change
+   * refreshes it with the banner.
+   */
+  tasks: {
     input: z.object({ captainId: threadId }).strict(),
-    output: z.object({ threads: z.array(crewThread) }).strict(),
+    output: z
+      .object({
+        tasks: z.array(captainTask),
+        /** A repo had more open tasks than were read: the count is a floor. */
+        truncated: z.boolean(),
+        /** Why the crew could not be read; the tasks are listed without it. */
+        crewError: z.string().nullable(),
+      })
+      .strict(),
     tags: ({ captainId }) => [crewTag(captainId)],
   },
   /** The Overview's Drive: its top-level files first, then the most recently changed. */
@@ -421,5 +443,5 @@ export type AdoptOptions = z.infer<typeof adoptOptionsSchema>;
 export type AdoptInput = z.infer<typeof adoptInputSchema>;
 export type AdoptResult = z.infer<typeof adoptResultSchema>;
 export type ChangeRef = z.infer<typeof changeRef>;
-export type CrewThreadItem = z.infer<typeof crewThread>;
+export type CaptainTaskItem = z.infer<typeof captainTask>;
 export type DriveFileItem = z.infer<typeof driveFile>;

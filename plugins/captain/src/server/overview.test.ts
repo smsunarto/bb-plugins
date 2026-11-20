@@ -19,13 +19,15 @@ import { readInside } from "./drive.ts";
 import { DRIVE_WALK_MAX, listDrive, watchDrive } from "./overview.ts";
 import { captainHost, newCaptain, SERVER_HOST } from "./test-host.ts";
 
-type Thread = {
-  id: string;
-  title: string;
-  status: string;
-  model: string | null;
-  task: string | null;
-  role: string | null;
+type Listing = {
+  tasks: {
+    key: string;
+    status: string;
+    ready: boolean;
+    crew: { threadId: string; role: string | null; state: string } | null;
+  }[];
+  truncated: boolean;
+  crewError: string | null;
 };
 type Drive = {
   total: number;
@@ -40,11 +42,10 @@ async function overviewHost(options: Parameters<typeof captainHost>[0] = {}) {
   const as = (argv: string[]) => host.harness.behavior.runCli(argv, { threadId: captainId });
   const rpc = (method: string, input: unknown) => host.harness.behavior.callRpc(method, input);
   const invalidations = () => host.harness.inspection.experimental_rpcInvalidations.flat();
-  const crew = async () =>
-    ((await rpc("crewThreads", { captainId })) as { threads: Thread[] }).threads;
+  const tasks = async () => (await rpc("tasks", { captainId })) as Listing;
   const drive = async () => (await rpc("drive", { captainId })) as Drive;
   const driveDir = join(host.storageRoot, captainId);
-  return { host, captainId, as, rpc, crew, drive, driveDir, invalidations };
+  return { host, captainId, as, rpc, tasks, drive, driveDir, invalidations };
 }
 
 async function dispatch(
@@ -72,44 +73,67 @@ const scanBaseline = () => {
   };
 };
 
-describe("crewThreads", () => {
-  test("lists the unarchived crew, active first, with model name, task and role", async () => {
-    const { host, as, crew } = await overviewHost();
-    host.addTask("BBPLUGINS-1", { title: "Render PR images" });
-    host.addTask("BBPLUGINS-2", { title: "Fix the sidebar" });
-    host.addTask("BBPLUGINS-3", { title: "Old work" });
-    const idle = await dispatch(as, "BBPLUGINS-1");
-    const busy = await dispatch(as, "BBPLUGINS-2", "Implement");
-    const gone = await dispatch(as, "BBPLUGINS-3");
-    host.updateThread(idle, { status: "idle", updatedAt: 9_000 });
-    host.updateThread(busy, { status: "active", updatedAt: 2_000 });
-    host.updateThread(gone, { archivedAt: 5_000 });
+describe("tasks", () => {
+  test("open tasks of the Captain's repos, waiting on the user first, with their crew", async () => {
+    const { host, as, tasks } = await overviewHost();
+    const passed = { value: "passed", head: null, writtenAt: new Date(0).toISOString() };
+    host.addTask("BBPLUGINS-1", { status: "backlog", updatedAt: "2026-01-05T00:00:00.000Z" });
+    host.addTask("BBPLUGINS-2", { status: "todo", updatedAt: "2026-01-04T00:00:00.000Z" });
+    host.addTask("BBPLUGINS-3", { status: "in_progress", updatedAt: "2026-01-01T00:00:00.000Z" });
+    host.addTask("BBPLUGINS-4", { status: "in_progress", updatedAt: "2026-01-03T00:00:00.000Z" });
+    host.addTask("BBPLUGINS-5", { status: "in_review" });
+    host.addTask("BBPLUGINS-6", {
+      status: "in_review",
+      fields: new Map([["review", passed]]),
+    });
+    host.addTask("BBPLUGINS-7", { status: "done" });
+    host.addTask("BBPLUGINS-8", { status: "canceled" });
+    host.addTask("OTHER-1", { status: "in_review" });
+    const busy = await dispatch(as, "BBPLUGINS-3");
+    const errored = await dispatch(as, "BBPLUGINS-5");
+    host.updateThread(busy, { status: "active" });
+    host.updateThread(errored, { status: "error" });
 
-    expect(await crew()).toEqual([
-      expect.objectContaining({
-        id: busy,
-        status: "active",
-        model: "Claude Opus 5.5",
-        task: "BBPLUGINS-2",
-        role: "Implement",
-      }),
-      expect.objectContaining({ id: idle, status: "idle", task: "BBPLUGINS-1", role: "Implement" }),
+    const listing = await tasks();
+    expect(listing.tasks.map((task) => task.key)).toEqual([
+      "BBPLUGINS-6",
+      "BBPLUGINS-5",
+      "BBPLUGINS-4",
+      "BBPLUGINS-3",
+      "BBPLUGINS-2",
+      "BBPLUGINS-1",
     ]);
+    expect(listing.tasks[0]).toMatchObject({ ready: true, crew: null });
+    expect(listing.tasks[1]).toMatchObject({
+      ready: false,
+      crew: { threadId: errored, role: "Implement", state: "errored" },
+    });
+    expect(listing.tasks[3]).toMatchObject({
+      crew: { threadId: busy, role: "Implement", state: "working" },
+    });
+    expect(listing).toMatchObject({ truncated: false, crewError: null });
   });
 
-  test("keeps every thread while Tasks is down, without its task", async () => {
-    const { host, as, crew } = await overviewHost();
-    host.addTask("BBPLUGINS-1");
+  test("an archived crew thread leaves its task without crew", async () => {
+    const { host, as, tasks } = await overviewHost();
+    host.addTask("BBPLUGINS-1", { status: "in_progress" });
     const thread = await dispatch(as, "BBPLUGINS-1");
+    host.updateThread(thread, { archivedAt: 5_000 });
+    expect((await tasks()).tasks).toEqual([expect.objectContaining({ crew: null })]);
+  });
+
+  test("fails while Tasks is down, so the section says it could not load", async () => {
+    const { host, tasks } = await overviewHost();
+    host.addTask("BBPLUGINS-1");
     host.tasks.down = true;
-    expect(await crew()).toEqual([expect.objectContaining({ id: thread, task: null })]);
+    await expect(tasks()).rejects.toThrow(/scott-tasks/u);
   });
 
   test("shares the banner crew read's tag, so every crew refresh reaches it", () => {
     const input = { captainId: "thr_captain" };
-    const tags = (method: "crew" | "crewThreads" | "drive") =>
+    const tags = (method: "crew" | "tasks" | "drive") =>
       (captainContract[method].tags as (read: typeof input) => string[])(input);
-    expect(tags("crewThreads")).toEqual(tags("crew"));
+    expect(tags("tasks")).toEqual(tags("crew"));
     expect(tags("drive")).toEqual([driveTag("thr_captain")]);
   });
 });
@@ -152,15 +176,13 @@ describe("drive", () => {
 });
 
 describe("crew status changes", () => {
-  test("a crew thread going active refreshes the read, which then lists it first", async () => {
-    const { host, as, captainId, crew, invalidations } = await overviewHost();
-    host.addTask("BBPLUGINS-1");
-    host.addTask("BBPLUGINS-2");
-    const first = await dispatch(as, "BBPLUGINS-1");
+  test("a crew thread going active refreshes the read, which then shows it working", async () => {
+    const { host, as, captainId, tasks, invalidations } = await overviewHost();
+    host.addTask("BBPLUGINS-2", { status: "in_progress" });
     const second = await dispatch(as, "BBPLUGINS-2");
-    host.updateThread(first, { status: "idle", updatedAt: 9_000 });
-    host.updateThread(second, { status: "idle", updatedAt: 2_000 });
-    expect((await crew()).map((thread) => thread.id)).toEqual([first, second]);
+    host.updateThread(second, { status: "idle" });
+    const state = async () => (await tasks()).tasks[0]?.crew?.state;
+    expect(await state()).toBe("idle");
 
     const before = invalidations().length;
     const active = host.updateThread(second, { status: "active" });
@@ -168,16 +190,13 @@ describe("crew status changes", () => {
       thread: makeThreadResponse({ ...active, parentThreadId: captainId }),
     } as never);
     expect(invalidations().slice(before)).toContain(crewTag(captainId));
-    expect((await crew()).map((thread) => [thread.id, thread.status])).toEqual([
-      [second, "active"],
-      [first, "idle"],
-    ]);
+    expect(await state()).toBe("working");
   });
 });
 
 describe("the shared crew read", () => {
-  test("the banner's interaction read and the Overview's model reads start while Tasks answers", async () => {
-    const { host, captainId, as, rpc, crew } = await overviewHost();
+  test("the banner's interaction read starts while Tasks answers, and the Overview shares the crew read", async () => {
+    const { host, captainId, as, rpc, tasks } = await overviewHost();
     host.addTask("BBPLUGINS-2");
     const blocked = await dispatch(as, "BBPLUGINS-2");
     host.updateThread(blocked, { status: "idle", hasPendingInteraction: true });
@@ -195,18 +214,46 @@ describe("the shared crew read", () => {
       release = resolve;
     });
     host.interactionReads.length = 0;
-    const models = host.providerModels.calls;
+    const snapshots = () =>
+      host.tasks.calls.filter((call) => call.method === "crewSnapshot").length;
+    const before = snapshots();
     const banner = rpc("crew", { captainId });
-    const overview = crew();
+    const overview = tasks();
     await settle();
-    // Tasks has not answered, yet both reads that need only the threads ran.
+    // Tasks has not answered, yet the read that needs only the threads ran.
     expect(host.interactionReads).toEqual([blocked]);
-    expect(host.providerModels.calls).toBe(models + 1);
     host.crewSnapshotHold.gate = null;
     release();
     const items = ((await banner) as { items: { kind: string; task: string | null }[] }).items;
     expect(items).toEqual([expect.objectContaining({ kind: "blocked", task: "BBPLUGINS-2" })]);
-    expect(await overview).toEqual([expect.objectContaining({ id: blocked, task: "BBPLUGINS-2" })]);
+    expect((await overview).tasks).toEqual([
+      expect.objectContaining({
+        key: "BBPLUGINS-2",
+        crew: expect.objectContaining({ threadId: blocked, state: "needs-input" }),
+      }),
+    ]);
+    // One crew snapshot served both reads.
+    expect(snapshots() - before).toBe(1);
+  });
+});
+
+describe("the Tasks recheck", () => {
+  test("a task changed in Tasks refreshes a watched tasks read, and stops when unwatched", async () => {
+    const { host, captainId, invalidations } = await overviewHost({ crewPollMs: 60_000 });
+    const task = host.addTask("BBPLUGINS-1", { status: "todo" });
+    const stop = host.harness.behavior.experimental_watchRpc("tasks", { input: { captainId } });
+    await settle();
+    const before = invalidations().length;
+    task.status = "in_progress";
+    task.updatedAt = new Date(Date.now() + 1_000).toISOString();
+    await settle(200);
+    expect(invalidations().slice(before)).toContain(crewTag(captainId));
+    stop();
+    await settle();
+    const after = invalidations().length;
+    task.status = "in_review";
+    await settle(200);
+    expect(invalidations().slice(after)).not.toContain(crewTag(captainId));
   });
 });
 
@@ -217,7 +264,7 @@ describe("the crew poll", () => {
     const polls = () => host.threadLists.filter((parent) => parent === captainId).length;
     const start = polls();
     const banner = host.harness.behavior.experimental_watchRpc("crew", { input: { captainId } });
-    const overview = host.harness.behavior.experimental_watchRpc("crewThreads", {
+    const overview = host.harness.behavior.experimental_watchRpc("tasks", {
       input: { captainId },
     });
     await settle();
@@ -227,7 +274,7 @@ describe("the crew poll", () => {
     banner();
     overview();
     await settle();
-    const again = host.harness.behavior.experimental_watchRpc("crewThreads", {
+    const again = host.harness.behavior.experimental_watchRpc("tasks", {
       input: { captainId },
     });
     await settle();
@@ -476,19 +523,5 @@ describe("Drive scan", () => {
     writeFileSync(join(driveDir, "NOTES.md"), "# Notes\n\nAgain");
     await settle(200);
     expect(invalidations().slice(after)).not.toContain(driveTag(captainId));
-  });
-});
-
-describe("the provider catalog", () => {
-  test("a failed catalog read is not kept: the next read shows model names", async () => {
-    const { host, as, crew } = await overviewHost();
-    host.addTask("BBPLUGINS-1");
-    await dispatch(as, "BBPLUGINS-1");
-    host.providerModels.fails = 1;
-    expect((await crew())[0]?.model).toBe("claude-opus-5-5");
-    expect((await crew())[0]?.model).toBe("Claude Opus 5.5");
-    const calls = host.providerModels.calls;
-    await crew();
-    expect(host.providerModels.calls).toBe(calls);
   });
 });
