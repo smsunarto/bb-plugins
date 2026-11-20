@@ -231,10 +231,10 @@ class Reader {
   /**
    * A hunk line where its hunk has ended: one it held past its counts, or one
    * it lost across a blank line or a signature. Returns whether the line is a
-   * mail signature.
+   * mail signature or MIME boundary.
    */
   private checkPastHunk(index: number, line: string): boolean {
-    if (isSignature(line, this.lines[index + 1])) return true;
+    if (isMailTrailer(line, this.lines[index + 1])) return true;
     if (this.afterHunk && /^[+\- ]/.test(line))
       throw malformed(index, "continues a hunk past the lines its header counts");
     if (this.trailing && /^[+-]/.test(line))
@@ -324,12 +324,13 @@ function commitStarts(lines: string[], index: number): boolean {
 }
 
 /**
- * A mail signature's `-- ` line, or `--` once an editor trimmed its space:
- * the version line after it is no hunk line.
+ * A mail line that ends a patch's text: the signature's `-- `, or `--` once
+ * an editor trimmed its space, or a MIME boundary (`--------------2.43.0--`)
+ * from `format-patch --attach` or `--inline`. The line after it is no hunk line.
  */
-function isSignature(line: string, next: string | undefined): boolean {
+function isMailTrailer(line: string, next: string | undefined): boolean {
   if (line === "-- ") return true;
-  return line === "--" && !/^[+\- @\\]/.test(next ?? "");
+  return /^--\S*$/.test(line) && !/^[+\- @\\]/.test(next ?? "");
 }
 
 /** Whether a git file is still in its extended header, before its `---`/`+++` pair. */

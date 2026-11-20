@@ -538,6 +538,13 @@ describe("review round 2 fixtures", () => {
     expect(files2(rename)).toEqual([["y", "renamed", name]]);
   });
 
+  test("format-patch --attach and --inline end at their MIME boundary", () => {
+    for (const name of ["format-patch-attach.patch", "format-patch-inline.patch"])
+      expect(
+        parsed(fixture(`review2/${name}`)).commits.map((c) => [c.subject, c.files.length]),
+      ).toEqual([["second: edit, delete, add", 3]]);
+  });
+
   test("git log --abbrev-commit and --format=fuller start a section per commit", () => {
     for (const name of ["log-abbrev.patch", "log-fuller-stat.patch"]) {
       const commits = parsed(fixture(`review2/${name}`)).commits;
