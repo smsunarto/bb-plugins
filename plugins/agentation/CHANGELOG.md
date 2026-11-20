@@ -4,7 +4,7 @@
 
 ### Patch Changes
 
-- Annotations an agent acknowledged no longer return to staging when its turn ends or after a restart; only ones it never picked up do. An acknowledgement belongs to one assignment: staging an annotation again or sending or mentioning it to a thread sets it back to pending. Mentioning an assigned annotation in another thread moves it there, and deleting a thread returns everything assigned to it to staging.
+- Annotations an agent acknowledged no longer return to staging when its turn ends or after a restart; only ones it never picked up do. An acknowledgement belongs to one assignment: staging an annotation again, sending it, or mentioning it in another thread sets it back to pending; mentioning it in the thread that holds it changes nothing. Mentioning an assigned annotation in another thread moves it there, and deleting a thread returns everything assigned to it to staging. Agents are told to acknowledge what they take on.
 - Staged-annotation rows name a captured thread as `from <thread>` instead of `thread: <thread>`, so the label no longer reads as the assignee.
 - **Discard all** in the composer's staged-annotation list discards the batch at once instead of asking for confirmation. Discarded feedback stays recoverable from the panel's Dismissed view.
 - Update the vendored Agentation toolbar from 3.0.2 to 3.1.2: selection inside same-origin iframes and open shadow roots, keyboard and focus fixes, and Copy/Send keep feedback that changed or failed mid-operation. The toolbar now renders in a shadow root, so its styles no longer leak into bb and the `fill-current` icon workaround is gone. Upstream now ships the `inert` fixes this plugin patched in; the patch keeps only React 19 component detection.

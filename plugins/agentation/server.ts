@@ -70,7 +70,6 @@ import {
 } from "./lib/store.ts";
 import {
   advanceTurnAssignments,
-  assignmentThreadIds,
   claimStagedAnnotations,
   completeDispatch,
   discardStagedAnnotations,
@@ -79,6 +78,7 @@ import {
   listAnnotationRoutings,
   listStagedAnnotations,
   recoverInterruptedDispatches,
+  readRecoverySnapshot,
   recoverInterruptedTurnAssignments,
   restageAnnotation as restageStoredAnnotation,
   restageThreadAssignments,
@@ -334,9 +334,14 @@ export default async function plugin(bb: BbPluginApi) {
     },
     async resolve(itemId) {
       const { annotationId, threadId } = parseAnnotationMentionItemId(itemId);
+      if (!getAnnotation(db, annotationId)) {
+        throw new Error(`Annotation ${annotationId} no longer exists.`);
+      }
+      if (threadId) await assignMentionToThread(annotationId, threadId);
+      // Read after assigning: a new assignment sets an acknowledged annotation
+      // back to pending, and the agent must see the status it now has.
       const annotation = getAnnotation(db, annotationId);
       if (!annotation) throw new Error(`Annotation ${annotationId} no longer exists.`);
-      if (threadId) await assignMentionToThread(annotationId, threadId);
       return {
         context: renderAnnotationMentionContext(annotation, getSession(db, annotation.sessionId)),
       };
@@ -416,6 +421,14 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
+  // Broadcasts: a change that can set an acknowledged annotation back to
+  // pending (a claim, Stage again, a deleted thread, recovery) sends
+  // `annotations`, so the panel reloads statuses. A change that only moves
+  // routing (delivery confirmed or failed, a turn ending) sends `routing`.
+
+  // An explicit mention while composing is the one claim that may take an
+  // annotation from another thread. One the target thread already holds is
+  // left alone, so its agent keeps the acknowledgement.
   async function assignMentionToThread(annotationId: string, threadId: string): Promise<void> {
     const phase = await composerTurnPhase(threadId);
     const claim = claimStagedAnnotations(db, {
@@ -426,13 +439,8 @@ export default async function plugin(bb: BbPluginApi) {
     if (claim.outcome === "stale") return;
 
     completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: phase });
-    broadcastClaim(claim.reopened);
+    broadcast({ type: "annotations", sessionId: null });
     bb.log.info(`assigned mentioned annotation ${annotationId} to ${threadId}`);
-  }
-
-  /** A claim that reset acknowledged statuses changes annotations, not only routing. */
-  function broadcastClaim(reopened: number): void {
-    broadcast({ type: reopened > 0 ? "annotations" : "routing", sessionId: null });
   }
 
   function publishRestagedAfterTurn(threadId: string, includeAwaitingStart = false): void {
@@ -487,8 +495,11 @@ export default async function plugin(bb: BbPluginApi) {
   // assign it. The thread exists by the time its first message is dispatched;
   // assign those annotations there. A start on a running thread queues behind
   // its turn, so it re-stages after the next turn, as a queued send does.
-  // Claims are idempotent across re-attempts. Assignment is bookkeeping and a
-  // throwing hook fails the send, so errors are logged and the send proceeds.
+  // Only staged annotations are claimed, so a re-run of this pass (a drain,
+  // restart, or retry of the same or an older message) finds nothing left and
+  // cannot take an annotation back from the thread now holding it. Assignment
+  // is bookkeeping and a throwing hook fails the send, so errors are logged and
+  // the send proceeds.
   bb.experimental_hooks.on("message.dispatch", ({ thread, input, attempt }) => {
     try {
       const phase =
@@ -496,20 +507,17 @@ export default async function plugin(bb: BbPluginApi) {
           ? "awaiting-start"
           : "awaiting-finish";
       let assigned = 0;
-      let reopened = 0;
       for (const annotationId of threadlessAnnotationMentionIds(input.blocks, bb.pluginId)) {
         const claim = claimStagedAnnotations(db, {
           annotationIds: [annotationId],
           threadId: thread.id,
-          reassign: true,
         });
         if (claim.outcome === "stale") continue;
         completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: phase });
         assigned += 1;
-        reopened += claim.reopened;
       }
       if (assigned > 0) {
-        broadcastClaim(reopened);
+        broadcast({ type: "annotations", sessionId: null });
         bb.log.info(
           `assigned ${assigned} mentioned annotation${assigned === 1 ? "" : "s"} to ${thread.id}`,
         );
@@ -578,12 +586,12 @@ export default async function plugin(bb: BbPluginApi) {
   // of its assignments. This runs after the handlers above are registered, so
   // a turn that ends meanwhile is re-staged by its own event.
   async function recoverTurnAssignments(): Promise<void> {
-    const threadIds = assignmentThreadIds(db);
-    if (threadIds.length === 0) return;
+    const snapshot = readRecoverySnapshot(db);
+    if (snapshot.threadIds.length === 0) return;
     const statuses: Array<{ threadId: string; active: boolean; missing: boolean }> = [];
     // Bounded: acknowledged annotations keep old threads in this list.
-    for (let start = 0; start < threadIds.length; start += RECOVERY_CONCURRENCY) {
-      const batch = threadIds.slice(start, start + RECOVERY_CONCURRENCY);
+    for (let start = 0; start < snapshot.threadIds.length; start += RECOVERY_CONCURRENCY) {
+      const batch = snapshot.threadIds.slice(start, start + RECOVERY_CONCURRENCY);
       statuses.push(
         ...(await Promise.all(
           batch.map(async (threadId) => {
@@ -598,21 +606,29 @@ export default async function plugin(bb: BbPluginApi) {
       );
       if (disposed) return;
     }
-    const activeThreadIds = new Set(
-      statuses.filter((status) => status.active).map((status) => status.threadId),
-    );
-    const missingThreadIds = new Set(
-      statuses.filter((status) => status.missing).map((status) => status.threadId),
-    );
-    const restaged = recoverInterruptedTurnAssignments(db, activeThreadIds, missingThreadIds);
-    if (restaged > 0) {
+    const idsWhere = (keep: (status: (typeof statuses)[number]) => boolean) =>
+      new Set(statuses.filter(keep).map((status) => status.threadId));
+    const result = recoverInterruptedTurnAssignments(db, snapshot, {
+      active: idsWhere((status) => status.active),
+      missing: idsWhere((status) => status.missing),
+    });
+    if (result.restaged > 0 || result.orphaned > 0) {
       broadcast({ type: "annotations", sessionId: null });
+    }
+    if (result.restaged > 0) {
       bb.log.warn(
-        `re-staged ${restaged} annotations whose turn ended while Agentation was stopped`,
+        `re-staged ${result.restaged} unacknowledged annotation${result.restaged === 1 ? "" : "s"} whose turn ended while Agentation was stopped`,
       );
     }
-    if (activeThreadIds.size > 0) {
-      bb.log.info(`kept turn assignments for ${activeThreadIds.size} still-active threads`);
+    if (result.orphaned > 0) {
+      bb.log.warn(
+        `re-staged ${result.orphaned} annotation${result.orphaned === 1 ? "" : "s"} assigned to threads deleted while Agentation was stopped`,
+      );
+    }
+    if (result.keptThreads > 0) {
+      bb.log.info(
+        `kept turn assignments for ${result.keptThreads} still-active thread${result.keptThreads === 1 ? "" : "s"}`,
+      );
     }
   }
   recoverTurnAssignments().catch((error: unknown) => {
@@ -704,7 +720,7 @@ export default async function plugin(bb: BbPluginApi) {
       };
     }
 
-    broadcastClaim(claim.reopened);
+    broadcast({ type: "annotations", sessionId: null });
 
     const instruction = renderAnnotationAssignment(
       claim.dispatch.annotations,

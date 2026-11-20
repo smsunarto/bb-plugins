@@ -15,8 +15,8 @@ import {
   recoverInterruptedTurnAssignments,
   restageAnnotation,
   restageThreadAssignments,
+  readRecoverySnapshot,
   restageTurnAssignments,
-  turnAssignmentThreadIds,
 } from "../lib/staging.ts";
 import {
   getAnnotation,
@@ -32,6 +32,25 @@ function freshDb(): Database.Database {
   const db = new Database(":memory:");
   for (const statement of migrations) db.exec(statement);
   return db;
+}
+
+function turnAssignmentThreadIds(db: Database.Database): string[] {
+  const rows = db
+    .prepare(`SELECT DISTINCT thread_id FROM annotation_turn_assignments ORDER BY thread_id`)
+    .all() as Array<{ thread_id: string }>;
+  return rows.map((row) => row.thread_id);
+}
+
+/** Recovery as the server runs it, with the given thread states; returns how many moved. */
+function recover(
+  db: Database.Database,
+  threads: { active?: string[]; missing?: string[] } = {},
+): number {
+  const result = recoverInterruptedTurnAssignments(db, readRecoverySnapshot(db), {
+    active: new Set(threads.active),
+    missing: new Set(threads.missing),
+  });
+  return result.restaged + result.orphaned;
 }
 
 function seed(db: Database.Database, id = "ann_1") {
@@ -400,7 +419,7 @@ test("restart recovery keeps acknowledged annotations assigned", () => {
   const db = freshDb();
   assignTogether(db, "thr_target", "awaiting-finish");
 
-  assert.equal(recoverInterruptedTurnAssignments(db), 1);
+  assert.equal(recover(db), 1);
   assertAcknowledgedStaysAssigned(db, "thr_target");
 });
 
@@ -431,7 +450,7 @@ test("an annotation acknowledged while staged is pending again once sent", () =>
   acknowledge(db);
 
   const claim = send(db, "thr_T", "awaiting-start");
-  assert.equal(claim.outcome === "claimed" && claim.reopened, 1);
+  assert.equal(claim.outcome, "claimed");
   assert.equal(getAnnotation(db, "ann_1")?.status, "pending");
   assert.equal(restageTurnAssignments(db, "thr_T", { includeAwaitingStart: true }), 1);
   assert.deepEqual(
@@ -446,8 +465,8 @@ test("restart recovery re-stages an annotation acknowledged before it was sent",
   acknowledge(db);
   send(db, "thr_T", "awaiting-start");
 
-  assert.equal(recoverInterruptedTurnAssignments(db), 1);
-  assert.equal(recoverInterruptedTurnAssignments(db), 0);
+  assert.equal(recover(db), 1);
+  assert.equal(recover(db), 0);
   assert.equal(assignedThread(db), "staged");
 });
 
@@ -497,10 +516,10 @@ test("restart recovery gives back what a missing thread held, acknowledged or no
   assert.equal(restageTurnAssignments(db, "thr_gone"), 0);
 
   // An existing thread with no turn left keeps its acknowledged annotation.
-  assert.equal(recoverInterruptedTurnAssignments(db), 0);
+  assert.equal(recover(db), 0);
   assert.equal(assignedThread(db), "thr_gone");
 
-  assert.equal(recoverInterruptedTurnAssignments(db, new Set(), new Set(["thr_gone"])), 1);
+  assert.equal(recover(db, { missing: ["thr_gone"] }), 1);
   assert.equal(assignedThread(db), "staged");
   assert.equal(getAnnotation(db, "ann_1")?.status, "pending");
 });
@@ -514,20 +533,45 @@ test("mentioning an acknowledged annotation in another thread reassigns it", () 
 
   assert.equal(send(db, "thr_B", "awaiting-finish").outcome, "stale");
   const claim = send(db, "thr_B", "awaiting-finish", { reassign: true });
-  assert.equal(claim.outcome === "claimed" && claim.reopened, 1);
+  assert.equal(claim.outcome, "claimed");
   assert.equal(assignedThread(db), "thr_B");
   assert.equal(getAnnotation(db, "ann_1")?.status, "pending");
   assert.deepEqual(turnAssignmentThreadIds(db), ["thr_B"]);
 });
 
-test("a reassigned annotation leaves its previous thread's turn behind", () => {
+test("a claim drops the turn of the thread the annotation leaves", () => {
   const db = freshDb();
   seed(db);
   send(db, "thr_A", "awaiting-finish");
-  send(db, "thr_B", "awaiting-start", { reassign: true });
+  const moving = claimStagedAnnotations(db, {
+    annotationIds: ["ann_1"],
+    threadId: "thr_B",
+    reassign: true,
+  });
+  if (moving.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+  failDispatch(db, moving.dispatch.id, "thread unreachable");
+  assert.deepEqual(turnAssignmentThreadIds(db), []);
 
+  // Delivered elsewhere with no turn of its own, thr_A's turn ending leaves it.
+  const claim = claimStagedAnnotations(db, { annotationIds: ["ann_1"], threadId: "thr_C" });
+  if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+  completeDispatch(db, claim.dispatch.id);
   assert.equal(restageTurnAssignments(db, "thr_A"), 0);
-  assert.equal(assignedThread(db), "thr_B");
+  assert.equal(assignedThread(db), "thr_C");
+});
+
+test("an annotation is never claimed again for the thread holding it", () => {
+  const db = freshDb();
+  seed(db);
+  send(db, "thr_A", "awaiting-finish");
+  acknowledge(db);
+
+  assert.equal(send(db, "thr_A", "awaiting-finish", { reassign: true }).outcome, "stale");
+  assert.equal(getAnnotation(db, "ann_1")?.status, "acknowledged");
+  assert.equal(
+    (db.prepare(`SELECT COUNT(*) AS n FROM annotation_dispatches`).get() as { n: number }).n,
+    1,
+  );
 });
 
 test("a queued annotation waits for its own turn instead of the active turn", () => {
@@ -576,7 +620,7 @@ test("restart recovery returns open turn assignments to staging", () => {
   if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
   completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: "awaiting-start" });
 
-  assert.equal(recoverInterruptedTurnAssignments(db), 1);
+  assert.equal(recover(db), 1);
   assert.equal(getAnnotationRouting(db, "ann_1")?.state, "staged");
 });
 
@@ -594,7 +638,7 @@ test("restart recovery keeps assignments whose thread is still mid-turn", () => 
   }
   assert.deepEqual(turnAssignmentThreadIds(db), ["thr_busy", "thr_idle"]);
 
-  assert.equal(recoverInterruptedTurnAssignments(db, new Set(["thr_busy"])), 1);
+  assert.equal(recover(db, { active: ["thr_busy"] }), 1);
   assert.equal(getAnnotationRouting(db, "ann_idle")?.state, "staged");
   assert.equal(getAnnotationRouting(db, "ann_busy")?.state, "assigned");
   assert.deepEqual(turnAssignmentThreadIds(db), ["thr_busy"]);

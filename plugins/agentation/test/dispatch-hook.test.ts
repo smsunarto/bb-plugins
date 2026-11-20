@@ -72,7 +72,10 @@ async function loaded() {
     (
       (await harness.callRpc("listStagedAnnotations", null)) as { annotations: { id: string }[] }
     ).annotations.map((annotation) => annotation.id);
-  return { harness, hook, staged };
+  const db = bb.storage.database();
+  const dispatchRows = () =>
+    (db.prepare(`SELECT COUNT(*) AS n FROM annotation_dispatches`).get() as { n: number }).n;
+  return { harness, hook, staged, dispatchRows };
 }
 
 function dispatch(
@@ -107,14 +110,20 @@ function dispatch(
 }
 
 test("a new thread's first dispatch assigns the pill until its turn ends", async () => {
-  await withStagedAnnotation(async ({ harness, hook, staged }) => {
+  await withStagedAnnotation(async ({ harness, hook, staged, dispatchRows }) => {
     assert.deepEqual(await staged(), ["ann_1"]);
     const thread = makeThreadResponse({ id: "thr_new", status: "pending" });
 
     assert.deepEqual(await hook(dispatch(thread, "start-turn")), { action: "proceed" });
     assert.deepEqual(await staged(), []);
-    // A drain or retry of the same message finds nothing left to claim.
-    assert.deepEqual(await hook(dispatch(thread, "start-turn")), { action: "proceed" });
+    // A drain or retry of the same message finds nothing left to claim: no
+    // new dispatch row and no broadcast.
+    const signals = harness.inspection.realtimeSignals.length;
+    for (let pass = 0; pass < 4; pass += 1) {
+      assert.deepEqual(await hook(dispatch(thread, "start-turn")), { action: "proceed" });
+    }
+    assert.equal(dispatchRows(), 1);
+    assert.equal(harness.inspection.realtimeSignals.length, signals);
 
     await harness.emitThreadEvent("thread.idle", {
       thread: { ...thread, status: "idle" },
@@ -227,34 +236,6 @@ test("deleting the thread gives back a pill its agent acknowledged", async () =>
     assert.deepEqual(await staged(), []);
 
     await harness.emitThreadEvent("thread.deleted", { thread });
-    assert.deepEqual(await staged(), ["ann_1"]);
-  });
-});
-
-test("a pill acknowledged in one thread moves to the next thread it is mentioned in", async () => {
-  await withStagedAnnotation(async ({ harness, hook, staged }) => {
-    const first = makeThreadResponse({ id: "thr_A", status: "pending" });
-    await hook(dispatch(first, "start-turn"));
-    await harness.callAgentTool("agentation_acknowledge", { annotationId: "ann_1" });
-    await harness.emitThreadEvent("thread.idle", {
-      thread: { ...first, status: "idle" },
-      lastAssistantText: null,
-    });
-
-    const second = makeThreadResponse({ id: "thr_B", status: "pending" });
-    await hook(dispatch(second, "start-turn"));
-    const { routings } = (await harness.callRpc("listAnnotations", {
-      sessionId: null,
-      statuses: null,
-      pluginId: null,
-    })) as { routings: Record<string, { state: string; threadId?: string }> };
-    assert.equal(routings.ann_1?.threadId, "thr_B");
-
-    // thr_B's agent never acknowledged it, so it reappears after that turn.
-    await harness.emitThreadEvent("thread.idle", {
-      thread: { ...second, status: "idle" },
-      lastAssistantText: null,
-    });
     assert.deepEqual(await staged(), ["ann_1"]);
   });
 });

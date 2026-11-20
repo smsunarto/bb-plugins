@@ -24,7 +24,11 @@ source context, not the delivery target.
    - Otherwise, call `agentation_get_all_pending` before searching the code;
      the annotation already tells you where to look.
 2. Check status and assignment; leave work acknowledged by another thread with
-   that thread. Call `agentation_acknowledge` for each item you take on.
+   that thread. Call `agentation_acknowledge` for each item you take on:
+   acknowledging keeps the annotation assigned to your thread after your turn
+   ends. An annotation you do not acknowledge or resolve returns to the human's
+   staging area. A re-sent or newly mentioned annotation arrives as `pending`,
+   even if it was acknowledged before, so acknowledge it again.
 3. Locate the code using the targeting fields below, then make and verify the change.
 4. `agentation_resolve` with a one-line summary of what you changed. The marker
    disappears from every open bb window.
