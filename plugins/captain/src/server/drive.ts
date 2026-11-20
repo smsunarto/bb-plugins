@@ -1,15 +1,20 @@
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readdirSync,
+  readlinkSync,
   readSync,
   realpathSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync,
+  type Stats,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 
@@ -67,7 +72,7 @@ function realExisting(path: string): string {
   }
 }
 
-function isInside(root: string, path: string): boolean {
+export function isInside(root: string, path: string): boolean {
   const inside = relative(root, path);
   return inside !== "" && !inside.startsWith(`..${sep}`) && inside !== ".." && !isAbsolute(inside);
 }
@@ -101,7 +106,7 @@ export function createDrive() {
     ) {
       return cached.text;
     }
-    const text = readHead(path, Math.min(Number(stat.size), maxBytes));
+    const text = readHead(path, Math.min(Number(stat.size), maxBytes), stat.size > maxBytes);
     cache.set(path, { ino: stat.ino, size: stat.size, mtimeNs: stat.mtimeNs, cap: maxBytes, text });
     return text;
   }
@@ -165,7 +170,70 @@ export function createDrive() {
   };
 }
 
-function readHead(path: string, maxBytes: number): string {
+/**
+ * At most `maxBytes` of a regular file's head, or null when the file is gone,
+ * is not a regular file, or is not inside `root` (a real path). The checks and
+ * the read use one descriptor: opened without following a final link (and
+ * without blocking on a FIFO), checked by `fstat`, located through
+ * `/proc/self/fd`, then read. A path swapped after the open cannot change what
+ * is read. Where `/proc` is missing (macOS), the location is the path's own
+ * real path, accepted only while it is still the same file as the descriptor:
+ * a narrower race, not none.
+ */
+export function readInside(root: string, path: string, maxBytes: number): string | null {
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch {
+    return null;
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return null;
+    const located = locate(fd, path, stat);
+    if (located === null || !isInside(root, located)) return null;
+    const length = readInto(fd, Buffer.alloc(Math.min(stat.size, maxBytes)));
+    return stat.size > maxBytes ? completePrefix(length) : length.toString("utf8");
+  } catch {
+    return null;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Where an open file is: the kernel's own path for it, or the path's real path while it is the same file. */
+function locate(fd: number, path: string, stat: Stats): string | null {
+  try {
+    return readlinkSync(`/proc/self/fd/${fd}`);
+  } catch {
+    // No /proc: fall through.
+  }
+  const real = realpathSync(path);
+  const now = lstatSync(real, { throwIfNoEntry: false });
+  return now !== undefined && now.dev === stat.dev && now.ino === stat.ino ? real : null;
+}
+
+/** Fills `buffer` from the descriptor's start, or as much as the file holds. */
+function readInto(fd: number, buffer: Buffer): Buffer {
+  let length = 0;
+  while (length < buffer.byteLength) {
+    const read = readSync(fd, buffer, length, buffer.byteLength - length, length);
+    if (read === 0) break;
+    length += read;
+  }
+  return buffer.subarray(0, length);
+}
+
+/**
+ * The characters wholly inside `bytes`: a character the cut split in two is
+ * left out, rather than decoded as U+FFFD.
+ */
+function completePrefix(bytes: Uint8Array): string {
+  return new TextDecoder("utf-8").decode(bytes, { stream: true });
+}
+
+/** A file's first `maxBytes`; `cut` when the file is longer, so its last character may be split. */
+function readHead(path: string, maxBytes: number, cut = false): string {
   const fd = openSync(path, "r");
   try {
     const buffer = Buffer.alloc(maxBytes);
@@ -175,7 +243,8 @@ function readHead(path: string, maxBytes: number): string {
       if (read === 0) break;
       length += read;
     }
-    return buffer.subarray(0, length).toString("utf8");
+    const head = buffer.subarray(0, length);
+    return cut ? completePrefix(head) : head.toString("utf8");
   } finally {
     closeSync(fd);
   }

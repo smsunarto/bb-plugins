@@ -2,11 +2,12 @@ import { definePluginApp, experimental_THREAD_ACTION_GROUPS } from "@get-bb/plug
 import { ADOPT_ICON, ADOPT_LABEL, AdoptOverlay, adoptItem, useAdoptData } from "./adopt.tsx";
 import { NeedsYouBanner } from "./banner.tsx";
 import { CaptainIconSettings } from "./icon-settings.tsx";
+import { OverviewTab, useOverviewVisible } from "./overview.tsx";
 import { CrewModelsSettings } from "./settings.tsx";
 
 /**
- * Registers the Needs you banner, the crew model ladders and Captain icons in
- * Captain's settings, and Adopt into Captain in every thread menu.
+ * Registers the Needs you banner, the Overview tab, the crew model ladders and
+ * Captain icons in Captain's settings, and Adopt into Captain in every thread menu.
  */
 export default definePluginApp((app) => {
   app.slots.settingsSection({
@@ -20,6 +21,17 @@ export default definePluginApp((app) => {
     title: "Captain icons",
     description: "The icon or picture each Captain shows in the sidebar.",
     component: CaptainIconSettings,
+  });
+  // A Captain's asks, crew and Drive beside its thread; hidden on every other thread.
+  app.slots.experimental_tab({
+    context: { kind: "thread" },
+    availability: "fixed",
+    id: "overview",
+    title: "Overview",
+    icon: "LayoutList",
+    component: OverviewTab,
+    layout: "flush",
+    useVisible: useOverviewVisible,
   });
   // Composer banners scope only by composer kind, so this mounts on every
   // thread's composer; it renders only on Captain threads.

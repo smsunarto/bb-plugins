@@ -4,3 +4,8 @@
 # @pierre/diffs subpaths through the workspace root. Keep the linker pinned.
 [install]
 linker = "hoisted"
+
+# Each test run gets a private TMPDIR, removed when the run ends; see scripts/test-tmp-root.mjs.
+# bun reads only the bunfig.toml in the directory it starts from, so plugins carry their own.
+[test]
+preload = ["./scripts/test-tmp-root-preload.mjs"]

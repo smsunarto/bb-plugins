@@ -55,6 +55,8 @@ export type FakeTask = {
   updatedAt: string;
   description?: string;
   fields: Map<string, { value: string; head: string | null; writtenAt: string }>;
+  /** Keys the task had before a move; Tasks still answers them with the new key. */
+  formerKeys?: string[];
 };
 export type FakeTaskThread = {
   taskId: string;
@@ -113,6 +115,8 @@ export type FakeOptions = {
   maintenanceDeadlineMs?: number;
   /** How long a routine fire waits on one bb thread call. */
   threadDeadlineMs?: number;
+  /** How often a watched Drive is scanned. */
+  driveScanMs?: number;
 };
 
 /** The Account Pooler's `status.get` fields Captain reads; null when the pool is not loaded. */
@@ -305,6 +309,14 @@ export async function captainHost(options: FakeOptions = {}) {
   /** Threads whose archive fails. */
   const archiveFails = new Set<string>();
   const threads = new Map<string, Thread>();
+  /** `providers.models` calls, and how many of the next ones fail. */
+  const providerModels = { calls: 0, fails: 0 };
+  /** The parent of every `threads.list` read, in order, to count crew polls. */
+  const threadLists: (string | undefined)[] = [];
+  /** While `gate` is set, Tasks' `crewSnapshot` waits for it. */
+  const crewSnapshotHold: { gate: Promise<void> | null } = { gate: null };
+  /** Each `interactions.list` call's thread, in order. */
+  const interactionReads: string[] = [];
   /** Thread metadata by `<threadId> <pluginId>`, as other plugins read it. */
   const metadata = new Map<string, Record<string, unknown>>();
   /** Messages held by a spawn's `sendAt`, until sent now. */
@@ -465,7 +477,10 @@ export async function captainHost(options: FakeOptions = {}) {
         return { preset };
       }
       case "getTaskByKey": {
-        const task = tasks.tasks.find((entry) => entry.key === input["taskKey"]);
+        const key = String(input["taskKey"]);
+        const task = tasks.tasks.find(
+          (entry) => entry.key === key || entry.formerKeys?.includes(key) === true,
+        );
         return { task: task === undefined ? null : snapshotTask(task) };
       }
       case "listTasks": {
@@ -535,6 +550,7 @@ export async function captainHost(options: FakeOptions = {}) {
         );
         return { threadId: input["threadId"] };
       case "crewSnapshot": {
+        if (crewSnapshotHold.gate !== null) await crewSnapshotHold.gate;
         const ids = new Set(input["threadIds"] as string[]);
         const rows = tasks.taskThreads
           .filter((row) => ids.has(row.threadId))
@@ -613,6 +629,18 @@ export async function captainHost(options: FakeOptions = {}) {
     agentSkillIds: manifestSkillIds(),
     sdk: {
       system: { config: async () => ({ primaryHostId: SERVER_HOST }) as never },
+      providers: {
+        models: async () => {
+          providerModels.calls += 1;
+          if (providerModels.fails > 0) {
+            providerModels.fails -= 1;
+            throw new Error("provider catalog unavailable");
+          }
+          return {
+            models: [{ model: "claude-opus-5-5", displayName: "Claude Opus 5.5" }],
+          } as never;
+        },
+      },
       hosts: {
         get: async ({ hostId }) => ({
           ...makeHostResponse({ id: hostId }),
@@ -693,7 +721,10 @@ export async function captainHost(options: FakeOptions = {}) {
           return { ok: true, delivery: "sent" } as never;
         },
         interactions: {
-          list: async ({ threadId }) => (interactions.get(threadId) ?? []) as never,
+          list: async ({ threadId }) => {
+            interactionReads.push(threadId);
+            return (interactions.get(threadId) ?? []) as never;
+          },
         },
         defaultExecutionOptions: async ({ threadId }) =>
           ({
@@ -703,13 +734,15 @@ export async function captainHost(options: FakeOptions = {}) {
             serviceTier: "default",
             source: "client/thread/start",
           }) as never,
-        list: async (args = {}) =>
-          [...threads.values()].filter(
+        list: async (args = {}) => {
+          threadLists.push(args.parentThreadId ?? undefined);
+          return [...threads.values()].filter(
             (thread) =>
               (args.parentThreadId === undefined ||
                 thread.parentThreadId === args.parentThreadId) &&
               (args.archived === undefined || (thread.archivedAt !== null) === args.archived),
-          ) as never,
+          ) as never;
+        },
         update: async ({ threadId, ...patch }) => {
           const thread = threads.get(threadId);
           if (thread === undefined) throw new Error(`thread ${threadId} not found`);
@@ -803,6 +836,7 @@ export async function captainHost(options: FakeOptions = {}) {
       ? {}
       : { threadDeadlineMs: options.threadDeadlineMs }),
     crewPollMs: options.crewPollMs ?? 20,
+    driveScanMs: options.driveScanMs ?? 40,
   };
   let server = await start(host.bb, startOptions);
   await server.ready;
@@ -908,6 +942,10 @@ export async function captainHost(options: FakeOptions = {}) {
     events,
     archiveFails,
     threads,
+    threadLists,
+    providerModels,
+    crewSnapshotHold,
+    interactionReads,
     metadata,
     queued,
     busy,

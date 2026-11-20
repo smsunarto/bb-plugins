@@ -744,6 +744,153 @@ describe("bb captain ask", () => {
       host.tasks.comments.filter((c) => c.body.startsWith("Answered:")).map((c) => c.body),
     ).toEqual(["Answered: Studio (a1)"]);
   });
+
+  test("an option over 12 columns is refused on decision, access and improve asks; 12 opens trimmed, though the comment adds (recommended)", async () => {
+    const { host, captainId, as } = await crewHost();
+    const ask = (kind: string, first: string) =>
+      as([
+        "ask",
+        "Pick the cache backend",
+        "--kind",
+        kind,
+        "--task",
+        "BBPLUGINS-1",
+        "--option",
+        first,
+        "--option",
+        "SQLite",
+        "--detail",
+        "Builds re-download deps.",
+      ]);
+
+    const decision = await ask("decision", "Redis caches!");
+    const access = await ask("access", "Grant the key");
+    const improve = await ask("improve", "缓存后端缓存后端");
+    const opened = await ask("decision", "  Redis cache!  ");
+
+    expect(decision.exitCode).toBe(1);
+    expect(decision.stderr).toContain(
+      'option "Redis caches!" is 13 columns; an option is ≤12 columns (wide characters count 2), so the buttons fit on one row; fix: shorten it to a label, such as "Redis", with no ⭐ or other marker; move the detail into --detail-file',
+    );
+    expect(access.exitCode).toBe(1);
+    expect(access.stderr).toContain('option "Grant the key" is 13 columns');
+    expect(improve.exitCode).toBe(1);
+    expect(improve.stderr).toContain('option "缓存后端缓存后端" is 16 columns');
+    expect(opened.exitCode).toBe(0);
+    expect(host.server.store.asksOf(captainId).map((a) => a.options)).toEqual([
+      ["Redis cache!", "SQLite"],
+    ]);
+    expect(host.tasks.comments.at(-1)?.body).toContain("1. Redis cache! (recommended)");
+  });
+
+  test("an open ask stored before the cap still reads, answers, and retries its push on a rerun", async () => {
+    const { host, captainId, as } = await crewHost();
+    const long = "Keep the in-memory cache for now";
+    host.server.store.openAsk({
+      captainId,
+      taskKey: "BBPLUGINS-1",
+      kind: "decision",
+      text: "Pick the cache backend",
+      detail: "Builds re-download deps.",
+      options: [long, "Move to Redis"],
+      askedAt: 1_000,
+    });
+    const rerun = (...options: string[]) =>
+      as([
+        "ask",
+        "Pick the cache backend",
+        "--task",
+        "BBPLUGINS-1",
+        ...options.flatMap((option) => ["--option", option]),
+        "--detail",
+        "Builds re-download deps.",
+      ]);
+    const rpc = (method: string, input: unknown) => host.harness.behavior.callRpc(method, input);
+
+    const same = await rerun(long, "Move to Redis");
+    const changed = await rerun("Keep", "Redis");
+
+    expect(same.exitCode).toBe(0);
+    expect(same.stdout).toBe("a1  exists  decision  BBPLUGINS-1  Pick the cache backend\n");
+    expect(same.stderr).toBe("");
+    expect(host.pushes.filter((push) => push.method === "notifications.send")).toHaveLength(1);
+    expect(changed.exitCode).toBe(0);
+    expect(changed.stderr).toBe(
+      "note: a1 is already open, so it keeps its options; the new --option values were ignored\n",
+    );
+    expect(await rpc("asks", { captainId })).toEqual({
+      items: [expect.objectContaining({ key: "ask:a1", options: [long, "Move to Redis"] })],
+    });
+    expect(await rpc("resolveAsk", { askId: "a1", answer: long })).toEqual({
+      state: "answered",
+      warnings: [],
+    });
+  });
+
+  test("a rerun that gives no options gets no ignored-options note", async () => {
+    const { as } = await crewHost();
+    const argv = ["ask", "Grant the Unity key", "--kind", "access", "--detail", "Cloud crew."];
+
+    await as([...argv, "--option", "Grant", "--option", "Deny"]);
+    const again = await as(argv);
+
+    expect(again.exitCode).toBe(0);
+    expect(again.stdout).toBe("a1  exists  access  -  Grant the Unity key\n");
+    expect(again.stderr).toBe("");
+  });
+
+  test("a long-option rerun that no longer matches its open ask is refused, even when the ask is answered mid-command", async () => {
+    const { host, captainId, as } = await crewHost();
+    const ask = (...options: string[]) =>
+      as([
+        "ask",
+        "Pick the cache backend",
+        "--task",
+        "BBPLUGINS-1",
+        ...options.flatMap((option) => ["--option", option]),
+        "--detail",
+        "Builds re-download deps.",
+      ]);
+    await ask("Redis", "SQLite");
+
+    const [racing] = await Promise.all([
+      ask("x".repeat(70), "Move to Redis!!"),
+      host.harness.behavior.callRpc("resolveAsk", { askId: "a1", answer: "Redis" }),
+    ]);
+    const after = await ask("x".repeat(70), "Move to Redis!!");
+
+    expect(racing.exitCode === 1 || racing.stdout.includes("a1  exists")).toBe(true);
+    expect(after.exitCode).toBe(1);
+    expect(after.stderr).toContain(`option "${"x".repeat(23)}…" is 70 columns`);
+    expect(host.server.store.asksOf(captainId).map((a) => a.id)).toEqual(["a1"]);
+  });
+
+  test("a long-option rerun under a moved task's old key is refused", async () => {
+    const { host, captainId, as } = await crewHost();
+    const ask = (...options: string[]) =>
+      as([
+        "ask",
+        "Pick the cache backend",
+        "--task",
+        "BBPLUGINS-1",
+        ...options.flatMap((option) => ["--option", option]),
+        "--detail",
+        "Builds re-download deps.",
+      ]);
+    await ask("Redis", "SQLite");
+    const task = host.tasks.tasks.find((entry) => entry.key === "BBPLUGINS-1");
+    if (task === undefined) throw new Error("no BBPLUGINS-1");
+    Object.assign(task, { key: "BBPLUGINS-9", formerKeys: ["BBPLUGINS-1"] });
+
+    const moved = await ask("x".repeat(70), "Move to Redis!!");
+
+    expect(moved.exitCode).toBe(1);
+    expect(moved.stderr).toContain(`option "${"x".repeat(23)}…" is 70 columns`);
+    expect(moved.stderr).toContain('option "Move to Redis!!" is 15 columns');
+    expect(host.server.store.asksOf(captainId).map((a) => [a.id, a.taskKey])).toEqual([
+      ["a1", "BBPLUGINS-1"],
+    ]);
+  });
 });
 
 describe("bb captain tell", () => {

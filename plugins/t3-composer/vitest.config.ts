@@ -7,6 +7,7 @@ export default defineConfig({
     name: "t3-composer",
     include: ["**/*.test.{ts,tsx}"],
     setupFiles: ["./test-setup.ts"],
+    globalSetup: ["../../scripts/test-tmp-root.mjs"],
     exclude: ["node_modules/**"],
   },
 });

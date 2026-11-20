@@ -46,7 +46,7 @@ const NO_ITEMS: QueueItem[] = [];
 const TICK_MS = 30_000;
 const FAR = Number.MAX_SAFE_INTEGER;
 /** Every control a phone user taps gets a 44px target. */
-const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
+export const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 /** Later and Skip: a short pair that sits in the title's first line. */
 const DEFER = "h-6 px-2 text-muted-foreground";
 
@@ -60,7 +60,7 @@ function CaptainGate({ threadId }: { threadId: string }) {
   return captains.data?.ids.includes(threadId) ? <Banner captainId={threadId} /> : null;
 }
 
-type Action = { label: string; run: () => void; primary?: boolean; recommended?: boolean };
+export type Action = { label: string; run: () => void; primary?: boolean; recommended?: boolean };
 
 function Banner({ captainId }: { captainId: string }) {
   const input = useMemo(() => ({ captainId }), [captainId]);
@@ -209,7 +209,7 @@ function useItemUi(key: string) {
  * Answer, Later and Skip for the item on show. Each keeps keyboard focus on
  * the banner when the clicked button unmounts, and reports a failure inline.
  */
-function useItemCommands(
+export function useItemCommands(
   captainId: string,
   key: string,
   root: HTMLElement | null,
@@ -220,24 +220,34 @@ function useItemCommands(
     if (root?.contains(document.activeElement)) root.focus();
   };
   const fail = (failure: unknown) => setError((failure as Error).message);
-  const deliver = async (askId: string, text: string) => {
+  /** True once the server holds the answer, even if sending it on failed. */
+  const deliver = async (askId: string, text: string): Promise<boolean> => {
     try {
       const result = await resolve.mutate({ askId, answer: text });
       if (result.state === "undelivered") setError(result.warnings.join("; "));
+      return true;
     } catch (failure) {
       fail(failure);
+      return false;
     }
   };
-  const answer = (askId: string, text: string) => {
+  const answer = (askId: string, text: string): Promise<boolean> => {
     keepFocus();
     setError(null);
-    void deliver(askId, text);
+    return deliver(askId, text);
   };
   const deferItem = (action: "later" | "skip") => {
     keepFocus();
     void defer.mutate({ captainId, key, action }).catch(fail);
   };
-  return { answer, later: () => deferItem("later"), skip: () => deferItem("skip"), fail };
+  return {
+    answer,
+    later: () => deferItem("later"),
+    skip: () => deferItem("skip"),
+    fail,
+    /** An answer is on its way to the server. */
+    pending: resolve.isPending,
+  };
 }
 
 /** The answer and defer mutations, each updating the cached queue before the server replies. */
@@ -377,16 +387,26 @@ function Heading({
 
 /**
  * One answer; the recommended one says so. A long answer wraps inside the
- * card (the server caps it at 80 characters) and keeps "Recommended" whole.
+ * card (a new ask's options are capped at 12 columns, but older asks may be
+ * longer) and keeps "Recommended" whole.
  */
-function ActionButton({ action, index }: { action: Action; index: number }) {
+export function ActionButton({
+  action,
+  index,
+  shortcuts = true,
+}: {
+  action: Action;
+  index: number;
+  /** False where no key handler answers by number, as outside the banner. */
+  shortcuts?: boolean;
+}) {
   return (
     <Button
       type="button"
       size="sm"
       variant={action.primary ? "default" : "outline"}
       className={cn(TAP, "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal")}
-      aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
+      aria-keyshortcuts={shortcuts && index < 9 ? String(index + 1) : undefined}
       onClick={action.run}
     >
       <span className="min-w-0 text-start break-words [unicode-bidi:plaintext]">
@@ -550,7 +570,7 @@ function title(item: QueueItem): string {
   return item.kind === "ask" ? item.text : item.title;
 }
 
-function itemActions(
+export function itemActions(
   item: QueueItem,
   ctx: {
     answer: (askId: string, text: string) => void;
@@ -604,23 +624,26 @@ function healthActions(item: HealthItem, ctx: Parameters<typeof itemActions>[1])
   }
 }
 
-function OtherAnswer({
+export function OtherAnswer({
   value,
   onChange,
   onCancel,
   onSubmit,
+  pending = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   onCancel: () => void;
   onSubmit: (text: string) => void;
+  /** An answer is sending: Send waits, so one answer goes once. */
+  pending?: boolean;
 }) {
   return (
     <form
       className="flex min-w-0 items-center gap-1.5"
       onSubmit={(event) => {
         event.preventDefault();
-        if (value.trim() !== "") onSubmit(value.trim());
+        if (value.trim() !== "" && !pending) onSubmit(value.trim());
       }}
     >
       <Input
@@ -638,7 +661,7 @@ function OtherAnswer({
           }
         }}
       />
-      <Button type="submit" size="sm" className={TAP} disabled={value.trim() === ""}>
+      <Button type="submit" size="sm" className={TAP} disabled={value.trim() === "" || pending}>
         Send
       </Button>
     </form>
@@ -795,7 +818,7 @@ function useLastSeen(captainId: string): void {
 }
 
 /** The clock for ages and Later: a coarse tick, plus a wake when the next Later ends. */
-function useNow(...lists: (readonly QueueItem[] | undefined)[]): number {
+export function useNow(...lists: (readonly QueueItem[] | undefined)[]): number {
   const [now, setNow] = useState(Date.now);
   const wake = nextWake(
     lists.flatMap((list) => list ?? []),

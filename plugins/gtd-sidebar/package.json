@@ -123,7 +123,7 @@
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-gtd-sidebar.tsbuildinfo",
-    "test": "bun test --timeout=30000 test/*.test.ts && node --experimental-strip-types --test test/machine-visibility.node.ts test/feature-settings.node.ts test/snooze-family.node.ts test/family-folds.node.ts test/deletion-refresh.node.ts test/cli.node.ts",
+    "test": "bun test --timeout=30000 test/*.test.ts && node --import ../../scripts/test-tmp-root-preload.mjs --experimental-strip-types --test test/machine-visibility.node.ts test/feature-settings.node.ts test/snooze-family.node.ts test/family-folds.node.ts test/deletion-refresh.node.ts test/cli.node.ts",
     "clean": "rm -rf dist"
   },
   "bundledDependencies": [
