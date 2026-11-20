@@ -110,14 +110,13 @@ export function askResolveCommand(deps: CommandDeps) {
       },
       json: JSON_OPTION,
     },
-    run(input, ctx) {
+    run(input) {
       const json = input.options.json;
       return guard("captain ask resolve", json, async () => {
         const { ask, state, notes } = await resolveAsk(
           deps,
           input.positionals.id,
           input.options.answer,
-          { threadId: ctx.threadId ?? null },
         );
         return render([askItem(ask, state)], json, notes);
       });

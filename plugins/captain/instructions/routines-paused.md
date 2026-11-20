@@ -1,1 +1,0 @@
-No one opened the {{captain}} Captain for {{days}} days while its routines kept running, so Captain paused them: {{routines}}. **Resume** restarts exactly these; **Keep paused** leaves them for `bb captain routine resume`.

@@ -114,29 +114,12 @@ describe("routines", () => {
     expect(runs).toHaveLength(20);
     expect(runs[0]).toMatchObject({ at: 25, trigger: "test" });
     expect(runs.at(-1)?.at).toBe(6);
-    expect(store.lastScheduledDelivery("thr_a")).toBe(24);
+    expect(store.routine(routine.id)?.deliveredAt).toBe(24);
     store.deleteRoutine(routine.id);
     expect(store.routineRuns(routine.id)).toEqual([]);
   });
 
-  test("away holds: one claim per absence, then paused, then asked", async () => {
-    const host = await captainHost();
-    const store = host.server.store;
-    const a = store.createRoutine({ ...fields("A"), captainId: "thr_a", at: 1 });
-    store.createRoutine({ ...fields("B"), captainId: "thr_a", at: 1 });
-    expect(store.startAway("routines-away:thr_a:5", "thr_a", 5, [a.id], 10)).toBe(true);
-    expect(store.startAway("routines-away:thr_a:5", "thr_a", 5, [a.id], 11)).toBe(false);
-    expect(store.awayHolds({ captainId: "thr_a" })).toMatchObject([
-      { routineId: a.id, absence: 5, paused: false, askId: null },
-    ]);
-    store.markAwayPaused(a.id);
-    store.setAwayAsk([a.id], "a7");
-    expect(store.awayHolds({ askId: "a7" })).toMatchObject([{ routineId: a.id, paused: true }]);
-    store.clearAway(a.id);
-    expect(store.awayHolds()).toEqual([]);
-  });
-
-  test("the last scheduled delivery outlives the trimmed history", async () => {
+  test("fired and delivered times outlive the trimmed history", async () => {
     const host = await captainHost();
     const store = host.server.store;
     const routine = store.createRoutine({ ...fields("Sweep"), captainId: "thr_a", at: 1 });
@@ -164,7 +147,6 @@ describe("routines", () => {
       at: 50,
     });
     expect(store.routineRuns(routine.id).some((run) => run.at === 5)).toBe(false);
-    expect(store.lastScheduledDelivery("thr_a")).toBe(5);
     expect(store.routine(routine.id)).toMatchObject({ firedAt: 39, deliveredAt: 5 });
   });
 

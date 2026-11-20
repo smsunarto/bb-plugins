@@ -17,14 +17,14 @@ import {
 } from "../contract/routines.ts";
 import { isMissing, type AutomationsClient, type AutomationTarget } from "./automations-client.ts";
 import { Refusal } from "./output.ts";
-import { NOTICE, type Cleanup, type Store } from "./store.ts";
+import type { Cleanup, Store } from "./store.ts";
 
 /**
  * Routines: each is one script automation in bb Automations that calls the
  * hidden `bb captain routine fire`, which guards the run and sends the
  * Captain one message. Captain keeps no timer of its own; its maintenance
- * service repairs drift, retries failed Automations work and runs the away
- * pause, apart from the crew check.
+ * service repairs drift and retries failed Automations work, apart from the
+ * crew check.
  */
 
 export type RoutinesDeps = {
@@ -33,8 +33,6 @@ export type RoutinesDeps = {
   files: InstructionFiles;
   now: () => number;
   automations: AutomationsClient;
-  /** Open the away ask for a live Captain and return its id; reruns return the open one. */
-  openAwayAsk: (captainId: string, detail: string) => Promise<string>;
   /** The server machine's time zone, the default for `--timezone`. */
   defaultTimezone?: string;
   /** How long one maintenance item runs before Captain warns; tests shorten it. */
@@ -45,9 +43,6 @@ export type RoutinesDeps = {
 export type RoutineOwner = { threadId: string; name: string; homeProjectId: string };
 
 /** Unseen this long while routines ran, a Captain's routines are paused with one ask. */
-export const AWAY_PAUSE_AFTER_MS = 7 * 24 * 60 * 60_000;
-export const AWAY_ASK_TEXT = "Routines paused while you were away";
-export const AWAY_OPTIONS = ["Resume", "Keep paused"] as const;
 /** Maintenance calls in flight at once, and the deadline on each. */
 const MAINTENANCE_CONCURRENCY = 4;
 /** How long fire waits on one bb thread call. */
@@ -167,17 +162,9 @@ export function createRoutines(deps: RoutinesDeps) {
     if (key !== null && found !== null) await settleDelete(key, found);
   }
 
-  /** Make a routine's automation; held by an away pause, it starts paused and stays held. */
+  /** Make a routine's automation. */
   async function makeAutomation(owner: RoutineOwner, routine: Routine, enabled: boolean) {
-    const held = store.awayHold(routine.id) !== null;
-    const made = await automations.create(
-      owner.homeProjectId,
-      owner.name,
-      routine,
-      enabled && !held,
-    );
-    if (held) store.markAwayPaused(routine.id);
-    return made.id;
+    return (await automations.create(owner.homeProjectId, owner.name, routine, enabled)).id;
   }
 
   /**
@@ -334,7 +321,7 @@ export function createRoutines(deps: RoutinesDeps) {
               } else {
                 await automations.get(found);
               }
-              if (rearm && store.awayHold(before.id) === null) await automations.resume(found);
+              if (rearm) await automations.resume(found);
             } catch (error) {
               if (!isMissing(error)) throw error;
               automationId = await remake();
@@ -353,7 +340,7 @@ export function createRoutines(deps: RoutinesDeps) {
     });
   }
 
-  /** Pause, resume, run now (Grok's Test) or delete. An explicit choice ends an away hold. */
+  /** Pause, resume, run now (Grok's Test) or delete. */
   async function act(
     routine: Routine,
     action: RoutineAction,
@@ -379,7 +366,6 @@ export function createRoutines(deps: RoutinesDeps) {
       } catch (error) {
         throw automationsRefused(error);
       }
-      if (action !== "run") store.clearAway(latest.id);
       changed(owner.threadId);
       return { view: await view(latest), runId };
     });
@@ -702,113 +688,9 @@ export function createRoutines(deps: RoutinesDeps) {
   }
 
   /**
-   * The away pause, as steps a restart resumes: choose the running routines
-   * and claim the absence in one write, pause each (a failure is retried next
-   * pass), then open one ask once all are paused.
-   */
-  async function awayPass(captainId: string): Promise<void> {
-    const now = deps.now();
-    const row = store.captain(captainId);
-    if (row === null) return;
-    if (row.archivedAt !== null) {
-      // Archiving paused its routines and its asks cannot be answered: release the holds.
-      for (const hold of store.awayHolds({ captainId })) store.clearAway(hold.routineId);
-      return;
-    }
-    const seen = store.lastSeen(captainId) ?? row.createdAt;
-    const delivered = store.lastScheduledDelivery(captainId);
-    const qualifies = now - seen > AWAY_PAUSE_AFTER_MS && delivered !== null && delivered > seen;
-    const key = NOTICE.routinesAway(captainId, seen);
-    if (qualifies && store.noticeSentAt(key) === null) {
-      const running: string[] = [];
-      for (const routine of store.routinesOf(captainId)) {
-        const found = target(routine);
-        if (found === null || store.awayHold(routine.id) !== null) continue;
-        // A failed read stops the choice; nothing is written, so the next pass chooses again.
-        const status = await automations.get(found).catch((error: unknown) => {
-          if (isMissing(error)) return null;
-          throw error;
-        });
-        if (status?.enabled === true) running.push(routine.id);
-      }
-      store.startAway(key, captainId, seen, running, now);
-    }
-    // Finish every hold not yet in an ask, from this absence or an earlier
-    // one, even when the user has since been seen: it was chosen to pause.
-    const open = () => store.awayHolds({ captainId }).filter((hold) => hold.askId === null);
-    for (const hold of open().filter((entry) => !entry.paused)) {
-      await serial(`routine:${hold.routineId}`, async () => {
-        const routine = store.routine(hold.routineId);
-        if (routine !== null) await pauseRunning(routine);
-        store.markAwayPaused(hold.routineId);
-      }).catch((error: unknown) =>
-        bb.log.warn(`away pause of ${hold.routineId} retried next pass: ${message(error)}`),
-      );
-    }
-    const unasked = open();
-    if (unasked.length === 0 || unasked.some((hold) => !hold.paused)) return;
-    const names = unasked.map((hold) => {
-      const routine = store.routine(hold.routineId);
-      return routine === null
-        ? hold.routineId
-        : `${hold.routineId} ${JSON.stringify(routine.name)}`;
-    });
-    const since = Math.min(...unasked.map((hold) => hold.absence));
-    const askId = await deps.openAwayAsk(
-      captainId,
-      deps.files.read("routines-paused", {
-        captain: row.name,
-        days: Math.max(7, Math.floor((now - since) / (24 * 60 * 60_000))),
-        routines: names.join(", "),
-      }),
-    );
-    store.setAwayAsk(
-      unasked.map((hold) => hold.routineId),
-      askId,
-    );
-    changed(captainId);
-  }
-
-  /** Whether this ask is an away-pause ask still holding routines. */
-  const isAwayAsk = (askId: string) => store.awayHolds({ askId }).length > 0;
-
-  /**
-   * Apply the answer to an away-pause ask: Resume resumes exactly the
-   * routines it holds; any other answer leaves them paused. Each hold is
-   * removed once handled, so a retry does only the rest. Returns a warning
-   * when some could not be resumed yet.
-   */
-  async function applyAwayAnswer(askId: string, answer: string): Promise<string | null> {
-    const holds = store.awayHolds({ askId });
-    if (holds.length === 0) return null;
-    const resume = answer.trim().toLowerCase() === "resume";
-    const failed: string[] = [];
-    for (const hold of holds) {
-      await serial(`routine:${hold.routineId}`, async () => {
-        const routine = store.routine(hold.routineId);
-        const found = routine === null ? null : target(routine);
-        try {
-          if (resume && found !== null) await automations.resume(found);
-        } catch (error) {
-          if (!isMissing(error)) {
-            failed.push(hold.routineId);
-            return;
-          }
-        }
-        store.clearAway(hold.routineId);
-      });
-    }
-    changed(holds[0]?.captainId as string);
-    return failed.length === 0
-      ? null
-      : `${failed.join(", ")} not resumed: bb Automations did not answer; the next pass retries`;
-  }
-
-  /**
    * One maintenance pass, off the crew check: reconcile until it has run,
-   * retry queued cleanup, run the away pause per live Captain and apply
-   * answered away asks. Each part runs with bounded concurrency and a
-   * deadline, and its failure skips only itself. Returns whether work is left.
+   * then retry queued cleanup. Each part runs with bounded concurrency, and
+   * its failure skips only itself. Returns whether work is left.
    */
   async function maintain(signal?: AbortSignal): Promise<{ pending: boolean }> {
     const step = async (name: string, work: () => Promise<unknown>) => {
@@ -821,35 +703,7 @@ export function createRoutines(deps: RoutinesDeps) {
     };
     await step("reconcile", () => reconcile(signal));
     await step("cleanup", () => drainCleanup(signal));
-    await step("away pause", () =>
-      // Live Captains, plus any whose holds still need finishing or releasing.
-      mapLimit(
-        [
-          ...new Set([
-            ...store.liveCaptains().map((captain) => captain.threadId),
-            ...store.awayHolds().map((hold) => hold.captainId),
-          ]),
-        ],
-        (captainId) =>
-          awayPass(captainId).catch((error: unknown) =>
-            bb.log.warn(`away pause for ${captainId} skipped: ${message(error)}`),
-          ),
-        signal,
-      ),
-    );
-    await step("away answers", async () => {
-      const asks = new Set(
-        store.awayHolds().flatMap((hold) => (hold.askId === null ? [] : [hold.askId])),
-      );
-      for (const askId of asks) {
-        const ask = store.ask(askId);
-        if (ask?.answer == null) continue;
-        const warning = await applyAwayAnswer(askId, ask.answer);
-        if (warning !== null) bb.log.warn(`away answer ${askId}: ${warning}`);
-      }
-    });
-    const holdsLeft = store.awayHolds().some((hold) => !hold.paused || hold.askId === null);
-    return { pending: !reconciled || store.cleanups().length > 0 || holdsLeft };
+    return { pending: !reconciled || store.cleanups().length > 0 };
   }
 
   /**
@@ -924,8 +778,6 @@ export function createRoutines(deps: RoutinesDeps) {
     removeCaptain,
     reconcile,
     maintain,
-    isAwayAsk,
-    applyAwayAnswer,
     /** Register the maintenance service and the bb events that pause or remove a Captain's routines. */
     register(host: Pick<BbPluginApi, "events" | "background">): void {
       host.events.on("thread.archived", ({ thread }) => {

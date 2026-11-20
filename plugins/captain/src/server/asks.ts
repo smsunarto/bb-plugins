@@ -106,7 +106,7 @@ export function shipBlockers(taskKey: string, review: string | null): Blocker[] 
  * comment and sends one push; the push is retried on a rerun until it is sent.
  */
 export async function openAsk(
-  deps: Pick<CommandDeps, "bb" | "store" | "now" | "tasks">,
+  deps: CommandDeps,
   captain: Captain,
   draft: AskDraft,
 ): Promise<{ item: Item; notes: string[] }> {
@@ -174,7 +174,7 @@ export function askItem(ask: Ask, state: string): Item {
 
 /** A task comment that reads as the Captain's: an agent comment from its thread. */
 export async function captainComment(
-  deps: Pick<CommandDeps, "tasks">,
+  deps: CommandDeps,
   captain: Captain,
   taskId: string,
   body: string,
@@ -251,8 +251,6 @@ export async function resolveAsk(
   deps: CommandDeps,
   address: string,
   rawAnswer: string,
-  /** The calling thread; null for the user's terminal and the banner. */
-  caller: { threadId: string | null } = { threadId: null },
 ): Promise<Resolved> {
   // The user's shell has no thread, so the ask itself names its Captain.
   const id = address.trim().toLowerCase();
@@ -273,17 +271,6 @@ export async function resolveAsk(
       fix: "open a new ask with bb captain ask",
     });
   }
-  // An away ask changes schedules: only the user or its own Captain may answer it.
-  if (
-    caller.threadId !== null &&
-    caller.threadId !== ask.captainId &&
-    deps.routines.isAwayAsk(id)
-  ) {
-    blockers.push({
-      reason: `${id} pauses ${captain?.name ?? "a"} Captain's routines; ${caller.threadId} cannot answer it`,
-      fix: "the user answers it from the banner or their terminal",
-    });
-  }
   if (blockers.length > 0 || captain === null) throw new Refusal(blockers);
 
   const notes: string[] = [];
@@ -301,11 +288,6 @@ export async function resolveAsk(
   }
   const answered = deps.store.ask(id);
   if (answered === null || answered.answer === null) throw new Error(`${id} lost its answer`);
-  // An away-pause ask: Captain resumes or releases the routines it holds; maintenance retries a failure.
-  const away = await deps.routines
-    .applyAwayAnswer(id, answered.answer)
-    .catch((error: unknown) => `routines not resumed yet: ${(error as Error).message}`);
-  if (away !== null) notes.push(`warning: ${away}`);
   let state: Resolved["state"] = "answered";
   if (answered.answerDeliveredAt === null) {
     const warning = await deliverAnswer(deps, { ...answered, answer: answered.answer });
