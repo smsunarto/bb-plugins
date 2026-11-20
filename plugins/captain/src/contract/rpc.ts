@@ -273,11 +273,16 @@ export const captainContract = defineRpcContract({
     input: z.object({ captainId: threadId }).strict(),
     output: z
       .object({
+        /** The first rows of the whole ranked set. */
         tasks: z.array(captainTask),
-        /** A repo had more open tasks than were read: the count is a floor. */
+        /** Every open task read, of which `tasks` is the first slice. */
+        total: z.number().int().nonnegative(),
+        /** A repo had more open tasks than its read bound: `total` is a floor. */
         truncated: z.boolean(),
         /** Why the crew could not be read; the tasks are listed without it. */
         crewError: z.string().nullable(),
+        /** Repos whose tasks could not be read, by Tasks project name; the others are listed. */
+        unavailable: z.array(z.string()),
       })
       .strict(),
     tags: ({ captainId }) => [crewTag(captainId)],

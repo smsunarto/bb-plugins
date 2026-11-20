@@ -71,7 +71,11 @@ type State = {
   tasks: CaptainTaskItem[];
   /** More open tasks than were read. */
   tasksTruncated?: boolean;
+  /** Every open task read, when more than the rows. */
+  tasksTotal?: number;
   crewError?: string | null;
+  /** Repos whose tasks could not be read. */
+  unavailable?: string[];
   files: DriveFileItem[];
   /** Every file in the Drive, when more than the cards. */
   total?: number;
@@ -110,8 +114,10 @@ function render(
           fails("tasks");
           return {
             tasks: state.tasks,
+            total: state.tasksTotal ?? state.tasks.length,
             truncated: state.tasksTruncated ?? false,
             crewError: state.crewError ?? null,
+            unavailable: state.unavailable ?? [],
           };
         },
         drive: () => {
@@ -349,6 +355,21 @@ test("Tasks counts with + when a repo had more open tasks than were read", async
   const tasks = await section(slot, "Tasks");
   await within(tasks).findByText("Fix the sidebar");
   expect(tasks.textContent).toContain("Tasks3+");
+  expect(within(tasks).getByText("More in Tasks")).not.toBeNull();
+});
+
+test("Tasks counts every open task, and says how many the rows leave out", async () => {
+  const { slot } = render({ ...seeded, tasksTotal: 140 });
+  const tasks = await section(slot, "Tasks");
+  await within(tasks).findByText("137 more in Tasks");
+  expect(tasks.textContent).toContain("Tasks140");
+});
+
+test("a repo that could not be read is named above the others' tasks", async () => {
+  const { slot } = render({ ...seeded, unavailable: ["rampage"] });
+  const tasks = await section(slot, "Tasks");
+  await within(tasks).findByText("Couldn't load rampage · the other repos are listed");
+  expect(within(tasks).getByText("Fix the sidebar")).not.toBeNull();
 });
 
 test("a failed first read says so with Retry, and Retry loads it", async () => {
@@ -417,7 +438,7 @@ function answering(rpc: { asks: () => QueueItem[]; resolveAsk: (input: unknown) 
     rpc: {
       captains: () => ({ ids: [CAPTAIN] }),
       asks: () => ({ items: rpc.asks() }),
-      tasks: () => ({ tasks: [], truncated: false, crewError: null }),
+      tasks: () => ({ tasks: [], total: 0, truncated: false, crewError: null, unavailable: [] }),
       drive: () => ({ total: 0, truncated: false, files: [], folder: null }),
       resolveAsk: rpc.resolveAsk,
     } as never,
@@ -523,7 +544,10 @@ test("a hidden tab reads nothing", async () => {
     rpc: {
       captains: () => ({ ids: [CAPTAIN] }),
       asks: () => (calls.push("asks"), { items: [] }),
-      tasks: () => (calls.push("tasks"), { tasks: [], truncated: false, crewError: null }),
+      tasks: () => (
+        calls.push("tasks"),
+        { tasks: [], total: 0, truncated: false, crewError: null, unavailable: [] }
+      ),
       drive: () => (calls.push("drive"), { total: 0, truncated: false, files: [], folder: null }),
     } as never,
   });

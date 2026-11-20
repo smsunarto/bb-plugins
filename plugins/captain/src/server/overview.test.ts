@@ -16,7 +16,7 @@ import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, test, vi } from "vitest";
 import { captainContract, crewTag, DRIVE_EXCERPT_BYTES, driveTag } from "../contract/rpc.ts";
 import { readInside } from "./drive.ts";
-import { DRIVE_WALK_MAX, listDrive, watchDrive } from "./overview.ts";
+import { DRIVE_WALK_MAX, listDrive, TASKS_READ_MAX, TASKS_SHOWN, watchDrive } from "./overview.ts";
 import { captainHost, newCaptain, SERVER_HOST } from "./test-host.ts";
 
 type Listing = {
@@ -26,8 +26,10 @@ type Listing = {
     ready: boolean;
     crew: { threadId: string; role: string | null; state: string } | null;
   }[];
+  total: number;
   truncated: boolean;
   crewError: string | null;
+  unavailable: string[];
 };
 type Drive = {
   total: number;
@@ -46,6 +48,19 @@ async function overviewHost(options: Parameters<typeof captainHost>[0] = {}) {
   const drive = async () => (await rpc("drive", { captainId })) as Drive;
   const driveDir = join(host.storageRoot, captainId);
   return { host, captainId, as, rpc, tasks, drive, driveDir, invalidations };
+}
+
+/** A second Captain on the same host, with two repos. */
+async function overviewHostWithRepos(host: Awaited<ReturnType<typeof captainHost>>) {
+  const captainId = await newCaptain(host, [
+    "--name",
+    "Both",
+    "--repo",
+    "bb-plugins",
+    "--repo",
+    "rampage",
+  ]);
+  return async () => (await host.harness.behavior.callRpc("tasks", { captainId })) as Listing;
 }
 
 async function dispatch(
@@ -111,7 +126,60 @@ describe("tasks", () => {
     expect(listing.tasks[3]).toMatchObject({
       crew: { threadId: busy, role: "Implement", state: "working" },
     });
-    expect(listing).toMatchObject({ truncated: false, crewError: null });
+    expect(listing).toMatchObject({ total: 6, truncated: false, crewError: null, unavailable: [] });
+  });
+
+  test("pages past Tasks' page size and ranks the whole set before taking the rows", async () => {
+    const { host, tasks } = await overviewHost();
+    const passed = { value: "passed", head: null, writtenAt: new Date(0).toISOString() };
+    for (let index = 1; index <= 600; index += 1) {
+      host.addTask(`BBPLUGINS-${index}`, { status: "backlog" });
+    }
+    host.addTask("BBPLUGINS-601", { status: "in_review", fields: new Map([["review", passed]]) });
+    const listing = await tasks();
+    expect(listing.tasks[0]).toMatchObject({ key: "BBPLUGINS-601", ready: true });
+    expect(listing.tasks).toHaveLength(TASKS_SHOWN);
+    expect(listing).toMatchObject({ total: 601, truncated: false });
+    const pages = host.tasks.calls.filter((call) => call.method === "listTasks");
+    expect(pages.length).toBeGreaterThan(1);
+  });
+
+  test("exactly a page of tasks is not truncated; more than the read bound is", async () => {
+    const { host, tasks } = await overviewHost();
+    for (let index = 1; index <= 100; index += 1) host.addTask(`BBPLUGINS-${index}`);
+    expect(await tasks()).toMatchObject({ total: 100, truncated: false });
+    for (let index = 101; index <= TASKS_READ_MAX + 1; index += 1) {
+      host.addTask(`BBPLUGINS-${index}`);
+    }
+    expect(await tasks()).toMatchObject({ total: TASKS_READ_MAX, truncated: true });
+  });
+
+  test("a failed crewSnapshot keeps the tasks and says the crew is unavailable", async () => {
+    const { host, as, tasks } = await overviewHost();
+    host.addTask("BBPLUGINS-1", { status: "in_progress" });
+    await dispatch(as, "BBPLUGINS-1");
+    expect((await tasks()).tasks[0]?.crew).not.toBeNull();
+    host.tasks.failing.add("crewSnapshot");
+    const listing = await tasks();
+    expect(listing.tasks).toEqual([expect.objectContaining({ key: "BBPLUGINS-1", crew: null })]);
+    expect(listing.crewError).toMatch(/crewSnapshot/u);
+  });
+
+  test("a repo whose list fails is named, and the other repos' tasks stay", async () => {
+    const { host } = await overviewHost();
+    const two = await overviewHostWithRepos(host);
+    host.addTask("BBPLUGINS-1", { status: "todo" });
+    const failed = host.tasks.projects.find((project) => project.prefix !== "BBPLUGINS");
+    if (failed === undefined) throw new Error("no second project");
+    host.addTask(`${failed.prefix}-1`, { status: "todo" });
+    host.tasks.failing.add(`listTasks:${failed.id}`);
+    const listing = await two();
+    expect(listing.tasks.map((task) => task.key)).toEqual(["BBPLUGINS-1"]);
+    expect(listing.unavailable).toEqual([failed.name]);
+    // Every repo failing fails the read, so cached rows are labelled instead of emptied.
+    const kept = host.tasks.projects.find((project) => project.prefix === "BBPLUGINS");
+    host.tasks.failing.add(`listTasks:${kept?.id}`);
+    await expect(two()).rejects.toThrow(/listTasks/u);
   });
 
   test("an archived crew thread leaves its task without crew", async () => {
@@ -254,6 +322,23 @@ describe("the Tasks recheck", () => {
     task.status = "in_review";
     await settle(200);
     expect(invalidations().slice(after)).not.toContain(crewTag(captainId));
+  });
+
+  test("Tasks going down and coming back each refresh the read, with nothing else changed", async () => {
+    const { host, captainId, invalidations } = await overviewHost({ crewPollMs: 60_000 });
+    host.addTask("BBPLUGINS-1", { status: "todo" });
+    const refreshes = () => invalidations().filter((tag) => tag === crewTag(captainId)).length;
+    const stop = host.harness.behavior.experimental_watchRpc("tasks", { input: { captainId } });
+    await settle();
+    const before = refreshes();
+    host.tasks.down = true;
+    await settle(200);
+    const down = refreshes();
+    expect(down).toBe(before + 1);
+    host.tasks.down = false;
+    await settle(200);
+    expect(refreshes()).toBe(down + 1);
+    stop();
   });
 });
 

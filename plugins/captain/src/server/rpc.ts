@@ -176,8 +176,9 @@ function registerCrewWatch(
 
 /**
  * While a Captain's tasks read is watched, compare its open tasks every
- * `pollMs` and refresh the crew tag when they changed. A failed check is
- * skipped; the read itself labels Tasks being down.
+ * `pollMs` and refresh the crew tag when they changed. A check that starts
+ * or stops failing refreshes it too: the read then labels its rows as not
+ * refreshed, and later replaces them, even when nothing else changed.
  */
 async function watchTasks(
   deps: CommandDeps,
@@ -186,17 +187,29 @@ async function watchTasks(
   pollMs: number,
   changed: (captainId: string) => void,
 ): Promise<void> {
-  let last: string | null = null;
+  // The first check's outcome is the baseline: the read just ran against the same Tasks.
+  let last: { ok: true; signature: string } | { ok: false } | null = null;
   while (!signal.aborted) {
-    const now = await openTasksSignature(deps, captainId).catch(() => null);
+    const now = await openTasksSignature(deps, captainId).then(
+      (signature) => ({ ok: true as const, signature }),
+      () => ({ ok: false as const }),
+    );
     if (signal.aborted) return;
-    if (now !== null && last !== null && now !== last) {
+    if (last !== null && tasksMoved(last, now)) {
       changed(captainId);
       deps.bb.rpc.experimental_invalidate([crewTag(captainId)]);
     }
-    if (now !== null) last = now;
+    last = now;
     await sleep(pollMs, signal);
   }
+}
+
+function tasksMoved(
+  last: { ok: true; signature: string } | { ok: false },
+  now: { ok: true; signature: string } | { ok: false },
+): boolean {
+  if (last.ok !== now.ok) return true;
+  return last.ok && now.ok && last.signature !== now.signature;
 }
 
 /** While a `drive` read is watched, scan its Drive and refresh it when it changed. */

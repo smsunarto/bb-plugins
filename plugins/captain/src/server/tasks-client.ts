@@ -154,6 +154,30 @@ export function createTasksClient(
     return fields;
   }
 
+  /**
+   * One page of a project's open tasks in Tasks' board order, at most `limit`
+   * (Tasks' cap is 500); `nextCursor` reads the next page, null after the last.
+   */
+  async function openTasksPage(
+    projectId: string,
+    limit: number,
+    cursor?: string,
+    search?: string,
+  ): Promise<{ tasks: TasksTask[]; nextCursor: string | null }> {
+    const page = await call(
+      "listTasks",
+      {
+        projectId,
+        statuses: OPEN_STATUSES,
+        limit,
+        ...(cursor === undefined ? {} : { cursor }),
+        ...(search === undefined ? {} : { search }),
+      },
+      z.object({ tasks: z.array(taskSchema), nextCursor: z.string().nullable().optional() }),
+    );
+    return { tasks: page.tasks, nextCursor: page.nextCursor ?? null };
+  }
+
   async function mutate(method: string, input: unknown): Promise<TasksTask> {
     const result = await call(
       method,
@@ -226,19 +250,9 @@ export function createTasksClient(
     },
     /** One project's open tasks (not done or canceled), at most `limit`, in Tasks' board order; `search` matches title or description. */
     async listOpenTasks(projectId: string, limit: number, search?: string): Promise<TasksTask[]> {
-      return (
-        await call(
-          "listTasks",
-          {
-            projectId,
-            statuses: OPEN_STATUSES,
-            limit,
-            ...(search === undefined ? {} : { search }),
-          },
-          z.object({ tasks: z.array(taskSchema) }),
-        )
-      ).tasks;
+      return (await openTasksPage(projectId, limit, undefined, search)).tasks;
     },
+    openTasksPage,
     /** The threads attached to one task, with their live status. */
     async taskThreads(taskId: string): Promise<{ threadId: string; liveStatus: string }[]> {
       return (

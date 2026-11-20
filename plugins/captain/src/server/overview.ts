@@ -20,38 +20,51 @@ import type { TasksTask } from "./tasks-client.ts";
  * cards. Asks come from the banner's own `asks` read.
  */
 
-/** Each repo's open tasks are read up to this many; past it the count is a floor. */
-export const TASKS_PER_REPO = 100;
+/** Tasks' page size for open tasks, its own cap. */
+const TASKS_PAGE = 500;
+/** Each repo's open tasks are read up to this many, a page at a time; past it `total` is a floor. */
+export const TASKS_READ_MAX = 2_000;
+/** Rows the section shows, from the top of the ranked set; the count covers the rest. */
+export const TASKS_SHOWN = 100;
 
 /** Rank in the Tasks section: what waits on the user first, then work under way. */
 const RANK: Record<string, number> = { in_review: 1, in_progress: 2, todo: 3, backlog: 4 };
 const rankOf = (task: CaptainTaskItem) => (task.ready ? 0 : (RANK[task.status] ?? 5));
 
+export type CaptainTasks = {
+  tasks: CaptainTaskItem[];
+  total: number;
+  truncated: boolean;
+  crewError: string | null;
+  unavailable: string[];
+};
+
 /**
  * The Captain's repos' open tasks (done and canceled left out), with the
  * crew thread on each. Ready to ship, then in review, in progress, todo and
- * backlog; the most recently updated first within each. A Tasks failure
- * fails the read; a crew failure keeps the tasks without their crew.
+ * backlog; the most recently updated first within each. The whole set is
+ * ranked, then its top rows returned. A repo whose list fails is named and
+ * the others listed; Tasks failing for every repo fails the read. A crew
+ * failure keeps the tasks without their crew.
  */
 export async function captainTasks(
   deps: Pick<CommandDeps, "registry" | "store" | "tasks">,
   readCrew: (captainId: string) => CrewSnapshot,
   captainId: string,
-): Promise<{ tasks: CaptainTaskItem[]; truncated: boolean; crewError: string | null }> {
+): Promise<CaptainTasks> {
   const crewRead = readCrew(captainId);
   // The crew is read while Tasks answers; its failure is labelled, not fatal.
-  const crew = Promise.all([crewRead.threads, crewRead.rows]).then(
-    ([threads, rows]) => ({ crew: joinCrew(deps, threads, rows), error: null }),
+  const crew = Promise.all([crewRead.threads, crewRead.rows, crewRead.rowsError]).then(
+    ([threads, rows, error]) => ({ crew: joinCrew(deps, threads, rows), error }),
     (error: unknown) => ({ crew: [] as CrewThread[], error: (error as Error).message }),
   );
-  const lists = await readOpenTasks(deps, captainId);
-  const open = lists.flat();
+  const read = await readOpenTasks(deps, captainId);
   const [fields, joined] = await Promise.all([
-    deps.tasks.fieldsOf(open.map((task) => task.id)),
+    deps.tasks.fieldsOf(read.tasks.map((task) => task.id)),
     crew,
   ]);
   const crewOf = crewByTask(joined.crew);
-  const tasks = open
+  const ranked = read.tasks
     .map((task): CaptainTaskItem => ({
       key: task.key,
       title: task.title,
@@ -64,43 +77,84 @@ export async function captainTasks(
     }))
     .sort((a, b) => rankOf(a) - rankOf(b) || b.updatedAt - a.updatedAt);
   return {
-    tasks,
-    truncated: lists.some((list) => list.length >= TASKS_PER_REPO),
+    tasks: ranked.slice(0, TASKS_SHOWN),
+    total: ranked.length,
+    truncated: read.truncated,
     crewError: joined.error,
+    unavailable: read.unavailable,
   };
 }
 
-/** Each of the Captain's repos' open tasks, at most `TASKS_PER_REPO` each; a repo with no Tasks project reads none. */
+type OpenTasksRead = { tasks: TasksTask[]; truncated: boolean; unavailable: string[] };
+
+/**
+ * Every open task in the Captain's repos, each repo paged to `TASKS_READ_MAX`;
+ * a repo with no Tasks project reads none. Repos are read side by side, and
+ * one that fails is named in `unavailable`. When every repo with a project
+ * fails, or Tasks cannot list its projects, the read rejects.
+ */
 async function readOpenTasks(
   deps: Pick<CommandDeps, "registry" | "tasks">,
   captainId: string,
-): Promise<TasksTask[][]> {
+): Promise<OpenTasksRead> {
   const captain = deps.registry.get(captainId);
-  const projects = await deps.tasks.listProjects();
-  const byPrefix = new Map(projects.map((project) => [project.prefix, project]));
-  return Promise.all(
-    (captain?.repos ?? []).map((repo) => {
-      const project = byPrefix.get(repo.tasksProjectKey);
-      return project === undefined
-        ? Promise.resolve([])
-        : deps.tasks.listOpenTasks(project.id, TASKS_PER_REPO);
-    }),
+  const byPrefix = new Map(
+    (await deps.tasks.listProjects()).map((project) => [project.prefix, project]),
   );
+  const projects = (captain?.repos ?? []).flatMap((repo) => {
+    const project = byPrefix.get(repo.tasksProjectKey);
+    return project === undefined ? [] : [project];
+  });
+  const settled = await Promise.allSettled(
+    projects.map((project) => readProjectTasks(deps, project.id)),
+  );
+  const read: OpenTasksRead = { tasks: [], truncated: false, unavailable: [] };
+  let failure: unknown = null;
+  settled.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      read.tasks.push(...result.value.tasks);
+      read.truncated ||= result.value.truncated;
+    } else {
+      failure = result.reason;
+      read.unavailable.push(projects[index]?.name ?? "");
+    }
+  });
+  if (projects.length > 0 && read.unavailable.length === projects.length) throw failure;
+  return read;
+}
+
+/** One project's open tasks, following Tasks' cursor up to `TASKS_READ_MAX`. */
+async function readProjectTasks(
+  deps: Pick<CommandDeps, "tasks">,
+  projectId: string,
+): Promise<{ tasks: TasksTask[]; truncated: boolean }> {
+  const tasks: TasksTask[] = [];
+  let cursor: string | undefined;
+  while (tasks.length < TASKS_READ_MAX) {
+    const limit = Math.min(TASKS_PAGE, TASKS_READ_MAX - tasks.length);
+    const page = await deps.tasks.openTasksPage(projectId, limit, cursor);
+    tasks.push(...page.tasks);
+    if (page.nextCursor === null || page.tasks.length === 0) return { tasks, truncated: false };
+    cursor = page.nextCursor;
+  }
+  return { tasks, truncated: true };
 }
 
 /**
  * What the Tasks rows show from Tasks alone, as one string: a change made
  * outside the crew, such as in Tasks itself, changes it. A review verdict
- * moves the task's `updatedAt`, so it counts too.
+ * moves the task's `updatedAt`, so it counts too, and so does a repo
+ * becoming unreadable or readable again.
  */
 export async function openTasksSignature(
   deps: Pick<CommandDeps, "registry" | "tasks">,
   captainId: string,
 ): Promise<string> {
-  return (await readOpenTasks(deps, captainId))
-    .flat()
-    .map((task) => `${task.key}\0${task.status}\0${task.title}\0${task.updatedAt}`)
-    .join("\n");
+  const read = await readOpenTasks(deps, captainId);
+  return [
+    ...read.unavailable.map((name) => `!${name}`),
+    ...read.tasks.map((task) => `${task.key}\0${task.status}\0${task.title}\0${task.updatedAt}`),
+  ].join("\n");
 }
 
 /** Each task's crew thread: a busy one before an idle one, then the latest attached. */

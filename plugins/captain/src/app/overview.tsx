@@ -104,11 +104,7 @@ export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
         <Section
           id="tasks"
           title="Tasks"
-          count={
-            listed === undefined
-              ? undefined
-              : `${listed.tasks.length}${listed.truncated ? "+" : ""}`
-          }
+          count={listed === undefined ? undefined : `${listed.total}${listed.truncated ? "+" : ""}`}
           collapsed={collapsed.tasks}
           onToggle={toggle}
         >
@@ -366,6 +362,15 @@ function subscribeOpenAsks(listener: () => void): () => void {
 }
 /** An Other… answer being typed, per ask, so a remount keeps it. */
 const otherDrafts = new Map<string, string>();
+
+/**
+ * The banner's answer controls on the Overview's 4px grid: an 8px inset around
+ * a 16px line, an 8px gap. An outline button's 1px hairline is part of its
+ * inset, so both kinds stand 32px tall.
+ */
+const OVERVIEW_ACTION = "py-2 leading-4";
+const OVERVIEW_OUTLINE_ACTION = "py-[7px] leading-4";
+const OVERVIEW_OTHER = "gap-2";
 function useOpenAsk(captainId: string): string | null {
   return useSyncExternalStore(subscribeOpenAsks, () => openAsks.get(captainId) ?? null);
 }
@@ -458,6 +463,7 @@ function Answer({ id, captainId, item }: { id: string; captainId: string; item: 
       ) : null}
       {other !== null && item.kind === "ask" && !sending ? (
         <OtherAnswer
+          className={OVERVIEW_OTHER}
           value={other}
           pending={pending}
           onChange={setOther}
@@ -481,7 +487,13 @@ function Answer({ id, captainId, item }: { id: string; captainId: string; item: 
           </output>
         ) : null}
         {actions.map((action, index) => (
-          <ActionButton key={action.label} action={action} index={index} shortcuts={false} />
+          <ActionButton
+            key={action.label}
+            action={action}
+            index={index}
+            shortcuts={false}
+            className={action.primary ? OVERVIEW_ACTION : OVERVIEW_OUTLINE_ACTION}
+          />
         ))}
         {item.kind === "ask" && item.askKind !== "ship" && !sending && other === null ? (
           <Button
@@ -535,19 +547,31 @@ function AskIcon({ item }: { item: QueueItem }) {
   );
 }
 
-type TaskListing = { tasks: CaptainTaskItem[]; truncated: boolean; crewError: string | null };
+type TaskListing = {
+  tasks: CaptainTaskItem[];
+  total: number;
+  truncated: boolean;
+  crewError: string | null;
+  unavailable: string[];
+};
 
-/** The task rows, and a line when the crew could not be read alongside them. */
+/** The task rows, a line for each part that could not be read alongside them, and what they leave out. */
 function TasksBody({ listing }: { listing: TaskListing }) {
+  const more = listing.total - listing.tasks.length;
   return (
     <>
+      {listing.unavailable.length === 0 ? null : (
+        <Notice
+          text={`Couldn't load ${listing.unavailable.join(", ")} · the other repos are listed`}
+        />
+      )}
       {listing.crewError === null ? null : (
-        <output className="block truncate px-2 py-1 text-xs leading-4 text-muted-foreground">
-          Crew unavailable · {listing.crewError}
-        </output>
+        <Notice text={`Crew unavailable · ${listing.crewError}`} />
       )}
       {listing.tasks.length === 0 ? (
-        <Empty>No open tasks in this Captain's repos.</Empty>
+        listing.unavailable.length === 0 ? (
+          <Empty>No open tasks in this Captain's repos.</Empty>
+        ) : null
       ) : (
         <ul className="m-0 flex list-none flex-col p-0">
           {listing.tasks.map((task) => (
@@ -555,7 +579,24 @@ function TasksBody({ listing }: { listing: TaskListing }) {
           ))}
         </ul>
       )}
+      {more <= 0 && !listing.truncated ? null : (
+        <p className="m-0 px-2 py-1 text-xs leading-4 text-muted-foreground">
+          {more > 0 ? `${more}${listing.truncated ? "+" : ""} more in Tasks` : "More in Tasks"}
+        </p>
+      )}
     </>
+  );
+}
+
+/** A one-line note on part of a read, whole on hover. */
+function Notice({ text }: { text: string }) {
+  return (
+    <output
+      className="block truncate px-2 py-1 text-xs leading-4 text-muted-foreground"
+      title={text}
+    >
+      {text}
+    </output>
   );
 }
 

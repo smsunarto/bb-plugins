@@ -58,18 +58,22 @@ export function NeedsYouBanner() {
 
 function CaptainGate({ threadId }: { threadId: string }) {
   const captains = useRpcQuery({ contract: captainContract, method: "captains", input: NO_INPUT });
-  if (!captains.data?.ids.includes(threadId)) return null;
+  const isCaptain = captains.data === undefined ? null : captains.data.ids.includes(threadId);
   return (
     <>
-      <OverviewOnOpen threadId={threadId} />
-      <Banner captainId={threadId} />
+      <OverviewOnOpen threadId={threadId} isCaptain={isCaptain} />
+      {isCaptain === true ? <Banner captainId={threadId} /> : null}
     </>
   );
 }
 
-/** Rides on the banner, already mounted on every Captain thread: it renders nothing. */
-function OverviewOnOpen({ threadId }: { threadId: string }) {
-  useOverviewOnOpen(threadId);
+/**
+ * Rides on the banner's slot, mounted on every thread before bb says which
+ * are Captains, so a panel opened meanwhile still lands on Overview. It
+ * renders nothing.
+ */
+function OverviewOnOpen({ threadId, isCaptain }: { threadId: string; isCaptain: boolean | null }) {
+  useOverviewOnOpen(threadId, isCaptain);
   return null;
 }
 
@@ -407,18 +411,25 @@ export function ActionButton({
   action,
   index,
   shortcuts = true,
+  className,
 }: {
   action: Action;
   index: number;
   /** False where no key handler answers by number, as outside the banner. */
   shortcuts?: boolean;
+  /** The caller's spacing, such as the Overview's grid; the banner keeps its own. */
+  className?: string;
 }) {
   return (
     <Button
       type="button"
       size="sm"
       variant={action.primary ? "default" : "outline"}
-      className={cn(TAP, "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal")}
+      className={cn(
+        TAP,
+        "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal",
+        className,
+      )}
       aria-keyshortcuts={shortcuts && index < 9 ? String(index + 1) : undefined}
       onClick={action.run}
     >
@@ -643,6 +654,7 @@ export function OtherAnswer({
   onCancel,
   onSubmit,
   pending = false,
+  className,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -650,10 +662,12 @@ export function OtherAnswer({
   onSubmit: (text: string) => void;
   /** An answer is sending: Send waits, so one answer goes once. */
   pending?: boolean;
+  /** The caller's spacing, such as the Overview's grid; the banner keeps its own. */
+  className?: string;
 }) {
   return (
     <form
-      className="flex min-w-0 items-center gap-1.5"
+      className={cn("flex min-w-0 items-center gap-1.5", className)}
       onSubmit={(event) => {
         event.preventDefault();
         if (value.trim() !== "" && !pending) onSubmit(value.trim());
