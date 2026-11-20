@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { collectLoads, compile, dataKey, evaluate, formatDiagnostics, initialState, probeInteractions, type LoadedData } from "./core";
 import type { UiNode } from "./core/types";
-import { COMPONENTS } from "./core/catalog";
+import { COMPONENTS, TAUGHT_COMPONENTS } from "./core/catalog";
 import { listGallery, loadGalleryFile, readGallerySpec } from "./data-source";
 import { examplesOf } from "./examples";
 import { checkSpec } from "./fallback";
@@ -23,7 +23,7 @@ describe("gallery", () => {
   // The gallery page and the ui_examples tool both serve these files.
   it("has an example for every component", async () => {
     const names = await listGallery();
-    const missing = Object.keys(COMPONENTS).filter((component) => examplesOf(names, component).length === 0);
+    const missing = TAUGHT_COMPONENTS.filter((component) => examplesOf(names, component).length === 0);
     expect(missing).toEqual([]);
   });
 

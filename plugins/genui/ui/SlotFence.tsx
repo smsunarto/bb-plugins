@@ -15,6 +15,7 @@ export function SlotFence({ code, language, status, index, message, Original }: 
         language={language}
         code={code}
         complete={status !== "streaming"}
+        closed={status === "closed"}
         stateKey={`bb.genui.state:${message.id}#${language}#${index}`}
         threadId={message.threadId}
         messageId={message.id}

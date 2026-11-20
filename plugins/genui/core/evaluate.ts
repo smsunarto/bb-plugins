@@ -83,6 +83,11 @@ function isList(value: Value): value is readonly Value[] {
 
 type PlainObject = { readonly [key: string]: Value };
 
+/** Local (bb-plugins): an interpreter-made UI node. */
+function isUiNode(value: Value): boolean {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && (value as { kind?: unknown }).kind === "node";
+}
+
 /** A spec-language or loaded-data object, as opposed to interpreter-made nodes, actions and bindings. */
 export function isPlainObject(value: Value): value is PlainObject {
   return kindOf(value) === "object";
@@ -117,6 +122,20 @@ function checkLength<T extends readonly Value[]>(list: T, pos: Pos): T {
     throw new RuntimeError(pos, `lists are limited to ${LIMITS.listLength} items (got ${list.length})`);
   }
   return list;
+}
+
+/**
+ * Local (bb-plugins): `Number(x)`. A number stays itself, a boolean is 1 or
+ * 0, and text that spells a number (spaces and thousands commas allowed) is
+ * that number; anything else, empty text included, is null.
+ */
+export function toNumber(value: Value): number | null {
+  if (typeof value === "number") return finite(value);
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (typeof value !== "string") return null;
+  const text = value.trim().replace(/(\d),(?=\d{3}\b)/g, "$1");
+  if (!/^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?$/i.test(text)) return null;
+  return finite(Number(text));
 }
 
 /** Text for `+`, templates and `join`: null is empty, other scalars use String(). */
@@ -201,6 +220,19 @@ class Interpreter {
     private readonly state: UiState,
     private readonly data: ReadonlyMap<string, LoadedData>,
   ) {}
+
+  /** Local (bb-plugins): states whose initial value is a number, read once per evaluation. */
+  private numberStates: ReadonlySet<string> | undefined;
+
+  /** Local (bb-plugins): whether `$name` was declared a number, so a text input keeps it one. */
+  private declaredNumber(name: string): boolean {
+    this.numberStates ??= new Set(
+      Object.entries(initialState(this.program, this.data))
+        .filter(([, value]) => typeof value === "number")
+        .map(([state]) => state),
+    );
+    return this.numberStates.has(name);
+  }
 
   /** Reports a failure (a load still in flight is none) and restores the evaluation context saved before it; rethrows anything else. */
   recover(error: unknown, depth: number, suffix: string): EvalFailure {
@@ -451,6 +483,64 @@ class Interpreter {
     throw new RuntimeError(pos, `cannot index ${describe(object)}`);
   }
 
+  /** Local (bb-plugins): nodes made from a Decision question's Card (validate.ts), by identity. */
+  private readonly questionCards = new WeakSet<UiNode>();
+  /** Local (bb-plugins): nodes whose props reach a question's Card outside a Form; only these are walked. */
+  private readonly holdsQuestion = new WeakSet<UiNode>();
+  /** Local (bb-plugins): each walked node as a Form holds it, so a node shared many times is walked once. */
+  private readonly lifted = new WeakMap<UiNode, readonly UiNode[]>();
+
+  /** Local (bb-plugins): each list or object's reachesQuestion answer, so shared data is walked once. */
+  private readonly reaches = new WeakMap<object, boolean>();
+  /** Local (bb-plugins): each list or object a Form lifted, so shared data stays shared. */
+  private readonly liftedValues = new WeakMap<object, Value>();
+
+  /** Local (bb-plugins): whether `value` holds a question's Card, or a node that does, without looking inside nodes. */
+  private reachesQuestion(value: Value): boolean {
+    if (isUiNode(value)) return this.questionCards.has(value as UiNode) || this.holdsQuestion.has(value as UiNode);
+    if (!Array.isArray(value) && !isPlainObject(value)) return false;
+    const known = this.reaches.get(value);
+    if (known !== undefined) return known;
+    const found = (Array.isArray(value) ? value : Object.values(value)).some((item) => this.reachesQuestion(item));
+    this.reaches.set(value, found);
+    return found;
+  }
+
+  /**
+   * Local (bb-plugins): `node` as a Form holds it. A Decision question's Card
+   * becomes its own Form's fields (the Radio), so the Form asks the question
+   * once and sends the answer once; a node that reaches one is copied with
+   * it lifted; everything else is returned as is. Each node is walked once.
+   */
+  private liftNode(node: UiNode): readonly UiNode[] {
+    if (this.questionCards.has(node)) {
+      const form = (node.props as { children?: readonly UiNode[] }).children?.[0];
+      return form?.type === "Form" ? ((form.props as { children?: readonly UiNode[] }).children ?? []) : [node];
+    }
+    if (!this.holdsQuestion.has(node)) return [node];
+    const known = this.lifted.get(node);
+    if (known !== undefined) return known;
+    const props: Record<string, Value> = {};
+    for (const [name, value] of Object.entries(node.props as Record<string, Value>)) props[name] = this.liftValue(value);
+    const result = [{ ...node, props } as UiNode];
+    this.lifted.set(node, result);
+    return result;
+  }
+
+  /** Local (bb-plugins): a prop value with the questions it reaches lifted; arrays keep their nesting, data its values. */
+  private liftValue(value: Value): Value {
+    if (!this.reachesQuestion(value)) return value;
+    if (isUiNode(value)) return this.liftNode(value as UiNode)[0] ?? value;
+    if (!Array.isArray(value) && !isPlainObject(value)) return value;
+    const known = this.liftedValues.get(value);
+    if (known !== undefined) return known;
+    const lifted: Value = Array.isArray(value)
+      ? value.flatMap((item): Value[] => (isUiNode(item) ? [...this.liftNode(item as UiNode)] : [this.liftValue(item)]))
+      : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.liftValue(item)]));
+    this.liftedValues.set(value, lifted);
+    return lifted;
+  }
+
   /** Every node is made through here, so the count against LIMITS.nodes is complete. */
   private made<N extends UiNode>(node: N, pos: Pos): N {
     if (++this.nodes > LIMITS.nodes) throw new LimitError(pos, `the UI has more than ${LIMITS.nodes} components`);
@@ -483,7 +573,13 @@ class Interpreter {
       if (type === "Snippet") Object.assign(props, this.snippet(props));
       // `param` normalized every argument to `spec`, the catalog entry for `type`, and the lines above added what
       // AddedProps lists, so `props` is PropsOf<type>: the one place the pairing of `type` and `props` is asserted.
-      return this.made({ kind: "node", type, key, props } as ComponentNode, call.pos);
+      // Local (bb-plugins): a Form takes the Radio of a Decision question it holds as its own field.
+      const asks = (this.program.questions?.size ?? 0) > 0;
+      if (asks && type === "Form") props.children = this.liftValue(props.children ?? []);
+      const node = this.made({ kind: "node", type, key, props } as ComponentNode, call.pos);
+      if (asks && this.program.questions?.has(call)) this.questionCards.add(node);
+      else if (asks && type !== "Form" && Object.values(props).some((value) => this.reachesQuestion(value))) this.holdsQuestion.add(node);
+      return node;
     } catch (error) {
       if (!(error instanceof RuntimeError)) throw error;
       const failure = this.recover(error, depth, suffix);
@@ -541,7 +637,10 @@ class Interpreter {
       const mismatch = stateMismatch(label, param, arg.name, kindOf(value), "holds");
       const coerced = mismatch === null ? value : coerceState(param.holds, value);
       if (coerced === undefined) throw new RuntimeError(arg.pos, mismatch!);
-      const binding: Binding = { kind: "binding", name: arg.name, value: coerced };
+      const binding: Binding =
+        param.holds === "text" && this.declaredNumber(arg.name)
+          ? { kind: "binding", name: arg.name, value: coerced, number: true }
+          : { kind: "binding", name: arg.name, value: coerced };
       return binding;
     }
     const value = param.kind === "function" ? this.value(arg, scope) : this.expr(arg, scope);
@@ -727,6 +826,9 @@ class Interpreter {
           call.pos,
         );
       }
+      // Local (bb-plugins): a number from what a text input holds.
+      case "Number":
+        return toNumber(args[0]);
       case "Load": {
         const path = this.text(args[0], call.args[0].pos, "Load()");
         const loaded = this.data.get(dataKey({ path, raw: false }));

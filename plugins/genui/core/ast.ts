@@ -73,4 +73,10 @@ export interface Program {
   readonly named: ReadonlyMap<string, Decl>;
   /** Bare expressions in source order, or the named value `root`. */
   readonly roots: readonly Expr[];
+  /**
+   * Local (bb-plugins): the `Card(null, [Form([Radio])])` calls Decision
+   * questions became. A Form holding one, at any depth, takes its Radio as
+   * its own field, so the answer is sent once (evaluate.ts).
+   */
+  readonly questions?: ReadonlySet<Expr>;
 }

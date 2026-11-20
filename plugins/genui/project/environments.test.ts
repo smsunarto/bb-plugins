@@ -72,24 +72,30 @@ function workspace(branch: string, overrides: Partial<WorkspaceEntry> = {}): Wor
   };
 }
 
-const PULL_REQUEST = {
-  number: 424,
-  title: "Offline search index",
-  url: "https://github.com/acme/app/pull/424",
-  state: "draft",
-  baseRefName: "main",
-  headRefName: "wt/env_wt01",
-  checks: { state: "failing", passedCount: 3, failedCount: 1, pendingCount: 0, totalCount: 4 },
-  review: { state: "none", reviewRequestCount: 0 },
-  mergeability: { state: "draft", mergeable: "MERGEABLE", mergeStateStatus: "DRAFT" },
-  attention: "draft",
-  autoMerge: false,
-  inMergeQueue: false,
-  updatedAt: "2026-10-09T12:00:00Z",
-};
+/** A pull request as Source Control's `statusForThread` row carries it. */
+const PULL_REQUEST = { number: 424, title: "Offline search index", url: "https://github.com/acme/app/pull/424", state: "draft" } as const;
 
 /**
- * `bb.sdk.plugins.callRpc` for Source Control and the PR status plugin, answering from
+ * One thread's row from Source Control's `statusForThread`, in the shape its
+ * contract documents (plugins/source-control/src/core/status.ts); `extra`
+ * adds fields such as BBP-32's `forge`.
+ */
+function status(branch: string | null, pullRequest: object | null, extra: Record<string, unknown> = {}): unknown {
+  return {
+    state: "change",
+    key: null,
+    branch,
+    pullRequest,
+    line: pullRequest === null ? "Pushed" : "Checks failing",
+    chips: [],
+    tone: pullRequest === null ? "neutral" : "error",
+    sort: 0,
+    ...extra,
+  };
+}
+
+/**
+ * `bb.sdk.plugins.callRpc` for Source Control, answering from
  * `reads` and parsing each answer with the caller's schema as bb does.
  */
 function pluginReads(reads: Record<string, (input: never) => unknown>) {
@@ -103,7 +109,12 @@ function pluginReads(reads: Record<string, (input: never) => unknown>) {
 }
 
 /** A BB with two projects: proj_a (the reply's) and proj_b (someone else's). */
-function fakeBb(options: { status?: (environmentId: string, base: string | null) => unknown } = {}) {
+function fakeBb(
+  options: {
+    status?: (environmentId: string, base: string | null) => unknown;
+    statuses?: (threadId: string) => unknown;
+  } = {},
+) {
   const calls: { method: string; args: unknown }[] = [];
   const environments: Record<string, EnvironmentEntry> = {
     env_main: environment("env_main", { isWorktree: false, branchName: "main", path: "/work/app" }),
@@ -159,9 +170,9 @@ function fakeBb(options: { status?: (environmentId: string, base: string | null)
         const branch = environments[args.environmentId]?.branchName ?? "main";
         return { ok: true, value: workspace(branch) };
       },
-      "bb--github-pr-status.pullRequests": ({ keys }: { keys: string[] }) => {
-        calls.push({ method: "pullRequests", args: { environmentId: keys[0] } });
-        return { [keys[0]!]: { outcome: "available", pullRequest: PULL_REQUEST } };
+      "source-control.statusForThread": ({ keys }: { keys: string[] }) => {
+        calls.push({ method: "statusForThread", args: keys });
+        return Object.fromEntries(keys.map((key) => [key, options.statuses?.(key) ?? status("wt/env_wt01", PULL_REQUEST)]));
       },
     }),
   };
@@ -225,8 +236,8 @@ describe("environments: the list", () => {
     expect(await source.environments("../etc", false)).toMatchObject({ ok: false, reason: "invalid" });
   });
 
-  it("reads the default view's details for the markdown fallback", async () => {
-    const { source } = fakeBb();
+  it("reads the default view's details for the markdown fallback, with one Source Control read and no thread list per environment", async () => {
+    const { source, calls } = fakeBb();
     const answer = await source.environments("thr_mine00", true);
     if (!answer.ok) throw new Error(answer.message);
     // The default view: environments with live threads (env_wt02 has none).
@@ -236,6 +247,10 @@ describe("environments: the list", () => {
       ["env_gone", true],
       ["env_wt02", false],
     ]);
+    expect(calls.filter((call) => call.method === "statusForThread").map((call) => call.args)).toEqual([["thr_wt0100", "thr_wt0101"]]);
+    expect(calls.filter((call) => call.method === "threads.list")).toHaveLength(1);
+    const worktree = answer.environments.find((entry) => entry.id === "env_wt01");
+    expect(worktree?.detail?.pull).toMatchObject({ ok: true, pullRequest: { number: 424 } });
   });
 });
 
@@ -264,8 +279,48 @@ describe("environments: one environment's detail", () => {
       behind: 1,
       uncommitted: { files: 2, additions: 12, deletions: 3, complete: true },
     });
-    expect(detail.pull).toMatchObject({ ok: true, pullRequest: { number: 424, state: "draft", checks: { state: "failing", failed: 1, passed: 3 } } });
+    expect(detail.pull).toEqual({ ok: true, pullRequest: PULL_REQUEST, line: "Checks failing", tone: "error", forge: { state: "unknown" } });
     expect(calls.find((call) => call.method === "checkoutStatus")?.args).toEqual({ environmentId: "env_wt01", base: "main" });
+    // Asked of Source Control, for the environment's own threads; the app watches the same rows.
+    expect(calls.find((call) => call.method === "statusForThread")?.args).toEqual(["thr_wt0100", "thr_wt0101"]);
+    expect(detail.threadIds).toEqual(["thr_wt0100", "thr_wt0101"]);
+  });
+
+  it("says why a pull request couldn't be shown, never \"none\", when Source Control has no answer", async () => {
+    const pull = async (statuses: (threadId: string) => unknown) => {
+      const { source } = fakeBb({ statuses });
+      return ((await source.environment("thr_mine00", "env_wt01")) as EnvironmentDetail).pull;
+    };
+    expect(await pull(() => ({ state: "pending" }))).toEqual({ ok: false, message: "Source Control hasn't read this environment's threads yet" });
+    // A row that doesn't parse is as good as none.
+    expect(await pull(() => ({ state: "change", branch: 7 }))).toEqual({ ok: false, message: "Source Control hasn't read this environment's threads yet" });
+    // A row for another branch of the checkout says nothing about this one.
+    expect(await pull(() => status("main", PULL_REQUEST))).toEqual({ ok: false, message: "Source Control has no thread on wt/env_wt01" });
+    expect(await pull(() => { throw new Error("source-control is disabled"); })).toEqual({
+      ok: false,
+      message: "Source Control couldn't say: source-control is disabled",
+    });
+  });
+
+  it("takes the row with a pull request first, and keeps whether the pull request was read when the row says (BBP-32)", async () => {
+    const pull = async (statuses: (threadId: string) => unknown) => {
+      const { source } = fakeBb({ statuses });
+      return ((await source.environment("thr_mine00", "env_wt01")) as EnvironmentDetail).pull;
+    };
+    expect(await pull((id) => (id === "thr_wt0100" ? status("wt/env_wt01", null) : status("wt/env_wt01", PULL_REQUEST)))).toMatchObject({ ok: true, pullRequest: PULL_REQUEST });
+    // Today's row doesn't say whether a null pull request was read.
+    expect(await pull(() => status("wt/env_wt01", null))).toEqual({ ok: true, pullRequest: null, line: "Pushed", tone: "neutral", forge: { state: "unknown" } });
+    expect(await pull(() => status("wt/env_wt01", null, { forge: { state: "read", at: 5 }, source: "checkout" }))).toMatchObject({ forge: { state: "read", at: 5 } });
+    expect(await pull(() => status("wt/env_wt01", PULL_REQUEST, { forge: { state: "failed", at: 4, problem: { kind: "auth" } } }))).toMatchObject({
+      forge: { state: "failed", at: 4, problem: "GitHub isn't signed in for Source Control" },
+    });
+  });
+
+  it("has no pull request to show for an environment no thread is on", async () => {
+    const { source, calls } = fakeBb();
+    const detail = (await source.environment("thr_mine00", "env_wt02")) as EnvironmentDetail;
+    expect(detail.pull).toEqual({ ok: false, message: "No thread on this environment, so Source Control has no pull request for it" });
+    expect(calls.some((call) => call.method === "statusForThread")).toBe(false);
   });
 
   it("doesn't look for a pull request on the default branch", async () => {
@@ -273,7 +328,7 @@ describe("environments: one environment's detail", () => {
     const detail = (await source.environment("thr_mine00", "env_main")) as EnvironmentDetail;
     expect(detail.checkout).toMatchObject({ ok: true, onBase: true, ahead: null, behind: null });
     expect(detail.pull).toBeNull();
-    expect(calls.some((call) => call.method === "pullRequests")).toBe(false);
+    expect(calls.some((call) => call.method === "statusForThread")).toBe(false);
   });
 
   it("says a missing workspace folder honestly", async () => {
@@ -297,7 +352,7 @@ describe("environments: one environment's detail", () => {
     const detail = (await source.environment("thr_mine00", "env_wt01")) as EnvironmentDetail;
     expect(detail.checkout).toMatchObject({ ok: true, base: "main" });
     expect(calls.map((call) => call.args)).toEqual([{ environmentId: "env_wt01", base: null }]);
-    expect(detail.pull).toEqual({ ok: true, pullRequest: null });
+    expect(detail.pull).toEqual({ ok: true, pullRequest: null, line: "Pushed", tone: "neutral", forge: { state: "unknown" } });
   });
 });
 
@@ -305,7 +360,10 @@ describe("environments: one environment's detail", () => {
 function fakeBbWithoutBase() {
   const calls: { method: string; args: unknown }[] = [];
   const sdk = {
-    threads: { get: async () => thread("thr_mine00", "env_main") },
+    threads: {
+      get: async () => thread("thr_mine00", "env_main"),
+      list: async () => [thread("thr_wt0100", "env_wt01")],
+    },
     environments: {
       get: async () => environment("env_wt01", { defaultBranch: null }),
     },
@@ -314,7 +372,7 @@ function fakeBbWithoutBase() {
         calls.push({ method: "checkoutStatus", args });
         return { ok: true, value: workspace("wt/env_wt01") };
       },
-      "bb--github-pr-status.pullRequests": ({ keys }: { keys: string[] }) => ({ [keys[0]!]: { outcome: "absent" } }),
+      "source-control.statusForThread": ({ keys }: { keys: string[] }) => Object.fromEntries(keys.map((key) => [key, status("wt/env_wt01", null)])),
     }),
   };
   return { source: createEnvironmentsSource(sdk as unknown as BbPluginApi["sdk"]), calls };

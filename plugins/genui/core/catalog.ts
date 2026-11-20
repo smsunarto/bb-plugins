@@ -68,6 +68,12 @@ export type ComponentGroup = "Layout" | "Content" | "Media" | "Data" | "Inputs" 
 
 export interface CatalogComponentSpec extends ComponentSpec {
   readonly group: ComponentGroup;
+  /**
+   * Local (bb-plugins): rendered so replies written before it was retired
+   * still show, and left out of the reference, ui_examples, the gallery and
+   * name suggestions, so no prompt teaches it.
+   */
+  readonly retired?: true;
 }
 
 const TONES = ["neutral", "good", "warn", "bad", "info"] as const;
@@ -507,6 +513,13 @@ export const COMPONENTS = {
     params: [{ name: "limit", kind: "number", optional: true }],
     summary: "this branch's commits since the default branch, each opening its changes",
   },
+  // Local (bb-plugins): retired on 2026-11-15 for Source Control's card; old replies still name it.
+  PullRequest: {
+    group: "Project",
+    retired: true,
+    params: [{ name: "refs", kind: "list", optional: true }],
+    summary: 'pull request links; refs: ["o/r#1", url]',
+  },
   Threads: {
     group: "Project",
     params: [{ name: "ids", kind: "list", optional: true }],
@@ -679,6 +692,11 @@ export const COMPONENTS = {
 
 export type ComponentName = keyof typeof COMPONENTS;
 
+/** Local (bb-plugins): the components prompts, examples and the gallery teach: all but the retired ones. */
+export const TAUGHT_COMPONENTS: readonly ComponentName[] = (Object.keys(COMPONENTS) as ComponentName[]).filter(
+  (name) => (COMPONENTS[name] as CatalogComponentSpec).retired !== true,
+);
+
 /** `Name(a, b?, $state, kind:x|y?)`: how the reference and the gallery write a component's or action's call. */
 export function callSignature(name: string, spec: ComponentSpec): string {
   const params = spec.params.filter((param) => param.legacy !== true && param.unlisted !== true).map((param) => {
@@ -749,6 +767,8 @@ export const FUNCTIONS = {
   keys: "keys(object) → list of keys",
   values: "values(object) → list of values",
   entries: "entries(object) → list of [key, value]",
+  // Local (bb-plugins): text inputs hold text; agents reach for JS's Number() to do sums with them.
+  Number: "Number(x) → the number numeric text spells (\"1,250\" → 1250), else null",
   Load: "Load(path): JSON/CSV/TSV/JSONL/text file, workspace-relative or in thread storage",
 } as const;
 

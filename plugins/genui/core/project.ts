@@ -200,45 +200,6 @@ export interface CommitsView {
 }
 
 export type PullRequestState = "open" | "draft" | "merged" | "closed";
-export type ChecksState = "passing" | "failing" | "pending" | "no_checks" | "unknown";
-export type ReviewState = "approved" | "changes_requested" | "review_requested" | "review_required" | "none";
-export type MergeabilityState = "mergeable" | "conflicts" | "blocked" | "draft" | "unknown";
-export type PullRequestAttention =
-  | "blocked"
-  | "changes_requested"
-  | "checks_failed"
-  | "checks_pending"
-  | "closed"
-  | "conflicts"
-  | "draft"
-  | "merged"
-  | "none"
-  | "queued"
-  | "ready_to_merge"
-  | "review_requested";
-
-export interface PullRequestInfo {
-  readonly number: number;
-  readonly title: string;
-  readonly url: string;
-  readonly state: PullRequestState;
-  readonly baseRef: string;
-  readonly headRef: string;
-  readonly checks: {
-    readonly state: ChecksState;
-    readonly passed: number;
-    readonly failed: number;
-    readonly pending: number;
-    readonly total: number;
-  };
-  readonly review: { readonly state: ReviewState; readonly requests: number };
-  readonly mergeability: MergeabilityState;
-  readonly attention: PullRequestAttention;
-  readonly autoMerge: boolean;
-  readonly inMergeQueue: boolean;
-  /** Epoch ms, or null when GitHub's time didn't parse. */
-  readonly updatedAt: number | null;
-}
 
 export type ThreadDisplayStatus =
   | "active"
@@ -394,25 +355,6 @@ export const PR_STATE_LABEL: Record<PullRequestState, string> = {
   merged: "Merged",
   closed: "Closed",
 };
-
-export const CHECKS_LABEL: Record<ChecksState, string> = {
-  passing: "Checks passing",
-  failing: "Checks failing",
-  pending: "Checks running",
-  no_checks: "No checks",
-  unknown: "Checks unknown",
-};
-
-/** "2 failed · 5 passed · 1 running", only the counts that aren't zero. */
-export function checkCounts(checks: PullRequestInfo["checks"]): string {
-  return [
-    checks.failed > 0 ? `${checks.failed} failed` : "",
-    checks.passed > 0 ? `${checks.passed} passed` : "",
-    checks.pending > 0 ? `${checks.pending} running` : "",
-  ]
-    .filter((part) => part !== "")
-    .join(" · ");
-}
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;

@@ -21,7 +21,6 @@ import {
   type ProjectFailure,
   type ProjectRequest,
   type ProjectResult,
-  type PullRequestInfo,
   type ThreadDisplayStatus,
   type ThreadInfo,
   type ThreadsResult,
@@ -138,53 +137,6 @@ export function changedFile(file: CheckoutFile, inline: boolean): ChangedFile {
         : file.additions + file.deletions > TOO_LARGE_LINES
           ? "too-large"
           : "on-demand",
-  };
-}
-
-interface PullRequestEntry {
-  readonly number: number;
-  readonly title: string;
-  readonly url: string;
-  readonly state: PullRequestInfo["state"];
-  readonly baseRefName: string;
-  readonly headRefName: string;
-  readonly checks: {
-    readonly state: PullRequestInfo["checks"]["state"];
-    readonly passedCount: number;
-    readonly failedCount: number;
-    readonly pendingCount: number;
-    readonly totalCount: number;
-  };
-  readonly review: { readonly state: PullRequestInfo["review"]["state"]; readonly reviewRequestCount: number };
-  readonly mergeability: { readonly state: PullRequestInfo["mergeability"] };
-  readonly attention: PullRequestInfo["attention"];
-  readonly autoMerge: boolean;
-  readonly inMergeQueue: boolean | null;
-  readonly updatedAt: string;
-}
-
-export function pullRequestInfo(pr: PullRequestEntry): PullRequestInfo {
-  const updatedAt = Date.parse(pr.updatedAt);
-  return {
-    number: pr.number,
-    title: pr.title,
-    url: pr.url,
-    state: pr.state,
-    baseRef: pr.baseRefName,
-    headRef: pr.headRefName,
-    checks: {
-      state: pr.checks.state,
-      passed: pr.checks.passedCount,
-      failed: pr.checks.failedCount,
-      pending: pr.checks.pendingCount,
-      total: pr.checks.totalCount,
-    },
-    review: { state: pr.review.state, requests: pr.review.reviewRequestCount },
-    mergeability: pr.mergeability.state,
-    attention: pr.attention,
-    autoMerge: pr.autoMerge,
-    inMergeQueue: pr.inMergeQueue === true,
-    updatedAt: Number.isFinite(updatedAt) ? updatedAt : null,
   };
 }
 

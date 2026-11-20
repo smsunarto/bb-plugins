@@ -1,16 +1,16 @@
-// A thread environment's checkout and pull request, read through other
-// plugins: the checkout through Source Control's plain-git reads
-// (`checkoutStatus`, `checkoutFiles`, `checkoutPatches`), so bb's bundled Git
-// plugin can stay disabled, and the pull request through bb's GitHub PR
-// status plugin. The schemas copy only the fields this plugin reads; zod
-// drops the rest.
+// A thread environment's checkout and pull request, both read through Source
+// Control: the checkout through its plain-git reads (`checkoutStatus`,
+// `checkoutFiles`, `checkoutPatches`), so bb's bundled Git plugin can stay
+// disabled, and the pull request through `statusForThread`, as Source
+// Control last read it for the threads on that checkout. The schemas copy
+// only the fields this plugin reads; zod drops the rest.
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { MAX_STATUS_KEYS, parseThreadStatuses, type ThreadStatus } from "../core/sourceControl";
 
 type Sdk = BbPluginApi["sdk"];
 
 const SOURCE_CONTROL = "source-control";
-const PULL_REQUESTS = "bb--github-pr-status";
 
 const problemSchema = z.object({
   kind: z.string(),
@@ -93,55 +93,6 @@ const filesSchema = read(
 );
 const patchesSchema = read(z.object({ patches: z.array(patchSchema) }));
 
-const pullRequestSchema = z.object({
-  number: z.number(),
-  title: z.string(),
-  url: z.string(),
-  state: z.enum(["open", "draft", "merged", "closed"]),
-  baseRefName: z.string(),
-  headRefName: z.string(),
-  updatedAt: z.string(),
-  autoMerge: z.boolean(),
-  inMergeQueue: z.boolean().nullable(),
-  checks: z.object({
-    state: z.enum(["passing", "failing", "pending", "no_checks", "unknown"]),
-    passedCount: z.number(),
-    failedCount: z.number(),
-    pendingCount: z.number(),
-    totalCount: z.number(),
-  }),
-  review: z.object({
-    state: z.enum(["approved", "changes_requested", "review_requested", "review_required", "none"]),
-    reviewRequestCount: z.number(),
-  }),
-  mergeability: z.object({
-    state: z.enum(["mergeable", "conflicts", "blocked", "draft", "unknown"]),
-  }),
-  attention: z.enum([
-    "checks_failed",
-    "checks_pending",
-    "changes_requested",
-    "review_requested",
-    "conflicts",
-    "blocked",
-    "draft",
-    "queued",
-    "ready_to_merge",
-    "merged",
-    "closed",
-    "none",
-  ]),
-});
-
-const pullRequestsSchema = z.record(
-  z.string(),
-  z.discriminatedUnion("outcome", [
-    z.object({ outcome: z.literal("available"), pullRequest: pullRequestSchema }),
-    z.object({ outcome: z.literal("absent") }),
-    z.object({ outcome: z.literal("unavailable"), message: z.string() }),
-  ]),
-);
-
 /** The checkout measured against `base`; null measures against its default branch. */
 export function checkoutStatus(sdk: Sdk, environmentId: string, base: string | null) {
   return sdk.plugins.callRpc({
@@ -182,18 +133,22 @@ export function checkoutPatches(
   });
 }
 
-/** The pull request for the environment's current branch, or why there is none. */
-export async function pullRequest(sdk: Sdk, environmentId: string) {
-  const answer = await sdk.plugins.callRpc({
-    pluginId: PULL_REQUESTS,
-    method: "pullRequests",
-    input: { keys: [environmentId] },
-    outputSchema: pullRequestsSchema,
+/**
+ * Each thread's row as Source Control's `statusForThread` gives it, keyed by
+ * thread id: its pull request, status line and tone, from Source Control's
+ * store, so asking never reads a host or GitHub. Rows that don't parse are
+ * left out.
+ */
+export async function threadStatuses(
+  sdk: Sdk,
+  threadIds: readonly string[],
+): Promise<Record<string, ThreadStatus>> {
+  if (threadIds.length === 0) return {};
+  const rows = await sdk.plugins.callRpc({
+    pluginId: SOURCE_CONTROL,
+    method: "statusForThread",
+    input: { keys: [...new Set(threadIds)].slice(0, MAX_STATUS_KEYS) },
+    outputSchema: z.record(z.string(), z.unknown()),
   });
-  return (
-    answer[environmentId] ?? {
-      outcome: "unavailable" as const,
-      message: "BB didn't report a pull request",
-    }
-  );
+  return parseThreadStatuses(rows);
 }

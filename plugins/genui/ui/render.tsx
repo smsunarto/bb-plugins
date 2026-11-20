@@ -43,6 +43,7 @@ import { Shader } from "./components/Shader";
 import { StackTrace } from "./components/StackTrace";
 import { Table } from "./components/Table";
 import { Tests } from "./components/Tests";
+import { PullRequest } from "./components/pullRequest";
 import { Threads } from "./components/threads";
 import { Transcript } from "./components/Transcript";
 import { Board, Roadmap, Status } from "./components/tracking";
@@ -130,6 +131,7 @@ const RENDERERS: { readonly [N in ComponentName]: ComponentType<{ props: PropsOf
   Map: MapView,
   Changes,
   Commits,
+  PullRequest,
   Threads,
   Tests,
   Json,

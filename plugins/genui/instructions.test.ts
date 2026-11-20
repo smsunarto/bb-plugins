@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACTIONS, COMPONENTS } from "./core/catalog";
+import { ACTIONS, TAUGHT_COMPONENTS } from "./core/catalog";
 import {
   collectLoads,
   compile,
@@ -45,7 +45,7 @@ describe("agent instructions", () => {
   // The Evidence group's signatures ride on the code-work section, which every session that gets the references also gets.
   it("list every component and action the parser accepts", () => {
     const reference = `${UI_REFERENCE}\n${UI_REFERENCE_MORE}\n${CODE_WORK_INSTRUCTIONS}`;
-    for (const name of [...Object.keys(COMPONENTS), ...Object.keys(ACTIONS)]) {
+    for (const name of [...TAUGHT_COMPONENTS, ...Object.keys(ACTIONS)]) {
       expect(reference, name).toContain(`${name}(`);
     }
   });

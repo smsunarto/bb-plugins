@@ -6,6 +6,7 @@ import {
   FORBIDDEN_PROPERTIES,
   FUNCTIONS,
   METHODS,
+  TAUGHT_COMPONENTS,
   type ComponentSpec,
   type FunctionName,
   type ParamKind,
@@ -19,6 +20,8 @@ import type { Value } from "./types";
 // Maps, not the catalog objects, so spec-controlled names like `constructor`
 // never hit Object.prototype.
 export const COMPONENT_SPECS: ReadonlyMap<string, ComponentSpec> = new Map(Object.entries(COMPONENTS));
+/** Local (bb-plugins): components kept only for old replies (catalog.ts `retired`). */
+const RETIRED: ReadonlySet<string> = new Set(Object.keys(COMPONENTS).filter((name) => !(TAUGHT_COMPONENTS as readonly string[]).includes(name)));
 export const ACTION_SPECS: ReadonlyMap<string, ComponentSpec> = new Map(Object.entries(ACTIONS));
 
 type MethodName = (typeof METHODS)[keyof typeof METHODS][number];
@@ -42,10 +45,14 @@ const FUNCTION_ARITY: ReadonlyMap<string, Arity> = new Map(
     round: [1, 2], fmt: [1, 2], sum: [1, 1], min: [1, Infinity], max: [1, Infinity], abs: [1, 1], Load: [1, 1],
     keys: [1, 1], values: [1, 1], entries: [1, 1], floor: [1, 1], ceil: [1, 1], sqrt: [1, 1], pow: [2, 2],
     sin: [1, 1], cos: [1, 1], tan: [1, 1], asin: [1, 1], acos: [1, 1], atan: [1, 1], atan2: [2, 2],
-    clamp: [3, 3], lerp: [3, 3], range: [2, 3], random: [1, 1],
+    clamp: [3, 3], lerp: [3, 3], range: [2, 3], random: [1, 1], Number: [1, 1],
   } satisfies Record<FunctionName, Arity>),
 );
 
+/** Local (bb-plugins): the components that caption a `source:`, for the warning that drops one elsewhere. */
+const SOURCE_COMPONENTS = ((names: string[]) => `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`)(
+  [...COMPONENT_SPECS].filter(([, spec]) => spec.params.some((param) => param.name === "source")).map(([name]) => name),
+);
 const ACTION_LIST = [...ACTION_SPECS].map(([name, spec]) => signature(name, spec)).join(", ");
 export const ARROW_ONLY =
   "arrow functions can only be declared as a named function (`share = p => ...`), passed to map, filter, find, some or every, or given as a value of a list or object (a Scene's `t => [...]`, a surface's `f`)";
@@ -237,6 +244,34 @@ export function didYouMean(name: string, candidates: Iterable<string>, render = 
   return best === undefined ? "" : ` Did you mean \`${render(best)}\`?`;
 }
 
+/** Local (bb-plugins): text as written, a literal or a template. */
+function isText(expr: Expr | undefined): expr is Extract<Expr, { type: "template" | "literal" }> {
+  return expr !== undefined && (expr.type === "template" || (expr.type === "literal" && typeof expr.value === "string"));
+}
+
+const OPTION_VALUE_KEYS: ReadonlySet<string> = new Set(["label", "title", "name", "value"]);
+const OPTION_DETAIL_KEYS: ReadonlySet<string> = new Set(["description", "detail"]);
+
+/**
+ * Local (bb-plugins): an option of a question written for Decision, as a
+ * Radio option: text as is, `{label, description}` as `{value, detail}`.
+ * Undefined for anything else (scores, pros, a computed item).
+ */
+function radioOption(item: Expr): Expr | undefined {
+  if (isText(item)) return item;
+  if (item.type !== "object") return undefined;
+  if (!item.entries.every((entry) => OPTION_VALUE_KEYS.has(entry.key) || OPTION_DETAIL_KEYS.has(entry.key))) return undefined;
+  const values = item.entries.filter((entry) => OPTION_VALUE_KEYS.has(entry.key));
+  const details = item.entries.filter((entry) => OPTION_DETAIL_KEYS.has(entry.key));
+  const [value] = values;
+  const [detail] = details;
+  if (value === undefined || values.length > 1 || !isText(value.value)) return undefined;
+  if (detail !== undefined && (details.length > 1 || !isText(detail.value))) return undefined;
+  const entries: { key: string; value: Expr; pos: Pos }[] = [{ key: "value", value: value.value, pos: value.pos }];
+  if (detail !== undefined) entries.push({ key: "detail", value: detail.value, pos: detail.pos });
+  return { type: "object", entries, pos: item.pos };
+}
+
 interface Ref {
   readonly name: string;
   readonly pos: Pos;
@@ -260,6 +295,10 @@ class Validator {
   private readonly stateDecls: Decl[] = [];
   /** Local (bb-plugins): config-object field names (`{name: "…"}`) and the states they bind. */
   private readonly fieldStates = new Map<string, string>();
+  /** Local (bb-plugins): states a rewrite declared; a field name never binds one. */
+  private readonly synthesized = new Set<string>();
+  /** Local (bb-plugins): the Cards Decision questions became; a Form takes their Radio as its own field (evaluate.ts). */
+  private readonly questions = new Set<Expr>();
 
   constructor(private readonly diagnostics: DiagnosticList) {}
 
@@ -338,7 +377,7 @@ class Validator {
     for (const [name, decl] of this.named) {
       if (!used.has(name)) this.diagnostics.report(decl.pos, `\`${name}\` is never used`, "warning");
     }
-    return { states: this.stateDecls, named: this.named, roots };
+    return { states: this.stateDecls, named: this.named, roots, questions: this.questions };
   }
 
   private refs(expr: Expr): Refs {
@@ -576,7 +615,7 @@ class Validator {
       return `\`${name}\` is a value and cannot be called; only components, actions and functions can`;
     }
     const isFunctionLike = name[0] === name[0].toLowerCase();
-    const candidates = [...COMPONENT_SPECS.keys(), ...ACTION_SPECS.keys(), ...FUNCTION_ARITY.keys()];
+    const candidates = [...TAUGHT_COMPONENTS, ...ACTION_SPECS.keys(), ...FUNCTION_ARITY.keys()];
     // Local (bb-plugins): name the closest few, never the whole catalog; the
     // full list filled a phone screen and the reference already has it.
     const fallback = isFunctionLike
@@ -605,13 +644,24 @@ class Validator {
   /** Maps arguments onto catalog params and checks what is knowable before evaluation. */
   private catalogCall(expr: CallExpr, spec: ComponentSpec): void {
     const sig = signature(expr.name, spec);
+    if (RETIRED.has(expr.name)) {
+      // Local (bb-plugins): still rendered for replies written before it was retired; no prompt teaches it.
+      this.diagnostics.report(expr.pos, `\`${expr.name}\` was retired; its pull requests are shown as links. The Source Control card shows a pull request's status`, "warning");
+    }
     const slots: (Expr | undefined)[] = spec.params.map((_, index) => expr.args[index]);
     if (expr.args.length > spec.params.length) {
       this.diagnostics.report(expr.args[spec.params.length].pos, `too many arguments: ${sig}`);
     }
+    let sourceDropped = false;
     for (const arg of expr.named) {
       const index = spec.params.findIndex((param) => param.name === arg.name);
       if (index < 0) {
+        // Local (bb-plugins): `source:` where only Table, Chart and Metric caption one; dropped.
+        if (arg.name === "source") {
+          sourceDropped = true;
+          this.diagnostics.report(arg.pos, `\`${expr.name}\` shows no \`source:\`; dropped it. Only ${SOURCE_COMPONENTS} caption a source`, "warning");
+          continue;
+        }
         const hint = didYouMean(arg.name, spec.params.map((param) => param.name));
         const why =
           hint === "" && Object.hasOwn(STYLE_ARGS, arg.name.toLowerCase())
@@ -624,6 +674,11 @@ class Validator {
         slots[index] = arg.value;
       }
     }
+    if (sourceDropped) {
+      // validate owns the parsed AST before it becomes the program (readonly is type-level).
+      (expr as unknown as { named: NamedArg[] }).named = expr.named.filter((arg) => arg.name !== "source");
+    }
+    this.coerceSelectLabel(expr, spec, slots, sig);
     this.coerceOptionsFirst(expr, spec, slots, sig);
     this.coerceTabsItems(expr, spec, slots, sig);
     this.coerceConfigObject(expr, spec, slots, sig);
@@ -782,6 +837,7 @@ class Validator {
     let n = 1;
     while (this.states.has(name) || this.named.has(name)) name = `${base}${++n}`;
     this.registerState(name, initial ?? this.initialFor(holds, pos), pos);
+    this.synthesized.add(name);
     return name;
   }
 
@@ -823,7 +879,7 @@ class Validator {
     const base = own ? slug : component.toLowerCase();
     // Only a field spelled exactly like a declared state binds it; a normalized one never lands on one.
     const taken = (name: string) =>
-      claimed.has(name) || this.named.has(name) || (!(valid && name === field) && this.states.has(name));
+      claimed.has(name) || this.named.has(name) || this.synthesized.has(name) || (!(valid && name === field) && this.states.has(name));
     let name = base;
     let n = 1;
     while (taken(name)) name = `${base}${++n}`;
@@ -893,6 +949,7 @@ class Validator {
    */
   private coerceCallee(expr: CallExpr, params: readonly string[]): void {
     if (this.named.has(expr.name) || params.includes(expr.name) || FUNCTION_ARITY.has(expr.name)) return;
+    if (expr.name === "Decision") this.coerceDecisionQuestion(expr);
     if (!COMPONENT_SPECS.has(expr.name) && !ACTION_SPECS.has(expr.name)) {
       const target = COMPONENT_ALIASES.get(expr.name) ?? uniqueCaseInsensitive(expr.name);
       if (target === undefined) return;
@@ -918,6 +975,98 @@ class Validator {
         "warning",
       );
     }
+  }
+
+  /**
+   * Local (bb-plugins): `Decision("Question?", [{label, description}, …])`
+   * or `Decision({question, options})`: a question, not the options-against-
+   * criteria table `Decision(options, criteria)` draws. With no criteria
+   * and every option a text or a {label, description} object, the call
+   * becomes `Card(null, [Form([Radio($decision, [{value, detail}, …],
+   * label: question)])])` (warning), so the pick reaches the user's message
+   * as "Question? answer"; a Form it is inside takes the Radio as its own
+   * field when it evaluates. Anything else keeps its errors.
+   */
+  private coerceDecisionQuestion(expr: CallExpr): void {
+    if (expr.named.length > 0) return;
+    let question: Expr | undefined;
+    let options: Expr | undefined;
+    const [first, second] = expr.args;
+    if (expr.args.length === 2 && isText(first)) {
+      question = first;
+      options = second;
+    } else if (expr.args.length === 1 && first.type === "object") {
+      if (!first.entries.every((entry) => entry.key === "question" || entry.key === "options")) return;
+      question = first.entries.find((entry) => entry.key === "question")?.value;
+      options = first.entries.find((entry) => entry.key === "options")?.value;
+    }
+    if (question === undefined || !isText(question) || options?.type !== "list" || options.items.length === 0) return;
+    const items: Expr[] = [];
+    for (const item of options.items) {
+      const option = radioOption(item);
+      if (option === undefined) return;
+      items.push(option);
+    }
+    const name = this.synthState("Decision", "scalar", expr.pos);
+    const radio: Expr = {
+      type: "call",
+      name: "Radio",
+      args: [{ type: "state", name, pos: question.pos }, { type: "list", items, pos: options.pos }],
+      named: [{ name: "label", value: question, pos: question.pos }],
+      pos: question.pos,
+    };
+    // Card, Form and Radio each keep a distinct position, so their node keys differ.
+    const form: Expr = { type: "call", name: "Form", args: [{ type: "list", items: [radio], pos: options.pos }], named: [], pos: options.pos };
+    const mutable = expr as unknown as { name: string; args: Expr[] };
+    mutable.name = "Card";
+    mutable.args = [{ type: "literal", value: null, pos: expr.pos }, { type: "list", items: [form], pos: options.pos }];
+    this.questions.add(expr);
+    this.diagnostics.report(
+      expr.pos,
+      `\`Decision\` scores options against criteria; with none it is a question, so it became a Radio bound to \`$${name}\`. Write a question as \`Radio($pick, [{value, detail}], label: "Question?")\` in a Form`,
+      "warning",
+    );
+  }
+
+  /**
+   * Local (bb-plugins): `Select("Region", ["eu", "us"])` (text that is not an
+   * option) and `Select("region", "Region", ["eu", "us"])` (a field name, a
+   * label, the options): the label stands where the `$state` goes. Both
+   * become `Select($state, options, label: "Region")` (warning), with the
+   * field name as the state's name when given. Text that is one of the
+   * options stays its starting value (coerceLiteralBindings).
+   */
+  private coerceSelectLabel(expr: CallExpr, spec: ComponentSpec, slots: (Expr | undefined)[], sig: string): void {
+    if (expr.name !== "Select" || expr.named.length > 0) return;
+    const [first, second, third] = expr.args;
+    let state: string;
+    let label: Expr;
+    let options: Expr;
+    if (expr.args.length === 3 && first.type === "literal" && typeof first.value === "string" && first.value.trim() !== "" && isText(second) && third.type === "list") {
+      state = this.fieldState(first.value.trim(), expr.name);
+      if (!this.states.has(state)) this.registerState(state, this.initialFor("scalar", first.pos), first.pos);
+      label = second;
+      options = third;
+    } else if (expr.args.length === 2 && isText(first) && second.type === "list" && !this.literalIsStartingValue(spec, slots, first)) {
+      state = this.synthState(expr.name, "scalar", first.pos);
+      label = first;
+      options = second;
+    } else {
+      return;
+    }
+    const stateExpr: Expr = { type: "state", name: state, pos: first.pos };
+    slots[0] = stateExpr;
+    slots[1] = options;
+    slots[2] = label;
+    // validate owns the parsed AST before it becomes the program (readonly is type-level).
+    const mutable = expr as unknown as { args: Expr[]; named: NamedArg[] };
+    mutable.args = [stateExpr, options];
+    mutable.named = [{ name: "label", value: label, pos: label.pos }];
+    this.diagnostics.report(
+      expr.pos,
+      `\`Select\` got its label where its \`$state\` goes; bound the pick to \`$${state}\` and made the text its label: ${sig}`,
+      "warning",
+    );
   }
 
   /**

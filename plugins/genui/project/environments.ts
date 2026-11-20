@@ -16,12 +16,12 @@ import {
   type EnvironmentInfo,
   type EnvironmentKind,
   type EnvironmentLife,
-  type EnvironmentPull,
   type EnvironmentThread,
 } from "../core/environments";
 import { RUNNING, THREAD_ID, type EnvironmentsResult, type ProjectFailure, type ThreadDisplayStatus } from "../core/project";
-import { checkoutStatus as readCheckoutStatus, pullRequest, type CheckoutProblem, type CheckoutRead } from "./checkout";
-import { branchOf, pullRequestInfo } from "./source";
+import { environmentPull, type ThreadStatus } from "../core/sourceControl";
+import { checkoutStatus as readCheckoutStatus, threadStatuses, type CheckoutProblem, type CheckoutRead } from "./checkout";
+import { branchOf } from "./source";
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -261,6 +261,12 @@ export async function mapLimit<T, R>(items: readonly T[], limit: number, work: (
   return results;
 }
 
+/** An environment's checkout, and the branch whose pull request is wanted (null: none of its own). */
+interface CheckoutDetail {
+  readonly checkout: EnvironmentDetail["checkout"];
+  readonly branch: string | null;
+}
+
 export function createEnvironmentsSource(sdk: Sdk): EnvironmentsSource {
   const projects = new Map<string, { at: number; projectId: string; environmentId: string | null }>();
 
@@ -281,46 +287,45 @@ export function createEnvironmentsSource(sdk: Sdk): EnvironmentsSource {
     return { ok: true as const, ...own };
   }
 
-  async function readCheckout(environment: EnvironmentEntry): Promise<Pick<EnvironmentDetail, "checkout" | "pull">> {
+  /** The checkout, and the branch whose pull request is wanted: null for none of its own. */
+  async function readCheckout(environment: EnvironmentEntry): Promise<CheckoutDetail> {
     const life = environmentLife(environment);
-    if (life === "destroyed") return { checkout: unread("gone", "This environment was destroyed"), pull: null };
-    if (life === "host-gone") return { checkout: unread("unavailable", "The machine it was on was removed"), pull: null };
-    if (!environment.isGitRepo) return { checkout: unread("not-git", "Not a git checkout"), pull: null };
-    const environmentId = environment.id;
-    const answer = await readCheckoutStatus(sdk, environmentId, environment.mergeBaseBranch ?? environment.defaultBranch);
-    if (!answer.ok) return { checkout: checkoutFailure(answer.problem, environment.path), pull: null };
+    if (life === "destroyed") return { checkout: unread("gone", "This environment was destroyed"), branch: null };
+    if (life === "host-gone") return { checkout: unread("unavailable", "The machine it was on was removed"), branch: null };
+    if (!environment.isGitRepo) return { checkout: unread("not-git", "Not a git checkout"), branch: null };
+    const answer = await readCheckoutStatus(sdk, environment.id, environment.mergeBaseBranch ?? environment.defaultBranch);
+    if (!answer.ok) return { checkout: checkoutFailure(answer.problem, environment.path), branch: null };
     const status = answer.value;
-    if (status.state === "missing") return { checkout: unread("missing", "Workspace folder is gone", environment.path), pull: null };
-    if (status.state === "not-git") return { checkout: unread("not-git", "Not a git checkout"), pull: null };
-    if (status.base === null) return { checkout: unread("unavailable", "No default branch to compare with", environment.path), pull: null };
+    if (status.state === "missing") return { checkout: unread("missing", "Workspace folder is gone", environment.path), branch: null };
+    if (status.state === "not-git") return { checkout: unread("not-git", "Not a git checkout"), branch: null };
+    if (status.base === null) return { checkout: unread("unavailable", "No default branch to compare with", environment.path), branch: null };
     const checkout = checkoutStatus(status, status.base);
     // Only a branch of its own has a pull request: not the default branch, its base, or a detached HEAD.
-    if (checkout.checkout !== "branch" || checkout.onBase || checkout.branch === checkout.defaultBranch) return { checkout, pull: null };
-    return { checkout, pull: await readPull(environmentId) };
+    const own = checkout.checkout === "branch" && checkout.branch !== null && !checkout.onBase && checkout.branch !== checkout.defaultBranch;
+    return { checkout, branch: own ? checkout.branch : null };
   }
 
-  async function readPull(environmentId: string): Promise<EnvironmentPull> {
+  async function checkoutOf(environment: EnvironmentEntry): Promise<CheckoutDetail> {
     try {
-      const answer = await pullRequest(sdk, environmentId);
-      if (answer.outcome === "unavailable") return { ok: false, message: answer.message };
-      return { ok: true, pullRequest: answer.outcome === "available" ? pullRequestInfo(answer.pullRequest) : null };
+      return await readCheckout(environment);
     } catch (cause) {
-      return { ok: false, message: errorMessage(cause) };
+      return { checkout: unread("unavailable", `BB couldn't read the checkout: ${errorMessage(cause)}`), branch: null };
     }
   }
 
-  async function detailOf(environment: EnvironmentEntry): Promise<EnvironmentDetail> {
+  /** Source Control's rows for the threads, in one read; or why it couldn't say. */
+  async function statusesOf(threadIds: readonly string[]): Promise<Readonly<Record<string, ThreadStatus>> | string> {
     try {
-      return { ok: true, id: environment.id, ...(await readCheckout(environment)), fetchedAt: Date.now() };
+      return await threadStatuses(sdk, threadIds);
     } catch (cause) {
-      return {
-        ok: true,
-        id: environment.id,
-        checkout: unread("unavailable", `BB couldn't read the checkout: ${errorMessage(cause)}`),
-        pull: null,
-        fetchedAt: Date.now(),
-      };
+      return `Source Control couldn't say: ${errorMessage(cause)}`;
     }
+  }
+
+  function detailOf(id: string, read: CheckoutDetail, threadIds: readonly string[], statuses: Readonly<Record<string, ThreadStatus>> | string): EnvironmentDetail {
+    const pull =
+      read.branch === null ? null : typeof statuses === "string" ? { ok: false as const, message: statuses } : environmentPull(threadIds, statuses, read.branch);
+    return { ok: true, id, checkout: read.checkout, pull, threadIds: read.branch === null ? [] : threadIds, fetchedAt: Date.now() };
   }
 
   return {
@@ -368,9 +373,12 @@ export function createEnvironmentsSource(sdk: Sdk): EnvironmentsSource {
         const view = { ok: true as const, environments: infos, threadsTruncated: kept.length > MAX_PROJECT_THREADS, fetchedAt: Date.now() };
         if (!withDetails) return view;
         const wanted = defaultEnvironments(infos).shown.slice(0, MARKDOWN_DETAILS);
-        const details = new Map(
-          (await mapLimit(wanted, DETAIL_CONCURRENCY, (info) => detailOf(environments.get(info.id) as EnvironmentEntry))).map((detail) => [detail.id, detail]),
-        );
+        const reads = await mapLimit(wanted, DETAIL_CONCURRENCY, (info) => checkoutOf(environments.get(info.id) as EnvironmentEntry));
+        const idsOf = (info: EnvironmentInfo) => info.threads.map((thread) => thread.id);
+        // One Source Control read for every environment with a branch of its own.
+        const asked = wanted.flatMap((info, index) => (reads[index]?.branch === null ? [] : idsOf(info)));
+        const statuses = asked.length === 0 ? {} : await statusesOf(asked);
+        const details = new Map(wanted.map((info, index) => [info.id, detailOf(info.id, reads[index] as CheckoutDetail, idsOf(info), statuses)]));
         return { ...view, environments: infos.map((info) => ({ ...info, detail: details.get(info.id) ?? null })) };
       } catch (cause) {
         return failure("unavailable", `BB couldn't list the environments: ${errorMessage(cause)}`);
@@ -387,7 +395,16 @@ export function createEnvironmentsSource(sdk: Sdk): EnvironmentsSource {
         if (environment === null || environment.projectId !== own.projectId) {
           return { ok: false, reason: "not-found", message: "No such environment in this project" };
         }
-        return await detailOf(environment);
+        const read = await checkoutOf(environment);
+        if (read.branch === null) return detailOf(environmentId, read, [], {});
+        let threadIds: string[];
+        try {
+          const threads = await sdk.threads.list({ environmentId, limit: THREADS_PER_ENVIRONMENT });
+          threadIds = threads.filter((thread) => thread.environmentId === environmentId && thread.deletedAt === null).map((thread) => thread.id);
+        } catch (cause) {
+          return detailOf(environmentId, read, [], `BB couldn't list the environment's threads: ${errorMessage(cause)}`);
+        }
+        return detailOf(environmentId, read, threadIds, await statusesOf(threadIds));
       } catch (cause) {
         return { ok: false, reason: "unavailable", message: `BB couldn't read the environment: ${errorMessage(cause)}` };
       }

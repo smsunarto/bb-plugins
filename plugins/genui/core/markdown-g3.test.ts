@@ -42,7 +42,7 @@ function environment(id: string, overrides: Partial<EnvironmentInfo>): Environme
 }
 
 function detail(id: string, rest: Pick<EnvironmentDetail, "checkout" | "pull">): EnvironmentDetail {
-  return { ok: true, id, ...rest, fetchedAt: NOW };
+  return { ok: true, id, ...rest, threadIds: [], fetchedAt: NOW };
 }
 
 /** The orbit-web project as BB answered on 2026-10-10: the checkout, a worktree with a PR, a worktree whose folder is gone, one without threads. */
@@ -106,16 +106,10 @@ const VIEW: ProjectResult = {
             title: "Offline search index",
             url: "https://github.com/acme/orbit/pull/424",
             state: "draft",
-            baseRef: "release-1.5",
-            headRef: "feat/403-offline-search",
-            checks: { state: "failing", passed: 3, failed: 1, pending: 0, total: 4 },
-            review: { state: "none", requests: 0 },
-            mergeability: "draft",
-            attention: "draft",
-            autoMerge: false,
-            inMergeQueue: false,
-            updatedAt: NOW - 60 * MINUTE,
           },
+          line: "Checks failing",
+          tone: "error",
+          forge: { state: "read", at: NOW - 60 * MINUTE },
         },
       }),
     }),
@@ -153,7 +147,7 @@ describe("toMarkdown: Environments", () => {
           "  - Sketch the team’s onboarding checklist — Running",
           "  - Speed up the pricing page on mobile — Idle",
           "  - ↳ Fix \\*the\\* header — Needs input",
-          "- **feat/403-offline-search** (Worktree) · 40 files +2,782 −312 uncommitted · 32 ahead, 1 behind release-1.5 · PR [#424](https://github.com/acme/orbit/pull/424) Draft, checks failing · 1 live · 1 h ago",
+          "- **feat/403-offline-search** (Worktree) · 40 files +2,782 −312 uncommitted · 32 ahead, 1 behind release-1.5 · PR [#424](https://github.com/acme/orbit/pull/424) Draft, checks failing, read 1 h ago · 1 live · 1 h ago",
           "  - Continue Orbit issue #404 — Idle",
           "- **wt/flowers-day** (Worktree) · _Workspace folder is gone_ (`/Users/me/Projects/orbit-web-wt/flowers-day`) · 1 live · Sep 22",
           "  - ↳ Execute task instructions — Idle",

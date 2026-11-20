@@ -67,7 +67,6 @@ import {
 import {
   CHANGE_LABEL,
   changeTotals,
-  CHECKS_LABEL,
   parseChangesTarget,
   parseCommitLimit,
   parsePathFilter,
@@ -100,6 +99,7 @@ import {
   uncommittedLabel,
   type EnvironmentInfo,
 } from "./environments";
+import { forgeReadAt, noPullLabel, parsePullRequestRef } from "./sourceControl";
 import {
   cardLate,
   formatDay,
@@ -441,6 +441,18 @@ function calendarMarkdown(label: string, days: Value | undefined): string {
       }),
     ),
   ]);
+}
+
+/** Local (bb-plugins): a retired `PullRequest(refs)` as links; Source Control's card shows their status. */
+function pullRequestLinks(refs: Value | undefined): string {
+  const links = list(refs).map((ref) => {
+    const text = inline(ref);
+    const pr = parsePullRequestRef(text);
+    return pr === null ? text.replace(/[\\`*_[\]<>]/g, "\\$&") : link(`${pr.owner}/${pr.repo}#${pr.number}`, new URL(pr.url));
+  });
+  if (links.length === 0) return "**Pull request:** see this thread's Source Control card";
+  if (links.length === 1) return `**Pull request:** ${links[0]}`;
+  return `**Pull requests**\n${links.map((entry) => `- ${entry}`).join("\n")}`;
 }
 
 /** A node's markdown; a Table, Chart or Metric says where its numbers come from. */
@@ -906,6 +918,8 @@ function blockBody(node: UiNode): string {
     case "Commits":
     case "Threads":
       return projectMarkdown(node);
+    case "PullRequest":
+      return pullRequestLinks(props.refs);
     case "Tests":
       return testsMarkdown(props.results, inline(props.title));
     case "Json":
@@ -1710,13 +1724,16 @@ function environmentGit(environment: EnvironmentInfo): string[] {
   const pull = detail.pull;
   let pr = "";
   if (pull !== null && !pull.ok) pr = "pull request unknown";
-  else if (pull !== null && pull.pullRequest === null) pr = "no pull request";
+  else if (pull !== null && pull.pullRequest === null) pr = noPullLabel(pull.forge);
   else if (pull !== null && pull.pullRequest !== null) {
+    // Local (bb-plugins): Source Control's own status line, and when it last read the pull request, if it says.
     const request = pull.pullRequest;
     const url = webUrl(request.url, ["https:"]);
     const label = `#${request.number}`;
-    const checks = request.state === "open" || request.state === "draft" ? `, ${CHECKS_LABEL[request.checks.state].toLowerCase()}` : "";
-    pr = `PR ${url === null ? label : link(label, url)} ${PR_STATE_LABEL[request.state]}${checks}`;
+    const read = forgeReadAt(pull.forge);
+    const when =
+      read === null ? "" : read.failed !== null ? `, ${read.at === null ? "never read" : `read ${relativeTime(read.at, detail.fetchedAt)}`}, last read failed` : `, read ${relativeTime(read.at ?? detail.fetchedAt, detail.fetchedAt)}`;
+    pr = `PR ${url === null ? label : link(label, url)} ${PR_STATE_LABEL[request.state]}, ${pull.line.toLowerCase()}${when}`;
   }
   return [uncommittedLabel(checkout), position, pr];
 }

@@ -27,6 +27,7 @@ import {
   PluginCliError,
   type BbPluginApi,
 } from "@get-bb/plugin-sdk";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   listGallery,
@@ -43,7 +44,7 @@ import {
   sketchFontDataUrl,
 } from "./data-source";
 import { checkApp, MAX_APP_CHARS } from "./core/appLint";
-import { checkSpec, renderReplyMarkdown } from "./fallback";
+import { brokenUiBlocks, checkSpec, renderReplyMarkdown } from "./fallback";
 import type { Value } from "./core/types";
 import {
   MAX_PATH_FILTERS,
@@ -82,6 +83,11 @@ const UI_ID = /^[a-z0-9]{10}$/;
 /** Thread ids kept for the code-work instruction section (see configure). */
 const MAX_PERSON_THREADS = 10_000;
 
+/** Local (bb-plugins): a repair asked about reply `asked`, or answered by reply `answered`. */
+type RepairState =
+  | { readonly asked: string; readonly answered?: undefined }
+  | { readonly answered: string; readonly asked?: undefined };
+
 /** Declared here so BB lists it; the page reads it (ui/components/motion.ts). */
 export const MOTION_SETTINGS = {
   animations: {
@@ -92,6 +98,26 @@ export const MOTION_SETTINGS = {
     default: true,
   },
 } as const;
+
+/**
+ * Local (bb-plugins): after a person's thread goes idle on a reply whose
+ * ```ui blocks fail, genui asks the agent once, agent-only, to resend them
+ * fixed. Claude Code defers check_ui, so agents there seldom ran it first.
+ */
+export const UI_REPAIR_SETTINGS = {
+  uiRepair: {
+    type: "boolean",
+    label: "Repair broken UI",
+    description:
+      "When a reply's UI block can't render, asks the agent once, in the background, to send it again fixed. Each repair is one more agent turn.",
+    default: true,
+  },
+} as const;
+
+/** A reply's identity for repair bookkeeping: equal texts are the same reply. */
+function replyKey(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
 
 const storedUiSchema = z.object({ source: z.string() });
 
@@ -355,6 +381,8 @@ export default async function plugin(bb: BbPluginApi) {
   // same session resolution, so the code-work section below reaches exactly
   // the sessions that get the other three. Bounded; oldest forgotten first.
   const personThreads = new Set<string>();
+  /** Person threads whose broken UI blocks are repaired: all but `bb genui ask` trials. */
+  const repairThreads = new Set<string>();
   bb.agents.configure((context) => {
     // Only sessions whose replies a person reads in chat: not threads another
     // agent spawned (their reply goes back to that agent) and not threads a
@@ -365,16 +393,77 @@ export default async function plugin(bb: BbPluginApi) {
       (context.thread.parentThreadId === null &&
         (context.origin.pluginId === null || context.origin.pluginId === "side-chat"));
     personThreads.delete(context.thread.id);
+    repairThreads.delete(context.thread.id);
     if (!forPerson) return { tools: [], skills: [] };
     personThreads.add(context.thread.id);
     if (personThreads.size > MAX_PERSON_THREADS)
       personThreads.delete(personThreads.values().next().value!);
+    // A `bb genui ask` trial keeps its reply as written: a repair would skew what it measures.
+    if (context.pluginMetadata.trial !== true) repairThreads.add(context.thread.id);
+    if (repairThreads.size > MAX_PERSON_THREADS)
+      repairThreads.delete(repairThreads.values().next().value!);
     const instructions = web.isOn() ? AGENT_INSTRUCTIONS : AGENT_INSTRUCTIONS_WEB_OFF;
     return { tools: ["check_ui", "ui_examples"], skills: [], instructions };
   });
   bb.agents.contributeInstructions(({ threadId }) =>
     personThreads.has(threadId) ? CODE_WORK_INSTRUCTIONS : null,
   );
+
+  const repairSettings = bb.settings.define(UI_REPAIR_SETTINGS);
+  // One repair per broken reply. `repair:<thread>` holds `{asked}` while the
+  // agent answers a repair, so the next reply, whatever it holds, is that
+  // answer and is never repaired; then `{answered}`, so the same idle
+  // delivered again does nothing.
+  bb.events.on("thread.idle", async ({ thread, lastAssistantText }) => {
+    if (!repairThreads.has(thread.id)) return;
+    const stateKey = `repair:${thread.id}`;
+    const reply = lastAssistantText === null ? null : replyKey(lastAssistantText);
+    const state = await bb.storage.kv.get<RepairState>(stateKey);
+    if (reply !== null && (state?.asked === reply || state?.answered === reply)) return;
+    if (state?.asked !== undefined) {
+      if (reply === null) await bb.storage.kv.delete(stateKey);
+      else await bb.storage.kv.set(stateKey, { answered: reply } satisfies RepairState);
+      return;
+    }
+    if (lastAssistantText === null || reply === null || !(await repairSettings.get()).uiRepair)
+      return;
+    const broken = brokenUiBlocks(lastAssistantText);
+    if (broken.length === 0) return;
+    try {
+      const [latest] = await bb.sdk.threads.events.list({
+        threadId: thread.id,
+        order: "desc",
+        limit: "1",
+        types: ["turn/completed"],
+      });
+      // A stopped or failed turn is the user's call, not a broken reply.
+      if (latest?.type !== "turn/completed" || latest.data.status !== "completed") return;
+      const blocks = broken.map(({ block, errors }) => `Block ${block}:\n${errors}`).join("\n");
+      await bb.storage.kv.set(stateKey, { asked: reply } satisfies RepairState);
+      try {
+        await bb.sdk.threads.send({
+          threadId: thread.id,
+          mode: "start",
+          input: [
+            {
+              type: "text",
+              text: instructionText.read("ui-repair", { blocks }),
+              mentions: [],
+              visibility: "agent-only",
+            },
+          ],
+        });
+      } catch (error) {
+        // Not asked, so the next reply is not an answer to a repair.
+        await bb.storage.kv.delete(stateKey);
+        throw error;
+      }
+    } catch (error) {
+      bb.log.warn(
+        `could not ask ${thread.id} to repair its UI: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  });
 
   bb.http.route("GET", "/video-player.js", (context) => {
     const headers = { etag: VIDEO_PLAYER_ETAG, "cache-control": "no-cache" };
@@ -484,7 +573,7 @@ export default async function plugin(bb: BbPluginApi) {
               title: input.options.title,
               providerId: input.options.provider,
               model: input.options.model,
-              pluginMetadata: { audience: "person" },
+              pluginMetadata: { audience: "person", trial: true },
             });
             return { exitCode: 0, stdout: `${thread.id}\n` };
           },

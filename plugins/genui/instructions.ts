@@ -24,8 +24,8 @@ import {
   COMPONENTS,
   componentSignature,
   type ComponentGroup,
-  type ComponentName,
   type ComponentSpec,
+  TAUGHT_COMPONENTS,
 } from "./core/catalog";
 
 const instructionText = instructionFiles(import.meta.url);
@@ -42,7 +42,7 @@ const BRIEF_GROUPS: Partial<Record<ComponentGroup, string>> = {
 /** One line per group: `Group: Sig: summary · Sig · …`. */
 function componentLines(groups: readonly ComponentGroup[]): string {
   const lines = new Map<ComponentGroup, string[]>(groups.map((group) => [group, []]));
-  for (const name of Object.keys(COMPONENTS) as ComponentName[]) {
+  for (const name of TAUGHT_COMPONENTS) {
     const spec: ComponentSpec = COMPONENTS[name];
     const brief = `${name}(${spec.params
       .filter((param) => !param.optional)

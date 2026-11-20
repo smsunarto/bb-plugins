@@ -87,6 +87,21 @@ function findFences(lines: readonly string[]): Fence[] {
   return fences;
 }
 
+/**
+ * Local (bb-plugins): the reply's ```ui blocks that show an error card or
+ * drop part of themselves, numbered from 1 in reply order, each with its
+ * compile errors. Warnings and unclosed fences don't count.
+ */
+export function brokenUiBlocks(text: string): { readonly block: number; readonly errors: string }[] {
+  const lines = text.split("\n");
+  // An unclosed fence is a cut-off reply, not a broken block.
+  const blocks = findFences(lines).filter((fence) => fence.language === "ui" && fence.close < lines.length);
+  return blocks.flatMap((fence, index) => {
+    const errors = compile(fence.body).diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+    return errors.length === 0 ? [] : [{ block: index + 1, errors: formatDiagnostics(errors) }];
+  });
+}
+
 function appPointer(html: string): string {
   const title = /<title>([^<]{1,120})<\/title>/i.exec(html)?.[1]?.trim();
   return `_Interactive app${title ? `: ${title}` : ""}. Open this reply in BB to use it._`;
