@@ -1,0 +1,17 @@
+Index: x.txt
+===================================================================
+--- x.txt	(revision 1)
++++ x.txt	(working copy)
+@@ -1,4 +1,4 @@
+ one
+ 
+-two
++TWO
+ three
+
+Property changes on: x.txt
+___________________________________________________________________
+Added: svn:executable
+## -0,0 +1 ##
++*
+\ No newline at end of property

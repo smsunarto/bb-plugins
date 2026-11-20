@@ -440,6 +440,28 @@ describe("review round 3", () => {
     expect(screen.queryByTestId("sc-patch-file-notice")).toBeNull();
   });
 
+  test("a click in BB's preview checks the file as a poll would, validators kept", async () => {
+    const sent: (string | undefined)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        sent.push(sentTag(init));
+        return sentTag(init) === '"1"'
+          ? new Response(null, { status: 304 })
+          : new Response("--- a/x.txt\n+++ b/x.txt\n@@ -1 +1 @@\n-a\n", {
+              headers: { etag: '"1"' },
+            });
+      }),
+    );
+    function Preview() {
+      return <button type="button">Copy file contents</button>;
+    }
+    renderSlot(opener, { path: "work/change.patch", source: STORAGE, Original: Preview });
+    await screen.findByTestId("sc-patch-file-notice");
+    fireEvent.click(screen.getByRole("button", { name: "Copy file contents" }));
+    await waitFor(() => expect(sent).toEqual([undefined, '"1"']));
+  });
+
   test("files named toString and __proto__ open like any other", async () => {
     open(file("toString") + file("__proto__"));
     await waitFor(() => expect(paths()).toEqual(["toString", "__proto__"]));

@@ -298,7 +298,9 @@ function usePatchFile(url: string | null) {
       : loaded.url === url
         ? loaded.value
         : { state: "loading" };
-  return { loaded: value, refresh, refreshing, slow };
+  /** Read again, as a poll would: keeps the validators and leaves a running read alone. */
+  const recheck = useCallback(() => void load(false), [load]);
+  return { loaded: value, refresh, recheck, refreshing, slow };
 }
 
 /** A patch store already holding every file, keyed by entry: a path may show twice. */
@@ -515,10 +517,10 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
       source.experimental_hostId,
     ],
   );
-  const { loaded, refresh, refreshing, slow } = usePatchFile(url);
-  // BB's preview has its own Refresh, which reloads only its text: read the file again with it.
+  const { loaded, refresh, recheck, refreshing, slow } = usePatchFile(url);
+  // BB's preview has its own Refresh, which reloads only its text: check the file again with it.
   const onPreviewClick = (event: MouseEvent<HTMLElement>) => {
-    if ((event.target as Element).closest("button")) refresh();
+    if ((event.target as Element).closest("button")) recheck();
   };
   const [asText, setAsText] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -529,7 +531,9 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
 
   if (loaded.state === "text")
     return loaded.reason === null ? (
-      <Original />
+      <div className="h-full min-h-0" onClickCapture={onPreviewClick}>
+        <Original />
+      </div>
     ) : (
       // BB's preview below has its own Refresh, and the poll brings the diff back once the file reads.
       <div className="flex h-full min-h-0 flex-col" data-testid="sc-patch-file-text">

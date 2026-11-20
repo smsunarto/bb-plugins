@@ -1,0 +1,36 @@
+366af38 three
+
+
+
+diff --git a/f b/f
+index 6178079..f2ad6c7 100644
+--- a/f
++++ b/f
+@@ -1 +1 @@
+-b
++c
+81864a7 two
+
+- bullet one
++ plus thing
+-- dash
+
+
+diff --git a/f b/f
+index 7898192..6178079 100644
+--- a/f
++++ b/f
+@@ -1 +1 @@
+-a
++b
+75cc060 one
+
+
+
+diff --git a/f b/f
+new file mode 100644
+index 0000000..7898192
+--- /dev/null
++++ b/f
+@@ -0,0 +1 @@
++a

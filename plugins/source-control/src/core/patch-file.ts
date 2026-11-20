@@ -55,9 +55,15 @@ export type PatchFile = {
 
 export type PatchRead = { ok: true; read: PatchFile } | { ok: false; reason: string };
 
-/** `git format-patch`'s mail separator, with its fixed date, and `git log`'s commit line, its hash maybe abbreviated. */
+/**
+ * Where a commit starts: `git format-patch`'s mail separator with its fixed
+ * date, `git log`'s commit line (its hash maybe abbreviated), or any mbox
+ * `From ` line with a date, as b4 and lore write a series.
+ */
 const COMMIT_START =
-  /^(?:From ([0-9a-f]{40}|[0-9a-f]{64}) Mon Sep 17 00:00:00 2001$|commit ([0-9a-f]{7,64})\b)/;
+  /^(?:From ([0-9a-f]{40}|[0-9a-f]{64}) Mon Sep 17 00:00:00 2001$|commit ([0-9a-f]{7,64})\b|From \S+ (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d \d{4}$)/;
+/** A mail header line, after an mbox `From ` line such as b4's and lore's `From git@z …`. */
+const MAIL_FIELD = /^[A-Za-z-]+:/;
 /** What follows `git log`'s commit line, so a message line reading "commit 1a2b…" is not one. */
 const LOG_FIELD = /^(?:Merge|Author|AuthorDate|Commit|CommitDate|Date):/;
 const HUNK = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/;
@@ -352,7 +358,8 @@ function emptyCommit(): PatchFileCommit {
 function commitStarts(lines: string[], index: number): boolean {
   const match = COMMIT_START.exec(lines[index]!);
   if (!match) return false;
-  return match[1] !== undefined || LOG_FIELD.test(lines[index + 1] ?? "");
+  if (match[1] !== undefined) return true;
+  return (match[2] === undefined ? MAIL_FIELD : LOG_FIELD).test(lines[index + 1] ?? "");
 }
 
 /** Whether a git file is still in its extended header, before its `---`/`+++` pair. */
@@ -695,7 +702,7 @@ function readHeader(
   const meta: Meta = emptyCommit();
   const first = COMMIT_START.exec(lines[start]!)!;
   meta.id = first[1] ?? first[2] ?? null;
-  if (!first[1]) {
+  if (first[2] !== undefined) {
     const next = readLogHeader(lines, start + 1, meta);
     meta.authorName = nameOf(meta.author);
     return { meta, next, boundary: null };

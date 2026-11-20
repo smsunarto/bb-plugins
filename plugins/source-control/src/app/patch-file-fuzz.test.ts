@@ -120,7 +120,7 @@ function sourceChanges(text: string) {
 }
 
 const hasMessages = (text: string) =>
-  /^(?:From [0-9a-f]{40} |commit [0-9a-f]{7,})/m.test(text) || /^GIT binary patch$/m.test(text);
+  /^(?:From \S+ .*\d{4}$|commit [0-9a-f]{7,})/m.test(text) || /^GIT binary patch$/m.test(text);
 
 function checkFaithful(text: string): void {
   const read = readPatchFile(text);

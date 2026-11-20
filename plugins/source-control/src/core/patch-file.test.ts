@@ -610,3 +610,27 @@ describe("review round 3", () => {
     );
   });
 });
+
+describe("review round 3 corpus", () => {
+  const read = (name: string) => readPatchFile(fixture(`review3/${name}`));
+
+  test("an mbox series with b4's From lines starts a section per message", () => {
+    const result = read("mbox-series.patch");
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.read.commits.map((c) => [c.subject, c.id, c.files.length])).toEqual([
+      ["Rework files: rename, add, delete", null, 4],
+      ["Add logo and a fourth line", null, 2],
+    ]);
+  });
+
+  test.each([
+    // The parser takes the stray text as the file's end; the guard finds the + and - after it.
+    ["under-stray-extra.patch", "Line 9 reads as a hunk line, but no file's hunk holds it."],
+    // An svn property change has no hunk the diff view can draw.
+    ["svn-props.diff", "Line 16 reads as a hunk line, but no file's hunk holds it."],
+    // A custom git log format has no commit line to start a message at: its "- " body reads as lost lines.
+    ["log-custom-format.patch", "Line 14 reads as a hunk line, but no file's hunk holds it."],
+  ])("%s reads as text: %s", (name, reason) => {
+    expect(read(name)).toEqual({ ok: false, reason });
+  });
+});
