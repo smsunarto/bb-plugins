@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, onTestFinished, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,6 +55,8 @@ async function load() {
       throw new Error(`unexpected host method ${method}`);
     },
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   harness.sdk.stub("threads.get", () => ({ id: THREAD, host: { id: "host_1", name: "dev-pc" } }));
   await plugin(bb);
   return { harness, sudo };

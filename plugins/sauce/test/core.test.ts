@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, onTestFinished, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { deflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
@@ -323,6 +323,8 @@ test("the device list is read for the build `bb sauce start` will use", async ()
 
 test("the bb sauce steering reaches only rampage projects, and the skill stays selected", async () => {
   const { bb, harness: host } = createFakePluginHost({ pluginId: "sauce", agentSkillIds: SKILLS });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => host.lifecycle.dispose());
   await plugin(bb);
   expect(host.registrations.agentTools).toEqual([]);
   expect(host.registrations.cli?.name).toBe("sauce");

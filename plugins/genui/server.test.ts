@@ -3,12 +3,14 @@ import {
   makePluginAgentConfigurationContext,
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import plugin from "./server";
 
 describe("the plugin's settings", () => {
   it("lists Animations, on by default, beside Web lookups and Repair broken UI", async () => {
     const host = createFakePluginHost({ pluginId: "genui" });
+    // Disposing removes the fake host's storage dir.
+    onTestFinished(() => host.harness.lifecycle.dispose());
     await plugin(host.bb);
     expect(host.harness.registrations.settingsDescriptors).toMatchObject({
       animations: { type: "boolean", label: "Animations", default: true },
@@ -43,6 +45,8 @@ describe("check_ui local images", () => {
         },
       },
     });
+    // Disposing removes the fake host's storage dir.
+    onTestFinished(() => host.harness.lifecycle.dispose());
     try {
       await plugin(host.bb);
       const check = async (src: string) => {
@@ -95,6 +99,8 @@ it("streams video through a confined SDK lease and renews it without reading byt
       },
     },
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => host.harness.lifecycle.dispose());
   try {
     await plugin(host.bb);
     const preview = (path: string, renew = false) =>
@@ -150,6 +156,8 @@ describe("repairing a reply whose UI block fails", () => {
         },
       },
     });
+    // Disposing removes the fake host's storage dir.
+    onTestFinished(() => host.harness.lifecycle.dispose());
     await plugin(host.bb);
     const person = makePluginAgentConfigurationContext({
       thread: { id: "thr_person", parentThreadId: null },

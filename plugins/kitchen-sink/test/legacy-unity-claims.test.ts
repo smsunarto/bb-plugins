@@ -1,9 +1,11 @@
-import { expect, test } from "bun:test";
+import { expect, onTestFinished, test } from "bun:test";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../src/server/server.ts";
 
 test("the retired manager exports durable claims without registering Unity controls", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   const db = bb.storage.database();
   db.exec("CREATE TABLE kitchen_sink_unity_editor_claims (record TEXT NOT NULL)");
   db.prepare("INSERT INTO kitchen_sink_unity_editor_claims VALUES (?)").run(
@@ -28,6 +30,8 @@ test("the retired manager exports durable claims without registering Unity contr
 
 test("a Kitchen Sink installation without old claims exports an empty handoff", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   await plugin(bb);
   expect(await harness.callRpc("exportUnityClaims", {})).toEqual({ version: 1, claims: [] });
   bb.storage.database().close();

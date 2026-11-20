@@ -6,8 +6,7 @@
  * so this changes nothing outside the file that calls it.
  */
 import { accessSync, constants } from "node:fs";
-import { randomBytes } from "node:crypto";
-import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { afterAll, beforeAll } from "vitest";
@@ -40,27 +39,28 @@ function findBut(): string | null {
 }
 
 /**
- * Points the environment at a root that exists only while the file's tests
- * run: a `beforeAll` creates it and an `afterAll` removes it. A file whose
- * tests are all skipped runs neither hook, so it creates nothing.
+ * Points the environment at a private root that exists only while the file's
+ * tests run: a `beforeAll` acquires it with mkdtemp and an `afterAll` removes
+ * it. A file whose tests are all skipped runs neither hook, so it creates
+ * nothing, and teardown removes only a root this file acquired.
  */
 export async function isolate(prefix: string): Promise<Isolated> {
   const but = findBut();
-  const root = join(await realpath(tmpdir()), `${prefix}-${randomBytes(6).toString("hex")}`);
-  const cleanup = () => rm(root, { recursive: true, force: true });
-  const home = join(root, "home");
-  const directories = {
-    HOME: home,
-    XDG_CONFIG_HOME: join(root, "xdg-config"),
-    XDG_DATA_HOME: join(root, "xdg-data"),
-    XDG_CACHE_HOME: join(root, "xdg-cache"),
-    XDG_STATE_HOME: join(root, "xdg-state"),
-  };
-  const gitconfig = join(home, ".gitconfig");
+  let acquired: string | null = null;
   // Registered first, so it runs before the file's own `beforeAll` and its `afterAll` runs last.
   beforeAll(async () => {
-    await mkdir(root);
+    const root = await realpath(await mkdtemp(join(tmpdir(), `${prefix}-`)));
+    acquired = root;
+    const home = join(root, "home");
+    const directories = {
+      HOME: home,
+      XDG_CONFIG_HOME: join(root, "xdg-config"),
+      XDG_DATA_HOME: join(root, "xdg-data"),
+      XDG_CACHE_HOME: join(root, "xdg-cache"),
+      XDG_STATE_HOME: join(root, "xdg-state"),
+    };
     await Promise.all(Object.values(directories).map((path) => mkdir(path, { recursive: true })));
+    const gitconfig = join(home, ".gitconfig");
     await writeFile(
       gitconfig,
       [
@@ -78,20 +78,30 @@ export async function isolate(prefix: string): Promise<Isolated> {
         "",
       ].join("\n"),
     );
+    Object.assign(process.env, directories, {
+      GIT_CONFIG_GLOBAL: gitconfig,
+      GIT_CONFIG_NOSYSTEM: "1",
+      // A pinned zone, so commit times read the same however the machine is set.
+      TZ: "UTC",
+    });
   });
+  const cleanup = async () => {
+    if (acquired === null) return;
+    const root = acquired;
+    acquired = null;
+    await rm(root, { recursive: true, force: true });
+  };
   afterAll(cleanup);
-  Object.assign(process.env, directories, {
-    GIT_CONFIG_GLOBAL: gitconfig,
-    GIT_CONFIG_NOSYSTEM: "1",
-    // A pinned zone, so commit times read the same however the machine is set.
-    TZ: "UTC",
-  });
   for (const name of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "BUT_OUTPUT_FORMAT"]) {
     delete process.env[name];
   }
   if (but !== null) process.env["PATH"] = `${dirname(but)}${delimiter}${process.env["PATH"] ?? ""}`;
   return {
-    root,
+    get root() {
+      if (acquired === null)
+        throw new Error("the isolated root exists only while the file's tests run");
+      return acquired;
+    },
     but,
     cleanup,
   };

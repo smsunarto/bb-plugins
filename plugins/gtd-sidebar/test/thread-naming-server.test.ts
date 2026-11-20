@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, test } from "bun:test";
+import { describe, onTestFinished, test } from "bun:test";
 import { defineCli } from "@get-bb/plugin-sdk";
 import {
   createFakePluginHost,
@@ -66,6 +66,8 @@ function setup(options: { enabled?: boolean; projectRules?: string; title?: stri
       },
     },
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => host.harness.lifecycle.dispose());
   const settings = host.bb.settings.define({
     automaticallyNameThreads: {
       type: "boolean",

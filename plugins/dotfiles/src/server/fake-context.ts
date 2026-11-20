@@ -1,4 +1,5 @@
 import { createFakePluginHost, type FakePluginHarness } from "@get-bb/plugin-sdk/testing";
+import { onTestFinished } from "bun:test";
 import { createFakeGit, type FakeDotfilesGit } from "./fake-git.ts";
 import type { DotfilesGit, GitContext } from "./git.ts";
 
@@ -11,5 +12,7 @@ export interface FakeContext extends GitContext {
 /** The `{ bb, git }` a handler receives, over a fake host and a fake git. */
 export function createFakeContext(git: Partial<DotfilesGit> = {}): FakeContext {
   const { bb, harness } = createFakePluginHost({ pluginId: "dotfiles" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   return { bb, git: createFakeGit(git), harness };
 }

@@ -1,5 +1,5 @@
 // Fast looks, text and keys, per-step frames, and browser failures that carry a code.
-import { expect, test } from "bun:test";
+import { expect, onTestFinished, test } from "bun:test";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 
 import { BrowserCommandError } from "../src/server/browser.ts";
@@ -23,6 +23,8 @@ function cli() {
     pluginId: "sauce",
     agentSkillIds: ["sauce-live"],
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   registerSauce(bb, fake.deps);
   const json = async (argv: string[]) => {
     const result = await harness.runCli([...argv, "--json"], { threadId: "thr_a" });
