@@ -135,6 +135,7 @@ export function StripSummary({
   const pr = summary?.pullRequest;
   const merge = useMergePhase(
     summary?.key && pr ? { repo: repoOfKey(summary.key), number: pr.number } : null,
+    pr != null && pr.state !== "open",
   );
   if (!summary) return null;
   const countUncommitted = !segments.some((segment) => segment.key === CHANGED_FILES_SEGMENT);

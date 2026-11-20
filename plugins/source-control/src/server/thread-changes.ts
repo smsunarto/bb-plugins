@@ -293,11 +293,16 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     checks(keys: readonly ChangeKey[]) {
       return Object.fromEntries(keys.map((key) => [key, store.checks(key)]));
     },
-    /** One write on the thread's pull request, at the head the reader saw. */
+    /**
+     * One write on the thread's pull request, at the head the reader saw. A
+     * merge also names the Change the reader confirmed, and is refused once
+     * the thread's checkout has moved to another one, whose pull request
+     * could share the number, head and base.
+     */
     forgeAction: Effect.fn("forgeAction")(function* (
       threadId: string,
       action: ForgeAction,
-      expected: { number: number; head: string },
+      expected: { number: number; head: string; key?: ChangeKey | undefined },
     ) {
       const where = store.placement(threadId);
       if (where?.state !== "checkout")
@@ -305,7 +310,13 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
           status: "failed",
           problem: { kind: "moved", detail: "This thread has no checkout." },
         } satisfies ForgeResult;
-      return yield* forge.act(threadId, where.placement, action, expected);
+      if (action.kind === "merge" && (!expected.key || keyOf(threadId) !== expected.key))
+        return {
+          status: "conflict",
+          detail: "The thread moved to another branch since you looked, so nothing was merged.",
+        } satisfies ForgeResult;
+      const { number, head } = expected;
+      return yield* forge.act(threadId, where.placement, action, { number, head });
     }),
     refresh,
     /** The thread's Change from stored rows, if its checkout and branch are known. */

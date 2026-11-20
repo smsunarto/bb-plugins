@@ -29,7 +29,7 @@ import { useOpenReview } from "./open-review.ts";
 import { StateBadge } from "./page/rail.tsx";
 import type { ChangeState } from "../core/status.ts";
 import { useChangeReview, useReviewActions } from "./review-data.ts";
-import { MergeButton, mergeTarget, readyToMerge, useChangeMerge } from "./merge.tsx";
+import { MergeButton, mergeTarget, readyToMerge, useChangeMerge, useMergePhase } from "./merge.tsx";
 import { latestBatch } from "./review-model.ts";
 import { BatchLine, useFixSelected } from "./send.tsx";
 import { ChangeGroup } from "./group-card.tsx";
@@ -40,7 +40,7 @@ import { checkoutAttributes } from "../core/checkout-work.ts";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
-import { CARD_ACTION_CLASS } from "./ui.tsx";
+import { CARD_ACTION_CLASS, Pending } from "./ui.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
 
@@ -219,6 +219,28 @@ function CardHeader({
   );
 }
 
+/**
+ * A merge of this card's pull request started anywhere, while the card has
+ * no Merge it of its own to show it: checks still running, or grouped.
+ */
+function CardMergeProgress({ detail }: { detail: Ready }) {
+  const { row } = detail;
+  const phase = useMergePhase(
+    row.number === null ? null : { repo: row.repo, number: row.number },
+    row.state !== "open",
+  );
+  if (phase === "idle" || row.number === null) return null;
+  return (
+    <output
+      data-testid="sc-card-merge-progress"
+      className="flex min-h-7 items-center gap-1.5 text-[12px] leading-4 text-muted-foreground"
+    >
+      <Pending pending={phase === "merging"} icon="Check" />
+      {phase === "merging" ? `Merging #${row.number}…` : `Merged #${row.number}`}
+    </output>
+  );
+}
+
 /** "Merge it" on a Change whose pull request is ready: today's merge dialog, pinned to the head shown. */
 function CardMerge({ detail }: { detail: Ready }) {
   const submit = useChangeMerge();
@@ -293,7 +315,11 @@ function ReadyCard({
           Open review
         </Button>
         {thread?.button}
-        {!grouped && readyToMerge(detail) ? <CardMerge detail={detail} /> : null}
+        {!grouped && readyToMerge(detail) ? (
+          <CardMerge detail={detail} />
+        ) : (
+          <CardMergeProgress detail={detail} />
+        )}
         {hasItems ? (
           <Button
             size="sm"

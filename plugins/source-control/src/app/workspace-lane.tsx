@@ -20,7 +20,7 @@ import {
 } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import { BranchActions, type Dispatch, type Outcome } from "./branch-actions.tsx";
-import { MergeButton, repoOfKey, useThreadMerge } from "./merge.tsx";
+import { MergeButton, repoOfKey, useChangeMerge } from "./merge.tsx";
 import { useOpenReview } from "./open-review.ts";
 import { PullRequestLink } from "./open-pull-request.tsx";
 import { CreatePullRequest } from "./publish.tsx";
@@ -602,21 +602,13 @@ function prActionFor(
       <CreatePullRequest threadId={threadId} branch={branch.name} head={branch.head} busy={busy} />
     );
   if (reviewKey && forge?.state === "open" && !forge.isDraft)
-    return <TabMerge threadId={threadId} changeKey={reviewKey} forge={forge} />;
+    return <TabMerge changeKey={reviewKey} forge={forge} />;
   return null;
 }
 
-/** Merge for the thread's own open pull request, through the thread's forge action. */
-function TabMerge({
-  threadId,
-  changeKey,
-  forge,
-}: {
-  threadId: string;
-  changeKey: ChangeKey;
-  forge: PullRequest;
-}) {
-  const submit = useThreadMerge(threadId);
+/** Merge for the thread's own open pull request, by the Change the tab shows. */
+function TabMerge({ changeKey, forge }: { changeKey: ChangeKey; forge: PullRequest }) {
+  const submit = useChangeMerge();
   return (
     <MergeButton
       submit={submit}

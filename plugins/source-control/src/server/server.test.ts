@@ -1158,12 +1158,31 @@ describe("merge", () => {
     world.pullRequests["scott/route-gh"] = [{ ...PR, isDraft: false }];
     return world;
   }
+  const KEY = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
   const merge = (head: string, base = "main", method: "squash" | "merge" = "squash") => ({
     threadId: "thread-a",
     action: { kind: "merge" as const, method, base },
-    expected: { number: 482, head },
+    expected: { number: 482, head, key: KEY },
   });
-  const KEY = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+
+  test("a thread's merge is refused once its checkout is on another Change, or names none", async () => {
+    const world = ready();
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    const elsewhere = {
+      ...merge("c0ffee"),
+      expected: { number: 482, head: "c0ffee", key: "gh:second/fork:second:scott/route-gh" },
+    };
+    expect(await harness.behavior.callRpc("forgeAction", elsewhere)).toEqual({
+      status: "conflict",
+      detail: "The thread moved to another branch since you looked, so nothing was merged.",
+    });
+    const unnamed = { ...merge("c0ffee"), expected: { number: 482, head: "c0ffee" } };
+    expect(await harness.behavior.callRpc("forgeAction", unnamed)).toMatchObject({
+      status: "conflict",
+    });
+    expect(world.merged ?? []).toEqual([]);
+  });
 
   test("Merge reads the policy as the account that read the pull request, and merges pinned to its head", async () => {
     const world = ready();

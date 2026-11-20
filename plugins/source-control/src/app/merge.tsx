@@ -12,6 +12,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -49,25 +50,11 @@ export type MergeTarget = {
 /** Merges `target` with `method`, pinned to the head and base it holds. */
 export type SubmitMerge = (target: MergeTarget, method: MergeMethod) => Promise<ForgeResult>;
 
-/** Merge through the thread's own pull request (the tab). */
-export function useThreadMerge(threadId: string): SubmitMerge {
-  const mutation = useRpcMutation({ contract: sourceControlContract, method: "forgeAction" });
-  const mutate = useRef(mutation.mutate);
-  useLayoutEffect(() => {
-    mutate.current = mutation.mutate;
-  });
-  return useCallback(
-    (target, method) =>
-      mutate.current({
-        threadId,
-        action: { kind: "merge", method, base: target.base },
-        expected: { number: target.number, head: target.head },
-      }),
-    [threadId],
-  );
-}
-
-/** Merge a Change's pull request by its key (the review page and chat cards). */
+/**
+ * Merge a Change's pull request by its key, from every surface: the key
+ * names the repository and branch the reader confirmed, so a Retry after the
+ * thread's checkout moved still merges that pull request or nothing.
+ */
 export function useChangeMerge(): SubmitMerge {
   const mutation = useRpcMutation({ contract: sourceControlContract, method: "changeForgeAction" });
   const mutate = useRef(mutation.mutate);
@@ -132,17 +119,27 @@ export function repoOfKey(key: ChangeKey): string {
  * A merge outlives the surface that started it: the request is the server's
  * once sent, and the toast here follows it.
  */
-type Run = { phase: "merging"; id: number } | { phase: "merged" };
+type Run = { phase: "merging" | "merged" };
 export type MergePhase = "idle" | Run["phase"];
 
 const runs = new Map<string, Run>();
 const listeners = new Set<() => void>();
-let lastRun = 0;
+/** How many mounted surfaces show each pull request. */
+const watchers = new Map<string, number>();
+
+function notify() {
+  for (const listener of listeners) listener();
+}
 
 function setRun(key: string, run: Run | null) {
   if (run) runs.set(key, run);
   else runs.delete(key);
-  for (const listener of listeners) listener();
+  notify();
+}
+
+/** A merged run has done its job once its pull request's read says so, or nothing shows it. */
+function forgetMerged(key: string) {
+  if (runs.get(key)?.phase === "merged") setRun(key, null);
 }
 
 /** A pull request as the run store names it: `owner/name` and its number. */
@@ -152,24 +149,48 @@ function runKey(target: PullRequestRef): string {
   return `${target.repo}#${target.number}`;
 }
 
-function subscribe(listener: () => void) {
+function watch(key: string | null, listener: () => void) {
   listeners.add(listener);
-  return () => void listeners.delete(listener);
+  if (key) watchers.set(key, (watchers.get(key) ?? 0) + 1);
+  return () => {
+    listeners.delete(listener);
+    if (!key) return;
+    const left = (watchers.get(key) ?? 1) - 1;
+    if (left > 0) return void watchers.set(key, left);
+    watchers.delete(key);
+    forgetMerged(key);
+  };
 }
 
-/** Where a merge of `pullRequest` stands in this window; idle for none. */
-export function useMergePhase(pullRequest: PullRequestRef | null): MergePhase {
+/**
+ * Where a merge of `pullRequest` stands in this window; idle for none.
+ * `settled` says the surface's own read of it is no longer open, which
+ * ends a finished run.
+ */
+export function useMergePhase(pullRequest: PullRequestRef | null, settled = false): MergePhase {
   const key = pullRequest ? runKey(pullRequest) : null;
-  return useSyncExternalStore(subscribe, () => (key ? runs.get(key)?.phase : null) ?? "idle");
+  const subscribe = useCallback((listener: () => void) => watch(key, listener), [key]);
+  const phase = useSyncExternalStore(
+    subscribe,
+    () => (key ? runs.get(key)?.phase : null) ?? "idle",
+  );
+  const done = settled && phase === "merged";
+  useEffect(() => {
+    if (key && done) forgetMerged(key);
+  }, [key, done]);
+  return phase;
 }
 
 /** For tests: forget every merge this window ran. */
 export function resetMergeRuns() {
   runs.clear();
-  for (const listener of listeners) listener();
+  notify();
 }
 
-/** Past this, the toast stops spinning and says the outcome is unknown; a later answer still lands. */
+/**
+ * Past this, the toast stops spinning and says the outcome is unknown. The
+ * run stays open, so Merge stays off, until the server's answer lands.
+ */
 export const MERGE_DEADLINE_MS = 120_000;
 
 /** Why a merge did not happen, and what the reader can do about it. */
@@ -211,11 +232,6 @@ function thrownRefusal(error: unknown): Refusal {
   return { reason: `The bb server could not run the merge.${detail}`, next: "retry" };
 }
 
-const UNANSWERED: Refusal = {
-  reason: "bb has not heard back. It may still merge; check the pull request on GitHub.",
-  next: "github",
-};
-
 /** The pull request on GitHub; `repo` is `owner/name`. */
 function gitHubUrl(target: MergeTarget): string {
   return `https://github.com/${target.repo}/pull/${target.number}`;
@@ -226,38 +242,38 @@ type MergeRun = { target: MergeTarget; submit: SubmitMerge; openUrl: (url: strin
 /**
  * Starts squash-merging `target` unless this window is already merging it or
  * has merged it; returns whether it started. One toast per pull request
- * follows it: Merging…, then Merged or the reason with Retry or Open on GitHub.
+ * follows it: Merging…, then Merged or the reason with Retry or Open on
+ * GitHub. Each run settles once, on the server's answer, however late.
  */
 export function startMerge(merge: MergeRun): boolean {
   const { target, submit } = merge;
   const key = runKey(target);
   if (runs.has(key)) return false;
-  const run = { phase: "merging" as const, id: ++lastRun };
-  setRun(key, run);
+  setRun(key, { phase: "merging" });
   const id = `sc-merge:${key}`;
   toast.loading(`Merging ${key}…`, { id });
-  const current = () => runs.get(key) === run;
   const timer = setTimeout(() => {
-    if (!current()) return;
-    setRun(key, null);
-    refused(merge, id, UNANSWERED);
+    toast.warning(`Still merging #${target.number}`, {
+      id,
+      description: "bb has not heard back. It may still merge; check the pull request on GitHub.",
+      duration: Number.POSITIVE_INFINITY,
+      action: { label: "Open on GitHub", onClick: () => merge.openUrl(gitHubUrl(target)) },
+    });
   }, MERGE_DEADLINE_MS);
-  void submit(target, "squash").then(
-    (result) => settle(refusalOf(result)),
-    (error: unknown) => settle(thrownRefusal(error)),
-  );
-  function settle(refusal: Refusal | null) {
+  const settle = (refusal: Refusal | null) => {
     clearTimeout(timer);
     if (refusal === null) {
-      // A late success still counts, even after the deadline or during a retry.
       setRun(key, { phase: "merged" });
       toast.success(`Merged #${target.number}`, { id, description: target.title });
       return;
     }
-    if (!current()) return;
     setRun(key, null);
     refused(merge, id, refusal);
-  }
+  };
+  void submit(target, "squash").then(
+    (result) => settle(refusalOf(result)),
+    (error: unknown) => settle(thrownRefusal(error)),
+  );
   return true;
 }
 
@@ -269,10 +285,24 @@ function refused(merge: MergeRun, id: string, refusal: Refusal) {
     duration: 12_000,
     action:
       refusal.next === "retry"
-        ? { label: "Retry", onClick: () => void startMerge(merge) }
+        ? {
+            label: "Retry",
+            onClick: (event) => {
+              // The same toast turns back into Merging…; sonner would close it after this.
+              event.preventDefault();
+              startMerge(merge);
+            },
+          }
         : { label: "Open on GitHub", onClick: () => openUrl(gitHubUrl(target)) },
   });
 }
+
+/** What the trigger is called, with the merge's progress, after the toast has gone. */
+const PHASE_NAME: Record<MergePhase, (number: number) => string> = {
+  idle: (number) => `Merge #${number}`,
+  merging: (number) => `Merging #${number}…`,
+  merged: (number) => `Merged #${number}`,
+};
 
 /**
  * A button that opens the merge dialog for `target`, returning focus to
@@ -313,7 +343,7 @@ export function MergeButton({
         disabled={disabled}
         aria-disabled={busy || undefined}
         aria-busy={phase === "merging" || undefined}
-        aria-label={`Merge #${target.number}`}
+        aria-label={PHASE_NAME[phase](target.number)}
         // The dialog keeps the head and base seen now, whatever arrives while it is open.
         onClick={() => {
           if (!busy) setOpen(target);
