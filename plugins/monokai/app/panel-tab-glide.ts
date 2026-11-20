@@ -112,6 +112,13 @@ function computedTranslateX(transform: string) {
   return Number.parseFloat(values[2]!.split(",")[values[1] === undefined ? 4 : 12] ?? "0") || 0;
 }
 
+/** A box limited to the horizontal span of the viewport clipping it. */
+function clipTo(box: Box, region: { left: number; right: number }): Box {
+  const left = Math.min(Math.max(box.left, region.left), region.right);
+  const right = Math.max(Math.min(box.right, region.right), left);
+  return { ...box, left, right };
+}
+
 /** Where a pill's fill paints: its border box, inset to its background clip. */
 function fillOf(pill: Element, computed: CSSStyleDeclaration): Box {
   const { top, right, bottom, left } = pill.getBoundingClientRect();
@@ -178,15 +185,17 @@ function pagerStep(
 }
 
 /**
- * Where a pill's fill rests. A pinned circle's is its own box. bb rests the
- * active chip at the viewport's left edge, so a chip's is that slot at the
- * chip's own size, however far bb has stepped the row: a step can land a frame
- * after the switch.
+ * Where a pill's fill is drawn. A pinned circle's is its own box. A chip's is
+ * its own box placed as the row stood before bb stepped it ("start") or where
+ * it comes to rest ("end"), whatever a running glide draws now, and clipped to
+ * the viewport. The viewport shows every chip that fits, so the active chip
+ * rests at its own slot, not at the viewport's left edge.
  */
-function boxOf(pill: Element, fill: Box, step: PagerStep | null): Box {
+function boxOf(pill: Element, fill: Box, step: PagerStep | null, at: "start" | "end"): Box {
   if (step === null || pill.closest(VIEWPORT) !== step.viewport) return fill;
-  const { left } = step.viewportRect;
-  return { ...fill, left, right: left + fill.right - fill.left };
+  const shift = (at === "start" ? step.rowStart : step.rowEnd) - step.rowNow;
+  const { left, right } = step.viewportRect;
+  return clipTo({ ...fill, left: fill.left + shift, right: fill.right + shift }, { left, right });
 }
 
 /**
@@ -283,13 +292,13 @@ export function mountPanelTabGlide({
     const host = pager.getBoundingClientRect();
     const toComputed = win.getComputedStyle(to);
     const step = pagerStep(pager, oldStyles, win);
-    const end = boxOf(to, fillOf(to, toComputed), step);
+    const end = boxOf(to, fillOf(to, toComputed), step, "end");
     const previous = flights.get(pager);
     const current =
       previous?.ghost.isConnected === true
         ? boxOfInset(win.getComputedStyle(previous.ghost).clipPath, host)
         : null;
-    const start = current ?? boxOf(from, fillOf(from, win.getComputedStyle(from)), step);
+    const start = current ?? boxOf(from, fillOf(from, win.getComputedStyle(from)), step, "start");
     // The highlight never changes size in flight: between sizes, switch instantly.
     if (!sameSize(start, end)) {
       land(pager);

@@ -127,15 +127,19 @@ function strip(count: number, active: number, pinned: number) {
   return { group, buttons };
 }
 
-const PAGER_WIDTH = 400;
+const PAGER_WIDTH = 700;
+const VIEWPORT_LEFT = 120;
+const GAP = 4;
 
 /**
  * bb's tab pager, shown at 767px and narrower: 44px pinned circles, then a
- * viewport sized to the visible chip, whose row bb steps with an inline
- * translateX, hiding the chips outside it. `active` indexes the chips; -1 is
- * the first pin.
+ * viewport as wide as the chips that fit (`visible`, from the page's first
+ * chip), whose row bb steps with an inline translateX, hiding the chips
+ * outside it. The active chip rests at its own slot. `active` indexes the
+ * chips; -1 is the first pin. `page(first)` is bb's step: the row's offset,
+ * the viewport's width, the chips' visibility, and where each chip is drawn.
  */
-function pager(chipWidths: number[], active: number, pinCount = 2) {
+function pager(chipWidths: number[], active: number, visible = 1, pinCount = 2) {
   const root = document.createElement("div");
   root.setAttribute("data-testid", "mobile-panel-tab-pager");
   place(root, 0, 0, PAGER_WIDTH, 52);
@@ -143,11 +147,7 @@ function pager(chipWidths: number[], active: number, pinCount = 2) {
   const navigation = document.createElement("div");
   const viewport = document.createElement("div");
   viewport.setAttribute("data-testid", "mobile-panel-tab-viewport");
-  const shown = chipWidths[Math.max(active, 0)] ?? 0;
-  viewport.setAttribute("style", `width: ${shown}px;`);
-  place(viewport, 120, 0, shown, 52);
   const row = document.createElement("div");
-  row.setAttribute("style", "transform: translateX(0px);");
   viewport.append(row);
   navigation.append(viewport);
   root.append(pinned, navigation);
@@ -156,19 +156,46 @@ function pager(chipWidths: number[], active: number, pinCount = 2) {
     place(button.parentElement!, 4 + index * 48, 4, 44, 44);
     return button;
   });
-  let left = 120;
-  const chips = chipWidths.map((width, index) => {
+  const slots = chipWidths.map((_, index) =>
+    chipWidths.slice(0, index).reduce((sum, width) => sum + width + GAP, 0),
+  );
+  const chips = chipWidths.map((_, index) => {
     const wrapper = document.createElement("div");
     wrapper.setAttribute("data-panel-tab-measure", "true");
-    if (index !== active) wrapper.style.visibility = "hidden";
     row.append(wrapper);
-    const button = pill(wrapper, index === active);
-    place(button.parentElement!, left, 12, width, 28);
-    left += width + 4;
-    return button;
+    return pill(wrapper, index === active);
   });
+  const page = (first: number) => {
+    const last = Math.min(first + visible, chipWidths.length) - 1;
+    const offset = -slots[first]!;
+    const width = slots[last]! + chipWidths[last]! - slots[first]!;
+    row.setAttribute("style", `transform: translateX(${offset}px);`);
+    viewport.setAttribute("style", `width: ${width}px;`);
+    place(viewport, VIEWPORT_LEFT, 0, width, 52);
+    for (const [index, chip] of chips.entries()) {
+      const shown = index >= first && index <= last;
+      chip.parentElement!.parentElement!.style.visibility = shown ? "" : "hidden";
+      place(
+        chip.parentElement!,
+        VIEWPORT_LEFT + slots[index]! + offset,
+        12,
+        chipWidths[index]!,
+        28,
+      );
+    }
+  };
+  page(visible === 1 ? Math.max(active, 0) : 0);
   document.body.append(root);
-  return { root, viewport, row, pins, chips };
+  return { root, viewport, row, pins, chips, page };
+}
+
+/** The [left, right] a highlight keyframe leaves visible, in page coordinates. */
+function spanOf(keyframe: Keyframe | undefined) {
+  const width = insetWidth(keyframe, PAGER_WIDTH);
+  const left = Number.parseFloat(
+    /inset\(([^)]*?)\s+round/.exec(String(keyframe?.clipPath))![1]!.split(/\s+/)[3]!,
+  );
+  return [left, left + width];
 }
 
 test("the desktop toolbar switches instantly, even between same-size tabs", async () => {
@@ -303,17 +330,46 @@ test("works on a pager mounted after the script", async () => {
   dispose();
 });
 
-test("a swipe between chips of one width slides the row under the fill", async () => {
-  const { root, viewport, row, chips } = pager([112, 112, 112], 0);
+test("draws a chip flight where bb paints the chips, wherever they sit in the viewport", async () => {
+  // Three 144px chips fit: the viewport shows them all and bb steps nothing.
+  const { root, chips } = pager([144, 144, 144], 0, 3);
+  mount();
+  select(chips[0]!, chips[1]!);
+  await frame();
+  expect(root.querySelector(GLIDE)).not.toBeNull();
+  expect(chips[1]!.parentElement!.hasAttribute(TARGET)).toBe(true);
+  expect(animations.map((animation) => animation.keyframes.map(spanOf))).toEqual([
+    [
+      [120, 264],
+      [268, 412],
+    ],
+  ]);
+});
+
+test("draws a flight between two chips that both sit off the viewport's left edge", async () => {
+  const { chips } = pager([144, 144, 144], 1, 3);
+  mount();
+  select(chips[1]!, chips[2]!);
+  await frame();
+  expect(animations[0]!.keyframes.map(spanOf)).toEqual([
+    [268, 412],
+    [416, 560],
+  ]);
+});
+
+test("a swipe between chips of one width slides the row under a still fill", async () => {
+  const { root, viewport, row, chips, page } = pager([112, 112, 112], 0);
   const { dispose } = mount();
   // bb's step: flip the chips, move the row, hide the chip it left.
   select(chips[0]!, chips[1]!);
-  row.setAttribute("style", "transform: translateX(-116px);");
-  chips[0]!.parentElement!.parentElement!.style.visibility = "hidden";
-  chips[1]!.parentElement!.parentElement!.style.visibility = "";
+  page(1);
   await frame();
   expect(root.querySelector(GLIDE)).not.toBeNull();
   const of = (element: Element) => animations.find((animation) => animation.element === element);
+  expect(animations[0]!.keyframes.map(spanOf)).toEqual([
+    [120, 232],
+    [120, 232],
+  ]);
   expect(of(row)?.keyframes.map((keyframe) => keyframe.transform)).toEqual([
     "translateX(0px)",
     "translateX(-116px)",
@@ -330,11 +386,21 @@ test("a swipe between chips of one width slides the row under the fill", async (
 });
 
 test("a swipe between chips of different widths is instant", async () => {
-  const { root, viewport, row, chips } = pager([112, 140], 0);
+  const { root, chips, page } = pager([112, 140], 0);
   const { dispose } = mount();
   select(chips[0]!, chips[1]!);
-  row.setAttribute("style", "transform: translateX(-116px);");
-  viewport.setAttribute("style", "width: 140px;");
+  page(1);
+  await frame();
+  expect(root.querySelector(GLIDE)).toBeNull();
+  expect(animations).toHaveLength(0);
+  dispose();
+});
+
+test("a chip still outside the viewport when the switch lands is instant", async () => {
+  // bb has not stepped the row yet, so the target is clipped to nothing.
+  const { root, chips } = pager([112, 112], 0);
+  const { dispose } = mount();
+  select(chips[0]!, chips[1]!);
   await frame();
   expect(root.querySelector(GLIDE)).toBeNull();
   expect(animations).toHaveLength(0);
@@ -342,17 +408,23 @@ test("a swipe between chips of different widths is instant", async () => {
 });
 
 test("a pager step a frame after the switch joins the flight", async () => {
-  const { root, row, chips } = pager([112, 112], 0);
+  const { root, row, chips, page } = pager([144, 144, 144], 0, 2);
   const { dispose } = mount();
   select(chips[0]!, chips[1]!);
   await frame();
-  row.setAttribute("style", "transform: translateX(-116px);");
+  page(1);
   await frame();
   expect(root.querySelectorAll(GLIDE)).toHaveLength(1);
   expect(animations[0]!.cancelled).toBe(true);
   expect(
     animations.find((animation) => animation.element === row)?.keyframes.map((k) => k.transform),
-  ).toEqual(["translateX(0px)", "translateX(-116px)"]);
+  ).toEqual(["translateX(0px)", "translateX(-148px)"]);
+  expect(
+    spanOf(
+      animations.find((animation) => animation.element !== row && !animation.cancelled)
+        ?.keyframes[1],
+    ),
+  ).toEqual([120, 264]);
   expect(chips[1]!.parentElement!.hasAttribute(TARGET)).toBe(true);
   dispose();
 });
