@@ -7,6 +7,9 @@
 import {
   Markdown,
   experimental_Icon as Icon,
+  experimental_useSidebarThreads as useSidebarThreads,
+  useRealtimeConnectionState,
+  type PluginSidebarThreadIndicator,
   experimental_ProviderIcon as ProviderIcon,
   experimental_ThreadStatusGlyph as ThreadStatusGlyph,
   experimental_resolveThreadStatus as resolveThreadStatus,
@@ -22,15 +25,15 @@ import {
   useSdk,
 } from "@get-bb/plugin-sdk/app";
 import { useCallback, useId, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
-import { age, isSending, type QueueItem } from "../contract/queue.ts";
+import { age, isSending, orderQueue, type QueueItem } from "../contract/queue.ts";
 import { captainContract, type CrewThreadItem, type DriveFileItem } from "../contract/rpc.ts";
 import { ActionButton, OtherAnswer, TAP, itemActions, useItemCommands, useNow } from "./banner.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
+import { Preview } from "./preview.tsx";
 
 const NO_INPUT = {};
 const NO_ACTIVITY = { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0 };
-const NONE: never[] = [];
 
 /** Shown only on a live Captain's thread: one shared, cached read of the Captain ids. */
 export function useOverviewVisible({ threadId }: ExperimentalThreadTabProps): boolean {
@@ -60,75 +63,199 @@ export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
   });
   const [collapsed, toggle] = useCollapsed(threadId);
   const now = useNow(asks.data?.items);
-  const asked = asks.data?.items ?? NONE;
+  // The banner's queue: its order, Later's hidden items left out, so both count alike.
+  const asked = useMemo(
+    () => (asks.data === undefined ? undefined : orderQueue(asks.data.items, now)),
+    [asks.data, now],
+  );
+  const indicators = useCrewIndicators();
+  const drived = drive.data;
 
   return (
+    // bb's tab container clips; the tab scrolls itself.
     <div
       data-bb-plugin="captain"
       data-bb-plugin-scope-captain=""
       data-testid="captain-overview"
-      className="flex min-w-0 flex-col gap-1.5 p-2 text-sm"
+      className="h-full min-h-0 overflow-y-auto overscroll-contain"
     >
-      <Section
-        id="needs"
-        title="Needs you"
-        count={asks.data?.items.length}
-        collapsed={collapsed.needs}
-        onToggle={toggle}
-      >
-        {asks.data === undefined ? (
-          <Placeholder error={asks.error?.message} rows={1} />
-        ) : asked.length === 0 ? (
-          <Empty>Nothing needs you.</Empty>
-        ) : (
-          <ul className="m-0 flex list-none flex-col p-0">
-            {asked.map((item) => (
-              <AskRow key={item.key} captainId={threadId} item={item} now={now} />
-            ))}
-          </ul>
-        )}
-      </Section>
-      <Section
-        id="threads"
-        title="Threads"
-        count={crew.data?.threads.length}
-        collapsed={collapsed.threads}
-        onToggle={toggle}
-      >
-        {crew.data === undefined ? (
-          <Placeholder error={crew.error?.message} rows={2} />
-        ) : crew.data.threads.length === 0 ? (
-          <Empty>No crew yet. Dispatch a task to start one.</Empty>
-        ) : (
-          <ul className="m-0 flex list-none flex-col p-0">
-            {crew.data.threads.map((thread) => (
-              <CrewRow key={thread.id} thread={thread} now={now} />
-            ))}
-          </ul>
-        )}
-      </Section>
-      <Section
-        id="drive"
-        title="Drive"
-        count={drive.data?.total}
-        collapsed={collapsed.drive}
-        onToggle={toggle}
-        action={drive.data?.folder ? <OpenDrive folder={drive.data.folder} /> : null}
-      >
-        {drive.data === undefined ? (
-          <Placeholder error={drive.error?.message} rows={0} cards />
-        ) : drive.data.files.length === 0 ? (
-          <Empty>The Drive is empty.</Empty>
-        ) : (
-          <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,7.5rem)] gap-x-3 gap-y-2 p-0 px-2 pt-1">
-            {drive.data.files.map((file) => (
-              <DriveCard key={file.path} threadId={threadId} file={file} />
-            ))}
-          </ul>
-        )}
-      </Section>
+      <div className="flex min-w-0 flex-col gap-1.5 p-2 text-sm">
+        <Section
+          id="needs"
+          title="Needs you"
+          count={asked?.length}
+          collapsed={collapsed.needs}
+          onToggle={toggle}
+        >
+          <ReadState read={asks} rows={2}>
+            {asked === undefined ? null : asked.length === 0 ? (
+              <Empty>Nothing needs you.</Empty>
+            ) : (
+              <ul className="m-0 flex list-none flex-col p-0">
+                {asked.map((item) => (
+                  <AskRow key={item.key} captainId={threadId} item={item} now={now} />
+                ))}
+              </ul>
+            )}
+          </ReadState>
+        </Section>
+        <Section
+          id="threads"
+          title="Threads"
+          count={crew.data?.threads.length}
+          collapsed={collapsed.threads}
+          onToggle={toggle}
+        >
+          <ReadState read={crew} rows={3}>
+            {crew.data === undefined ? null : crew.data.threads.length === 0 ? (
+              <Empty>No crew yet. Dispatch a task to start one.</Empty>
+            ) : (
+              <ul className="m-0 flex list-none flex-col p-0">
+                {crew.data.threads.map((thread) => (
+                  <CrewRow
+                    key={thread.id}
+                    thread={thread}
+                    now={now}
+                    indicator={indicators.get(thread.id) ?? null}
+                  />
+                ))}
+              </ul>
+            )}
+          </ReadState>
+        </Section>
+        <Section
+          id="drive"
+          title="Drive"
+          count={drived === undefined ? undefined : `${drived.total}${drived.truncated ? "+" : ""}`}
+          collapsed={collapsed.drive}
+          onToggle={toggle}
+          action={<OpenDrive folder={drived?.folder ?? null} />}
+        >
+          <ReadState read={drive} rows={0} cards>
+            {drived === undefined ? null : drived.files.length === 0 ? (
+              <Empty>The Drive is empty.</Empty>
+            ) : (
+              <>
+                <ul className={cn("m-0 list-none px-2 py-1", CARD_GRID)}>
+                  {drived.files.map((file) => (
+                    <DriveCard key={file.path} threadId={threadId} file={file} />
+                  ))}
+                </ul>
+                <MoreInDrive
+                  more={drived.total - drived.files.length}
+                  truncated={drived.truncated}
+                  folder={drived.folder}
+                />
+              </>
+            )}
+          </ReadState>
+        </Section>
+      </div>
     </div>
   );
+}
+
+/**
+ * Cards share a row evenly: at least 7rem each, two to a ~300px panel. A phone
+ * shows the tab full width, so cards there take 9rem: two columns, one on the
+ * narrowest phones.
+ */
+const CARD_GRID =
+  "grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] max-md:grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2";
+
+/**
+ * bb's own status for each thread its sidebar lists, the indicator its rows
+ * draw, by thread id. A crew thread the sidebar has not loaded falls back to
+ * the row's own status (see CrewRow).
+ */
+function useCrewIndicators(): Map<string, PluginSidebarThreadIndicator> {
+  const { threads } = useSidebarThreads();
+  return useMemo(
+    () => new Map(threads.map((thread) => [thread.id, thread.indicator] as const)),
+    [threads],
+  );
+}
+
+type Read = {
+  data: unknown;
+  error: { message: string } | null;
+  isFetching: boolean;
+  refetch: () => Promise<void>;
+};
+
+/**
+ * A section's read state around its content: a placeholder the loaded
+ * content's size while it first loads, and a labelled line with Retry when
+ * the read failed or the connection is down. Loaded rows stay visible under
+ * a failed refresh or while offline, labelled as possibly out of date.
+ */
+function ReadState({
+  read,
+  rows,
+  cards = false,
+  children,
+}: {
+  read: Read;
+  rows: number;
+  cards?: boolean;
+  children: ReactNode;
+}) {
+  const connection = useRealtimeConnectionState();
+  const offline = !useBrowserOnline() || connection !== "connected";
+  const loaded = read.data !== undefined;
+  const problem = offline
+    ? loaded
+      ? "Offline · showing the last loaded"
+      : "Offline · waiting for bb to reconnect"
+    : read.error === null
+      ? null
+      : loaded
+        ? `Couldn't refresh · ${read.error.message}`
+        : `Couldn't load · ${read.error.message}`;
+  return (
+    <>
+      {problem === null ? null : (
+        <output
+          className={cn(
+            "flex min-w-0 items-center gap-2 px-2 py-1 text-xs",
+            read.error !== null && !offline ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          <span className="min-w-0 flex-1 truncate" title={problem}>
+            {problem}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className={cn(TAP, "h-6 shrink-0 px-2")}
+            disabled={read.isFetching}
+            onClick={() => void read.refetch()}
+          >
+            {read.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </output>
+      )}
+      {loaded ? children : problem === null ? <Placeholder rows={rows} cards={cards} /> : null}
+    </>
+  );
+}
+
+/**
+ * The browser's own online state. bb's socket can take seconds to notice a lost
+ * network, and reads pause while the browser is offline, so either one counts.
+ */
+function useBrowserOnline(): boolean {
+  return useSyncExternalStore(subscribeOnline, () => navigator.onLine);
+}
+
+function subscribeOnline(onChange: () => void): () => void {
+  window.addEventListener("online", onChange);
+  window.addEventListener("offline", onChange);
+  return () => {
+    window.removeEventListener("online", onChange);
+    window.removeEventListener("offline", onChange);
+  };
 }
 
 /** Which sections are collapsed, kept per thread in this browser. */
@@ -180,7 +307,8 @@ function Section({
 }: {
   id: SectionId;
   title: string;
-  count: number | undefined;
+  /** Undefined while loading: the space stays reserved, so nothing shifts. */
+  count: number | string | undefined;
   collapsed: boolean;
   onToggle: (id: SectionId) => void;
   action?: ReactNode;
@@ -197,20 +325,19 @@ function Section({
           onClick={() => onToggle(id)}
           className={cn(
             TAP,
-            "flex min-h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-start outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            "flex min-h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-start outline-none focus-visible:outline-1",
           )}
         >
           <span className="truncate font-medium text-foreground">{title}</span>
-          {count === undefined ? null : (
-            <span className="text-muted-foreground tabular-nums">{count}</span>
-          )}
+          <span
+            className={cn("text-muted-foreground tabular-nums", count === undefined && "invisible")}
+          >
+            {count ?? 0}
+          </span>
           <Icon
-            name="ChevronDown"
+            name={collapsed ? "ChevronRight" : "ChevronDown"}
             aria-hidden
-            className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none",
-              collapsed && "-rotate-90",
-            )}
+            className="size-3.5 shrink-0 text-muted-foreground"
           />
         </button>
         {action}
@@ -224,8 +351,8 @@ function Section({
 
 /**
  * Which ask is open, per Captain. Kept outside the component: bb remounts a
- * panel tab when its layout changes, such as on a resize across a breakpoint,
- * and an answer half-typed must not close under the user.
+ * panel tab when its layout changes, such as when its width crosses a
+ * breakpoint, and an answer half-typed must not close under the user.
  */
 const openAsks = new Map<string, string>();
 const openListeners = new Set<() => void>();
@@ -262,7 +389,7 @@ function AskRow({ captainId, item, now }: { captainId: string; item: QueueItem; 
         onClick={() => setOpen(!open)}
         className={cn(
           TAP,
-          "flex min-w-0 items-start gap-2.5 rounded-md px-2 py-1.5 text-start outline-none hover:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring",
+          "flex min-w-0 items-start gap-2 rounded-md px-2 py-1.5 text-start outline-none hover:bg-muted/40 focus-visible:outline-1",
         )}
       >
         <AskIcon item={item} />
@@ -270,27 +397,31 @@ function AskRow({ captainId, item, now }: { captainId: string; item: QueueItem; 
           <span className="font-medium break-words text-foreground [unicode-bidi:plaintext]">
             {title}
           </span>
-          <span className="truncate text-xs text-muted-foreground">{sub}</span>
+          <span className="truncate text-xs text-muted-foreground" title={sub}>
+            {sub}
+          </span>
         </span>
         {item.since === null ? null : (
-          <span className="shrink-0 pt-px text-xs text-muted-foreground tabular-nums">
+          <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
             {age(now, item.since)}
           </span>
         )}
       </button>
-      {open ? (
-        <div id={panel} className="ps-8 pe-2 pb-2">
-          <Answer captainId={captainId} item={item} />
-        </div>
-      ) : null}
+      {open ? <Answer id={panel} captainId={captainId} item={item} /> : null}
     </li>
   );
 }
 
-/** The banner's answer controls for one item: its detail, options, Other… and any error. */
-function Answer({ captainId, item }: { captainId: string; item: QueueItem }) {
+/**
+ * The banner's answer controls for one item: its detail, options, Other… and
+ * any error, through the banner's own answer commands. Focus stays in the
+ * panel when the button pressed goes away; Other… sends once and clears its
+ * draft. Options carry no number shortcuts here: no key handler answers them.
+ */
+function Answer({ id, captainId, item }: { id: string; captainId: string; item: QueueItem }) {
   const navigate = useBbNavigate();
   const sdk = useSdk();
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const [other, setOtherState] = useState<string | null>(() => otherDrafts.get(item.key) ?? null);
   const setOther = (value: string | null) => {
     if (value === null) otherDrafts.delete(item.key);
@@ -298,24 +429,38 @@ function Answer({ captainId, item }: { captainId: string; item: QueueItem }) {
     setOtherState(value);
   };
   const [error, setError] = useState<string | null>(null);
-  const { answer, fail } = useItemCommands(captainId, item.key, null, setError);
+  const { answer, fail, pending } = useItemCommands(captainId, item.key, root, setError);
   const sending = isSending(item);
   const actions = sending ? [] : itemActions(item, { answer, navigate, sdk, fail });
   const detail = item.kind === "blocked" ? null : item.detail;
   return (
-    <div className="flex min-w-0 flex-col gap-2 text-xs" data-testid="captain-overview-answer">
+    <div
+      id={id}
+      ref={setRoot}
+      tabIndex={-1}
+      className="flex min-w-0 flex-col gap-2 ps-8 pe-2 pb-2 text-xs outline-none"
+      data-testid="captain-overview-answer"
+    >
       {detail ? (
         <Markdown
           content={detail}
           className="min-w-0 text-xs leading-snug text-muted-foreground [--foreground:var(--muted-foreground)]"
         />
       ) : null}
-      {other !== null && item.kind === "ask" ? (
+      {other !== null && item.kind === "ask" && !sending ? (
         <OtherAnswer
           value={other}
+          pending={pending}
           onChange={setOther}
-          onCancel={() => setOther(null)}
-          onSubmit={(text) => answer(item.id, text)}
+          onCancel={() => {
+            setOther(null);
+            root?.focus();
+          }}
+          onSubmit={(text) => {
+            root?.focus();
+            setOther(null);
+            answer(item.id, text);
+          }}
         />
       ) : null}
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -325,7 +470,7 @@ function Answer({ captainId, item }: { captainId: string; item: QueueItem }) {
           </output>
         ) : null}
         {actions.map((action, index) => (
-          <ActionButton key={action.label} action={action} index={index} />
+          <ActionButton key={action.label} action={action} index={index} shortcuts={false} />
         ))}
         {item.kind === "ask" && item.askKind !== "ship" && !sending && other === null ? (
           <Button
@@ -379,8 +524,20 @@ function AskIcon({ item }: { item: QueueItem }) {
   );
 }
 
-/** One crew thread; it opens the thread. */
-function CrewRow({ thread, now }: { thread: CrewThreadItem; now: number }) {
+/**
+ * One crew thread; it opens the thread. Its glyph is bb's own indicator when
+ * the sidebar lists the thread, else one resolved from the thread's run state
+ * (which cannot show background work or queued messages), else the provider.
+ */
+function CrewRow({
+  thread,
+  now,
+  indicator: listed,
+}: {
+  thread: CrewThreadItem;
+  now: number;
+  indicator: PluginSidebarThreadIndicator | null;
+}) {
   const navigate = useBbNavigate();
   const provider = useProviders().providers.find((each) => each.id === thread.providerId);
   const status = resolveThreadStatus({
@@ -397,14 +554,11 @@ function CrewRow({ thread, now }: { thread: CrewThreadItem; now: number }) {
     hasUnsubmittedDraft: false,
     rowStatus: null,
   });
+  const indicator = listed ?? status.indicator;
   const busy = status.isWorking || thread.hasPendingInteraction;
-  const parts: [string, string | null][] = [
-    ["model", thread.model],
-    ["task", thread.task],
-    ["role", thread.role],
-    ["age", age(now, thread.updatedAt)],
-  ];
-  const sub = parts.filter((part): part is [string, string] => Boolean(part[1]));
+  const sub = [thread.model, thread.task, thread.role, age(now, thread.updatedAt)]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
   return (
     <li className="flex min-w-0">
       <button
@@ -412,17 +566,18 @@ function CrewRow({ thread, now }: { thread: CrewThreadItem; now: number }) {
         onClick={() => navigate.toThread(thread.id)}
         className={cn(
           TAP,
-          "flex min-w-0 flex-1 items-start gap-2.5 rounded-md px-2 py-1.5 text-start outline-none hover:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring",
+          "flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1.5 text-start outline-none hover:bg-muted/40 focus-visible:outline-1",
         )}
       >
         <span
           className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted-foreground"
           title={status.label ?? (thread.status === "error" ? "Errored" : undefined)}
+          data-indicator={thread.status === "error" ? "error" : indicator}
         >
           {thread.status === "error" ? (
             <Icon name="AlertTriangle" aria-label="Errored" className="size-4 text-destructive" />
-          ) : status.indicator !== "none" ? (
-            <ThreadStatusGlyph indicator={status.indicator} size="compact" />
+          ) : indicator !== "none" ? (
+            <ThreadStatusGlyph indicator={indicator} size="compact" />
           ) : (
             <ProviderIcon
               providerKind="agent"
@@ -438,16 +593,13 @@ function CrewRow({ thread, now }: { thread: CrewThreadItem; now: number }) {
               "truncate [unicode-bidi:plaintext]",
               busy ? "text-foreground" : "text-muted-foreground",
             )}
+            title={thread.title}
           >
             {thread.title}
           </span>
-          <span className="flex min-w-0 flex-wrap gap-x-1 text-xs text-muted-foreground tabular-nums">
-            {sub.map(([kind, part], index) => (
-              <span key={kind} className="whitespace-nowrap">
-                {index > 0 ? <span aria-hidden>· </span> : null}
-                {part}
-              </span>
-            ))}
+          {/* One line, cut at its end: a wrap would start a line with its separator. */}
+          <span className="truncate text-xs text-muted-foreground tabular-nums" title={sub}>
+            {sub}
           </span>
         </span>
       </button>
@@ -455,7 +607,7 @@ function CrewRow({ thread, now }: { thread: CrewThreadItem; now: number }) {
   );
 }
 
-/** One Drive file as a clipped Markdown preview; it opens the file. */
+/** One Drive file as a clipped text preview; it opens the file. */
 function DriveCard({ threadId, file }: { threadId: string; file: DriveFileItem }) {
   const navigate = useBbNavigate();
   const open = () =>
@@ -469,11 +621,11 @@ function DriveCard({ threadId, file }: { threadId: string; file: DriveFileItem }
         type="button"
         onClick={open}
         aria-label={`Open ${file.path}`}
-        className="group flex w-full min-w-0 flex-col gap-1 rounded-md text-start outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="flex w-full min-w-0 flex-col gap-1 rounded-md text-start outline-none hover:bg-muted/40 focus-visible:outline-1"
       >
         <span
           aria-hidden
-          className="relative block h-32 w-full overflow-hidden rounded-md border border-border bg-background p-2 transition-colors group-hover:border-muted-foreground/50"
+          className="flex h-32 min-w-0 flex-col overflow-hidden rounded-md border border-border bg-background p-2"
         >
           {file.excerpt === null ? (
             <span className="flex h-full items-center justify-center text-muted-foreground">
@@ -484,14 +636,17 @@ function DriveCard({ threadId, file }: { threadId: string; file: DriveFileItem }
               Empty
             </span>
           ) : (
-            <Markdown content={file.excerpt} className={CARD_TEXT} />
+            <Preview markdown={file.excerpt} />
           )}
-          <span className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-background to-transparent" />
         </span>
-        <span className="flex min-w-0 flex-col leading-tight">
-          <span className="truncate text-sm text-foreground">{file.name}</span>
+        <span className="flex min-w-0 flex-col leading-snug">
+          <span className="truncate text-sm text-foreground" title={file.name}>
+            {file.name}
+          </span>
           {file.folder === null ? null : (
-            <span className="truncate text-xs text-muted-foreground">{file.folder}</span>
+            <span className="truncate text-xs text-muted-foreground" title={file.folder}>
+              {file.folder}
+            </span>
           )}
         </span>
       </button>
@@ -500,43 +655,75 @@ function DriveCard({ threadId, file }: { threadId: string; file: DriveFileItem }
 }
 
 /**
- * A card's preview: bb's Markdown at thumbnail size. Every heading is the
- * text's size and weight, and blocks keep only a small gap, so the card shows
- * the file's opening lines rather than one large title. Nothing in it takes a
- * click or Tab: the card is the control.
+ * Opening the Drive folder: in this client's external file target when it
+ * has one for the server's machine, otherwise bb's Info tab, whose Thread
+ * storage row is the Drive. Null when neither is available.
  */
-const CARD_TEXT =
-  "pointer-events-none min-w-0 text-[10px] leading-snug text-foreground [&_*]:text-[length:inherit] [&_h1]:my-0 [&_h1]:mb-1 [&_h1]:font-medium [&_h2]:my-0 [&_h2]:mb-1 [&_h2]:font-medium [&_h3]:my-0 [&_h3]:mb-1 [&_h3]:font-medium [&_h4]:my-0 [&_h4]:font-medium [&_p]:my-0 [&_p]:mb-1 [&_ul]:my-0 [&_ul]:mb-1 [&_ol]:my-0 [&_ol]:mb-1 [&_li]:my-0 [&_pre]:my-0 [&_pre]:p-1 [&_button]:hidden [&_img]:hidden";
-
-/**
- * ↗ opens the Drive folder in this client's external file target when it has
- * one for the server's machine; otherwise bb's Info tab, whose Thread storage
- * row is the Drive.
- */
-function OpenDrive({ folder }: { folder: { hostId: string; path: string } }) {
+function useOpenDrive(
+  folder: { hostId: string; path: string } | null,
+): { label: string; run: () => void } | null {
   const navigate = useBbNavigate();
   const panel = useAppPanel();
   const tabs = usePanelTabs();
   const target = useMemo(
-    () => ({ kind: "host" as const, hostId: folder.hostId, path: folder.path }),
-    [folder.hostId, folder.path],
+    () => ({ kind: "host" as const, hostId: folder?.hostId ?? "", path: folder?.path ?? "/" }),
+    [folder?.hostId, folder?.path],
   );
-  const external = useCanOpenFileExternally(target);
+  const external = useCanOpenFileExternally(target) && folder !== null;
   const info = tabs.tabs.find((tab) => tab.detail.kind === "info");
-  if (!external && info === undefined) return null;
+  if (external) {
+    return {
+      label: "Open the Drive folder",
+      run: () => void navigate.experimental_openFileExternally({ target, location: null }),
+    };
+  }
+  if (info === undefined) return null;
+  return { label: "Show the Drive in Info", run: () => void panel.selectTab(info.key) };
+}
+
+/** ↗ in the Drive header; its space stays reserved while the Drive loads. */
+function OpenDrive({ folder }: { folder: { hostId: string; path: string } | null }) {
+  const open = useOpenDrive(folder);
+  if (open === null) return <span aria-hidden className="size-6 shrink-0" />;
   return (
     <Button
       type="button"
       size="icon"
       variant="ghost"
-      aria-label={external ? "Open the Drive folder" : "Show the Drive in Info"}
+      aria-label={open.label}
       className={cn(TAP, "size-6 text-muted-foreground")}
-      onClick={() => {
-        if (external) navigate.experimental_openFileExternally({ target, location: null });
-        else if (info !== undefined) panel.selectTab(info.key);
-      }}
+      onClick={open.run}
     >
       <Icon name="ArrowUpRight" aria-hidden className="size-3.5" />
+    </Button>
+  );
+}
+
+/** What the cards leave out, opening the Drive where it can. */
+function MoreInDrive({
+  more,
+  truncated,
+  folder,
+}: {
+  more: number;
+  truncated: boolean;
+  folder: { hostId: string; path: string } | null;
+}) {
+  const open = useOpenDrive(folder);
+  if (more <= 0 && !truncated) return null;
+  const label = `${more}${truncated ? "+" : ""} more in the Drive`;
+  return open === null ? (
+    <p className="m-0 px-2 py-1 text-xs text-muted-foreground">{label}</p>
+  ) : (
+    <Button
+      type="button"
+      size="sm"
+      variant="link"
+      className={cn(TAP, "h-auto self-start px-2 py-1 text-xs text-muted-foreground")}
+      aria-label={`${label}: ${open.label.toLowerCase()}`}
+      onClick={open.run}
+    >
+      {label}
     </Button>
   );
 }
@@ -545,34 +732,26 @@ function Empty({ children }: { children: ReactNode }) {
   return <p className="m-0 px-2 py-1.5 text-xs text-muted-foreground">{children}</p>;
 }
 
-/** Space for rows or cards that are loading, or the read's failure. */
-function Placeholder({
-  error,
-  rows,
-  cards = false,
-}: {
-  error: string | undefined;
-  rows: number;
-  cards?: boolean;
-}) {
-  if (error !== undefined) {
-    return <p className="m-0 px-2 py-1.5 text-xs break-words text-destructive">{error}</p>;
-  }
+/** Space for rows or cards while they first load, about the loaded content's height. */
+function Placeholder({ rows, cards = false }: { rows: number; cards?: boolean }) {
   return (
     <div aria-busy className="flex flex-col gap-1 px-2 py-1.5">
       {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="flex items-start gap-2.5 py-0.5">
-          <span className="size-4 shrink-0 animate-pulse rounded-full bg-muted" />
+        <div key={index} className="flex items-start gap-2 py-0.5">
+          <span className="size-4 shrink-0 animate-pulse rounded bg-muted" />
           <span className="flex flex-1 flex-col gap-1">
-            <span className="h-3.5 w-3/4 animate-pulse rounded bg-muted" />
+            <span className="h-4 w-3/4 animate-pulse rounded bg-muted" />
             <span className="h-3 w-1/2 animate-pulse rounded bg-muted" />
           </span>
         </div>
       ))}
       {cards ? (
-        <div className="grid grid-cols-[repeat(auto-fill,7.5rem)] gap-3">
-          {[0, 1, 2].map((index) => (
-            <span key={index} className="h-32 animate-pulse rounded-md bg-muted" />
+        <div className={CARD_GRID}>
+          {[0, 1, 2, 3, 4, 5].map((index) => (
+            <span key={index} className="flex flex-col gap-1">
+              <span className="h-32 animate-pulse rounded-md bg-muted" />
+              <span className="h-4 w-1/2 animate-pulse rounded bg-muted" />
+            </span>
           ))}
         </div>
       ) : null}

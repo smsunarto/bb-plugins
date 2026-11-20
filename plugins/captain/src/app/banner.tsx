@@ -237,7 +237,14 @@ export function useItemCommands(
     keepFocus();
     void defer.mutate({ captainId, key, action }).catch(fail);
   };
-  return { answer, later: () => deferItem("later"), skip: () => deferItem("skip"), fail };
+  return {
+    answer,
+    later: () => deferItem("later"),
+    skip: () => deferItem("skip"),
+    fail,
+    /** An answer is on its way to the server. */
+    pending: resolve.isPending,
+  };
 }
 
 /** The answer and defer mutations, each updating the cached queue before the server replies. */
@@ -379,14 +386,23 @@ function Heading({
  * One answer; the recommended one says so. A long answer wraps inside the
  * card (the server caps it at 80 characters) and keeps "Recommended" whole.
  */
-export function ActionButton({ action, index }: { action: Action; index: number }) {
+export function ActionButton({
+  action,
+  index,
+  shortcuts = true,
+}: {
+  action: Action;
+  index: number;
+  /** False where no key handler answers by number, as outside the banner. */
+  shortcuts?: boolean;
+}) {
   return (
     <Button
       type="button"
       size="sm"
       variant={action.primary ? "default" : "outline"}
       className={cn(TAP, "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal")}
-      aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
+      aria-keyshortcuts={shortcuts && index < 9 ? String(index + 1) : undefined}
       onClick={action.run}
     >
       <span className="min-w-0 text-start break-words [unicode-bidi:plaintext]">
@@ -609,18 +625,21 @@ export function OtherAnswer({
   onChange,
   onCancel,
   onSubmit,
+  pending = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   onCancel: () => void;
   onSubmit: (text: string) => void;
+  /** An answer is sending: Send waits, so one answer goes once. */
+  pending?: boolean;
 }) {
   return (
     <form
       className="flex min-w-0 items-center gap-1.5"
       onSubmit={(event) => {
         event.preventDefault();
-        if (value.trim() !== "") onSubmit(value.trim());
+        if (value.trim() !== "" && !pending) onSubmit(value.trim());
       }}
     >
       <Input
@@ -638,7 +657,7 @@ export function OtherAnswer({
           }
         }}
       />
-      <Button type="submit" size="sm" className={TAP} disabled={value.trim() === ""}>
+      <Button type="submit" size="sm" className={TAP} disabled={value.trim() === "" || pending}>
         Send
       </Button>
     </form>

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { QueueItem } from "../contract/queue.ts";
@@ -69,9 +69,29 @@ const file = (path: string, excerpt: string | null = `# ${path}\n\nBody`): Drive
   };
 };
 
-type State = { asks: QueueItem[]; threads: CrewThreadItem[]; files: DriveFileItem[] };
+type State = {
+  asks: QueueItem[];
+  threads: CrewThreadItem[];
+  files: DriveFileItem[];
+  /** Every file in the Drive, when more than the cards. */
+  total?: number;
+  truncated?: boolean;
+  /** Reads that fail while set. */
+  failing?: Set<string>;
+};
 
-function render(state: State, options: { threadId?: string; external?: boolean } = {}) {
+function render(
+  state: State,
+  options: {
+    threadId?: string;
+    external?: boolean;
+    connection?: "connected" | "reconnecting";
+    sidebar?: { id: string; indicator: string }[];
+  } = {},
+) {
+  const fails = (method: string) => {
+    if (state.failing?.has(method)) throw new Error(`${method} unavailable`);
+  };
   const calls: string[] = [];
   const slot = renderSlot(
     tab as never,
@@ -83,16 +103,20 @@ function render(state: State, options: { threadId?: string; external?: boolean }
         captains: () => ({ ids: [CAPTAIN] }),
         asks: () => {
           calls.push("asks");
+          fails("asks");
           return { items: state.asks };
         },
         crewThreads: () => {
           calls.push("crewThreads");
+          fails("crewThreads");
           return { threads: state.threads };
         },
         drive: () => {
           calls.push("drive");
+          fails("drive");
           return {
-            total: state.files.length,
+            total: state.total ?? state.files.length,
+            truncated: state.truncated ?? false,
             files: state.files,
             folder: { hostId: "host_server", path: "/storage/thr_captain" },
           };
@@ -104,6 +128,10 @@ function render(state: State, options: { threadId?: string; external?: boolean }
       openFileExternally: () => true,
       canOpenFileExternally: () => options.external ?? true,
       experimental_panel: { selectTab: () => true },
+      ...(options.connection === undefined ? {} : { realtimeConnectionState: options.connection }),
+      ...(options.sidebar === undefined
+        ? {}
+        : { sidebarThreads: { status: "ready", threads: options.sidebar as never } }),
       experimental_panelTabs: {
         open: true,
         selectedKey: "overview",
@@ -159,7 +187,7 @@ test("Needs you, Threads and Drive list their items with counts and sublines", a
   const threads = await section(slot, "Threads");
   await within(threads).findByText("Fix the sidebar");
   expect(threads.textContent).toContain("Threads3");
-  expect(threads.textContent).toContain("Claude Opus 5.5· GAME-5· implement· 3d");
+  expect(threads.textContent).toContain("Claude Opus 5.5 · GAME-5 · implement · 3d");
 
   const drive = await section(slot, "Drive");
   await within(drive).findByRole("button", { name: "Open briefs/BBP-43.md" });
@@ -260,15 +288,146 @@ test("an ask or a crew change refreshes its section", async () => {
   state.asks = [ship];
   await slot.behavior.experimental_invalidateRpc([asksTag(CAPTAIN)]);
   await waitFor(() => expect(within(needs).queryByText("Pick the cache backend")).toBeNull());
+});
 
+test("a crew thread's status change reorders the rows and redraws its status", async () => {
+  const idle = crewThread({ id: "thr_a", title: "Verify Unity builds" });
+  const other = crewThread({ id: "thr_b", title: "Review BBP-43", updatedAt: NOW });
+  const state: State = { ...seeded, threads: [other, idle] };
+  const { slot } = render(state);
   const threads = await section(slot, "Threads");
-  state.threads = [crewThread({ status: "active", title: "Verify Unity builds" })];
+  await within(threads).findByText("Review BBP-43");
+  const rowNames = () =>
+    within(threads)
+      .getAllByRole("button")
+      .slice(1)
+      .map((row) => row.textContent?.slice(0, 13));
+  const glyph = (title: string) =>
+    within(threads).getByText(title).closest("button")?.querySelector("[data-indicator]") ?? null;
+  expect(rowNames()).toEqual(["Review BBP-43", "Verify Unity "]);
+  expect(glyph("Verify Unity builds")?.getAttribute("data-indicator")).toBe("none");
+
+  // The server lists active crew first.
+  state.threads = [{ ...idle, status: "active" }, other];
   await slot.behavior.experimental_invalidateRpc([crewTag(CAPTAIN)]);
-  await waitFor(() =>
-    expect(
-      within(threads).getByText("Verify Unity builds").className.includes("text-foreground"),
-    ).toBe(true),
+  await waitFor(() => expect(rowNames()).toEqual(["Verify Unity ", "Review BBP-43"]));
+  expect(glyph("Verify Unity builds")?.getAttribute("data-indicator")).not.toBe("none");
+});
+
+test("bb's own indicator draws a crew row when the sidebar lists the thread", async () => {
+  const { slot } = render(
+    { ...seeded, threads: [crewThread({ id: "thr_a", title: "Verify Unity builds" })] },
+    { sidebar: [{ id: "thr_a", indicator: "background-command" }] },
   );
+  const threads = await section(slot, "Threads");
+  const row = (await within(threads).findByText("Verify Unity builds")).closest("button");
+  // An idle thread would draw its provider; bb's listed indicator replaces it.
+  expect(row?.querySelector("[data-indicator]")?.getAttribute("data-indicator")).toBe(
+    "background-command",
+  );
+});
+
+test("a failed first read says so with Retry, and Retry loads it", async () => {
+  const state: State = { ...seeded, failing: new Set(["crewThreads"]) };
+  const { slot } = render(state);
+  const threads = await section(slot, "Threads");
+  await within(threads).findByText(/Couldn't load · crewThreads unavailable/u);
+  state.failing = new Set();
+  fireEvent.click(within(threads).getByRole("button", { name: "Retry" }));
+  await within(threads).findByText("Fix the sidebar");
+  expect(within(threads).queryByRole("status")).toBeNull();
+});
+
+test("a failed refresh keeps the loaded rows, labelled as not refreshed", async () => {
+  const state: State = { ...seeded };
+  const { slot } = render(state);
+  const needs = await section(slot, "Needs you");
+  await within(needs).findByText("Pick the cache backend");
+  state.failing = new Set(["asks"]);
+  await slot.behavior.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  await within(needs).findByText(/Couldn't refresh · asks unavailable/u);
+  expect(within(needs).getByText("Pick the cache backend")).not.toBeNull();
+});
+
+test("offline, each section says so instead of pulsing", async () => {
+  const { slot } = render(seeded, { connection: "reconnecting" });
+  const drive = await section(slot, "Drive");
+  await within(drive).findByText(/^Offline/u);
+  expect(within(drive).getByRole("button", { name: "Retry" })).not.toBeNull();
+});
+
+test("the browser going offline labels loaded rows before bb's socket notices", async () => {
+  const { slot } = render(seeded);
+  const needs = await section(slot, "Needs you");
+  await within(needs).findByText("Pick the cache backend");
+  Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
+  try {
+    act(() => {
+      window.dispatchEvent(new Event("offline"));
+    });
+    await within(needs).findByText("Offline · showing the last loaded");
+    expect(within(needs).getByText("Pick the cache backend")).not.toBeNull();
+  } finally {
+    // The prototype keeps the real getter; dropping the own property restores it.
+    delete (navigator as { onLine?: boolean }).onLine;
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+  }
+  await waitFor(() => expect(within(needs).queryByText(/^Offline/u)).toBeNull());
+});
+
+test("Needs you counts and lists the banner's queue: an ask under Later is left out", async () => {
+  const later: QueueItem = { ...ship, snoozedUntil: NOW + 3_600_000 };
+  const { slot } = render({ ...seeded, asks: [decision, later] });
+  const needs = await section(slot, "Needs you");
+  await within(needs).findByText("Pick the cache backend");
+  expect(needs.textContent).toContain("Needs you1");
+  expect(within(needs).queryByText("Ship the sidebar fix")).toBeNull();
+});
+
+test("answering: no number shortcuts, Other… sends once and clears, focus stays in the panel", async () => {
+  let release: () => void = () => undefined;
+  const sent: unknown[] = [];
+  const slot = renderSlot(tab as never, { threadId: CAPTAIN, environment: null } as never, {
+    experimental_rpcContract: captainContract,
+    rpc: {
+      captains: () => ({ ids: [CAPTAIN] }),
+      asks: () => ({ items: [decision] }),
+      crewThreads: () => ({ threads: [] }),
+      drive: () => ({ total: 0, truncated: false, files: [], folder: null }),
+      resolveAsk: (input: unknown) => {
+        sent.push(input);
+        return new Promise((resolve) => {
+          release = () => resolve({ state: "answered", warnings: [] });
+        });
+      },
+    } as never,
+  });
+  fireEvent.click(await slot.findByRole("button", { name: /Pick the cache backend/u }));
+  const answer = await slot.findByTestId("captain-overview-answer");
+  expect(
+    within(answer).getByRole("button", { name: /Redis/u }).hasAttribute("aria-keyshortcuts"),
+  ).toBe(false);
+  fireEvent.click(within(answer).getByRole("button", { name: "Other…" }));
+  const box = within(answer).getByRole("textbox", { name: "Your answer" });
+  fireEvent.change(box, { target: { value: "Valkey" } });
+  fireEvent.submit(box.closest("form")!);
+  fireEvent.submit(box.closest("form") ?? document.createElement("form"));
+  await waitFor(() => expect(sent).toEqual([{ askId: "a1", answer: "Valkey" }]));
+  // The draft is gone and focus is on the panel, not the page.
+  expect(within(answer).queryByRole("textbox")).toBeNull();
+  expect(document.activeElement).toBe(answer);
+  release();
+  // Close it, so no other test starts with it open.
+  fireEvent.click(slot.getByRole("button", { name: /Pick the cache backend/u }));
+});
+
+test("the Drive says how many files the cards leave out, with + past the walk's bound", async () => {
+  const { slot } = render({ ...seeded, total: 40, truncated: true });
+  const drive = await section(slot, "Drive");
+  await within(drive).findByRole("button", { name: /37\+ more in the Drive/u });
+  expect(drive.textContent).toContain("Drive40+");
 });
 
 test("each section has an empty state", async () => {
@@ -287,7 +446,7 @@ test("a hidden tab reads nothing", async () => {
       captains: () => ({ ids: [CAPTAIN] }),
       asks: () => (calls.push("asks"), { items: [] }),
       crewThreads: () => (calls.push("crewThreads"), { threads: [] }),
-      drive: () => (calls.push("drive"), { total: 0, files: [], folder: null }),
+      drive: () => (calls.push("drive"), { total: 0, truncated: false, files: [], folder: null }),
     } as never,
   });
   await new Promise((settle) => setTimeout(settle, 30));
