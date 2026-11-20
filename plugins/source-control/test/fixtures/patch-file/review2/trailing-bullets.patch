@@ -1,0 +1,10 @@
+diff --git a/f.txt b/f.txt
+--- a/f.txt
++++ b/f.txt
+@@ -1,2 +1,2 @@
+ a
+-b
++B
+
+- a markdown bullet after the diff
+- another

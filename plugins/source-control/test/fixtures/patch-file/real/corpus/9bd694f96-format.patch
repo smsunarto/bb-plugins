@@ -1,0 +1,72 @@
+From 9bd694f963a33b7c1964e93838fa022fca661002 Mon Sep 17 00:00:00 2001
+From: Scott Sunarto <github@smsunarto.com>
+Date: Mon, 16 Nov 2026 12:55:33 -0800
+Subject: [PATCH] style(monokai): thread search drawer takes the model sheet's
+ single card
+
+On phones bb's command palette (thread search) sits in the persistent drawer
+but painted its input band and results with the page ground, so the card's
+popover showed only as lighter strips above and below (#1b1b1c around
+#121213). Clear both inside the drawer so the palette reads as one card, as
+bb's pickers and t3-composer's model sheet do, and drop the palette's dialog
+shadow there, which drew a gray line across the drawer in Light.
+---
+ plugins/monokai/scripts/bb-monokai.template.css | 15 +++++++++++++++
+ plugins/monokai/themes/bb-monokai.css           | 15 +++++++++++++++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/plugins/monokai/scripts/bb-monokai.template.css b/plugins/monokai/scripts/bb-monokai.template.css
+index 42b564b92..a9a004c4e 100644
+--- a/plugins/monokai/scripts/bb-monokai.template.css
++++ b/plugins/monokai/scripts/bb-monokai.template.css
+@@ -1672,6 +1672,21 @@ diffs-container {
+   margin-bottom: 8px;
+ }
+ 
++/* The command palette (thread search) fills its input band and results with
++ * the page ground, a dialog's look on desktop. In the drawer that left the
++ * card's popover showing only above and below it, as lighter strips. Let the
++ * card show through, as bb's pickers and the composer's model sheet do. */
++.dark [data-persistent-drawer-content] [data-palette-input-band],
++.dark [data-persistent-drawer-content] [data-palette-results-clip] {
++  background: transparent;
++}
++
++/* Its dialog shadow drew a gray line across the drawer near the bottom in
++ * Light, where bb's shadow tokens are visible. */
++[data-persistent-drawer-content] > [data-testid="command-palette"] {
++  box-shadow: none;
++}
++
+ /* bb's notification history is a first-class themed surface, separate from
+  * the native browser and operating-system banners delivered by the push
+  * notification plugin. The host owns responsive placement: a popover on
+diff --git a/plugins/monokai/themes/bb-monokai.css b/plugins/monokai/themes/bb-monokai.css
+index 452c15829..8d0cb2f92 100644
+--- a/plugins/monokai/themes/bb-monokai.css
++++ b/plugins/monokai/themes/bb-monokai.css
+@@ -1674,6 +1674,21 @@ diffs-container {
+   margin-bottom: 8px;
+ }
+ 
++/* The command palette (thread search) fills its input band and results with
++ * the page ground, a dialog's look on desktop. In the drawer that left the
++ * card's popover showing only above and below it, as lighter strips. Let the
++ * card show through, as bb's pickers and the composer's model sheet do. */
++.dark [data-persistent-drawer-content] [data-palette-input-band],
++.dark [data-persistent-drawer-content] [data-palette-results-clip] {
++  background: transparent;
++}
++
++/* Its dialog shadow drew a gray line across the drawer near the bottom in
++ * Light, where bb's shadow tokens are visible. */
++[data-persistent-drawer-content] > [data-testid="command-palette"] {
++  box-shadow: none;
++}
++
+ /* bb's notification history is a first-class themed surface, separate from
+  * the native browser and operating-system banners delivered by the push
+  * notification plugin. The host owns responsive placement: a popover on
+-- 
+2.56.0
+

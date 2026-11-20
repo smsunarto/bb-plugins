@@ -1,0 +1,30 @@
+diff -ru a/bin.dat b/bin.dat
+--- a/bin.dat	2026-11-19 17:01:20.422169285 -0800
++++ b/bin.dat	2026-11-19 17:01:20.423169312 -0800
+@@ -1 +1,2 @@
+-ó¾>jˆºAóáùÔìUIšoVzBŠ„Ø›„{™Hæ^^Yš‡Ù{àÅ–Årç´!hÊ¸úC¿~=
+\ No newline at end of file
++i¾Y|á!@q¡.%c I‹<¼‡ËêiÇñÏ#ïlåC—_ãğÔD¯=<»ŞLQ\V
++ZÆËb¤0Lß„
+\ No newline at end of file
+diff -ru a/d/f.txt b/d/f.txt
+--- a/d/f.txt	2026-11-19 17:01:20.412169024 -0800
++++ b/d/f.txt	2026-11-19 17:01:20.417169154 -0800
+@@ -4,7 +4,7 @@
+ 4
+ 5
+ 6
+-7
++seven
+ 8
+ 9
+ 10
+Only in b: new.txt
+Binary files a/nul.dat and b/nul.dat differ
+Only in a: only.txt
+diff -ru "a/s p.txt" "b/s p.txt"
+--- "a/s p.txt"	2026-11-19 17:01:20.417169154 -0800
++++ "b/s p.txt"	2026-11-19 17:01:20.417169154 -0800
+@@ -1 +1 @@
+-s p
++S P

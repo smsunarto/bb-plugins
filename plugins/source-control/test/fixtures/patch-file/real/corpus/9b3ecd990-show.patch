@@ -1,0 +1,189 @@
+commit 9b3ecd990270ac22d77a198eb96e782f04cec4ed
+Author: Scott Sunarto <github@smsunarto.com>
+Date:   Mon Nov 16 13:01:01 2026 -0800
+
+    fix(slopcop): keep rule titles inside their cards on narrow panels
+    
+    The rule title was a centered, nowrap shadcn Button given min-w-0 (since
+    0e072f372), so on narrow panels it shrank below its text and the text
+    spilled out both sides, over the repository chip. The title now truncates
+    with its full name in a tooltip, and the repository and mode chips wrap to
+    their own line. The header's account label truncates and moves under the
+    tabs on a narrow panel. Activity comment rows give the path and excerpt
+    their own lines below 480px instead of pushing them off-screen.
+
+diff --git a/plugins/slopcop/app.tsx b/plugins/slopcop/app.tsx
+index b6a689144..900db46a5 100644
+--- a/plugins/slopcop/app.tsx
++++ b/plugins/slopcop/app.tsx
+@@ -125,7 +125,15 @@ function Chip({
+   children: React.ReactNode;
+   tone?: keyof typeof CHIP_TONE;
+ }) {
+-  return <Badge variant={CHIP_TONE[tone]}>{children}</Badge>;
++  return (
++    <Badge
++      variant={CHIP_TONE[tone]}
++      className="max-w-full"
++      title={typeof children === "string" ? children : undefined}
++    >
++      <span className="truncate">{children}</span>
++    </Badge>
++  );
+ }
+ 
+ /** One value picker for the rule form's fixed option lists. */
+@@ -215,30 +223,42 @@ function RulesList({
+             rule.enabled ? "" : "opacity-60"
+           }`}
+         >
+-          <div className="flex items-center gap-2">
+-            <Button
+-              variant="link"
+-              size="sm"
+-              onClick={() => onEdit(rule)}
+-              className="h-auto min-w-0 p-0 text-sm font-semibold text-foreground"
+-            >
+-              {rule.name}
+-            </Button>
+-            <Badge variant="outline" className="font-mono text-muted-foreground">
+-              {rule.repo}
+-            </Badge>
+-            {rule.mode === "shadow" ? (
+-              <Chip tone="trigger">shadow</Chip>
+-            ) : (
+-              <Chip tone="guard">live</Chip>
+-            )}
+-            <span className="flex-1" />
+-            <Switch
+-              aria-label={`Enable ${rule.name}`}
+-              checked={rule.enabled}
+-              onClick={(event) => event.stopPropagation()}
+-              onCheckedChange={(next) => onToggle(rule, next)}
+-            />
++          <div className="flex items-start gap-2">
++            {/* The name, repository and mode wrap as whole items, so a long
++                name truncates on its own line instead of overrunning the chips. */}
++            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
++              <Button
++                variant="link"
++                size="sm"
++                onClick={() => onEdit(rule)}
++                className="h-auto min-h-6 max-w-full min-w-0 justify-start p-0 text-sm font-semibold text-foreground"
++              >
++                <span className="truncate" title={rule.name}>
++                  {rule.name}
++                </span>
++              </Button>
++              <Badge
++                variant="outline"
++                className="max-w-full font-mono text-muted-foreground"
++                title={rule.repo}
++              >
++                <span className="truncate">{rule.repo}</span>
++              </Badge>
++              {rule.mode === "shadow" ? (
++                <Chip tone="trigger">shadow</Chip>
++              ) : (
++                <Chip tone="guard">live</Chip>
++              )}
++            </div>
++            {/* As tall as the title line, so the toggle centers on it. */}
++            <div className="flex h-6 shrink-0 items-center">
++              <Switch
++                aria-label={`Enable ${rule.name}`}
++                checked={rule.enabled}
++                onClick={(event) => event.stopPropagation()}
++                onCheckedChange={(next) => onToggle(rule, next)}
++              />
++            </div>
+           </div>
+           <div className="mt-2 flex flex-wrap gap-2">
+             {rule.triggers.map((trigger) => (
+@@ -978,7 +998,7 @@ function Activity({ runs }: { runs: Run[] }) {
+               {run.status.replace(/_/g, " ")}
+             </span>
+             <div className="min-w-0 flex-1">
+-              <p className="text-sm">
++              <p className="text-sm wrap-break-word">
+                 <span className="font-mono text-pr-merged">
+                   {run.targetKind === "issue" ? "issue" : "PR"} #{run.prNumber}
+                 </span>{" "}
+@@ -1015,19 +1035,21 @@ function Activity({ runs }: { runs: Run[] }) {
+                 <p className="mt-1 text-xs text-warning-text">{run.detail}</p>
+               ) : null}
+               {expanded === run.id ? (
+-                <div className="mt-2 flex flex-col gap-2 border-l-2 border-border pl-3">
++                <div className="mt-2 flex flex-col gap-2 border-l-2 border-border pl-3 @container">
+                   {(comments[run.id] ?? []).map((comment, index) => (
+-                    <div key={index} className="flex gap-2 text-xs">
++                    // Below 480px the path and the excerpt each take a full line; wider,
++                    // the excerpt drops below a long path rather than shrink to a sliver.
++                    <div key={index} className="flex flex-wrap gap-x-2 gap-y-1 text-xs">
+                       <span className="min-w-[56px] shrink-0 rounded border border-border px-1 text-center font-mono text-subtle-foreground">
+                         {comment.kind}
+                       </span>
+                       {comment.path !== null ? (
+-                        <span className="shrink-0 font-mono text-foreground">
++                        <span className="min-w-0 font-mono wrap-anywhere text-foreground @max-[480px]:order-1 @max-[480px]:basis-full">
+                           {comment.path}
+                           {comment.line === null ? "" : `:${comment.line}`}
+                         </span>
+                       ) : null}
+-                      <span className="min-w-0 flex-1 text-muted-foreground">
++                      <span className="min-w-0 grow basis-48 text-muted-foreground @max-[480px]:order-2 @max-[480px]:basis-full">
+                         {comment.bodyExcerpt}
+                       </span>
+                       {comment.url !== null ? (
+@@ -1035,7 +1057,7 @@ function Activity({ runs }: { runs: Run[] }) {
+                           href={comment.url}
+                           target="_blank"
+                           rel="noreferrer"
+-                          className="shrink-0 text-timeline-accent hover:underline"
++                          className="ml-auto shrink-0 text-timeline-accent hover:underline"
+                         >
+                           open
+                         </a>
+@@ -1054,6 +1076,9 @@ function Activity({ runs }: { runs: Run[] }) {
+ 
+ // --------------------------------------------------------------------------
+ 
++const ACCOUNT_LABEL =
++  "min-w-0 flex-1 truncate text-right text-xs @max-[28rem]/panel:order-last @max-[28rem]/panel:basis-full @max-[28rem]/panel:text-left";
++
+ function SlopCopPanel() {
+   const rpc = useRpc<typeof rpcContract>();
+   const [tab, setTab] = useState<"rules" | "activity">("rules");
+@@ -1098,8 +1123,8 @@ function SlopCopPanel() {
+   }
+ 
+   return (
+-    <div className="flex h-full flex-col">
+-      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
++    <div className="flex h-full flex-col @container/panel">
++      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
+         <Tabs value={tab} onValueChange={(value) => setTab(value as "rules" | "activity")}>
+           <TabsList>
+             {(["rules", "activity"] as const).map((value) => (
+@@ -1112,14 +1137,18 @@ function SlopCopPanel() {
+             ))}
+           </TabsList>
+         </Tabs>
+-        <span className="flex-1" />
++        {/* The account label sits between the tabs and "New rule", truncating
++            if it must; a narrow panel moves it to its own line under them. */}
+         {ghLogin === null ? (
+-          <span className="text-xs text-warning-text">gh not authenticated</span>
++          <span className={`${ACCOUNT_LABEL} text-warning-text`}>gh not authenticated</span>
+         ) : (
+-          <span className="text-xs text-subtle-foreground">gh: {ghLogin}</span>
++          <span className={`${ACCOUNT_LABEL} text-subtle-foreground`} title={`gh: ${ghLogin}`}>
++            gh: {ghLogin}
++          </span>
+         )}
+         <Button
+           size="sm"
++          className="ml-auto"
+           onClick={() => {
+             openRule = "new";
+             setEditing("new");

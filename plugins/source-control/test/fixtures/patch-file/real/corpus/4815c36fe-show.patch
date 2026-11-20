@@ -1,0 +1,59 @@
+commit 4815c36fecc90b7cf606dbf814a7589e2591529d
+Author: Scott <github@smsunarto.com>
+Date:   Thu Nov 19 17:21:12 2026 -0800
+
+    docs(captain): write when Review may be skipped and lenses trimmed (BBP-55) (#200)
+    
+    Review found real bugs on every behavior change; skipped reviews of instruction text caused none. Make skipping a rule instead of a per-task call.
+
+diff --git a/plugins/captain/instructions/captain.md b/plugins/captain/instructions/captain.md
+index 4eaa9485a..7666facfc 100644
+--- a/plugins/captain/instructions/captain.md
++++ b/plugins/captain/instructions/captain.md
+@@ -52,7 +52,7 @@ A wake line reads `[tasks] <key> <first line> · <thread> <role> · <attachment
+ - The task's state: `bb captain status` for its row, verdict and recorded head.
+ - Check inline when that is one or two calls; otherwise hand the check to a background subagent with the brief's done-means, the path and the branch.
+ - Record a verdict only after you checked the report: `bb captain verdict <task> review passed --head <sha>`, or `review findings --head <sha>`. Add `--ship` to a passed review to open its ship ask in the same call.
+-- Implementation is ready only when its `review` verdict is `passed`, or `skipped` with `--reason "<why>"`.
++- Implementation is ready only when its `review` verdict is `passed`, or `skipped` with `--reason "<why>"` under the skip rule in `captain-review-loop`.
+ 
+ ## Task status
+ 
+diff --git a/plugins/captain/skills/captain-brief/SKILL.md b/plugins/captain/skills/captain-brief/SKILL.md
+index b6b76b1b4..e2813ad84 100644
+--- a/plugins/captain/skills/captain-brief/SKILL.md
++++ b/plugins/captain/skills/captain-brief/SKILL.md
+@@ -51,4 +51,5 @@ Remote: <yes: push the branch and open a draft PR | none: commit on your branch
+ 
+ - Add a `Lenses:` line to the brief to add or drop lenses, such as `Lenses: +visual -performance`, or to name a Drive lens.
+ - Without it, the Review thread picks lenses from the diff.
++- Drop lenses that cannot apply to the diff, such as `-visual` for a server-only diff.
+ - The implementer's report stays out of the brief: post nothing from it into the description, so the lenses stay blind.
+diff --git a/plugins/captain/skills/captain-review-loop/SKILL.md b/plugins/captain/skills/captain-review-loop/SKILL.md
+index 8d27f2fd0..c62b46b11 100644
+--- a/plugins/captain/skills/captain-review-loop/SKILL.md
++++ b/plugins/captain/skills/captain-review-loop/SKILL.md
+@@ -7,6 +7,16 @@ description: Run review rounds on implemented work, from the first Review dispat
+ 
+ Review checks a change against its brief through blind lens subagents and reports one batch. You decide what goes back to the implementer and when to stop.
+ 
++## Decide whether to review
++
++- **Always review** a change that touches runtime behavior, a storage schema, permissions, sends, or another plugin, whatever its size.
++- **Skip Review only when all of these hold:**
++  - The diff is instruction, skill or docs text only; mockups or research with no code; or a mechanical change (rename, constant, formatting) under about 20 lines that existing tests cover.
++  - The diff changes no runtime behavior, data or permissions.
++  - You read the diff yourself and ran the brief's checks.
++- **To skip:** record `bb captain verdict <task> review skipped --reason "<rule it met>"`, such as `--reason "docs text only"`. A skip without a reason is refused.
++- Otherwise start a round.
++
+ ## Start a round
+ 
+ 1. Check the Implement report as `captain.md`'s Check a report says: the branch holds commits, its head matches the report, and the checks it names pass. A PR is open unless the brief said the repo has no remote.
+@@ -30,6 +40,5 @@ Review checks a change against its brief through blind lens subagents and report
+ 
+ - Stop when a round finds only rare edge cases. File those as follow-up tasks with `bb tasks create`, then record `review passed`.
+ - Stop and ask the user, with `bb captain ask`, when the same finding survives two fix rounds.
+-- **To skip review:** record `bb captain verdict <task> review skipped --reason "<why>"`. A skip without a reason is refused.
+ 
+ The loop is done when the task's `review` verdict is `passed` or `skipped`.

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { QueueItem } from "../contract/queue.ts";
 import { asksTag, captainContract } from "../contract/rpc.ts";
@@ -42,10 +42,13 @@ function render(
   threadId: string,
   asks: QueueItem[] | (() => QueueItem[]),
   options: {
-    since?: unknown;
     crew?: QueueItem[];
     crewFails?: boolean;
     sdk?: unknown;
+    resolve?: (input: {
+      askId: string;
+      answer: string;
+    }) => Promise<{ state: "answered"; warnings: string[] }>;
     panelTabs?: unknown;
   } = {},
 ) {
@@ -59,6 +62,7 @@ function render(
   const slot = renderSlot(banner as never, {} as never, {
     experimental_rpcContract: captainContract,
     composer: { scope: { kind: "thread", threadId } },
+    experimental_panel: { openTab: () => true },
     rpc: {
       captains: log("captains", () => ({ ids: [CAPTAIN] })),
       asks: log("asks", () => ({ items: typeof asks === "function" ? asks() : asks })),
@@ -66,13 +70,11 @@ function render(
         if (options.crewFails) throw new Error("bb did not answer");
         return { items: options.crew ?? [] };
       }),
-      sinceYouLeft: log(
-        "sinceYouLeft",
-        () => options.since ?? { cutoff: null, done: [], ready: [], failed: [] },
+      resolveAsk: log(
+        "resolveAsk",
+        (input) => options.resolve?.(input) ?? { state: "answered", warnings: [] },
       ),
-      resolveAsk: log("resolveAsk", () => ({ state: "answered", warnings: [] })),
       defer: log("defer", () => ({ snoozedUntil: null, skipOrder: null })),
-      markSeen: log("markSeen", () => ({ at: NOW })),
     } as never,
     ...(options.sdk === undefined ? {} : { sdk: options.sdk as never }),
     ...(options.panelTabs === undefined
@@ -90,27 +92,48 @@ test("on a thread that is not a Captain, the banner reads only the Captain list 
   expect(calls.map((call) => call.method)).toEqual(["captains"]);
 });
 
-test("one item at a time, in queue order, with its place, task, age and recommended option", async () => {
-  const { slot } = render(CAPTAIN, [decision, access]);
-  const card = await slot.findByTestId("captain-needs-you");
-  // Access asks come before decisions.
-  expect(card.textContent).toContain("Grant the crew a deploy key");
-  expect(card.textContent).not.toContain("Pick the cache backend");
-  expect(card.textContent).toContain("1 of 2 · PLUG-8 · 40m");
-  // The first option says it is the recommended one; the others do not.
-  expect(slot.getByRole("button", { name: /Grant read-only/u }).textContent).toContain(
-    "Recommended",
-  );
-  expect(slot.getByRole("button", { name: /Grant read-write/u }).textContent).not.toContain(
-    "Recommended",
+test("two items show readable tabs in queue order and one answer panel", async () => {
+  const { slot, of } = render(CAPTAIN, [decision, access]);
+  const tabs = await slot.findAllByRole("tab");
+  expect(tabs.map((tab) => tab.textContent)).toEqual([
+    "Grant the crew a deploy key40m",
+    "Pick the cache backend40m",
+  ]);
+  expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
+  expect(slot.getByRole("tabpanel").textContent).toContain("PLUG-8");
+  expect(slot.getByRole("button", { name: "Grant read-only Recommended" })).toBeDefined();
+  expect(of("crew")).toHaveLength(1);
+
+  act(() => tabs[1]!.click());
+  expect(tabs[1]?.getAttribute("aria-selected")).toBe("true");
+  expect(slot.queryByRole("button", { name: /Grant read-only/u })).toBeNull();
+  act(() => slot.getByRole("button", { name: "SQLite" }).click());
+  await waitFor(() =>
+    expect(of("resolveAsk").map(({ input }) => input)).toEqual([{ askId: "a1", answer: "SQLite" }]),
   );
 });
 
-test("a lone item shows no place in the queue", async () => {
+test("a lone item uses the same queue and answer panel", async () => {
   const { slot } = render(CAPTAIN, [decision]);
-  const card = await slot.findByTestId("captain-needs-you");
-  expect(card.textContent).toContain("PLUG-8 · 40m");
-  expect(card.textContent).not.toContain("1 of 1");
+  const tab = await slot.findByRole("tab", { name: /Pick the cache backend/u });
+  expect(tab.getAttribute("aria-selected")).toBe("true");
+  expect(slot.getByRole("tabpanel").textContent).toContain("Pick the cache backend");
+});
+
+test("arrow keys choose among three or more asks and keep tab focus", async () => {
+  const third = { ...decision, key: "ask:a3", id: "a3", text: "Third ask" } as const;
+  const later = { ...decision, key: "ask:a4", id: "a4", snoozedUntil: NOW + 60_000 } as const;
+  const { slot } = render(CAPTAIN, [decision, access, third, later]);
+  const tabs = await slot.findAllByRole("tab");
+  expect(tabs).toHaveLength(3);
+  expect(slot.getByText("1 later")).toBeDefined();
+  act(() => tabs[0]!.focus());
+  fireEvent.keyDown(tabs[0]!, { key: "ArrowLeft" });
+  expect(document.activeElement).toBe(tabs[2]);
+  expect(tabs[2]?.getAttribute("aria-selected")).toBe("true");
+  expect(slot.getByRole("tabpanel").textContent).toContain("Third ask");
+  fireEvent.keyDown(tabs[2]!, { key: "ArrowRight" });
+  expect(document.activeElement).toBe(tabs[0]);
 });
 
 test("keys: a number answers, S skips, L hides it, Enter on the banner picks the recommended", async () => {
@@ -131,6 +154,7 @@ test("keys: a number answers, S skips, L hides it, Enter on the banner picks the
   cleanup();
   const again = render(CAPTAIN, [decision]);
   const fresh = await again.slot.findByTestId("captain-needs-you");
+  act(() => fresh.focus());
   fireEvent.keyDown(fresh, { key: "2" });
   await waitFor(() =>
     expect(again.of("resolveAsk").map((call) => call.input)).toEqual([
@@ -139,40 +163,43 @@ test("keys: a number answers, S skips, L hides it, Enter on the banner picks the
   );
 });
 
-test("the keys work without a visible hint: no keycap, number or framed letter renders", async () => {
+test("answer shortcuts use accessible attributes, with an icon-only Later and no visible Skip", async () => {
   const { slot } = render(CAPTAIN, [decision]);
-  const card = await slot.findByTestId("captain-needs-you");
-  act(() => card.focus());
-  const answers = ["Redis", "SQLite", "No cache"].map((name) =>
-    slot.getByRole("button", { name: new RegExp(name, "u") }),
-  );
-  answers.forEach((button, index) => {
+  await slot.findByTestId("captain-needs-you");
+  ["Redis", "SQLite", "No cache"].forEach((name, index) => {
+    const button = slot.getByRole("button", { name: new RegExp(name, "u") });
     expect(button.getAttribute("aria-keyshortcuts")).toBe(String(index + 1));
     expect(button.textContent).not.toMatch(/\d/u);
   });
   const later = slot.getByRole("button", { name: "Later" });
-  const skip = slot.getByRole("button", { name: "Skip" });
   expect(later.getAttribute("aria-keyshortcuts")).toBe("L");
-  expect(skip.getAttribute("aria-keyshortcuts")).toBe("S");
-  for (const button of [...answers, later, skip]) {
-    expect(button.querySelector("[aria-hidden]")).toBeNull();
-  }
-  // The label reads whole, and no element inside the button frames a part of
-  // it, such as its first letter; a span wrapping the whole word is fine.
-  for (const [button, label] of [
-    [later, "Later"],
-    [skip, "Skip"],
-  ] as const) {
-    expect(button.textContent).toBe(label);
-    const framed = [...button.querySelectorAll("*")].filter((each) => each.textContent !== label);
-    expect(framed.map((each) => each.textContent)).toEqual([]);
-  }
+  expect(later.textContent).toBe("");
+  expect(slot.queryByRole("button", { name: "Skip" })).toBeNull();
+});
+
+test("unfocused and pointer-focused controls do not arm letter or number shortcuts", async () => {
+  const { slot, of } = render(CAPTAIN, [decision]);
+  const card = await slot.findByTestId("captain-needs-you");
+  fireEvent.keyDown(card, { key: "1" });
+  const later = slot.getByRole("button", { name: "Later" });
+  fireEvent.pointerDown(later);
+  const matches = later.matches.bind(later);
+  const pointerFocus = vi
+    .spyOn(later, "matches")
+    .mockImplementation((selector) => (selector === ":focus-visible" ? false : matches(selector)));
+  act(() => later.focus());
+  fireEvent.keyDown(later, { key: "L" });
+  fireEvent.keyDown(later, { key: "2" });
+  pointerFocus.mockRestore();
+  expect(of("resolveAsk")).toEqual([]);
+  expect(of("defer")).toEqual([]);
 });
 
 test("Enter picks the recommended option only when the banner itself has focus", async () => {
   const { slot, of } = render(CAPTAIN, [decision]);
   const card = await slot.findByTestId("captain-needs-you");
   fireEvent.keyDown(slot.getByRole("button", { name: /Later/u }), { key: "Enter" });
+  act(() => card.focus());
   fireEvent.keyDown(card, { key: "Enter" });
   await waitFor(() =>
     expect(of("resolveAsk").map((call) => call.input)).toEqual([{ askId: "a1", answer: "Redis" }]),
@@ -228,7 +255,7 @@ test("a ship ask offers no Other…, and More expands the full detail", async ()
  * all, so open it never looks clipped. The ResizeObserver reports after each
  * layout, as the browser's does.
  */
-function layOut(layout: { lines: number; content: number }) {
+function layOut(layout: { lines: number; content: number; horizontalOverflow?: boolean }) {
   const observers = new Set<{ callback: ResizeObserverCallback; targets: Set<Element> }>();
   const box = (element: Element) =>
     element.hasAttribute("data-detail-box")
@@ -254,6 +281,16 @@ function layOut(layout: { lines: number; content: number }) {
     get(this: HTMLElement) {
       return box(this) === null ? 0 : layout.content * 16;
     },
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return box(this) !== null && layout.horizontalOverflow ? 480 : 280;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+    configurable: true,
+    get: () => 280,
   });
   globalThis.ResizeObserver = class {
     readonly entry: { callback: ResizeObserverCallback; targets: Set<Element> };
@@ -288,10 +325,12 @@ function layOut(layout: { lines: number; content: number }) {
     restore() {
       globalThis.ResizeObserver = previous;
       const prototype = HTMLElement.prototype as Partial<
-        Record<"clientHeight" | "scrollHeight", number>
+        Record<"clientHeight" | "scrollHeight" | "clientWidth" | "scrollWidth", number>
       >;
       delete prototype.clientHeight;
       delete prototype.scrollHeight;
+      delete prototype.clientWidth;
+      delete prototype.scrollWidth;
     },
   };
 }
@@ -465,7 +504,7 @@ test("the next item starts collapsed, whatever the last one showed", async () =>
     const card = await slot.findByTestId("captain-needs-you");
     expect(card.textContent).toContain("Grant the crew a deploy key");
     act(() => slot.getByRole("button", { name: "More" }).click());
-    act(() => slot.getByRole("button", { name: "Skip" }).click());
+    act(() => slot.getByRole("tab", { name: /Pick the cache backend/u }).click());
     await waitFor(() => expect(card.textContent).toContain("Pick the cache backend"));
     expect(slot.getByRole("button", { name: "More" }).getAttribute("aria-expanded")).toBe("false");
   } finally {
@@ -555,57 +594,43 @@ test("a click on a chip in the collapsed detail acts and leaves the detail as it
   }
 });
 
-test("Later and Skip clicks defer the item on show", async () => {
+test("the Later icon defers the item on show", async () => {
   const { slot, of } = render(CAPTAIN, [decision]);
   await slot.findByTestId("captain-needs-you");
-  act(() => slot.getByRole("button", { name: "Skip" }).click());
   act(() => slot.getByRole("button", { name: "Later" }).click());
   await waitFor(() =>
     expect(of("defer").map((call) => call.input)).toEqual([
-      { captainId: CAPTAIN, key: "ask:a1", action: "skip" },
       { captainId: CAPTAIN, key: "ask:a1", action: "later" },
     ]),
   );
 });
 
-test("an empty queue shows Since you left; a count opens its tasks and Mark seen advances the cutoff", async () => {
-  const { slot, of } = render(CAPTAIN, [], {
-    since: {
-      cutoff: NOW - 3_600_000,
-      done: [
-        { task: "PLUG-1", title: "One", threadId: null },
-        { task: "PLUG-2", title: "Two", threadId: null },
-      ],
-      ready: [{ task: "PLUG-3", title: "Three", threadId: null }],
-      failed: [],
+test("an empty queue is one clear line with an action that opens Captain Overview", async () => {
+  const { slot, calls } = render(CAPTAIN, []);
+  const overview = await slot.findByRole("button", { name: "Overview" });
+  expect(overview.parentElement?.textContent).toBe("All clearOverview");
+  expect(overview.parentElement?.querySelector("ul")).toBeNull();
+  fireEvent.click(overview);
+  expect(slot.experimental_panelCalls).toEqual([
+    {
+      method: "openTab",
+      options: {
+        tab: {
+          id: "overview",
+          context: { kind: "thread" },
+          availability: "fixed",
+        },
+      },
     },
-  });
-  const line = await slot.findByTestId("captain-since");
-  expect(line.textContent).toContain("All clear · since you left:");
-  expect(line.textContent).toContain("2 done");
-  expect(line.textContent).toContain("1 ready to ship");
-  expect(line.textContent).not.toContain("failed");
-  act(() => slot.getByRole("button", { name: "2 done" }).click());
-  expect(slot.getByRole("link", { name: "PLUG-2" }).getAttribute("href")).toBe(
-    "/plugins/scott-tasks/tasks/task/PLUG-2",
-  );
-  act(() => slot.getByRole("button", { name: "Mark seen" }).click());
-  await waitFor(() => expect(of("markSeen")).toHaveLength(1));
+  ]);
+  expect(calls.map(({ method }) => method).sort()).toEqual(["asks", "captains", "crew"]);
 });
 
-test("an empty queue with nothing since you left draws nothing", async () => {
-  const { slot, of } = render(CAPTAIN, []);
-  await waitFor(() => expect(of("sinceYouLeft")).toHaveLength(1));
-  expect(slot.queryByTestId("captain-since")).toBeNull();
-  expect(slot.queryByTestId("captain-needs-you")).toBeNull();
-});
-
-test("leaving the thread records last seen; showing it does not", async () => {
-  const { slot, of } = render(CAPTAIN, [decision]);
-  await slot.findByTestId("captain-needs-you");
-  expect(of("markSeen")).toHaveLength(0);
-  slot.lifecycle.unmount();
-  await waitFor(() => expect(of("markSeen")).toHaveLength(1));
+test("unavailable crew does not report All clear", async () => {
+  const { slot } = render(CAPTAIN, [], { crewFails: true });
+  await slot.findByText("Crew status unavailable");
+  expect(slot.queryByText("All clear")).toBeNull();
+  expect(slot.getByRole("button", { name: "Overview" })).toBeDefined();
 });
 
 test("a blocked crew row opens its thread", async () => {
@@ -622,7 +647,7 @@ test("a blocked crew row opens its thread", async () => {
     skipOrder: null,
   };
   const { slot } = render(CAPTAIN, [decision], { crew: [blocked] });
-  await slot.findByText("Implement needs you: secrets request: UNITY_TOKEN");
+  await slot.findByRole("button", { name: "Open thread" });
   act(() => slot.getByRole("button", { name: /Open thread/u }).click());
   expect(slot.inspection.navigateCalls).toEqual([
     expect.objectContaining({ method: "toThread", threadId: "thr_crew" }),
@@ -634,6 +659,7 @@ test("when the crew read fails, asks still show, the card says so, and Skip stil
   const card = await slot.findByTestId("captain-needs-you");
   await waitFor(() => expect(card.textContent).toContain("crew not read"));
   expect(card.textContent).toContain("Pick the cache backend");
+  act(() => card.focus());
   fireEvent.keyDown(card, { key: "s" });
   await waitFor(() =>
     expect(of("defer").map((call) => call.input)).toEqual([
@@ -667,7 +693,7 @@ test("an errored Captain thread's Retry re-submits its failed turn", async () =>
       },
     },
   });
-  await slot.findByText("Captain thread errored");
+  await slot.findByRole("button", { name: "Retry" });
   const retry = slot.getByRole("button", { name: /Retry/u });
   // Retry is the only action, not a recommendation among options.
   expect(retry.textContent).not.toContain("Recommended");
@@ -695,4 +721,252 @@ test("a Captain's closed panel is never opened by the banner", async () => {
   await waitFor(() => expect(of("asks").length).toBeGreaterThan(0));
   await new Promise((settle) => setTimeout(settle, 30));
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("a ship panel does not answer on implicit Enter, and its Merge and Hold actions still work", async () => {
+  const ship = { ...decision, askKind: "ship", options: ["Merge", "Hold"] } as const;
+  const { slot, of } = render(CAPTAIN, [{ ...ship, options: [...ship.options] }]);
+  const card = await slot.findByTestId("captain-needs-you");
+  act(() => card.focus());
+  fireEvent.keyDown(card, { key: "Enter" });
+  expect(of("resolveAsk")).toEqual([]);
+  expect(slot.getByRole("button", { name: "Merge Recommended" })).toBeDefined();
+  fireEvent.click(slot.getByRole("button", { name: "Hold" }));
+  await waitFor(() =>
+    expect(of("resolveAsk").map(({ input }) => input)).toEqual([{ askId: "a1", answer: "Hold" }]),
+  );
+});
+
+test("a Plan decision opens its full detail from the action row", async () => {
+  const plan = {
+    ...decision,
+    text: "Approve the plan · Board drag reorder",
+    options: ["Approve", "Revise"],
+  };
+  const { slot } = render(CAPTAIN, [plan]);
+  const read = await slot.findByRole("button", { name: "Read plan" });
+  expect(read.getAttribute("aria-expanded")).toBe("false");
+  expect(slot.queryByRole("tablist")).toBeNull();
+  act(() => read.click());
+  expect(read.getAttribute("aria-expanded")).toBe("true");
+  const details = document.getElementById(read.getAttribute("aria-controls")!);
+  expect(details?.textContent).toContain(plan.detail);
+});
+
+test("two in-flight answers each have a selectable Sending panel until delivered", async () => {
+  const delivered = new Set<string>();
+  const release = new Map<string, () => void>();
+  const { slot } = render(
+    CAPTAIN,
+    () => [decision, access].filter((item) => !delivered.has(item.id)),
+    {
+      resolve: ({ askId }) =>
+        new Promise((done) => {
+          release.set(askId, () => {
+            delivered.add(askId);
+            done({ state: "answered", warnings: [] });
+          });
+        }),
+    },
+  );
+  fireEvent.click(await slot.findByRole("button", { name: "Grant read-write" }));
+  fireEvent.click(await slot.findByRole("button", { name: "SQLite" }));
+  const decisionTab = await slot.findByRole("tab", { name: /Pick the cache/u });
+  const accessTab = slot.getByRole("tab", { name: /Grant the crew/u });
+  fireEvent.click(decisionTab);
+  const panel = slot.getByRole("tabpanel");
+  expect(panel.textContent).toContain('Answered "SQLite"');
+  expect(panel.getAttribute("aria-labelledby")).toBe(decisionTab.id);
+
+  act(() => decisionTab.focus());
+  fireEvent.keyDown(decisionTab, { key: "ArrowRight" });
+  expect(document.activeElement).toBe(accessTab);
+  expect(accessTab.getAttribute("aria-selected")).toBe("true");
+  expect(panel.getAttribute("aria-labelledby")).toBe(accessTab.id);
+  expect(panel.textContent).toContain('Answered "Grant read-write"');
+
+  await act(async () => release.get("a2")!());
+  await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  await waitFor(() => expect(slot.getAllByRole("tab")).toEqual([decisionTab]));
+  expect(panel.textContent).toContain('Answered "SQLite"');
+  await act(async () => release.get("a1")!());
+  await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  await waitFor(() => expect(slot.queryByRole("tabpanel")).toBeNull());
+});
+
+test("a short plain line has neither fade nor More", async () => {
+  const layout = layOut({ lines: 1, content: 1 });
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    const card = await slot.findByTestId("captain-needs-you");
+    expect(slot.queryByRole("button", { name: "More" })).toBeNull();
+    expect(card.querySelector("[data-preview-fade]")).toBeNull();
+  } finally {
+    layout.restore();
+  }
+});
+
+test.each([
+  ["Mermaid", "<div><div><button>Expand diagram</button></div></div>"],
+  ["code", "<button>Copy</button><pre><code>bun test</code></pre>"],
+])("a single-line %s preview that hides part of the block offers More", async (_kind, markup) => {
+  const layout = layOut({ lines: 1, content: 1 });
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    const card = await slot.findByTestId("captain-needs-you");
+    const frame = document.createElement("div");
+    frame.innerHTML = markup;
+    card.querySelector("[data-detail-box]")!.append(frame);
+    layout.relayout({ lines: 1, content: 1 });
+    expect(slot.getByRole("button", { name: "More" })).toBeDefined();
+    expect(card.querySelector("[data-preview-fade]")).toBeNull();
+  } finally {
+    layout.restore();
+  }
+});
+
+test("a single line clipped horizontally offers More", async () => {
+  const layout = layOut({ lines: 1, content: 1, horizontalOverflow: true });
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    await slot.findByTestId("captain-needs-you");
+    fireEvent.click(slot.getByRole("button", { name: "More" }));
+    expect(slot.getByRole("button", { name: "Less" })).toBeDefined();
+  } finally {
+    layout.restore();
+  }
+});
+
+test("Later comes before the accessible pen button and Other replaces the action row", async () => {
+  const { slot } = render(CAPTAIN, [decision]);
+  const trigger = await slot.findByRole("button", { name: "Other…" });
+  const later = slot.getByRole("button", { name: "Later" });
+  expect(later.nextElementSibling).toBe(trigger);
+  expect(trigger.querySelector("svg[aria-hidden=true]")).not.toBeNull();
+  fireEvent.click(trigger);
+  const input = slot.getByRole("textbox", { name: "Your answer" });
+  expect(document.activeElement).toBe(input);
+  expect(slot.queryByRole("button", { name: "Later" })).toBeNull();
+  expect(slot.queryByRole("button", { name: "SQLite" })).toBeNull();
+  fireEvent.keyDown(input, { key: "Escape" });
+  const returned = slot.getByRole("button", { name: "Other…" });
+  expect(document.activeElement).toBe(returned);
+  fireEvent.click(returned);
+  fireEvent.click(slot.getByRole("button", { name: "Cancel" }));
+  expect(document.activeElement).toBe(slot.getByRole("button", { name: "Other…" }));
+});
+
+test("a rejected typed answer leaves the draft focused in the answer row", async () => {
+  let fail!: (error: Error) => void;
+  const { slot } = render(CAPTAIN, [decision], {
+    resolve: () =>
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+  });
+  fireEvent.click(await slot.findByRole("button", { name: "Other…" }));
+  const input = slot.getByRole("textbox", { name: "Your answer" }) as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "Keep it local" } });
+  fireEvent.submit(input.form!);
+  expect(input.readOnly).toBe(true);
+  expect(document.activeElement).toBe(input);
+  await waitFor(() => expect(fail).toBeTypeOf("function"));
+  await act(async () => fail(new Error("Try again")));
+  await slot.findByText("Try again");
+  expect(input.value).toBe("Keep it local");
+  expect(input.readOnly).toBe(false);
+  expect(document.activeElement).toBe(input);
+});
+
+function delayedAnswer() {
+  type Acknowledgement = { state: "answered"; warnings: string[] };
+  let resolve!: (result: Acknowledgement) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<Acknowledgement>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+test.each(["answered", "failed"] as const)(
+  "Other on a second ask stays editable and focused when the first submit is %s",
+  async (result) => {
+    const response = delayedAnswer();
+    const { slot, of } = render(CAPTAIN, [decision, access], {
+      resolve: () => response.promise,
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Other…" }));
+    const first = slot.getByRole("textbox", { name: "Your answer" }) as HTMLInputElement;
+    fireEvent.change(first, { target: { value: "Read-only, for one day" } });
+    fireEvent.submit(first.form!);
+    await waitFor(() => expect(of("resolveAsk")).toHaveLength(1));
+
+    fireEvent.click(slot.getByRole("tab", { name: /Pick the cache/u }));
+    fireEvent.click(slot.getByRole("button", { name: "Other…" }));
+    const second = slot.getByRole("textbox", { name: "Your answer" }) as HTMLInputElement;
+    fireEvent.change(second, { target: { value: "Use the shared cache" } });
+    const editableWhileFirstPending = !second.readOnly;
+    const canCancelWhileFirstPending = !slot
+      .getByRole("button", { name: "Cancel" })
+      .hasAttribute("disabled");
+    await act(async () => {
+      if (result === "failed") response.reject(new Error("Access answer failed"));
+      else response.resolve({ state: "answered", warnings: [] });
+    });
+
+    expect(document.activeElement).toBe(second);
+    expect(second.value).toBe("Use the shared cache");
+    expect(slot.queryByText("Access answer failed")).toBeNull();
+    expect(editableWhileFirstPending).toBe(true);
+    expect(canCancelWhileFirstPending).toBe(true);
+  },
+);
+
+test("refresh removing the submitting editor restores focus and arms the next ask's shortcuts", async () => {
+  const response = delayedAnswer();
+  let recorded = false;
+  const { slot, of } = render(CAPTAIN, () => [decision, ...(recorded ? [] : [access])], {
+    resolve: ({ askId }) =>
+      askId === access.id ? response.promise : Promise.resolve({ state: "answered", warnings: [] }),
+  });
+  fireEvent.click(await slot.findByRole("button", { name: "Other…" }));
+  const first = slot.getByRole("textbox", { name: "Your answer" }) as HTMLInputElement;
+  fireEvent.change(first, { target: { value: "Read-only, for one day" } });
+  fireEvent.submit(first.form!);
+  await waitFor(() => expect(of("resolveAsk")).toHaveLength(1));
+  recorded = true;
+  await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  await waitFor(() => expect(slot.queryByRole("textbox")).toBeNull());
+
+  const next = slot.getByRole("tab", { name: /Pick the cache/u });
+  expect(document.activeElement).toBe(next);
+  fireEvent.keyDown(next, { key: "2" });
+  await waitFor(() =>
+    expect(of("resolveAsk").at(-1)?.input).toEqual({ askId: "a1", answer: "SQLite" }),
+  );
+  await act(async () => response.resolve({ state: "answered", warnings: [] }));
+});
+
+test.each([
+  { state: "empty", items: [] },
+  { state: "populated", items: [decision] },
+])("an asks refresh error reports stale status and keeps the $state queue", async ({ items }) => {
+  let failing = false;
+  const { slot } = render(CAPTAIN, () => {
+    if (failing) throw new Error("Asks RPC unavailable");
+    return items;
+  });
+  if (items.length) await slot.findByRole("tab", { name: /Pick the cache/u });
+  else await slot.findByText("All clear");
+
+  failing = true;
+  await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  await slot.findByText("Couldn’t refresh asks");
+  expect(slot.queryByText("All clear")).toBeNull();
+  if (items.length) expect(slot.getByRole("tab", { name: /Pick the cache/u })).toBeDefined();
+
+  failing = false;
+  await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  await waitFor(() => expect(slot.queryByText("Couldn’t refresh asks")).toBeNull());
 });

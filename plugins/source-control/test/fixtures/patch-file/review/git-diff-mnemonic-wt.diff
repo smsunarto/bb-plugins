@@ -1,0 +1,9 @@
+diff --git i/keep.txt w/keep.txt
+index 75cff79..764f043 100644
+--- i/keep.txt
++++ w/keep.txt
+@@ -39,3 +39,4 @@ thirty-five
+ 38
+ 39
+ 40
++zz

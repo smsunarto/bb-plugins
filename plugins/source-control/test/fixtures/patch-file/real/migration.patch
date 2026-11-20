@@ -1,0 +1,898 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # Web Clone
+ 
+-English adaptation of [Jane Xiaoer's Web Clone skill](https://github.com/Jane-xiaoer/claude-skill-web-clone), upstream skill version 1.6.0. Jane's [MIT license](LICENSE) applies to this copy. The bundled scripts are the upstream originals and may print some messages or generate templates in Chinese.
++English adaptation of [Jane Xiaoer's Web Clone skill](https://github.com/Jane-xiaoer/claude-skill-web-clone), upstream skill version 1.6.0. Jane's [MIT license](LICENSE) applies to this copy. The browser scripts were adapted to use agent-browser. Some bundled messages and generated templates are in Chinese.
+ 
+ Open [SKILL.md](SKILL.md) for the source-first workflow. It covers plain static mirrors, content-site rebuilds, multi-page capture, and WebGL or Canvas analysis. It uses responsive screenshots, interaction probes, and browser checks to document what the resulting site reproduces.
+ 
+@@ -8,7 +8,7 @@
+ 
+ Place the entire `web-clone` directory in the agent's skills directory, or point the agent at `SKILL.md` in this directory. Keep `references/` and `scripts/` next to it.
+ 
+-The browser probes use Node.js, Playwright, and Chromium. Install Playwright where the scripts can resolve it. From the skill directory, run `npm install --no-save playwright` and `npx playwright install chromium`. Set `skill_dir` to the installed directory in the workflow examples.
++The browser probes use Node.js and the [agent-browser CLI](https://agent-browser.dev/). Put `agent-browser` on your PATH and run `agent-browser install` if Chrome is missing. This bundle was tested with agent-browser 0.42.0. Set `skill_dir` to the installed directory in the workflow examples.
+ 
+ Example requests:
+ 
+diff --git a/SKILL.md b/SKILL.md
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -42,7 +42,7 @@
+ 
+ ## 3. Inspect and assess the site
+ 
+-Use Playwright or the available browser automation tool. For an authorized private page, use the browser session provided for that page. Keep public and localhost captures in a separate automation session.
++Use agent-browser for browser inspection. Read its core skill with `agent-browser skills get core` before driving it directly. The bundled commands create and close isolated sessions for public and localhost captures. For an authorized private page, run agent-browser directly in the session provided for that page.
+ 
+ Run the first command to identify the framework, canvas count, scrolling libraries, fonts, and page height. Confirm that it saved the capture JSON and screenshots at 1440, 768, and 390 pixels. Run the remaining probes when their evidence is relevant.
+ 
+diff --git a/references/static-mirror.md b/references/static-mirror.md
+--- a/references/static-mirror.md
++++ b/references/static-mirror.md
+@@ -11,7 +11,7 @@
+   --url "$source_url" --out "$project_dir"
+ ```
+ 
+-The script scrolls the page and downloads same-origin assets through the browser network stack. Review these outputs:
++The script scrolls the page and writes same-origin response bodies recorded by agent-browser. If the HAR omits a successful same-origin GET body, the script downloads the observed URL in the same browser session. Check the terminal output for failed downloads. Review these outputs:
+ 
+ | Path | Contents |
+ |---|---|
+diff --git a/scripts/interaction-probe.mjs b/scripts/interaction-probe.mjs
+--- a/scripts/interaction-probe.mjs
++++ b/scripts/interaction-probe.mjs
+@@ -2,7 +2,7 @@
+ import fs from "node:fs";
+ import path from "node:path";
+ import crypto from "node:crypto";
+-import { loadPlaywright, launchChromium } from "./lib/playwright-loader.mjs";
++import { captureTraffic, navigate, resourceType, withBrowser } from "./lib/browser.mjs";
+ 
+ function usage() {
+   console.log(`Usage:
+@@ -186,44 +186,54 @@
+   return JSON.stringify(before.counts) !== JSON.stringify(after.counts);
+ }
+ 
+-async function freshPage(browser, args, network, consoleErrors) {
+-  const page = await browser.newPage({ viewport: { width: args.width, height: 900 }, deviceScaleFactor: 1 });
+-  page.on("console", (message) => {
+-    if (message.type() === "error") consoleErrors.push(message.text());
+-  });
+-  page.on("response", (response) => {
+-    const request = response.request();
+-    if (["xhr", "fetch"].includes(request.resourceType())) {
+-      network.push({ url: response.url(), status: response.status(), method: request.method(), resourceType: request.resourceType() });
+-    }
+-  });
+-  await page.goto(args.url, { waitUntil: "domcontentloaded", timeout: 45000 });
+-  await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
+-  if (args.waitMs > 0) await page.waitForTimeout(args.waitMs);
+-  return page;
++async function captureSession(args, network, consoleErrors, run) {
++  return withBrowser({ width: args.width, height: 900 }, async (browser) => {
++    const { entries, result } = await captureTraffic(browser, "none", async () => {
++      await navigate(browser, args.url, { idleMs: 6000, waitMs: args.waitMs });
++      return run(browser);
++    });
++    for (const entry of entries) {
++      const type = resourceType(entry);
++      if (["xhr", "fetch"].includes(type) && entry.response.status > 0) {
++        network.push({
++          url: entry.request.url,
++          status: entry.response.status,
++          method: entry.request.method,
++          resourceType: type,
++        });
++      }
++    }
++    for (const { type, text } of browser.consoleMessages()) {
++      if (type === "error") consoleErrors.push(text);
++    }
++    return result;
++  });
+ }
+ 
+ async function captureAction(page, outDir, index, action, before) {
+   if (action.type === "scroll") {
+     await page.evaluate((ratio) => window.scrollTo({ top: Math.round((document.documentElement.scrollHeight - window.innerHeight) * ratio), behavior: "instant" }), action.ratio);
+   } else if (action.type === "hover") {
+-    await page.locator(action.selector).first().hover({ timeout: 3000 });
++    page.command(["hover", action.selector], { timeoutMs: 4_000 });
+   } else if (action.type === "click") {
+-    await page.locator(action.selector).first().click({ timeout: 4000 });
++    page.command(["click", action.selector], { timeoutMs: 5_000 });
+   } else if (action.type === "canvas-drag") {
+     const rect = action.rect;
+     const x = rect.x + rect.width / 2;
+     const y = rect.y + rect.height / 2;
+-    await page.mouse.move(x, y);
+-    await page.mouse.down();
+-    await page.mouse.move(x + Math.min(180, rect.width * 0.25), y + Math.min(120, rect.height * 0.2), { steps: 8 });
+-    await page.mouse.up();
+-  }
+-  await page.waitForTimeout(450);
++    page.command(["mouse", "move", x, y]);
++    page.command(["mouse", "down", "left"]);
++    try {
++      page.command(["mouse", "move", x + Math.min(180, rect.width * 0.25), y + Math.min(120, rect.height * 0.2), "--steps", 8]);
++    } finally {
++      page.command(["mouse", "up", "left"]);
++    }
++  }
++  page.command(["wait", 450]);
+   const after = await hashSnapshot(page, await snapshot(page));
+   const screenshotName = `${String(index + 1).padStart(2, "0")}-${safeFileName(`${action.type}-${action.target || action.selector || "page"}`)}-${shortHash(JSON.stringify(action))}.png`;
+   const screenshotPath = path.join(outDir, "screenshots", screenshotName);
+-  await page.screenshot({ path: screenshotPath, fullPage: true });
++  page.screenshot(screenshotPath);
+   return {
+     ...action,
+     before,
+@@ -243,16 +253,15 @@
+   const outDir = path.resolve(args.outDir);
+   fs.mkdirSync(path.join(outDir, "screenshots"), { recursive: true });
+ 
+-  const { chromium } = loadPlaywright();
+-  const browser = await launchChromium(chromium);
+   const network = [];
+   const consoleErrors = [];
+ 
+-  const seedPage = await freshPage(browser, args, network, consoleErrors);
+-  const initial = await hashSnapshot(seedPage, await snapshot(seedPage));
+-  const discovered = await candidates(seedPage);
+-  await seedPage.screenshot({ path: path.join(outDir, "screenshots", "00-initial.png"), fullPage: true });
+-  await seedPage.close();
++  const { initial, discovered } = await captureSession(args, network, consoleErrors, async (page) => {
++    const initial = await hashSnapshot(page, await snapshot(page));
++    const discovered = await candidates(page);
++    page.screenshot(path.join(outDir, "screenshots", "00-initial.png"));
++    return { initial, discovered };
++  });
+ 
+   const actions = [
+     { type: "scroll", target: "middle", ratio: 0.5 },
+@@ -264,25 +273,17 @@
+ 
+   const results = [];
+   for (let index = 0; index < actions.length; index += 1) {
+-    const page = await freshPage(browser, args, network, consoleErrors);
+-    const before = await hashSnapshot(page, await snapshot(page));
+-    try {
+-      results.push(await captureAction(page, outDir, index, actions[index], before));
+-    } catch (error) {
+-      results.push({
+-        ...actions[index],
+-        before,
+-        after: before,
+-        changed: false,
+-        screenshot: "",
+-        error: error.message,
+-      });
+-    } finally {
+-      await page.close();
+-    }
+-  }
+-
+-  await browser.close();
++    const action = actions[index];
++    const result = await captureSession(args, network, consoleErrors, async (page) => {
++      const before = await hashSnapshot(page, await snapshot(page));
++      try {
++        return await captureAction(page, outDir, index, action, before);
++      } catch (error) {
++        return { ...action, before, after: before, changed: false, screenshot: "", error: error.message };
++      }
++    });
++    results.push(result);
++  }
+ 
+   const changedCount = results.filter((action) => action.changed).length;
+   const findings = [
+diff --git a/scripts/lib/browser.mjs b/scripts/lib/browser.mjs
+--- /dev/null
++++ b/scripts/lib/browser.mjs
+@@ -0,0 +1,102 @@
++import { spawnSync } from "node:child_process";
++import { randomUUID } from "node:crypto";
++import { mkdtempSync, readFileSync, rmSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++
++export async function withBrowser(viewport, run) {
++  const session = `web-clone-${randomUUID()}`;
++
++  function command(args, { input, timeoutMs = 60_000 } = {}) {
++    const result = spawnSync("agent-browser", [
++      "--session", session, "--json", ...args.map(String),
++    ], {
++      encoding: "utf8",
++      input,
++      timeout: timeoutMs,
++      maxBuffer: 64 * 1024 * 1024,
++    });
++    if (result.error?.code === "ENOENT") {
++      throw new Error("agent-browser is required. Install it and run agent-browser install.");
++    }
++    if (result.error) throw result.error;
++
++    let response;
++    try {
++      response = JSON.parse(result.stdout);
++    } catch {
++      throw new Error(result.stderr.trim() || `agent-browser ${args[0]} returned invalid JSON`);
++    }
++    if (!response.success || result.status !== 0) {
++      throw new Error(response.error || `agent-browser ${args[0]} failed`);
++    }
++    return response.data;
++  }
++
++  const browser = {
++    command,
++    evaluate(fn, arg) {
++      const expression = `(${fn})(${JSON.stringify(arg) ?? ""})`;
++      return command(["eval", "--stdin"], { input: expression }).result;
++    },
++    screenshot(file) {
++      command(["screenshot", "--full", "--screenshot-format", "png", file]);
++    },
++    consoleMessages() {
++      return command(["console"]).messages;
++    },
++  };
++
++  let runError;
++  try {
++    const { width, height, scale = 1 } = viewport ?? { width: 1920, height: 1080, scale: 2 };
++    command(["set", "viewport", width, height, scale]);
++    return await run(browser);
++  } catch (error) {
++    runError = error;
++    throw error;
++  } finally {
++    try {
++      command(["close"], { timeoutMs: 10_000 });
++    } catch (error) {
++      if (!runError) throw error;
++    }
++  }
++}
++
++export async function navigate(browser, url, { idleMs = 0, waitMs = 0, timeoutMs = 45_000 } = {}) {
++  browser.command(["open", url], { timeoutMs });
++  if (idleMs > 0) {
++    try {
++      browser.command(["wait", "--load", "networkidle", "--timeout", idleMs], { timeoutMs: idleMs + 5_000 });
++    } catch {
++      // A busy page can still be captured.
++    }
++  }
++  if (waitMs > 0) browser.command(["wait", waitMs], { timeoutMs: waitMs + 5_000 });
++}
++
++// Keep the raw HAR temporary. Callers receive the structured traffic used by their report.
++export async function captureTraffic(browser, mode, run) {
++  const dir = mkdtempSync(join(tmpdir(), "web-clone-har-"));
++  try {
++    browser.command(["network", "har", "start", "--content", mode]);
++    const result = await run();
++    const file = join(dir, "traffic.har");
++    browser.command(["network", "har", "stop", file]);
++    const entries = JSON.parse(readFileSync(file, "utf8")).log.entries;
++    return { result, entries };
++  } finally {
++    rmSync(dir, { recursive: true, force: true });
++  }
++}
++
++export function resourceType(entry) {
++  return (entry._resourceType || "other").toLowerCase();
++}
++
++export function responseBody(response) {
++  const { encoding, text } = response.content;
++  if (typeof text !== "string") return null;
++  return Buffer.from(text, encoding === "base64" ? "base64" : "utf8");
++}
+diff --git a/scripts/lib/playwright-loader.mjs b/scripts/lib/playwright-loader.mjs
+--- a/scripts/lib/playwright-loader.mjs
++++ /dev/null
+@@ -1,32 +0,0 @@
+-import { createRequire } from "node:module";
+-
+-const require = createRequire(import.meta.url);
+-
+-export function loadPlaywright() {
+-  const candidates = [
+-    "playwright",
+-    "/Users/jane/.shared-skills/Browser/node_modules/playwright",
+-    "/Users/jane/ZenDrop/node_modules/playwright",
+-    "/Users/jane/.nvm/versions/node/v22.14.0/lib/node_modules/@playwright/mcp/node_modules/playwright",
+-  ];
+-  for (const candidate of candidates) {
+-    try {
+-      return require(candidate);
+-    } catch {
+-      // Try next candidate.
+-    }
+-  }
+-  throw new Error("Playwright not found. Run `npm install -D playwright` in the clone project, or install the Browser skill dependencies.");
+-}
+-
+-export async function launchChromium(chromium) {
+-  try {
+-    return await chromium.launch({ headless: true });
+-  } catch (firstError) {
+-    try {
+-      return await chromium.launch({ headless: true, channel: "chrome" });
+-    } catch {
+-      throw firstError;
+-    }
+-  }
+-}
+diff --git a/scripts/mirror-site.mjs b/scripts/mirror-site.mjs
+--- a/scripts/mirror-site.mjs
++++ b/scripts/mirror-site.mjs
+@@ -13,8 +13,9 @@
+ //       后续手工: 自托管锁域名字体(典型 Typekit @import) → 改写 CSS @import 为本地 → 删追踪 → 从 site/ 作 web 根服务。
+ //       完整配方见 references/static-mirror.md。
+ 
+-import { loadPlaywright, launchChromium } from "./lib/playwright-loader.mjs";
++import { captureTraffic, navigate, resourceType, responseBody, withBrowser } from "./lib/browser.mjs";
+ import fs from "node:fs";
++import { randomUUID } from "node:crypto";
+ import path from "node:path";
+ 
+ function parseArgs(argv) {
+@@ -50,6 +51,25 @@
+   return p.replace(/^\/+/, "");
+ }
+ 
++function downloadAsset(browser, url, dest) {
++  const id = `web-clone-download-${randomUUID()}`;
++  browser.evaluate(({ id, url }) => {
++    if (new URL(url).origin !== location.origin) throw new Error("Asset requires a same-origin page");
++    const link = document.createElement("a");
++    link.id = id;
++    link.href = url;
++    link.download = "";
++    link.textContent = "Download asset";
++    link.style.cssText = "position:fixed;top:0;left:0;z-index:2147483647;background:white";
++    document.documentElement.append(link);
++  }, { id, url });
++  try {
++    browser.command(["download", `#${id}`, dest]);
++  } finally {
++    browser.evaluate((id) => document.getElementById(id)?.remove(), id);
++  }
++}
++
+ const args = parseArgs(process.argv.slice(2));
+ if (args.help || !args.url || !args.out) {
+   usage();
+@@ -60,62 +80,82 @@
+ const siteDir = path.join(path.resolve(args.out), "site");
+ fs.mkdirSync(siteDir, { recursive: true });
+ 
+-const responses = new Map(); // url -> {status, type, ct}
+-const pw = loadPlaywright();
+-const browser = await launchChromium(pw.chromium);
+-const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+-const page = await ctx.newPage();
+-page.on("response", (resp) => {
+-  try {
+-    const h = resp.headers();
+-    responses.set(resp.url(), { status: resp.status(), type: resp.request().resourceType(), ct: h["content-type"] || "" });
+-  } catch {}
++console.log(`▸ 加载 + 全程滚动捕获: ${args.url}`);
++const { all, ownUrls, ok, failed } = await withBrowser({ width: 1440, height: 900 }, async (browser) => {
++  const { entries } = await captureTraffic(browser, "all", async () => {
++    await navigate(browser, args.url, { idleMs: args.maxMs, timeoutMs: args.maxMs });
++    const total = browser.evaluate(() => document.documentElement.scrollHeight);
++    for (let y = 0; y <= total; y += args.scrollStep) {
++      browser.evaluate((yy) => window.scrollTo(0, yy), y);
++      browser.command(["wait", 180]);
++    }
++    browser.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
++    browser.command(["wait", args.settle], { timeoutMs: args.settle + 5_000 });
++    browser.evaluate(() => window.scrollTo(0, 0));
++    browser.command(["wait", 1200]);
++  });
++
++  const responses = new Map();
++  for (const entry of entries) {
++    if (entry.response.status > 0) responses.set(entry.request.url, entry);
++  }
++  const all = [...responses].map(([url, entry]) => ({
++    url,
++    status: entry.response.status,
++    type: resourceType(entry),
++    ct: entry.response.headers.find(({ name }) => name.toLowerCase() === "content-type")?.value || "",
++  }));
++  const ownUrls = all.filter(({ url }) => new URL(url).origin === origin);
++
++  function finalResponse(url) {
++    const seen = new Set();
++    while (!seen.has(url)) {
++      seen.add(url);
++      const entry = responses.get(url);
++      if (!entry?.response.redirectURL) return entry;
++      url = new URL(entry.response.redirectURL, url).href;
++    }
++    return null;
++  }
++
++  console.log(`▸ 捕获请求 ${all.length} 个；同源 ${ownUrls.length} 个，开始下载…`);
++  let ok = 0;
++  const failed = [];
++  for (const r of ownUrls) {
++    const rel = urlToLocalPath(r.url, origin);
++    const dest = path.join(siteDir, rel);
++    try {
++      const entry = finalResponse(r.url);
++      if (!entry) throw new Error("Redirect response was not captured");
++      if (entry.response.status < 200 || entry.response.status >= 300) throw new Error(`HTTP${entry.response.status}`);
++      const body = responseBody(entry.response);
++      fs.mkdirSync(path.dirname(dest), { recursive: true });
++      if (body) {
++        fs.writeFileSync(dest, body);
++      } else if (entry.request.method === "GET" && new URL(entry.request.url).origin === origin) {
++        // Larger responses may have metadata only in the HAR.
++        downloadAsset(browser, entry.request.url, dest);
++      } else {
++        throw new Error("Response body was not captured");
++      }
++      ok++;
++    } catch (e) {
++      failed.push(`${e.message} ${rel}`);
++    }
++  }
++  return { all, ownUrls, ok, failed };
+ });
+ 
+-console.log(`▸ 加载 + 全程滚动捕获: ${args.url}`);
+-await page.goto(args.url, { waitUntil: "networkidle", timeout: args.maxMs }).catch((e) => console.warn("  goto:", e.message));
+-const total = await page.evaluate(() => document.documentElement.scrollHeight);
+-for (let y = 0; y <= total; y += args.scrollStep) {
+-  await page.evaluate((yy) => window.scrollTo(0, yy), y);
+-  await page.waitForTimeout(180);
+-}
+-await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+-await page.waitForTimeout(args.settle);
+-await page.evaluate(() => window.scrollTo(0, 0));
+-await page.waitForTimeout(1200);
+-
+-const all = [...responses.entries()].map(([url, m]) => ({ url, ...m }));
+-const ownUrls = all.filter((r) => r.url.startsWith(origin + "/") || r.url === origin || r.url === origin + "/");
+-
+-console.log(`▸ 捕获请求 ${all.length} 个；同源 ${ownUrls.length} 个，开始下载…`);
+-let ok = 0, fail = 0;
+-const failed = [];
+-for (const r of ownUrls) {
+-  const rel = urlToLocalPath(r.url, origin);
+-  const dest = path.join(siteDir, rel);
+-  try {
+-    const resp = await ctx.request.get(r.url); // 复用浏览器网络栈(cookie/TUN/代理一致)
+-    if (!resp.ok()) { fail++; failed.push(`HTTP${resp.status()} ${rel}`); continue; }
+-    const buf = await resp.body();
+-    fs.mkdirSync(path.dirname(dest), { recursive: true });
+-    fs.writeFileSync(dest, buf);
+-    ok++;
+-  } catch (e) {
+-    fail++; failed.push(`${e.message} ${rel}`);
+-  }
+-}
+-
+ // 第三方 + webfont 提示
+-const thirdHosts = [...new Set(all.filter((r) => !r.url.startsWith(origin)).map((r) => { try { return new URL(r.url).host; } catch { return r.url; } }))];
++const thirdHosts = [...new Set(all.filter((r) => new URL(r.url).origin !== origin).map((r) => { try { return new URL(r.url).host; } catch { return r.url; } }))];
+ const webfontCss = all.map((r) => r.url).filter((u) => /use\.typekit\.net\/[a-z0-9]+\.css|fonts\.googleapis\.com\/css/i.test(u));
+ const outRoot = path.resolve(args.out);
+ fs.writeFileSync(path.join(outRoot, "mirror-manifest.json"), JSON.stringify(all, null, 2));
+ fs.writeFileSync(path.join(outRoot, "own-asset-urls.txt"), ownUrls.map((r) => urlToLocalPath(r.url, origin)).sort().join("\n") + "\n");
+ fs.writeFileSync(path.join(outRoot, "third-party.json"), JSON.stringify({ hosts: thirdHosts, webfont_css_to_selfhost: webfontCss }, null, 2));
+ 
+-console.log(`✅ 镜像完成: ${ok} 成功 / ${fail} 失败 → ${siteDir}`);
++console.log(`✅ 镜像完成: ${ok} 成功 / ${failed.length} 失败 → ${siteDir}`);
+ if (failed.length) console.log("  ⚠️ 失败:\n   " + failed.slice(0, 20).join("\n   "));
+ console.log(`▸ 第三方 host: ${thirdHosts.join(", ") || "(无)"}`);
+ if (webfontCss.length) console.log(`▸ 需自托管的 webfont CSS(锁域名,见 static-mirror.md): \n   ${webfontCss.join("\n   ")}`);
+ console.log(`▸ 下一步: 自托管字体 + 改写 CSS @import + 删追踪 → cd ${siteDir} && python3 -m http.server 8124`);
+-await browser.close();
+diff --git a/scripts/network-capture.mjs b/scripts/network-capture.mjs
+--- a/scripts/network-capture.mjs
++++ b/scripts/network-capture.mjs
+@@ -2,7 +2,7 @@
+ import fs from "node:fs";
+ import path from "node:path";
+ import crypto from "node:crypto";
+-import { loadPlaywright, launchChromium } from "./lib/playwright-loader.mjs";
++import { captureTraffic, navigate, resourceType, responseBody, withBrowser } from "./lib/browser.mjs";
+ 
+ function usage() {
+   console.log(`Usage:
+@@ -51,61 +51,82 @@
+   const fixturesDir = path.join(outDir, "fixtures");
+   fs.mkdirSync(fixturesDir, { recursive: true });
+ 
+-  const { chromium } = loadPlaywright();
+-  const browser = await launchChromium(chromium);
+-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
++  const { requests, responses } = await withBrowser({ width: 1440, height: 900 }, async (browser) => {
++    const { entries } = await captureTraffic(browser, "text", () =>
++      navigate(browser, args.url, { idleMs: args.waitMs, waitMs: args.waitMs })
++    );
+ 
+-  const requests = [];
+-  const responses = [];
++    const requests = entries.map((entry) => ({
++      url: entry.request.url,
++      method: entry.request.method,
++      resourceType: resourceType(entry),
++      headers: Object.fromEntries(entry.request.headers.map(({ name, value }) => [name.toLowerCase(), value])),
++      postData: entry.request.postData?.text || "",
++    }));
+ 
+-  page.on("request", (request) => {
+-    requests.push({
+-      url: request.url(),
+-      method: request.method(),
+-      resourceType: request.resourceType(),
+-      headers: request.headers(),
+-      postData: request.postData() || "",
+-    });
++    const responses = [];
++    let trackedRequests;
++    for (const requestEntry of entries) {
++      const { request, response } = requestEntry;
++      if (response.status <= 0) continue;
++
++      const contentType = response.headers.find(({ name }) => name.toLowerCase() === "content-type")?.value || "";
++      const entry = {
++        url: request.url,
++        status: response.status,
++        ok: response.status >= 200 && response.status < 300,
++        method: request.method,
++        resourceType: resourceType(requestEntry),
++        contentType,
++        fixture: "",
++        error: "",
++      };
++
++      if (shouldSave(entry.resourceType, contentType)) {
++        try {
++          let body = responseBody(response);
++          if (!body) {
++            const length = response.headers.find(({ name }) => name.toLowerCase() === "content-length")?.value;
++            const compressed = response.headers.some(({ name, value }) =>
++              name.toLowerCase() === "content-encoding" && value.toLowerCase() !== "identity"
++            );
++            if (!compressed && Number(length) > args.maxBytes) {
++              entry.error = `body too large: ${length}`;
++            } else {
++              // HAR omits large bodies. Read the original request without replaying it.
++              trackedRequests ??= browser.command(["network", "requests"]).requests;
++              const matches = trackedRequests.filter((tracked) =>
++                tracked.url === entry.url && tracked.method === entry.method &&
++                tracked.status === entry.status && tracked.resourceType.toLowerCase() === entry.resourceType
++              );
++              if (matches.length === 1) {
++                const { responseBody: text } = browser.command(["network", "request", matches[0].requestId]);
++                if (typeof text === "string" && !/^\[base64, \d+ chars\]$/.test(text)) {
++                  body = Buffer.from(text, "utf8");
++                }
++              }
++            }
++          }
++
++          if (!body) {
++            entry.error ||= "Response body was not captured";
++          } else if (body.length > args.maxBytes) {
++            entry.error = `body too large: ${body.length}`;
++          } else {
++            const file = path.join(fixturesDir, safeFixtureName(entry.url, contentType));
++            fs.writeFileSync(file, body);
++            entry.fixture = path.relative(outDir, file);
++            entry.bytes = body.length;
++          }
++        } catch (error) {
++          entry.error = error.message;
++        }
++      }
++
++      responses.push(entry);
++    }
++    return { requests, responses };
+   });
+-
+-  page.on("response", async (response) => {
+-    const request = response.request();
+-    const headers = response.headers();
+-    const contentType = headers["content-type"] || "";
+-    const entry = {
+-      url: response.url(),
+-      status: response.status(),
+-      ok: response.ok(),
+-      method: request.method(),
+-      resourceType: request.resourceType(),
+-      contentType,
+-      fixture: "",
+-      error: "",
+-    };
+-
+-    if (shouldSave(request.resourceType(), contentType)) {
+-      try {
+-        const body = await response.body();
+-        if (body.length <= args.maxBytes) {
+-          const file = path.join(fixturesDir, safeFixtureName(response.url(), contentType));
+-          fs.writeFileSync(file, body);
+-          entry.fixture = path.relative(outDir, file);
+-          entry.bytes = body.length;
+-        } else {
+-          entry.error = `body too large: ${body.length}`;
+-        }
+-      } catch (error) {
+-        entry.error = error.message;
+-      }
+-    }
+-
+-    responses.push(entry);
+-  });
+-
+-  await page.goto(args.url, { waitUntil: "domcontentloaded", timeout: 45000 });
+-  await page.waitForLoadState("networkidle", { timeout: args.waitMs }).catch(() => {});
+-  if (args.waitMs > 0) await page.waitForTimeout(args.waitMs);
+-  await browser.close();
+ 
+   const manifest = {
+     label: args.label,
+diff --git a/scripts/recon-site.mjs b/scripts/recon-site.mjs
+--- a/scripts/recon-site.mjs
++++ b/scripts/recon-site.mjs
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env node
+ import fs from "node:fs";
+ import path from "node:path";
+-import { loadPlaywright, launchChromium } from "./lib/playwright-loader.mjs";
++import { navigate, withBrowser } from "./lib/browser.mjs";
+ 
+ function usage() {
+   console.log(`Usage:
+@@ -180,43 +180,34 @@
+     process.exit(args.help ? 0 : 1);
+   }
+ 
+-  const { chromium } = loadPlaywright();
+   const outDir = path.resolve(args.outDir);
+   const screenshotsDir = path.join(outDir, "screenshots");
+   fs.mkdirSync(screenshotsDir, { recursive: true });
+ 
+   const consoleState = { errors: [], warnings: [], pageErrors: [] };
+-  const browser = await launchChromium(chromium);
+   const captures = [];
+ 
+   for (const width of args.widths) {
+-    const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: 1 });
+-    page.on("console", (message) => {
+-      const entry = { type: message.type(), text: message.text(), viewport: width };
+-      if (message.type() === "error") consoleState.errors.push(entry);
+-      if (message.type() === "warning") consoleState.warnings.push(entry);
++    await withBrowser({ width, height: 900 }, async (browser) => {
++      await navigate(browser, args.url, { idleMs: 8000, waitMs: args.waitMs });
++      const signals = await collectSignals(browser);
++      const screenshotPath = path.join(screenshotsDir, `${args.label}-${width}.png`);
++      browser.screenshot(screenshotPath);
++      for (const { type, text } of browser.consoleMessages()) {
++        if (type === "error") consoleState.errors.push({ type, text, viewport: width });
++        if (type === "warning") consoleState.warnings.push({ type, text, viewport: width });
++      }
++      for (const { text } of browser.command(["errors"]).errors) {
++        const message = text.split("\n", 1)[0].replace(/^\w*Error: /, "");
++        consoleState.pageErrors.push({ message, viewport: width });
++      }
++      captures.push({
++        viewport: { width, height: 900 },
++        screenshot: path.relative(outDir, screenshotPath),
++        signals,
++      });
+     });
+-    page.on("pageerror", (error) => {
+-      consoleState.pageErrors.push({ message: error.message, viewport: width });
+-    });
+-
+-    await page.goto(args.url, { waitUntil: "domcontentloaded", timeout: 45000 });
+-    await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
+-    if (args.waitMs > 0) await page.waitForTimeout(args.waitMs);
+-
+-    const signals = await collectSignals(page);
+-    const screenshotName = `${args.label}-${width}.png`;
+-    const screenshotPath = path.join(screenshotsDir, screenshotName);
+-    await page.screenshot({ path: screenshotPath, fullPage: true });
+-    captures.push({
+-      viewport: { width, height: 900 },
+-      screenshot: path.relative(outDir, screenshotPath),
+-      signals,
+-    });
+-    await page.close();
+   }
+-
+-  await browser.close();
+ 
+   const result = {
+     label: args.label,
+diff --git a/scripts/route-crawl.mjs b/scripts/route-crawl.mjs
+--- a/scripts/route-crawl.mjs
++++ b/scripts/route-crawl.mjs
+@@ -2,7 +2,7 @@
+ import fs from "node:fs";
+ import path from "node:path";
+ import crypto from "node:crypto";
+-import { loadPlaywright, launchChromium } from "./lib/playwright-loader.mjs";
++import { navigate, withBrowser } from "./lib/browser.mjs";
+ 
+ function usage() {
+   console.log(`Usage:
+@@ -106,6 +106,7 @@
+     }));
+     return {
+       href: location.href,
++      status: performance.getEntriesByType("navigation")[0]?.responseStatus || 0,
+       title: document.title || "",
+       lang: document.documentElement.lang || "",
+       metaDescription: document.querySelector("meta[name='description']")?.content || "",
+@@ -138,74 +139,61 @@
+   const screenshotsDir = path.join(outDir, "screenshots");
+   fs.mkdirSync(screenshotsDir, { recursive: true });
+ 
+-  const { chromium } = loadPlaywright();
+-  const browser = await launchChromium(chromium);
+-  const page = await browser.newPage({ viewport: { width: args.width, height: 900 }, deviceScaleFactor: 1 });
+-
+   const queue = [{ url: startUrl, depth: 0, from: "" }];
+   const seen = new Set();
+   const routes = [];
+   const skipped = [];
+ 
+-  while (queue.length && routes.length < args.maxPages) {
+-    const current = queue.shift();
+-    if (!current || seen.has(current.url)) continue;
+-    seen.add(current.url);
+-
+-    if (current.depth > args.maxDepth) {
+-      skipped.push({ url: current.url, reason: `depth>${args.maxDepth}` });
+-      continue;
++  await withBrowser({ width: args.width, height: 900 }, async (page) => {
++    while (queue.length && routes.length < args.maxPages) {
++      const current = queue.shift();
++      if (!current || seen.has(current.url)) continue;
++      seen.add(current.url);
++
++      if (current.depth > args.maxDepth) {
++        skipped.push({ url: current.url, reason: `depth>${args.maxDepth}` });
++        continue;
++      }
++      if (!sameSite(current.url, startUrl, args.allowSubdomains)) {
++        skipped.push({ url: current.url, reason: "external" });
++        continue;
++      }
++
++      try {
++        page.command(["console", "--clear"]);
++        await navigate(page, current.url, { idleMs: 6000, waitMs: args.waitMs });
++        const data = await collectPage(page);
++        const screenshotName = routeFileName(current.url);
++        const screenshotPath = path.join(screenshotsDir, screenshotName);
++        page.screenshot(screenshotPath);
++
++        routes.push({
++          url: current.url,
++          from: current.from,
++          depth: current.depth,
++          status: data.status,
++          title: data.title,
++          lang: data.lang,
++          metaDescription: data.metaDescription,
++          h1: data.h1,
++          headings: data.headings,
++          counts: data.counts,
++          linkCount: data.links.length,
++          screenshot: path.relative(outDir, screenshotPath),
++          consoleErrors: page.consoleMessages().filter(({ type }) => type === "error").map(({ text }) => text),
++        });
++
++        for (const link of data.links) {
++          const nextUrl = normalizeUrl(link.href, current.url);
++          if (!nextUrl || seen.has(nextUrl)) continue;
++          if (!sameSite(nextUrl, startUrl, args.allowSubdomains)) continue;
++          queue.push({ url: nextUrl, depth: current.depth + 1, from: current.url });
++        }
++      } catch (error) {
++        skipped.push({ url: current.url, reason: error.message });
++      }
+     }
+-    if (!sameSite(current.url, startUrl, args.allowSubdomains)) {
+-      skipped.push({ url: current.url, reason: "external" });
+-      continue;
+-    }
+-
+-    const consoleErrors = [];
+-    const onConsole = (message) => {
+-      if (message.type() === "error") consoleErrors.push(message.text());
+-    };
+-    page.on("console", onConsole);
+-
+-    try {
+-      const response = await page.goto(current.url, { waitUntil: "domcontentloaded", timeout: 45000 });
+-      await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
+-      if (args.waitMs > 0) await page.waitForTimeout(args.waitMs);
+-      const data = await collectPage(page);
+-      const screenshotName = routeFileName(current.url);
+-      const screenshotPath = path.join(screenshotsDir, screenshotName);
+-      await page.screenshot({ path: screenshotPath, fullPage: true });
+-
+-      routes.push({
+-        url: current.url,
+-        from: current.from,
+-        depth: current.depth,
+-        status: response?.status() || 0,
+-        title: data.title,
+-        lang: data.lang,
+-        metaDescription: data.metaDescription,
+-        h1: data.h1,
+-        headings: data.headings,
+-        counts: data.counts,
+-        linkCount: data.links.length,
+-        screenshot: path.relative(outDir, screenshotPath),
+-        consoleErrors,
+-      });
+-
+-      for (const link of data.links) {
+-        const nextUrl = normalizeUrl(link.href, current.url);
+-        if (!nextUrl || seen.has(nextUrl)) continue;
+-        if (!sameSite(nextUrl, startUrl, args.allowSubdomains)) continue;
+-        queue.push({ url: nextUrl, depth: current.depth + 1, from: current.url });
+-      }
+-    } catch (error) {
+-      skipped.push({ url: current.url, reason: error.message });
+-    } finally {
+-      page.off("console", onConsole);
+-    }
+-  }
+-
+-  await browser.close();
++  });
+ 
+   const result = {
+     label: args.label,
+diff --git a/scripts/visual-diff.mjs b/scripts/visual-diff.mjs
+--- a/scripts/visual-diff.mjs
++++ b/scripts/visual-diff.mjs
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env node
+ import fs from "node:fs";
+ import path from "node:path";
+-import { loadPlaywright, launchChromium } from "./lib/playwright-loader.mjs";
++import { withBrowser } from "./lib/browser.mjs";
+ 
+ function usage() {
+   console.log(`Usage:
+@@ -130,11 +130,9 @@
+     process.exit(args.help ? 0 : 1);
+   }
+ 
+-  const { chromium } = loadPlaywright();
+-  const browser = await launchChromium(chromium);
+-  const page = await browser.newPage();
+-  const result = await compareInBrowser(page, imageDataUrl(args.original), imageDataUrl(args.clone), args.threshold);
+-  await browser.close();
++  const result = await withBrowser(null, (browser) =>
++    compareInBrowser(browser, imageDataUrl(args.original), imageDataUrl(args.clone), args.threshold)
++  );
+ 
+   const diffDataUrl = result.diffPngDataUrl;
+   delete result.diffPngDataUrl;

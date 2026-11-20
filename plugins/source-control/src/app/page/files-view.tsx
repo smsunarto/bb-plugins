@@ -104,6 +104,8 @@ export const ColumnContext = createContext<Column | null>(null);
 
 /** Whether diffs wrap long lines: on a phone, where scrolling sideways hides the end of each line. */
 export const WrapContext = createContext(false);
+/** What a card says of a diff too large to draw, where the surface offers its own way to read it. */
+export const TooLargeContext = createContext<string | null>(null);
 
 /** Cards drawn before the observer reports: about a screen of them. */
 export const EAGER_CARDS = 8;
@@ -439,9 +441,12 @@ function useLineAnnotations({
 }
 
 /** Why a ready file has no diff to draw. */
-function emptyText(patch: FilePatch | null, file: ChangeFile): string {
+function emptyText(patch: FilePatch | null, file: ChangeFile, tooLarge: string | null): string {
   if (patch?.truncated)
-    return "This diff is too large to show. Open the file on GitHub or in your editor to read it.";
+    return (
+      tooLarge ??
+      "This diff is too large to show. Open the file on GitHub or in your editor to read it."
+    );
   if (file.kind === "renamed" && file.previousPath) return `Renamed from ${file.previousPath}.`;
   return "No text to show. The file is binary or its contents did not change.";
 }
@@ -460,6 +465,7 @@ function useKeptPatch(store: PatchStore, path: string): PatchEntry | undefined {
 }
 
 function PatchBody({
+  id,
   store,
   file,
   line,
@@ -467,6 +473,8 @@ function PatchBody({
   actions,
   head,
 }: {
+  /** The card's key in the store and column: its path, unless the view shows a path twice. */
+  id: string;
   store: PatchStore;
   file: ChangeFile;
   line: number | null;
@@ -475,10 +483,11 @@ function PatchBody({
   actions: ReviewActions | null;
   head: string;
 }) {
-  const entry = useKeptPatch(store, file.path);
+  const entry = useKeptPatch(store, id);
   const { mode, name } = useCodeTheme();
   const commenting = actions !== null;
   const wrap = useContext(WrapContext);
+  const tooLarge = useContext(TooLargeContext);
   const options = useMemo(
     () => ({
       disableFileHeader: true,
@@ -515,7 +524,7 @@ function PatchBody({
       />
     );
   if (entry.state === "failed")
-    return <PatchesProblem text={entry.message} onRetry={() => store.request(file.path)} />;
+    return <PatchesProblem text={entry.message} onRetry={() => store.request(id)} />;
   if (!patch || !parsed)
     return (
       <>
@@ -524,7 +533,7 @@ function PatchBody({
           data-testid="sc-patch-empty"
           className="m-0 border-t border-solid border-border-hairline bg-surface-recessed px-3 py-2 text-[11px] leading-4 text-muted-foreground"
         >
-          {emptyText(patch, file)}
+          {emptyText(patch, file, tooLarge)}
         </p>
       </>
     );
@@ -559,6 +568,7 @@ function PatchBody({
 export type OnViewed = (file: ChangeFile, viewed: boolean) => void;
 
 export const FileCard = memo(function FileCard({
+  id: givenId,
   file,
   open,
   store,
@@ -572,6 +582,8 @@ export const FileCard = memo(function FileCard({
   viewed = null,
   onViewed,
 }: {
+  /** The card's key in the store, the column and `onToggle`; the path when omitted. */
+  id?: string;
   file: ChangeFile;
   open: boolean;
   store: PatchStore;
@@ -588,15 +600,16 @@ export const FileCard = memo(function FileCard({
   viewed?: boolean | null;
   onViewed?: OnViewed;
 }) {
+  const id = givenId ?? file.path;
   const column = useContext(ColumnContext);
   const [near, setNear] = useState(eager);
   const watchRef = useCallback(
-    (element: HTMLElement | null) => column?.watch(file.path, element, setNear),
-    [column, file.path],
+    (element: HTMLElement | null) => column?.watch(id, element, setNear),
+    [column, id],
   );
   useEffect(() => {
-    if (open && near) store.request(file.path);
-  }, [open, near, store, file.path]);
+    if (open && near) store.request(id);
+  }, [open, near, store, id]);
   const generated = startsCollapsed(file.path);
   const card =
     "min-w-0 overflow-hidden rounded-[8px] border border-solid border-border-hairline bg-background";
@@ -610,7 +623,7 @@ export const FileCard = memo(function FileCard({
         data-open={open}
         aria-label={file.path}
         className={card}
-        style={{ height: column?.heights.get(file.path) ?? farHeight(file, open) }}
+        style={{ height: column?.heights.get(id) ?? farHeight(file, open) }}
       />
     );
   return (
@@ -628,7 +641,7 @@ export const FileCard = memo(function FileCard({
           type="button"
           aria-expanded={open}
           title={file.path}
-          onClick={() => onToggle(file.path)}
+          onClick={() => onToggle(id)}
           // In a narrow column the note drops to its own line rather than truncating to a word.
           className="flex min-h-9 min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-x-2 border-0 bg-transparent ps-2 pe-3 text-start text-[12px] leading-4 @max-lg:gap-y-1 @max-lg:py-2"
         >
@@ -679,6 +692,7 @@ export const FileCard = memo(function FileCard({
       </div>
       {open ? (
         <PatchBody
+          id={id}
           store={store}
           file={file}
           line={line}

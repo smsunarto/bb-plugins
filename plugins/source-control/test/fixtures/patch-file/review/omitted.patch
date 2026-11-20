@@ -1,0 +1,10 @@
+diff --git a/f.txt b/f.txt
+--- a/f.txt
++++ b/f.txt
+@@ -1 +1 @@
+-a
++A
+@@ -0,0 +1,3 @@
++x
++y
++z

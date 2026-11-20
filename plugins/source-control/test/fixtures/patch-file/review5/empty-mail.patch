@@ -1,0 +1,28 @@
+From 9351d4f1af670807d2ae508be3359ec88273ef1c Mon Sep 17 00:00:00 2001
+From: Test <test@example.org>
+Date: Thu, 19 Nov 2026 20:06:26 -0800
+Subject: [PATCH 1/2] two
+
+---
+ data | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/data b/data
+index 3367afd..3e75765 100644
+--- a/data
++++ b/data
+@@ -1 +1 @@
+-old
++new
+-- 
+2.56.0
+
+
+From 262d147455a885e368e7d87b2026ef83cade57c7 Mon Sep 17 00:00:00 2001
+From: Test <a@b>
+Date: Thu, 19 Nov 2026 20:07:27 -0800
+Subject: [PATCH 2/2] record sign-off
+
+-- 
+2.56.0
+

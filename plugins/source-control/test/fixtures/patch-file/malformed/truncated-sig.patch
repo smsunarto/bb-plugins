@@ -1,0 +1,17 @@
+From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001
+From: A <a@e.x>
+Subject: [PATCH] t
+
+---
+ f.txt | 2 +-
+
+diff --git a/f.txt b/f.txt
+--- a/f.txt
++++ b/f.txt
+@@ -1,6 +1,6 @@
+ a
+-b
++B
+-- 
+2.43.0
+

@@ -1,0 +1,141 @@
+diff --git a/plugins/t3-composer/src/ComposerPermissionControl.test.tsx b/plugins/t3-composer/src/ComposerPermissionControl.test.tsx
+index c89f0d737..d48751d60 100644
+--- a/plugins/t3-composer/src/ComposerPermissionControl.test.tsx
++++ b/plugins/t3-composer/src/ComposerPermissionControl.test.tsx
+@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+ import { afterEach, describe, expect, it, vi } from "vitest";
+ import { CompactViewportOverrideProvider } from "@/components/ui/hooks/use-compact-viewport";
+ import { PermissionPicker } from "./ComposerPermissionControl";
+-import { permissionModeOptions } from "./permission-modes";
++import { CEILING_REASON, permissionModeOptions } from "./permission-modes";
+ 
+ const ALL = ["accept-edits", "auto", "full"] as const;
+ 
+@@ -43,12 +43,24 @@ describe("PermissionPicker on a phone", () => {
+     expect(onChange).toHaveBeenCalledWith("auto");
+   });
+ 
+-  it("shows the machine's limit in place of a disabled mode's description", async () => {
++  it("shows each mode by name alone, and why a mode above the machine's limit is off", async () => {
+     renderSheet({ value: "auto", options: permissionModeOptions(ALL, "auto") });
+     fireEvent.click(screen.getByRole("button", { name: "Permission mode" }));
+-    const full = await screen.findByRole("menuitemradio", { name: /Full Access/ });
+-    expect(full.hasAttribute("disabled")).toBe(true);
+-    expect(full.textContent).toContain("Above the selected machine's permission limit.");
++    const rows = await screen.findAllByRole("menuitemradio");
++    expect(rows.map((row) => row.textContent)).toEqual([
++      "Accept Edits",
++      "Approve for me",
++      `Full Access${CEILING_REASON}`,
++    ]);
++    expect(rows[2]!.hasAttribute("disabled")).toBe(true);
++  });
++
++  it("names only the mode in the trigger's tooltip", () => {
++    renderSheet({ value: "auto" });
++    const trigger = screen.getByRole("button", { name: "Permission mode" });
++    expect(trigger.querySelector("[title]")?.getAttribute("title")).toBe(
++      "Permission mode: Approve for me",
++    );
+   });
+ 
+   it("stays read-only until the machine's modes are known", () => {
+diff --git a/plugins/t3-composer/src/ComposerPermissionControl.tsx b/plugins/t3-composer/src/ComposerPermissionControl.tsx
+index 33dd6dba7..242694506 100644
+--- a/plugins/t3-composer/src/ComposerPermissionControl.tsx
++++ b/plugins/t3-composer/src/ComposerPermissionControl.tsx
+@@ -205,10 +205,7 @@ export function PermissionPicker(props: {
+         !interactive && "cursor-default disabled:opacity-100",
+       )}
+     >
+-      <span
+-        className="contents"
+-        title={current ? `Permission mode: ${label} - ${current.description}` : undefined}
+-      >
++      <span className="contents" title={current ? `Permission mode: ${label}` : undefined}>
+         <span className="min-w-0 truncate" data-promptbox-full-label="">
+           {label}
+         </span>
+@@ -266,9 +263,9 @@ export function PermissionPicker(props: {
+ }
+ 
+ /**
+- * One mode: icon, name and what it allows, with a check on the current one. Rows are split
+- * by hairlines inset to the text, and the elevated mode keeps BB's warning tone, across the
+- * whole row once chosen.
++ * One mode: icon and name, with a check on the current one; a mode above the machine's limit
++ * also says why it is unavailable. Rows are split by hairlines inset to the text, and the
++ * elevated mode keeps BB's warning tone.
+  */
+ function PermissionRow(props: {
+   option: PermissionModeOption;
+@@ -309,15 +306,17 @@ function PermissionRow(props: {
+           >
+             {option.label}
+           </span>
+-          <span
+-            className={cn(
+-              "text-pretty",
+-              large ? "text-sm leading-5" : "text-xs leading-4",
+-              warning && selected ? WARNING_TEXT : "text-muted-foreground",
+-            )}
+-          >
+-            {option.disabled ? CEILING_REASON : option.description}
+-          </span>
++          {/* A mode above the machine's limit says why it cannot be picked. */}
++          {option.disabled ? (
++            <span
++              className={cn(
++                "text-pretty text-muted-foreground",
++                large ? "text-sm leading-5" : "text-xs leading-4",
++              )}
++            >
++              {CEILING_REASON}
++            </span>
++          ) : null}
+         </span>
+         <Icon
+           name="Check"
+diff --git a/plugins/t3-composer/src/permission-modes.ts b/plugins/t3-composer/src/permission-modes.ts
+index 4fe21e021..ad3792550 100644
+--- a/plugins/t3-composer/src/permission-modes.ts
++++ b/plugins/t3-composer/src/permission-modes.ts
+@@ -7,7 +7,6 @@ export interface PermissionModeOption {
+   label: string;
+   /** The trigger's label once the composer is narrow. */
+   compactLabel: string;
+-  description: string;
+   icon: string;
+   tone?: "warning";
+   disabled?: boolean;
+@@ -20,29 +19,24 @@ const OPTIONS: readonly PermissionModeOption[] = [
+     value: "accept-edits",
+     label: "Accept Edits",
+     compactLabel: "Edits",
+-    description:
+-      "Applies edits inside the workspace automatically. Anything beyond the workspace asks you first.",
+     icon: "FolderEdit",
+   },
+   {
+     value: "auto",
+     label: "Approve for me",
+     compactLabel: "Auto",
+-    description:
+-      "Same workspace sandbox, with requests reviewed automatically. High-risk actions can still come back to you.",
+     icon: "SecurityCheck",
+   },
+   {
+     value: "full",
+     label: "Full Access",
+     compactLabel: "Full",
+-    description: "No sandbox and no approvals — the agent can run anything on your machine.",
+     icon: "SquareUnlock02",
+     tone: "warning",
+   },
+ ];
+ 
+-/** BB's reason for a mode above the machine's limit, shown in place of its description. */
++/** BB's reason for a mode above the machine's limit, shown under its label. */
+ export const CEILING_REASON =
+   "Above the selected machine's permission limit. Change it in Settings → Machines.";
+ 

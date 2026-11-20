@@ -1,0 +1,14 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Alice <a@example.org>
+Date: Wed, 1 Jan 2020 00:00:00 +0000
+Subject: [PATCH] inline
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+
+diff --git a/shown.txt b/shown.txt
+--- a/shown.txt
++++ b/shown.txt
+@@ -1 +1 @@
+-let count =3D 1;
++let count =3D 2;

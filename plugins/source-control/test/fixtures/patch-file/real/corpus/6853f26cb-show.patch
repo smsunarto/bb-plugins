@@ -1,0 +1,162 @@
+commit 6853f26cb90b84277b7a4b081d7a132e4fc70600
+Author: Scott <github@smsunarto.com>
+Date:   Wed Nov 18 15:50:58 2026 -0800
+
+    fix(agentation): stop an Escape that exits feedback mode from closing the page (#181)
+    
+    Upstream marks a handled Escape (preventDefault + stopPropagation) only when a
+    portalContainer is set. bb mounts the toolbar without one, so the Escape that
+    deactivated Agentation also reached scott-tasks' and bb's window-level Escape
+    handlers and closed the task page. Drop the portal gate in the vendored bundle.
+
+diff --git a/plugins/agentation/test/toolbar-activation.test.ts b/plugins/agentation/test/toolbar-activation.test.ts
+index 45e9ff21c..ed0e6a719 100644
+--- a/plugins/agentation/test/toolbar-activation.test.ts
++++ b/plugins/agentation/test/toolbar-activation.test.ts
+@@ -63,6 +63,42 @@ test("a host launcher controls feedback mode and Escape hides the floating launc
+   await waitFor(() => expect(toolbar()?.style.display).toBe("none"));
+ });
+ 
++test("Escape that exits feedback mode does not reach the page's own Escape handlers", async () => {
++  // bb mounts the toolbar without a portalContainer. The page underneath, such
++  // as a Tasks detail view or bb's own back keybinding, listens on window and
++  // skips an Escape that is already handled.
++  const pageClosed: string[] = [];
++  const pageEscape = (event: KeyboardEvent) => {
++    if (event.key === "Escape" && !event.defaultPrevented) pageClosed.push("closed");
++  };
++  window.addEventListener("keydown", pageEscape);
++  try {
++    function ControlledToolbar() {
++      const [active, setActive] = useState(true);
++      return createElement<AgentationProps>(Agentation, {
++        active,
++        onActiveChange: setActive,
++        hideLauncher: true,
++      });
++    }
++    render(createElement(ControlledToolbar));
++    const toolbar = () =>
++      document
++        .querySelector("agentation-toolbar")
++        ?.shadowRoot?.querySelector<HTMLElement>("[data-agentation-toolbar]");
++    await waitFor(() => expect(toolbar()?.style.display).not.toBe("none"));
++
++    fireEvent.keyDown(document.body, { key: "Escape" });
++    await waitFor(() => expect(toolbar()?.style.display).toBe("none"));
++    expect(pageClosed).toEqual([]);
++
++    fireEvent.keyDown(document.body, { key: "Escape" });
++    expect(pageClosed).toEqual(["closed"]);
++  } finally {
++    window.removeEventListener("keydown", pageEscape);
++  }
++});
++
+ test("an initially active toolbar focuses its controls after mounting", async () => {
+   render(createElement<AgentationProps>(Agentation, { active: true, hideLauncher: true }));
+   await waitFor(() =>
+diff --git a/plugins/agentation/vendor/README.md b/plugins/agentation/vendor/README.md
+index 0f74c022b..ae56d52e1 100644
+--- a/plugins/agentation/vendor/README.md
++++ b/plugins/agentation/vendor/README.md
+@@ -20,6 +20,11 @@ floating launcher is hidden; expanded tools and annotation markers remain.
+ `getLauncherElement` resolves the host's current footer button for targeting
+ exclusion and keyboard focus restoration.
+ 
++An Escape the toolbar handles is marked with `preventDefault` and
++`stopPropagation` even without a `portalContainer`. Upstream does this only in
++portal mode, so in bb the same Escape that exited feedback mode also closed the
++page underneath (a Tasks detail view, or bb's `app.back` keybinding).
++
+ Bun applies `patchedDependencies` in this workspace only. bb builds a `git:`
+ install itself, after an `npm install` that knows nothing about that field — so
+ a registry dependency would ship unpatched, and the toolbar would silently lose
+diff --git a/plugins/agentation/vendor/agentation.patch b/plugins/agentation/vendor/agentation.patch
+index 7fd4dc5cf..d879692a2 100644
+--- a/plugins/agentation/vendor/agentation.patch
++++ b/plugins/agentation/vendor/agentation.patch
+@@ -65,10 +65,9 @@ diff --git a/dist/index.js b/dist/index.js
+      } else if (!isActive && focusLauncherOnCloseRef.current) {
+        focusLauncherOnCloseRef.current = false;
+ -      launcherRef.current?.focus();
+--    }
+--  }, [isActive]);
+ +      (hideLauncher ? getLauncherElement?.() ?? invokingElementRef.current : launcherRef.current)?.focus();
+-+    }
++     }
++-  }, [isActive]);
+ +  }, [isActive, mounted, isToolbarHidden, hideLauncher, getLauncherElement]);
+    (0, import_react19.useEffect)(() => {
+      const stop = (e) => {
+@@ -201,6 +200,15 @@ diff --git a/dist/index.js b/dist/index.js
+            seenElements.add(el);
+            const { name } = identifyElement(el);
+            if (!elementNames.includes(name)) {
++@@ -12052,7 +12077,7 @@
++       const target = e.composedPath()[0] || e.target;
++       const isTyping = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
++       if (e.key === "Escape") {
++-        if (portalContainer && !pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
+++        if (!pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
++           e.preventDefault();
++           e.stopPropagation();
++         }
+ @@ -12242,7 +12267,7 @@
+            "data-feedback-toolbar": true,
+            "data-agentation-toolbar": true,
+@@ -288,10 +296,9 @@ diff --git a/dist/index.mjs b/dist/index.mjs
+      } else if (!isActive && focusLauncherOnCloseRef.current) {
+        focusLauncherOnCloseRef.current = false;
+ -      launcherRef.current?.focus();
+--    }
+--  }, [isActive]);
+ +      (hideLauncher ? getLauncherElement?.() ?? invokingElementRef.current : launcherRef.current)?.focus();
+-+    }
++     }
++-  }, [isActive]);
+ +  }, [isActive, mounted, isToolbarHidden, hideLauncher, getLauncherElement]);
+    useEffect8(() => {
+      const stop = (e) => {
+@@ -424,6 +431,15 @@ diff --git a/dist/index.mjs b/dist/index.mjs
+            seenElements.add(el);
+            const { name } = identifyElement(el);
+            if (!elementNames.includes(name)) {
++@@ -11984,7 +12009,7 @@
++       const target = e.composedPath()[0] || e.target;
++       const isTyping = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
++       if (e.key === "Escape") {
++-        if (portalContainer && !pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
+++        if (!pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
++           e.preventDefault();
++           e.stopPropagation();
++         }
+ @@ -12174,7 +12199,7 @@
+            "data-feedback-toolbar": true,
+            "data-agentation-toolbar": true,
+diff --git a/plugins/agentation/vendor/agentation/dist/index.js b/plugins/agentation/vendor/agentation/dist/index.js
+index ab6e06084..76e0767c2 100644
+--- a/plugins/agentation/vendor/agentation/dist/index.js
++++ b/plugins/agentation/vendor/agentation/dist/index.js
+@@ -12077,7 +12077,7 @@ function PageFeedbackToolbarForRoute({
+       const target = e.composedPath()[0] || e.target;
+       const isTyping = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
+       if (e.key === "Escape") {
+-        if (portalContainer && !pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
++        if (!pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
+           e.preventDefault();
+           e.stopPropagation();
+         }
+diff --git a/plugins/agentation/vendor/agentation/dist/index.mjs b/plugins/agentation/vendor/agentation/dist/index.mjs
+index 7ea2fef07..f1bb63efa 100644
+--- a/plugins/agentation/vendor/agentation/dist/index.mjs
++++ b/plugins/agentation/vendor/agentation/dist/index.mjs
+@@ -12009,7 +12009,7 @@ function PageFeedbackToolbarForRoute({
+       const target = e.composedPath()[0] || e.target;
+       const isTyping = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
+       if (e.key === "Escape") {
+-        if (portalContainer && !pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
++        if (!pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
+           e.preventDefault();
+           e.stopPropagation();
+         }

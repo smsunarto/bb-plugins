@@ -1,0 +1,77 @@
+commit 3bb2b95b4c263a0056809c02dc562713090b1ca3
+tree 35cb307e43e820a375e641cbf491b9edaf7e98ce
+parent f4207f7e69b042447f7662b021fcf5d1e49b5a98
+author Scott Sunarto <github@smsunarto.com> 1795146741 -0800
+committer Scott Sunarto <github@smsunarto.com> 1795147195 -0800
+
+    fix(source-control): draw a patch only when a strict second reading agrees (BBP-51 review 4)
+    
+    An independent strict pass (core/patch-strict.ts) walks the source once and
+    accounts for every line. A patch draws only when it reads strictly and its
+    per-file list matches the main reader's: order, paths, kinds and counts.
+    Otherwise it shows as text with a reason. Files Pierre can't parse or counts
+    short of their headers also fall back to text, and Only in records are never
+    dropped. The fuzz oracle now covers mail and log inputs; the reviewer's six
+    fixtures and eleven variations are tests.
+
+diff --git a/plugins/source-control/src/app/patch-file-opener.tsx b/plugins/source-control/src/app/patch-file-opener.tsx
+index 387d31971..4495f1d34 100644
+--- a/plugins/source-control/src/app/patch-file-opener.tsx
++++ b/plugins/source-control/src/app/patch-file-opener.tsx
+@@ -30,7 +30,7 @@ import {
+   type PatchFileEntry,
+ } from "../core/patch-file.ts";
+ import { Button } from "./components/ui/button.tsx";
+-import { FileRowsSkeleton } from "./file-cards.tsx";
++import { FileRowsSkeleton, parsePatch } from "./file-cards.tsx";
+ import { plural, shortId } from "./format.ts";
+ import { PHONE, useWidth } from "./page/hooks.ts";
+ import {
+@@ -183,9 +183,45 @@ function afterFailure(
+ function shownFor(text: string | null): Loaded {
+   if (text === null) return { state: "text", reason: TOO_LARGE };
+   const read = readPatchFile(text);
+-  return read.ok
++  if (!read.ok) return { state: "text", reason: read.reason };
++  const undrawable = undrawableFile(read.read);
++  return undrawable === null
+     ? { state: "diff", read: read.read, failed: null }
+-    : { state: "text", reason: read.reason };
++    : { state: "text", reason: `The diff view can't draw ${undrawable} as its patch reads.` };
++}
++
++const HUNK_COUNTS = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/gm;
++
++/**
++ * The first card Pierre can't draw line for line, or null: each card's patch
++ * goes through Pierre's own parser before the diff view accepts the file,
++ * and the lines it would draw must be the ones the hunk headers count.
++ */
++/** Old and new line counts a patch's hunk headers state. */
++function hunkCounts(patch: string) {
++  let old = 0;
++  let next = 0;
++  for (const [, oldCount, nextCount] of patch.matchAll(HUNK_COUNTS)) {
++    old += oldCount === undefined ? 1 : Number(oldCount);
++    next += nextCount === undefined ? 1 : Number(nextCount);
++  }
++  return { old, next };
++}
++
++export function undrawableFile(read: PatchFile): string | null {
++  for (const commit of read.commits)
++    for (const { file, patch } of commit.files) {
++      if (patch.patch === "") continue;
++      const drawn = parsePatch(patch.patch);
++      const { old, next } = hunkCounts(patch.patch);
++      if (
++        drawn === null ||
++        drawn.deletionLines.length !== old ||
++        drawn.additionLines.length !== next
++      )
++        return file.path;
++    }
++  return null;
+ }
+ 
+ /**

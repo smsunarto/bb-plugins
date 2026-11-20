@@ -1,0 +1,10 @@
+--- a/first
++++ b/first
+@@ -1 +1 @@
+-old1
++new1
+--- a/second
++++ b/second
+@@ -1 +1 @@
+-old2
++new2

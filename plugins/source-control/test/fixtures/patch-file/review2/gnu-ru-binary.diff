@@ -1,0 +1,14 @@
+Binary files 'a/my file.bin' and 'b/my file.bin' differ
+Binary files a/plain.bin and b/plain.bin differ
+Binary files 'a/x and y.bin' and 'b/x and y.bin' differ
+diff -ru a/x.txt b/x.txt
+--- a/x.txt	2026-11-19 18:17:13.139676546 -0800
++++ b/x.txt	2026-11-19 18:17:13.139676546 -0800
+@@ -1,6 +1,6 @@
+ one
+ 
+-two
++TWO
+ three
+ 
+ five

@@ -1,0 +1,84 @@
+commit 7c7ca83eaa756633388e755c721052171c356438
+Author: t <t@t>
+Date:   Thu Nov 19 20:15:57 2026 -0800
+
+    change things
+
+diff --git a/added.txt b/added.txt
+new file mode 100644
+index 0000000..92d5444
+--- /dev/null
++++ b/added.txt
+@@ -0,0 +1 @@
++fresh
+diff --git a/blob.bin b/blob.bin
+index c364c8e..ac3d0d8 100644
+Binary files a/blob.bin and b/blob.bin differ
+diff --git a/gone.txt b/gone.txt
+deleted file mode 100644
+index 286c5f5..0000000
+--- a/gone.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-gone
+diff --git a/keep.txt b/keep.txt
+index 4cb29ea..ea14db2 100644
+--- a/keep.txt
++++ b/keep.txt
+@@ -1,3 +1,4 @@
+ one
+-two
++2
+ three
++four
+diff --git a/old-name.txt b/new-name.txt
+similarity index 100%
+rename from old-name.txt
+rename to new-name.txt
+diff --git a/run.sh b/run.sh
+old mode 100644
+new mode 100755
+
+commit 6fb86c0a150bc2cb2eaea08d280acd8e068cd20f
+Author: t <t@t>
+Date:   Thu Nov 19 20:15:57 2026 -0800
+
+    init
+
+diff --git a/blob.bin b/blob.bin
+new file mode 100644
+index 0000000..c364c8e
+Binary files /dev/null and b/blob.bin differ
+diff --git a/gone.txt b/gone.txt
+new file mode 100644
+index 0000000..286c5f5
+--- /dev/null
++++ b/gone.txt
+@@ -0,0 +1 @@
++gone
+diff --git a/keep.txt b/keep.txt
+new file mode 100644
+index 0000000..4cb29ea
+--- /dev/null
++++ b/keep.txt
+@@ -0,0 +1,3 @@
++one
++two
++three
+diff --git a/old-name.txt b/old-name.txt
+new file mode 100644
+index 0000000..27824a2
+--- /dev/null
++++ b/old-name.txt
+@@ -0,0 +1,3 @@
++move me
++please
++now
+diff --git a/run.sh b/run.sh
+new file mode 100644
+index 0000000..4163036
+--- /dev/null
++++ b/run.sh
+@@ -0,0 +1,2 @@
++#!/bin/sh
++echo hi
