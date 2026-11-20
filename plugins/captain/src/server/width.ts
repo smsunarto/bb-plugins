@@ -5,7 +5,8 @@
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-const EMOJI = /\p{Emoji_Presentation}|\p{Extended_Pictographic}️|\p{Regional_Indicator}/u;
+const EMOJI =
+  /\p{Emoji_Presentation}|\p{Extended_Pictographic}\u{FE0F}|\p{Regional_Indicator}|[#*0-9]\u{FE0F}?\u{20E3}/u;
 
 /** East Asian Wide (W) and Fullwidth (F) code point ranges, inclusive. */
 const WIDE: readonly (readonly [number, number])[] = [

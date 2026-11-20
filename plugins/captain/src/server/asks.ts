@@ -19,13 +19,17 @@ export const ASK_TEXT_MAX = 80;
  * An option is a banner button, so every option fits on one row: at most 12
  * columns, where an emoji or a wide East Asian character counts 2. The
  * "Recommended" tag the banner and the `Asked:` comment add sits outside the
- * label and is not counted. Checked only when an ask opens: stored asks keep
- * their labels.
+ * label and is not counted. `openAsk` checks it only for a new ask: stored
+ * asks keep their labels.
  */
 export const ASK_OPTION_COLUMNS = 12;
-/** The option's UTF-16 ceiling, so every label stays a valid `resolveAsk` answer. */
+/**
+ * Every option, new or rerun, is one line of at most 80 UTF-16 units, so it
+ * stays a valid `resolveAsk` answer; asks stored before the column cap meet it too.
+ */
 const ASK_OPTION_UNITS = ASK_TEXT_MAX;
-/** Columns of a refused option echoed back in its blocker. */
+/** A refused option is echoed from its first 64 units, cut to 24 columns. */
+const ECHO_UNITS = 64;
 const ECHO_COLUMNS = 24;
 export const SHIP_OPTIONS = ["Merge", "Hold"] as const;
 /** The banner picks options with keys 1 to 9. */
@@ -59,69 +63,86 @@ export function askBlockers(draft: Omit<AskDraft, "task"> & { taskKey: string | 
     blockers.push({ reason: `a ${draft.kind} ask needs its task`, fix: "pass --task <key>" });
   }
   const options = draft.options.map((option) => option.trim());
-  if (draft.kind === "ship") {
-    if (options.length > 0) {
+  blockers.push(...optionListBlockers(draft.kind, options));
+  return blockers;
+}
+
+/** The rules on a draft's trimmed options that hold for every ask, new or rerun. */
+function optionListBlockers(kind: AskKind, options: readonly string[]): Blocker[] {
+  if (kind === "ship") {
+    return options.length === 0
+      ? []
+      : [{ reason: "a ship ask's options are always Merge and Hold", fix: "drop --option" }];
+  }
+  const blockers: Blocker[] = [];
+  if (kind === "decision" && options.length < 2) {
+    blockers.push({
+      reason: "a decision ask needs two or more options, the recommended one first",
+      fix: "pass --option <recommended> --option <other>",
+    });
+  }
+  if (options.length === 1 && kind !== "decision") {
+    blockers.push({
+      reason: "one option is no choice",
+      fix: "pass two or more --option values, or none",
+    });
+  }
+  if (options.length > OPTIONS_MAX) {
+    blockers.push({
+      reason: `an ask takes at most ${OPTIONS_MAX} options`,
+      fix: "keep the options that matter",
+    });
+  }
+  if (options.some((option) => option === "")) {
+    blockers.push({ reason: "an option is empty", fix: "drop the empty --option" });
+  }
+  for (const option of options) {
+    if (/[\r\n]/u.test(option)) {
       blockers.push({
-        reason: "a ship ask's options are always Merge and Hold",
-        fix: "drop --option",
+        reason: `option ${echo(option)} spans lines; an option is one line`,
+        fix: "put it on one line; move the detail into --detail-file",
+      });
+    } else if (option.length > ASK_OPTION_UNITS) {
+      blockers.push({
+        reason: `option ${echo(option)} is ${option.length} UTF-16 units; an option is at most ${ASK_OPTION_UNITS}`,
+        fix: "shorten it; move the detail into --detail-file",
       });
     }
-  } else {
-    if (draft.kind === "decision" && options.length < 2) {
-      blockers.push({
-        reason: "a decision ask needs two or more options, the recommended one first",
-        fix: "pass --option <recommended> --option <other>",
-      });
-    }
-    if (options.length === 1 && draft.kind !== "decision") {
-      blockers.push({
-        reason: "one option is no choice",
-        fix: "pass two or more --option values, or none",
-      });
-    }
-    if (options.length > OPTIONS_MAX) {
-      blockers.push({
-        reason: `an ask takes at most ${OPTIONS_MAX} options`,
-        fix: "keep the options that matter",
-      });
-    }
-    if (options.some((option) => option === "")) {
-      blockers.push({ reason: "an option is empty", fix: "drop the empty --option" });
-    }
-    if (new Set(options.map((option) => option.toLowerCase())).size !== options.length) {
-      blockers.push({ reason: "two options are the same", fix: "drop the duplicate --option" });
-    }
+  }
+  if (new Set(options.map((option) => option.toLowerCase())).size !== options.length) {
+    blockers.push({ reason: "two options are the same", fix: "drop the duplicate --option" });
   }
   return blockers;
 }
 
 /**
- * The label rule for a new ask's options: each fits a banner button. Run it
- * only when no open ask matches, so a rerun of an older ask still retries.
+ * The column rule for a new ask's trimmed options: each fits a banner button.
+ * `openAsk` runs it only when no open ask matches, so a rerun of an older ask
+ * still retries its push.
  */
 export function optionLabelBlockers(options: readonly string[]): Blocker[] {
-  return options.flatMap((raw): Blocker[] => {
-    const option = raw.trim();
-    const quoted = JSON.stringify(clip(option, ECHO_COLUMNS));
+  return options.flatMap((option): Blocker[] => {
     const columns = displayWidth(option);
-    if (columns > ASK_OPTION_COLUMNS) {
-      return [
-        {
-          reason: `option ${quoted} is ${columns} columns; an option is ≤${ASK_OPTION_COLUMNS} columns (wide characters count 2), so the buttons fit on one row`,
-          fix: 'shorten it to a label, such as "Redis", with no ⭐ or other marker; move the detail into --detail-file',
-        },
-      ];
-    }
-    if (option.length > ASK_OPTION_UNITS) {
-      return [
-        {
-          reason: `option ${quoted} is ${option.length} UTF-16 units; an option is at most ${ASK_OPTION_UNITS}`,
-          fix: "drop the combining marks; move the detail into --detail-file",
-        },
-      ];
-    }
-    return [];
+    if (columns <= ASK_OPTION_COLUMNS) return [];
+    return [
+      {
+        reason: `option ${echo(option)} is ${columns} columns; an option is ≤${ASK_OPTION_COLUMNS} columns (wide characters count 2), so the buttons fit on one row`,
+        fix: 'shorten it to a label, such as "Redis", with no ⭐ or other marker; move the detail into --detail-file',
+      },
+    ];
   });
+}
+
+function refuseUnlessLabelsFit(options: readonly string[]): void {
+  const blockers = optionLabelBlockers(options);
+  if (blockers.length > 0) throw new Refusal(blockers);
+}
+
+/** An option quoted for a blocker, bounded in size however long it is. */
+function echo(option: string): string {
+  const head = option.slice(0, ECHO_UNITS);
+  const clipped = clip(head, ECHO_COLUMNS);
+  return JSON.stringify(head.length < option.length && clipped === head ? `${head}…` : clipped);
 }
 
 /** The ship gate: a ship ask needs a `review` verdict of passed or skipped. */
@@ -154,6 +175,9 @@ export async function openAsk(
   const taskKey = draft.task?.key ?? null;
   const options = draft.kind === "ship" ? [...SHIP_OPTIONS] : draft.options.map((o) => o.trim());
   const existing = deps.store.findOpenAsk(captain.threadId, draft.kind, taskKey, text);
+  // No await between this lookup and the insert, so the ask a rerun matches
+  // cannot be answered in between and let a new ask skip the column rule.
+  if (existing === null) refuseUnlessLabelsFit(options);
   const ask =
     existing ??
     deps.store.openAsk({
@@ -195,9 +219,9 @@ export async function openAsk(
   return { item: askItem(ask, existing === null ? "open" : "exists"), notes };
 }
 
-/** A rerun of an open ask keeps its stored options; say so when new ones differ. */
+/** A rerun of an open ask keeps its stored options; say so when it gave different ones. */
 function ignoredOptions(existing: Ask | null, options: readonly string[]): string[] {
-  if (existing === null) return [];
+  if (existing === null || options.length === 0) return [];
   const same =
     existing.options.length === options.length &&
     existing.options.every((option, i) => option === options[i]);

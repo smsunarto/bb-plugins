@@ -1,13 +1,22 @@
 import { describe, expect, test } from "vitest";
-import { ASK_OPTION_COLUMNS, optionLabelBlockers } from "./asks.ts";
+import { ASK_OPTION_COLUMNS, askBlockers, optionLabelBlockers } from "./asks.ts";
 import { clip, displayWidth } from "./width.ts";
 
 const reasons = (...options: string[]) => optionLabelBlockers(options).map((b) => b.reason);
+/** The blockers every ask's options meet, new or rerun, for one option beside "Hold". */
+const lineBlockers = (option: string, kind: "decision" | "ship" = "decision") =>
+  askBlockers({
+    kind,
+    taskKey: "BBPLUGINS-1",
+    text: "Pick one",
+    detail: "d",
+    options: [option, "Hold"],
+  });
 
 describe("an ask's option labels", () => {
   test("12 columns is accepted and 13 is refused, naming the option and the limit", () => {
     expect(ASK_OPTION_COLUMNS).toBe(12);
-    expect(optionLabelBlockers(["Redis cache!", "  SQLite  "])).toEqual([]);
+    expect(optionLabelBlockers(["Redis cache!", "SQLite"])).toEqual([]);
     expect(optionLabelBlockers(["Redis caches!"])).toEqual([
       {
         reason:
@@ -17,8 +26,7 @@ describe("an ask's option labels", () => {
     ]);
   });
 
-  test("each long option gets its own blocker; surrounding space is not counted", () => {
-    expect(reasons("  Redis cache!  ")).toEqual([]);
+  test("each long option gets its own blocker", () => {
     expect(reasons("Use the Redis cache", "Use SQLite")).toEqual([
       'option "Use the Redis cache" is 19 columns; an option is ≤12 columns (wide characters count 2), so the buttons fit on one row',
     ]);
@@ -40,12 +48,11 @@ describe("an ask's option labels", () => {
     expect(reasons("Redis (Recommended)")[0]).toContain("is 19 columns");
   });
 
-  test("a narrow label over 80 UTF-16 units is refused so it stays a valid answer", () => {
-    const stacked = `a${"́".repeat(100)}`;
-    expect(displayWidth(stacked)).toBe(1);
-    expect(reasons(stacked)).toEqual([
-      `option ${JSON.stringify(stacked)} is 101 UTF-16 units; an option is at most 80`,
-    ]);
+  test("keycap emoji count 2 columns", () => {
+    expect(displayWidth("1\u{FE0F}\u{20E3}")).toBe(2);
+    expect(displayWidth("#\u{20E3}")).toBe(2);
+    expect(reasons("1\u{FE0F}\u{20E3}".repeat(6))).toEqual([]);
+    expect(reasons("1\u{FE0F}\u{20E3}".repeat(7))[0]).toContain("is 14 columns");
   });
 
   test("the echo is JSON-quoted and cut to a short prefix", () => {
@@ -53,6 +60,38 @@ describe("an ask's option labels", () => {
     expect(reason).toBe(
       'option "Use \\"Redis\\"\\nfor the cac…" is 100037 columns; an option is ≤12 columns (wide characters count 2), so the buttons fit on one row',
     );
+  });
+});
+
+describe("the rules every option meets, new or rerun", () => {
+  test("over 80 UTF-16 units is refused, so the label stays a valid answer, and the echo stays short", () => {
+    const stacked = `a${"\u0301".repeat(100_000)}`;
+    expect(displayWidth(stacked)).toBe(1);
+    expect(lineBlockers(stacked)).toEqual([
+      {
+        reason: `option ${JSON.stringify(`${stacked.slice(0, 64)}…`)} is 100001 UTF-16 units; an option is at most 80`,
+        fix: "shorten it; move the detail into --detail-file",
+      },
+    ]);
+    expect(JSON.stringify(lineBlockers(stacked)).length).toBeLessThan(500);
+    expect(lineBlockers("x".repeat(80))).toEqual([]);
+  });
+
+  test("an option with a line break is refused", () => {
+    expect(lineBlockers("Redis\nnow")).toEqual([
+      {
+        reason: 'option "Redis\\nnow" spans lines; an option is one line',
+        fix: "put it on one line; move the detail into --detail-file",
+      },
+    ]);
+    expect(lineBlockers("Redis\r")).toEqual([]); // trimmed
+    expect(lineBlockers("Re\rdis")[0]?.reason).toContain("spans lines");
+  });
+
+  test("a ship ask's long option only says to drop it", () => {
+    expect(lineBlockers("x".repeat(200), "ship")).toEqual([
+      { reason: "a ship ask's options are always Merge and Hold", fix: "drop --option" },
+    ]);
   });
 });
 

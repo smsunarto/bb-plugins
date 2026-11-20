@@ -55,6 +55,8 @@ export type FakeTask = {
   updatedAt: string;
   description?: string;
   fields: Map<string, { value: string; head: string | null; writtenAt: string }>;
+  /** Keys the task had before a move; Tasks still answers them with the new key. */
+  formerKeys?: string[];
 };
 export type FakeTaskThread = {
   taskId: string;
@@ -317,7 +319,10 @@ export async function captainHost(options: FakeOptions = {}) {
         return { preset };
       }
       case "getTaskByKey": {
-        const task = tasks.tasks.find((entry) => entry.key === input["taskKey"]);
+        const key = String(input["taskKey"]);
+        const task = tasks.tasks.find(
+          (entry) => entry.key === key || entry.formerKeys?.includes(key) === true,
+        );
         return { task: task === undefined ? null : snapshotTask(task) };
       }
       case "listTasks": {

@@ -4,7 +4,6 @@ import {
   askBlockers,
   askItem,
   openAsk,
-  optionLabelBlockers,
   resolveAsk,
   shipBlockers,
 } from "../asks.ts";
@@ -80,15 +79,6 @@ export function askCommand(deps: CommandDeps) {
           detail,
           options: input.options.option,
         });
-        // A rerun of an open ask retries its push and keeps its options, so
-        // only a new ask's labels must fit a button.
-        const reopened = deps.store.findOpenAsk(
-          captain.threadId,
-          kind,
-          taskKey,
-          input.positionals.text.trim(),
-        );
-        if (reopened === null) blockers.push(...optionLabelBlockers(input.options.option));
         let task: TasksTask | null = null;
         if (taskKey !== null) {
           const resolved = await tasksOrRefuse(() => resolveTask(deps, captain, taskKey));

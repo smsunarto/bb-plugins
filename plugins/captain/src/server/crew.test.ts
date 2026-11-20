@@ -745,7 +745,7 @@ describe("bb captain ask", () => {
     ).toEqual(["Answered: Studio (a1)"]);
   });
 
-  test("an option over 12 columns is refused on every non-ship kind; 12 opens, though the comment adds (recommended)", async () => {
+  test("an option over 12 columns is refused on decision, access and improve asks; 12 opens trimmed, though the comment adds (recommended)", async () => {
     const { host, captainId, as } = await crewHost();
     const ask = (kind: string, first: string) =>
       as([
@@ -765,7 +765,8 @@ describe("bb captain ask", () => {
 
     const decision = await ask("decision", "Redis caches!");
     const access = await ask("access", "Grant the key");
-    const opened = await ask("decision", "Redis cache!");
+    const improve = await ask("improve", "缓存后端缓存后端");
+    const opened = await ask("decision", "  Redis cache!  ");
 
     expect(decision.exitCode).toBe(1);
     expect(decision.stderr).toContain(
@@ -773,6 +774,8 @@ describe("bb captain ask", () => {
     );
     expect(access.exitCode).toBe(1);
     expect(access.stderr).toContain('option "Grant the key" is 13 columns');
+    expect(improve.exitCode).toBe(1);
+    expect(improve.stderr).toContain('option "缓存后端缓存后端" is 16 columns');
     expect(opened.exitCode).toBe(0);
     expect(host.server.store.asksOf(captainId).map((a) => a.options)).toEqual([
       ["Redis cache!", "SQLite"],
@@ -822,6 +825,71 @@ describe("bb captain ask", () => {
       state: "answered",
       warnings: [],
     });
+  });
+
+  test("a rerun that gives no options gets no ignored-options note", async () => {
+    const { as } = await crewHost();
+    const argv = ["ask", "Grant the Unity key", "--kind", "access", "--detail", "Cloud crew."];
+
+    await as([...argv, "--option", "Grant", "--option", "Deny"]);
+    const again = await as(argv);
+
+    expect(again.exitCode).toBe(0);
+    expect(again.stdout).toBe("a1  exists  access  -  Grant the Unity key\n");
+    expect(again.stderr).toBe("");
+  });
+
+  test("a long-option rerun that no longer matches its open ask is refused, even when the ask is answered mid-command", async () => {
+    const { host, captainId, as } = await crewHost();
+    const ask = (...options: string[]) =>
+      as([
+        "ask",
+        "Pick the cache backend",
+        "--task",
+        "BBPLUGINS-1",
+        ...options.flatMap((option) => ["--option", option]),
+        "--detail",
+        "Builds re-download deps.",
+      ]);
+    await ask("Redis", "SQLite");
+
+    const [racing] = await Promise.all([
+      ask("x".repeat(70), "Move to Redis!!"),
+      host.harness.behavior.callRpc("resolveAsk", { askId: "a1", answer: "Redis" }),
+    ]);
+    const after = await ask("x".repeat(70), "Move to Redis!!");
+
+    expect(racing.exitCode === 1 || racing.stdout.includes("a1  exists")).toBe(true);
+    expect(after.exitCode).toBe(1);
+    expect(after.stderr).toContain(`option "${"x".repeat(23)}…" is 70 columns`);
+    expect(host.server.store.asksOf(captainId).map((a) => a.id)).toEqual(["a1"]);
+  });
+
+  test("a long-option rerun under a moved task's old key is refused", async () => {
+    const { host, captainId, as } = await crewHost();
+    const ask = (...options: string[]) =>
+      as([
+        "ask",
+        "Pick the cache backend",
+        "--task",
+        "BBPLUGINS-1",
+        ...options.flatMap((option) => ["--option", option]),
+        "--detail",
+        "Builds re-download deps.",
+      ]);
+    await ask("Redis", "SQLite");
+    const task = host.tasks.tasks.find((entry) => entry.key === "BBPLUGINS-1");
+    if (task === undefined) throw new Error("no BBPLUGINS-1");
+    Object.assign(task, { key: "BBPLUGINS-9", formerKeys: ["BBPLUGINS-1"] });
+
+    const moved = await ask("x".repeat(70), "Move to Redis!!");
+
+    expect(moved.exitCode).toBe(1);
+    expect(moved.stderr).toContain(`option "${"x".repeat(23)}…" is 70 columns`);
+    expect(moved.stderr).toContain('option "Move to Redis!!" is 15 columns');
+    expect(host.server.store.asksOf(captainId).map((a) => [a.id, a.taskKey])).toEqual([
+      ["a1", "BBPLUGINS-1"],
+    ]);
   });
 });
 
