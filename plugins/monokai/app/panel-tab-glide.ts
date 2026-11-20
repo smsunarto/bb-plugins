@@ -2,44 +2,44 @@ import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 
 /**
  * Slides the active highlight from the old tab to the new one when the user
- * taps or clicks a tab in the right panel's toolbar: the desktop toolbar
- * (pinned views beside the scrolling tab strip) and the phone pager (pinned
- * circles beside a one-chip viewport).
+ * taps or swipes to a tab in the phone pager: pinned circles beside a
+ * one-chip viewport.
+ *
+ * The desktop toolbar switches instantly. Its tabs differ in width (28px icon
+ * pills beside labeled tabs), and bb swaps the panel's content on the click's
+ * frame. A highlight flying between them stretched and shrank across the
+ * icons for 200ms behind content that had already changed, which read as the
+ * tab expanding rather than moving (BBP-49).
  *
  * bb paints the active tab's fill on its `[data-tab-pill]` and flips
  * `aria-pressed` on the pill's button in place as the selection moves. When a
- * flip follows a pointer in the same toolbar, and the toolbar still holds the
+ * flip follows a pointer in the same pager, and the pager still holds the
  * pill that was active, the script lays a transient highlight
- * (`[data-monokai-tab-glide]`) over the toolbar and animates its `clip-path`
+ * (`[data-monokai-tab-glide]`) over the pager and animates its `clip-path`
  * from the old pill's fill to the new one's. The new pill's own fill is hidden
  * during the flight (`[data-monokai-tab-glide-target]`) and returns when it lands.
  *
- * On the phone, bb steps the pager's chip row with an inline `translateX`,
- * resizes its viewport to the chip, and hides the chip it leaves. During the
- * flight the row slides from its old offset, the viewport eases to its new
- * width, and the chip leaving stays visible, so a swipe reads as the labels
- * moving under one fill.
+ * bb steps the pager's chip row with an inline `translateX`, resizes its
+ * viewport to the chip, and hides the chip it leaves. During the flight the
+ * row slides from its old offset, the viewport eases to its new width, and
+ * the chip leaving stays visible, so a swipe reads as the labels moving under
+ * one fill.
  *
  * - **Pointer only:** a keyboard shortcut, a new tab, or a closed tab switches
  *   instantly. Tab shortcuts fire many times a day; motion there reads as lag.
  * - **Interruption:** a switch mid-flight starts from where the highlight is.
  * - **Reduced motion:** no slide.
- * - **Private contracts:** the `[data-sidebar-split-tab-group]` toolbar (one per
- *   split pane) and its `[data-secondary-panel-tab-scroll-region]`; the phone's
- *   `mobile-panel-tab-pager`, its `mobile-panel-tab-viewport`, the viewport's
- *   inline `width`, its row's inline `transform`, and each chip wrapper's inline
- *   `visibility`; `[data-tab-pill] > button[aria-pressed]`; and the active
- *   pill's computed fill (background colour, clip box, radius).
+ * - **Private contracts:** `mobile-panel-tab-pager`, its
+ *   `mobile-panel-tab-viewport`, the viewport's inline `width`, its row's
+ *   inline `transform`, and each chip wrapper's inline `visibility`;
+ *   `[data-tab-pill] > button[aria-pressed]`; and the active pill's computed
+ *   fill (background colour, clip box, radius).
  */
-const GROUP = "[data-sidebar-split-tab-group]";
 const PAGER = '[data-testid="mobile-panel-tab-pager"]';
 const VIEWPORT_ID = "mobile-panel-tab-viewport";
 const VIEWPORT = `[data-testid="${VIEWPORT_ID}"]`;
-const TOOLBAR = `${GROUP}, ${PAGER}`;
-/** Regions that clip the pills inside them. */
-const CLIP = `[data-secondary-panel-tab-scroll-region], ${VIEWPORT}`;
 const PILL = "[data-tab-pill]";
-const PILL_BUTTON = `:is(${TOOLBAR}) ${PILL} > button[aria-pressed]`;
+const PILL_BUTTON = `${PAGER} ${PILL} > button[aria-pressed]`;
 const GLIDE = "data-monokai-tab-glide";
 const TARGET = "data-monokai-tab-glide-target";
 const HOST = "data-monokai-tab-glide-host";
@@ -48,16 +48,16 @@ const STYLE = "data-monokai-tab-glide-style";
 /** On-screen movement, fired tens of times a day: fast, strong ease-in-out. */
 const DURATION_MS = 200;
 const EASING = "cubic-bezier(0.77, 0, 0.175, 1)";
-/** Clears a flight whose `finished` never settles, as when bb removes the toolbar. */
+/** Clears a flight whose `finished` never settles, as when bb removes the pager. */
 const FALLBACK_MS = DURATION_MS + 120;
-/** A switch this soon after a pointer event in its toolbar came from that pointer. */
+/** A switch this soon after a pointer event in its pager came from that pointer. */
 const POINTER_WINDOW_MS = 800;
 
-// The highlight is the toolbar's last child, a span, so bb's and the theme's
-// `> div:first-child` rules keep matching the pinned views. The toolbar isolates
+// The highlight is the pager's last child, a span, so bb's and the theme's
+// `> div:first-child` rules keep matching the pinned views. The pager isolates
 // during a flight so the highlight sits under the pills but over its own fill.
 const CSS = `
-${GROUP}[${HOST}], ${PAGER}[${HOST}] { position: relative; isolation: isolate; }
+${PAGER}[${HOST}] { position: relative; isolation: isolate; }
 [${HOST}] > [${GLIDE}] { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
 [${HOST}] ${PILL}[${TARGET}] { background-color: transparent !important; }
 `;
@@ -167,11 +167,11 @@ interface PagerStep {
  * value, the old inline style bb replaced this frame, or where they are.
  */
 function pagerStep(
-  toolbar: Element,
+  pager: Element,
   oldStyles: ReadonlyMap<Element, string | null>,
   win: Window,
 ): PagerStep | null {
-  const viewport = toolbar.querySelector<HTMLElement>(VIEWPORT);
+  const viewport = pager.querySelector<HTMLElement>(VIEWPORT);
   if (viewport === null) return null;
   const viewportRect = viewport.getBoundingClientRect();
   const child = viewport.firstElementChild;
@@ -197,7 +197,7 @@ function pagerStep(
  * ("end"), whatever a running glide draws now.
  */
 function boxOf(pill: Element, step: PagerStep | null, at: "start" | "end", win: Window): Box {
-  const region = pill.closest(CLIP);
+  const region = pill.closest(VIEWPORT);
   const fill = fillOf(pill, win.getComputedStyle(pill));
   if (step === null || region !== step.viewport) {
     return clipTo(fill, region?.getBoundingClientRect() ?? null);
@@ -261,17 +261,17 @@ export function mountPanelTabGlide({
   const prefersReduced =
     reducedMotion ?? (() => win.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true);
 
-  // The last pointer event inside a toolbar: a tap, a click, or the end of a swipe.
-  let pointer: { toolbar: Element; at: number } | null = null;
+  // The last pointer event inside a pager: a tap, a click, or the end of a swipe.
+  let pointer: { pager: Element; at: number } | null = null;
   const onPointer = (event: PointerEvent) => {
-    const toolbar = event.target instanceof Element ? event.target.closest(TOOLBAR) : null;
-    if (toolbar !== null) pointer = { toolbar, at: win.performance.now() };
+    const pager = event.target instanceof Element ? event.target.closest(PAGER) : null;
+    if (pager !== null) pointer = { pager, at: win.performance.now() };
   };
   const fromPointer =
     isPointerSwitch ??
     ((pill: Element) =>
       pointer !== null &&
-      pill.closest(TOOLBAR) === pointer.toolbar &&
+      pill.closest(PAGER) === pointer.pager &&
       win.performance.now() - pointer.at < POINTER_WINDOW_MS);
 
   const style = doc.createElement("style");
@@ -287,31 +287,31 @@ export function mountPanelTabGlide({
   const oldStyles = new Map<Element, string | null>();
   let frame: number | undefined;
 
-  function land(toolbar: Element) {
-    const flight = flights.get(toolbar);
+  function land(pager: Element) {
+    const flight = flights.get(pager);
     if (flight === undefined) return;
-    flights.delete(toolbar);
+    flights.delete(pager);
     win.clearTimeout(flight.timer);
     for (const animation of flight.animations) animation.cancel();
     flight.ghost.remove();
     flight.target.removeAttribute(TARGET);
-    toolbar.removeAttribute(HOST);
+    pager.removeAttribute(HOST);
   }
 
   /** `retarget`: bb moved the pills of a flight in progress, so follow them. */
   function glide(from: Element, to: Element, retarget = false) {
-    const toolbar = to.closest(TOOLBAR);
-    if (toolbar === null || from.closest(TOOLBAR) !== toolbar || !from.isConnected) return;
+    const pager = to.closest(PAGER);
+    if (pager === null || from.closest(PAGER) !== pager || !from.isConnected) return;
     if (!retarget && (prefersReduced() || !fromPointer(to))) {
-      land(toolbar);
+      land(pager);
       return;
     }
 
-    const host = toolbar.getBoundingClientRect();
+    const host = pager.getBoundingClientRect();
     const toComputed = win.getComputedStyle(to);
-    const step = pagerStep(toolbar, oldStyles, win);
+    const step = pagerStep(pager, oldStyles, win);
     const end = boxOf(to, step, "end", win);
-    const previous = flights.get(toolbar);
+    const previous = flights.get(pager);
     const current =
       previous?.ghost.isConnected === true
         ? boxOfInset(win.getComputedStyle(previous.ghost).clipPath, host)
@@ -319,7 +319,7 @@ export function mountPanelTabGlide({
     const start = current ?? boxOf(from, step, "start", win);
     const background = previous?.ghost.style.backgroundColor || toComputed.backgroundColor;
     const radius = toComputed.borderTopLeftRadius || "0px";
-    land(toolbar);
+    land(pager);
 
     const ghost = doc.createElement("span");
     if (typeof ghost.animate !== "function") return;
@@ -327,8 +327,8 @@ export function mountPanelTabGlide({
     ghost.setAttribute("aria-hidden", "true");
     ghost.style.backgroundColor = background;
     ghost.style.clipPath = insetOf(end, host, radius);
-    toolbar.setAttribute(HOST, "");
-    toolbar.append(ghost);
+    pager.setAttribute(HOST, "");
+    pager.append(ghost);
     to.setAttribute(TARGET, "");
 
     const timing: KeyframeAnimationOptions = { duration: DURATION_MS, easing: EASING, id: GLIDE };
@@ -344,12 +344,12 @@ export function mountPanelTabGlide({
       from,
       target: to,
       animations,
-      timer: win.setTimeout(() => land(toolbar), FALLBACK_MS),
+      timer: win.setTimeout(() => land(pager), FALLBACK_MS),
     };
-    flights.set(toolbar, flight);
+    flights.set(pager, flight);
     animations[0]!.finished.then(
       () => {
-        if (flights.get(toolbar) === flight) land(toolbar);
+        if (flights.get(pager) === flight) land(pager);
         return undefined;
       },
       () => undefined,
@@ -361,7 +361,7 @@ export function mountPanelTabGlide({
     const batch = switches;
     switches = [];
     for (const { from, to } of batch) {
-      stepped.delete(to.closest(TOOLBAR) ?? to);
+      stepped.delete(to.closest(PAGER) ?? to);
       glide(from, to);
     }
     // bb re-measures the pager a frame after a switch; a flight follows that step.
@@ -389,16 +389,16 @@ export function mountPanelTabGlide({
     const pressed = target.getAttribute("aria-pressed");
     if (oldValue === pressed || !target.matches(PILL_BUTTON)) return;
     const pill = target.parentElement;
-    const toolbar = pill?.closest(TOOLBAR);
-    if (pill == null || toolbar == null) return;
-    const entry = flips.get(toolbar) ?? {};
+    const pager = pill?.closest(PAGER);
+    if (pill == null || pager == null) return;
+    const entry = flips.get(pager) ?? {};
     if (pressed === "true") entry.to = pill;
     else if (oldValue === "true") entry.from = pill;
-    flips.set(toolbar, entry);
+    flips.set(pager, entry);
   }
 
   const observer = new MutationObserver((records) => {
-    // One switch flips two buttons in the same toolbar; split panes each have one.
+    // One switch flips two buttons in the same pager.
     const flips = new Map<Element, Partial<Record<"from" | "to", Element>>>();
     for (const { target, attributeName, oldValue } of records) {
       if (!(target instanceof HTMLElement)) continue;
@@ -429,7 +429,7 @@ export function mountPanelTabGlide({
     switches = [];
     stepped.clear();
     oldStyles.clear();
-    for (const toolbar of flights.keys()) land(toolbar);
+    for (const pager of flights.keys()) land(pager);
     style.remove();
   };
   signal.addEventListener("abort", dispose, { once: true });

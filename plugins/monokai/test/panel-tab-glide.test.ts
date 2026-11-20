@@ -44,40 +44,32 @@ afterEach(() => {
 });
 
 /**
- * bb's right panel toolbar: pinned view pills, then the tab strip
- * (strip > scroll region > viewport > content row > tab wrappers).
+ * bb's desktop right panel toolbar: pinned view pills, then the tab strip
+ * (strip > scroll region > content row > tab wrappers).
  */
 function strip(count: number, active = 0, pinned = 0) {
   const group = document.createElement("div");
   group.setAttribute("data-sidebar-split-tab-group", "pane-primary");
-  const root = document.createElement("div");
-  root.setAttribute("data-testid", "secondary-panel-tab-strip");
   const region = document.createElement("div");
   region.setAttribute("data-secondary-panel-tab-scroll-region", "true");
-  const row = document.createElement("div");
-  row.setAttribute("data-secondary-panel-tab-content", "");
-  region.append(row);
-  root.append(region);
+  group.append(region);
   const buttons = Array.from({ length: count }, (_, index) => {
-    const wrapper = document.createElement("div");
     const pill = document.createElement("div");
     pill.setAttribute("data-tab-pill", "");
     const button = document.createElement("button");
     button.setAttribute("aria-pressed", String(index === active));
     pill.append(button);
-    wrapper.append(pill);
-    (index < pinned ? group : row).append(wrapper);
+    (index < pinned ? group : region).append(pill);
     return button;
   });
-  group.append(root);
   document.body.append(group);
-  return { row: group, buttons };
+  return { group, buttons };
 }
 
-function select(buttons: HTMLButtonElement[], index: number) {
-  for (const [i, button] of buttons.entries()) {
-    button.setAttribute("aria-pressed", String(i === index));
-  }
+/** Moves the selection the way bb does: both buttons flip in one commit. */
+function select(from: HTMLButtonElement, to: HTMLButtonElement) {
+  from.setAttribute("aria-pressed", "false");
+  to.setAttribute("aria-pressed", "true");
 }
 
 function mount(options: { pointer?: boolean; reduced?: boolean } = {}) {
@@ -90,97 +82,17 @@ function mount(options: { pointer?: boolean; reduced?: boolean } = {}) {
   return { controller, dispose };
 }
 
-test("slides a highlight to a clicked tab and lands it", async () => {
-  const { row, buttons } = strip(3);
+test("the desktop toolbar switches instantly, icon and labeled tabs alike", async () => {
+  const { group, buttons } = strip(3, 0, 2);
   const { dispose } = mount();
-  select(buttons, 2);
+  select(buttons[0]!, buttons[1]!);
   await frame();
-  const ghost = row.querySelector(GLIDE);
-  expect(row.lastElementChild).toBe(ghost);
-  expect(ghost?.getAttribute("aria-hidden")).toBe("true");
-  expect(buttons[2]!.parentElement!.hasAttribute(TARGET)).toBe(true);
-  expect(animations).toHaveLength(1);
-
-  expect(row.hasAttribute("data-monokai-tab-glide-host")).toBe(true);
-  animations[0]!.finish();
+  select(buttons[1]!, buttons[2]!);
   await frame();
-  expect(row.querySelector(GLIDE)).toBeNull();
-  expect(row.hasAttribute("data-monokai-tab-glide-host")).toBe(false);
+  expect(group.querySelector(GLIDE)).toBeNull();
+  expect(group.hasAttribute("data-monokai-tab-glide-host")).toBe(false);
   expect(buttons[2]!.parentElement!.hasAttribute(TARGET)).toBe(false);
-  dispose();
-});
-
-test("a keyboard switch, reduced motion, or a closed tab stays instant", async () => {
-  const keyboard = strip(2);
-  const first = mount({ pointer: false });
-  select(keyboard.buttons, 1);
-  await frame();
-  expect(keyboard.row.querySelector(GLIDE)).toBeNull();
-  first.dispose();
-
-  const reduced = strip(2);
-  const second = mount({ reduced: true });
-  select(reduced.buttons, 1);
-  await frame();
-  expect(reduced.row.querySelector(GLIDE)).toBeNull();
-  second.dispose();
-
-  const closed = strip(2);
-  const third = mount();
-  closed.buttons[0]!.closest("[data-tab-pill]")!.parentElement!.remove();
-  closed.buttons[1]!.setAttribute("aria-pressed", "true");
-  await frame();
-  expect(closed.row.querySelector(GLIDE)).toBeNull();
-  third.dispose();
   expect(animations).toHaveLength(0);
-});
-
-test("a switch mid-flight replaces the flight with one highlight", async () => {
-  const { row, buttons } = strip(3);
-  const { dispose } = mount();
-  select(buttons, 1);
-  await frame();
-  select(buttons, 2);
-  await frame();
-  expect(row.querySelectorAll(GLIDE)).toHaveLength(1);
-  expect(animations[0]!.cancelled).toBe(true);
-  expect(buttons[1]!.parentElement!.hasAttribute(TARGET)).toBe(false);
-  expect(buttons[2]!.parentElement!.hasAttribute(TARGET)).toBe(true);
-  dispose();
-});
-
-test("slides between a pinned view and a strip tab", async () => {
-  const { row, buttons } = strip(3, 0, 2);
-  const { dispose } = mount();
-  select(buttons, 2);
-  await frame();
-  expect(row.lastElementChild?.hasAttribute("data-monokai-tab-glide")).toBe(true);
-  expect(buttons[2]!.parentElement!.hasAttribute(TARGET)).toBe(true);
-  dispose();
-});
-
-test("lands when bb replaces the target pill mid-flight", async () => {
-  const { row, buttons } = strip(2);
-  const { dispose } = mount();
-  select(buttons, 1);
-  await frame();
-  const pill = buttons[1]!.parentElement!;
-  const replacement = pill.cloneNode(true) as HTMLElement;
-  replacement.removeAttribute(TARGET);
-  pill.replaceWith(replacement);
-  await new Promise((resolve) => setTimeout(resolve, 400));
-  expect(row.querySelector(GLIDE)).toBeNull();
-  expect(row.hasAttribute("data-monokai-tab-glide-host")).toBe(false);
-  expect(replacement.hasAttribute(TARGET)).toBe(false);
-  dispose();
-});
-
-test("works on a strip mounted after the script", async () => {
-  const { dispose } = mount();
-  const { row, buttons } = strip(2);
-  select(buttons, 1);
-  await frame();
-  expect(row.querySelector(GLIDE)).not.toBeNull();
   dispose();
 });
 
@@ -222,15 +134,85 @@ function pager(count: number, active: number) {
   return { root, viewport, row, pins, chips };
 }
 
-test("glides between a pinned circle and the pager's chip", async () => {
+test("slides the highlight to a tapped tab and lands it", async () => {
   const { root, pins, chips } = pager(2, 0);
   const { dispose } = mount();
-  chips[0]!.setAttribute("aria-pressed", "false");
-  pins[0]!.setAttribute("aria-pressed", "true");
+  select(chips[0]!, pins[0]!);
   await frame();
-  expect(root.lastElementChild?.hasAttribute("data-monokai-tab-glide")).toBe(true);
+  const ghost = root.querySelector(GLIDE);
+  expect(root.lastElementChild).toBe(ghost);
+  expect(ghost?.getAttribute("aria-hidden")).toBe("true");
   expect(pins[0]!.parentElement!.hasAttribute(TARGET)).toBe(true);
-  expect(animations).toHaveLength(1);
+  expect(root.hasAttribute("data-monokai-tab-glide-host")).toBe(true);
+  animations[0]!.finish();
+  await frame();
+  expect(root.querySelector(GLIDE)).toBeNull();
+  expect(root.hasAttribute("data-monokai-tab-glide-host")).toBe(false);
+  expect(pins[0]!.parentElement!.hasAttribute(TARGET)).toBe(false);
+  dispose();
+});
+
+test("a keyboard switch, reduced motion, or a closed tab stays instant", async () => {
+  const keyboard = pager(2, 0);
+  const first = mount({ pointer: false });
+  select(keyboard.chips[0]!, keyboard.pins[0]!);
+  await frame();
+  expect(keyboard.root.querySelector(GLIDE)).toBeNull();
+  first.dispose();
+
+  const reduced = pager(2, 0);
+  const second = mount({ reduced: true });
+  select(reduced.chips[0]!, reduced.pins[0]!);
+  await frame();
+  expect(reduced.root.querySelector(GLIDE)).toBeNull();
+  second.dispose();
+
+  const closed = pager(2, 0);
+  const third = mount();
+  closed.chips[0]!.closest("[data-tab-pill]")!.parentElement!.remove();
+  closed.chips[1]!.setAttribute("aria-pressed", "true");
+  await frame();
+  expect(closed.root.querySelector(GLIDE)).toBeNull();
+  third.dispose();
+  expect(animations).toHaveLength(0);
+});
+
+test("a switch mid-flight replaces the flight with one highlight", async () => {
+  const { root, pins, chips } = pager(2, 0);
+  const { dispose } = mount();
+  select(chips[0]!, pins[0]!);
+  await frame();
+  select(pins[0]!, chips[0]!);
+  await frame();
+  expect(root.querySelectorAll(GLIDE)).toHaveLength(1);
+  expect(animations[0]!.cancelled).toBe(true);
+  expect(pins[0]!.parentElement!.hasAttribute(TARGET)).toBe(false);
+  expect(chips[0]!.parentElement!.hasAttribute(TARGET)).toBe(true);
+  dispose();
+});
+
+test("lands when bb replaces the target pill mid-flight", async () => {
+  const { root, pins, chips } = pager(2, 0);
+  const { dispose } = mount();
+  select(chips[0]!, pins[0]!);
+  await frame();
+  const pill = pins[0]!.parentElement!;
+  const replacement = pill.cloneNode(true) as HTMLElement;
+  replacement.removeAttribute(TARGET);
+  pill.replaceWith(replacement);
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  expect(root.querySelector(GLIDE)).toBeNull();
+  expect(root.hasAttribute("data-monokai-tab-glide-host")).toBe(false);
+  expect(replacement.hasAttribute(TARGET)).toBe(false);
+  dispose();
+});
+
+test("works on a pager mounted after the script", async () => {
+  const { dispose } = mount();
+  const { root, pins, chips } = pager(2, 0);
+  select(chips[0]!, pins[0]!);
+  await frame();
+  expect(root.querySelector(GLIDE)).not.toBeNull();
   dispose();
 });
 
@@ -292,16 +274,16 @@ test("a pager step without a switch is forgotten by the next switch", async () =
 });
 
 test("disposal removes the highlight, the mark, and the style", async () => {
-  const { row, buttons } = strip(2);
+  const { root, pins, chips } = pager(2, 0);
   const { controller } = mount();
   expect(document.querySelector("[data-monokai-tab-glide-style]")).not.toBeNull();
-  select(buttons, 1);
+  select(chips[0]!, pins[0]!);
   await frame();
   controller.abort();
-  expect(row.querySelector(GLIDE)).toBeNull();
-  expect(buttons[1]!.parentElement!.hasAttribute(TARGET)).toBe(false);
+  expect(root.querySelector(GLIDE)).toBeNull();
+  expect(pins[0]!.parentElement!.hasAttribute(TARGET)).toBe(false);
   expect(document.querySelector("[data-monokai-tab-glide-style]")).toBeNull();
-  select(buttons, 0);
+  select(pins[0]!, chips[0]!);
   await frame();
-  expect(row.querySelector(GLIDE)).toBeNull();
+  expect(root.querySelector(GLIDE)).toBeNull();
 });
