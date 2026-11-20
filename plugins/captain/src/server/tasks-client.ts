@@ -208,12 +208,17 @@ export function createTasksClient(
       return (await call("getTaskByKey", { taskKey }, z.object({ task: taskSchema.nullable() })))
         .task;
     },
-    /** One project's open tasks (not done or canceled), at most `limit`, in Tasks' board order. */
-    async listOpenTasks(projectId: string, limit: number): Promise<TasksTask[]> {
+    /** One project's open tasks (not done or canceled), at most `limit`, in Tasks' board order; `search` matches title or description. */
+    async listOpenTasks(projectId: string, limit: number, search?: string): Promise<TasksTask[]> {
       return (
         await call(
           "listTasks",
-          { projectId, statuses: OPEN_STATUSES, limit },
+          {
+            projectId,
+            statuses: OPEN_STATUSES,
+            limit,
+            ...(search === undefined ? {} : { search }),
+          },
           z.object({ tasks: z.array(taskSchema) }),
         )
       ).tasks;

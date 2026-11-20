@@ -79,8 +79,11 @@ export const sinceTag = (captainId: string) => `since:${captainId}`;
 export const CAPTAINS_TAG = "captains";
 export const LADDERS_TAG = "ladders";
 
-/** The roles a thread can be adopted as: the dispatchable ones. */
-export const ADOPT_ROLES = ["plan", "implement", "review"] as const;
+/** The longest title a task made from a thread's title may have. */
+export const ADOPT_TITLE_MAX = 200;
+
+/** A thread's crew record, for the Adopt menu item: which Captain it is crew of, on a task. */
+export const crewOfTag = (threadId: string) => `crew-of:${threadId}`;
 
 /** Later and Skip may write only these `notices` keys; the check's own keys stay its own. */
 export const DEFERRABLE_KEY = /^(ask|blocked|health):[A-Za-z0-9_:.-]{1,200}$/u;
@@ -121,14 +124,22 @@ const adoptOptionsSchema = z
           ),
           /** Open tasks in its repos. */
           tasks: z.array(
-            z.object({ key: z.string(), title: z.string(), status: z.string() }).strict(),
+            z
+              .object({
+                key: z.string(),
+                title: z.string(),
+                status: z.string(),
+                /** Roles another live thread already holds on this task; adopting into one is refused. */
+                held: z.array(z.enum(LADDER_ROLES)),
+              })
+              .strict(),
           ),
           /** Why this thread cannot join this Captain; empty when it can. */
           blockers: z.array(blocker),
         })
         .strict(),
     ),
-    roles: z.array(z.object({ value: z.enum(ADOPT_ROLES), label: z.string() }).strict()),
+    roles: z.array(z.object({ value: z.enum(LADDER_ROLES), label: z.string() }).strict()),
     /** Tasks did not answer: tasks are missing, and only Captains and repos show. */
     tasksError: z.string().nullable(),
   })
@@ -138,7 +149,7 @@ const adoptInputSchema = z
   .object({
     captainId: threadId,
     threadId,
-    role: z.enum(ADOPT_ROLES),
+    role: z.enum(LADDER_ROLES),
     task: z.discriminatedUnion("kind", [
       z.object({ kind: z.literal("existing"), key: taskKey }).strict(),
       z
@@ -149,7 +160,7 @@ const adoptInputSchema = z
             .string()
             .trim()
             .min(1)
-            .max(200)
+            .max(ADOPT_TITLE_MAX)
             .regex(/^[^\r\n]+$/u),
         })
         .strict(),
@@ -164,11 +175,8 @@ const adoptResultSchema = z.discriminatedUnion("ok", [
       task: z.string(),
       /** The task was created from the thread's title. */
       created: z.boolean(),
-      /** `adopted`, or `exists` when another live thread already holds the task and role. */
-      state: z.string(),
-      adopted: z.boolean(),
+      /** Whether the contract was sent now or waits for the first tell. */
       detail: z.string(),
-      blockers: z.array(blocker),
       /** What `dispatch --thread` prints as notes, such as a non-full permission mode. */
       warnings: z.array(z.string()),
     })
@@ -290,9 +298,19 @@ export const captainContract = defineRpcContract({
       z.object({ ok: z.literal(false), blockers: z.array(blocker) }).strict(),
     ]),
   },
+  /**
+   * The Captain each thread is crew of on a task, keyed by thread id; null for
+   * any other thread. Read from `data.db` alone, for every thread menu row.
+   */
+  crewOf: {
+    input: z.object({ keys: z.array(z.string().min(1).max(200)).max(500) }).strict(),
+    output: z.record(z.string(), threadId.nullable()),
+    keyTags: (key) => [crewOfTag(key)],
+  },
   /** The Captains, open tasks and roles the Adopt into Captain dialog offers for one thread. */
   adoptOptions: {
-    input: z.object({ threadId }).strict(),
+    /** `open` numbers each opening of the dialog, so each one reads fresh rather than from cache. */
+    input: z.object({ threadId, open: z.number().int().nonnegative() }).strict(),
     output: adoptOptionsSchema,
     tags: () => [CAPTAINS_TAG],
   },

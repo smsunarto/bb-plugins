@@ -48,7 +48,7 @@ type Plan = {
   presets: TasksPreset[];
 };
 
-export type Flags = {
+type Flags = {
   again: boolean;
   dryRun: boolean;
   baseBranch: string | undefined;
@@ -129,7 +129,6 @@ export function dispatchCommand(deps: CommandDeps) {
             flags.thread,
             flags,
           );
-          if (!adopted.ok) return refuse("captain dispatch", adopted.blockers, json);
           return render([adopted.item], json, adopted.notes);
         }
         const plan = await validate(
@@ -199,13 +198,18 @@ export function dispatchCommand(deps: CommandDeps) {
   });
 }
 
-/** Read and check everything before spawning anything; collect every blocker. */
+/**
+ * Read and check everything before spawning anything; collect every blocker.
+ * With `pendingTask`, `--thread` takes no key: the task does not exist yet,
+ * and every other check runs as it would once it does.
+ */
 async function validate(
   deps: CommandDeps,
   captain: Captain,
   keys: readonly string[],
   roleNames: readonly string[],
   flags: Flags,
+  pendingTask = false,
 ): Promise<(Plan & { poolUnread: boolean }) | { blockers: Blocker[] }> {
   const blockers: Blocker[] = [];
   if (flags.rung === null) {
@@ -237,7 +241,8 @@ async function validate(
     });
   }
   const uniqueKeys = [...new Set(keys.map((key) => key.trim().toUpperCase()))];
-  if (flags.thread !== undefined && (uniqueKeys.length !== 1 || roles.length > 1)) {
+  const taskCount = pendingTask ? 0 : 1;
+  if (flags.thread !== undefined && (uniqueKeys.length !== taskCount || roles.length > 1)) {
     blockers.push({
       reason: "--thread brings one thread in for one task and one role",
       fix: "pass one task key and one --role with --thread",
@@ -591,14 +596,17 @@ export function adoptionBlockers(
   deps: CommandDeps,
   captain: Captain,
   thread: Pick<Adoptee, "id" | "originKind" | "archivedAt" | "parentThreadId">,
-  retry: { task: string; role: string },
+  retry: { task: string; role: string } | null,
 ): Blocker[] {
   const threadId = thread.id;
   const blockers: Blocker[] = [];
   if (thread.originKind !== null) {
     blockers.push({
       reason: `${threadId} is a fork, and bb never tells a fork's parent about its turns`,
-      fix: `bb captain dispatch ${retry.task} --role ${retry.role} to start a new thread`,
+      fix:
+        retry === null
+          ? "start a new crew thread for this work instead"
+          : `bb captain dispatch ${retry.task} --role ${retry.role} to start a new thread`,
     });
   }
   if (thread.archivedAt !== null) {
@@ -621,7 +629,8 @@ export function adoptionBlockers(
  * `bb captain dispatch <task> --role <role> --thread <id>`: validate as
  * dispatch does, then bring the thread in. The CLI and the sidebar's Adopt
  * dialog both call this, so both set parent, notifications, the Tasks
- * attachment, the role record and the contract the same way.
+ * attachment, the role record and the contract the same way. A refusal
+ * throws `Refusal`, which each caller's guard turns into its own output.
  */
 export async function adoptThread(
   deps: CommandDeps,
@@ -630,18 +639,36 @@ export async function adoptThread(
   roleNames: readonly string[],
   threadId: string,
   flags: Omit<Flags, "thread">,
-): Promise<{ ok: true; item: Item; notes: string[] } | { ok: false; blockers: Blocker[] }> {
+): Promise<{ item: Item; notes: string[] }> {
   const withThread: Flags = { ...flags, thread: threadId };
   const plan = await validate(deps, captain, keys, roleNames, withThread);
-  if ("blockers" in plan) return { ok: false, blockers: plan.blockers };
+  if ("blockers" in plan) throw new Refusal(plan.blockers);
   const [unit] = plan.units;
   if (unit === undefined) throw new Error("adoption without a unit");
-  try {
-    return { ok: true, ...(await adopt(deps, plan, unit, threadId, withThread)) };
-  } catch (error) {
-    if (error instanceof Refusal) return { ok: false, blockers: error.blockers };
-    throw error;
-  }
+  return await adopt(deps, plan, unit, threadId, withThread);
+}
+
+/**
+ * Every refusal `adoptThread` would raise for one role, run before its task
+ * exists: `validate` without a key, then the thread's own checks. A caller
+ * that creates the task first runs this so a refusal creates nothing.
+ */
+export async function checkAdoption(
+  deps: CommandDeps,
+  captain: Captain,
+  roleName: string,
+  threadId: string,
+): Promise<Blocker[]> {
+  const flags: Flags = {
+    again: false,
+    dryRun: false,
+    baseBranch: undefined,
+    thread: threadId,
+    rung: undefined,
+  };
+  const plan = await validate(deps, captain, [], [roleName], flags, true);
+  if ("blockers" in plan) return plan.blockers;
+  return adoptionBlockers(deps, captain, await readAdoptee(deps, threadId), null);
 }
 
 /**

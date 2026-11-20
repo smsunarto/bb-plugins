@@ -53,6 +53,7 @@ export type FakeTask = {
   title: string;
   status: string;
   updatedAt: string;
+  description?: string;
   fields: Map<string, { value: string; head: string | null; writtenAt: string }>;
 };
 export type FakeTaskThread = {
@@ -322,10 +323,15 @@ export async function captainHost(options: FakeOptions = {}) {
       case "listTasks": {
         const project = tasks.projects.find((entry) => entry.id === input["projectId"]);
         const statuses = input["statuses"] as string[] | undefined;
+        const search = input["search"] as string | undefined;
         return {
           tasks: tasks.tasks
             .filter((task) => project !== undefined && task.key.startsWith(`${project.prefix}-`))
             .filter((task) => statuses === undefined || statuses.includes(task.status))
+            .filter(
+              (task) =>
+                search === undefined || `${task.title}\n${task.description ?? ""}`.includes(search),
+            )
             .slice(0, Number(input["limit"] ?? 100))
             .map(snapshotTask),
           nextCursor: null,
@@ -338,6 +344,7 @@ export async function captainHost(options: FakeOptions = {}) {
           tasks.tasks.filter((task) => task.key.startsWith(`${project.prefix}-`)).length + 1;
         const task = addTask(`${project.prefix}-${number}`, {
           title: String(input["title"]),
+          description: String(input["description"] ?? ""),
           status: (input["status"] as string | undefined) ?? "backlog",
         });
         return { ok: true, task: snapshotTask(task) };
