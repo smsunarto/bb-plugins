@@ -1,0 +1,34 @@
+diff --git c/added.txt i/added.txt
+new file mode 100644
+index 0000000..92d5444
+--- /dev/null
++++ i/added.txt
+@@ -0,0 +1 @@
++fresh
+diff --git c/blob.bin i/blob.bin
+index c364c8e..ac3d0d8 100644
+Binary files c/blob.bin and i/blob.bin differ
+diff --git c/gone.txt i/gone.txt
+deleted file mode 100644
+index 286c5f5..0000000
+--- c/gone.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-gone
+diff --git c/keep.txt i/keep.txt
+index 4cb29ea..ea14db2 100644
+--- c/keep.txt
++++ i/keep.txt
+@@ -1,3 +1,4 @@
+ one
+-two
++2
+ three
++four
+diff --git c/old-name.txt i/new-name.txt
+similarity index 100%
+rename from old-name.txt
+rename to new-name.txt
+diff --git c/run.sh i/run.sh
+old mode 100644
+new mode 100755

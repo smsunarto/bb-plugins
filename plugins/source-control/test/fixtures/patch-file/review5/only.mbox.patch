@@ -1,0 +1,12 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Alice <a@example.org>
+Date: Wed, 1 Jan 2020 00:00:00 +0000
+Subject: [PATCH] inline
+
+Only in new: missing.txt
+diff --git a/shown.txt b/shown.txt
+--- a/shown.txt
++++ b/shown.txt
+@@ -1 +1 @@
+-b
++c

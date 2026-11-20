@@ -11,6 +11,9 @@ import {
 import { quotedPath } from "./quoted-path.ts";
 
 const FIXTURES = join(import.meta.dirname, "../../test/fixtures/patch-file");
+const START =
+  "Line 1 isn't the start of a git diff, git log, git format-patch or diff -u, the forms the diff view draws.";
+const BIN = "Line 1 is a binary record outside a git diff, which the diff view doesn't draw.";
 const fixture = (name: string) => readFileSync(join(FIXTURES, name), "utf8");
 
 /** The read of a patch the diff view must accept. */
@@ -256,6 +259,7 @@ describe("readPatchFile", () => {
     const text = [
       `From ${sha} Mon Sep 17 00:00:00 2001`,
       "From: Ada <ada@example.com>",
+      "Date: Mon, 1 Jan 2024 00:00:00 +0000",
       "Subject: [PATCH] Revert the bad one",
       "",
       `commit ${sha} broke the build; this reverts it.`,
@@ -316,7 +320,7 @@ describe("readPatchFile", () => {
     [
       "a truncated hunk",
       "--- a/x.txt\n+++ b/x.txt\n@@ -1,10 +1,10 @@\n-a\n+b\n",
-      "Line 3 starts a hunk",
+      "Line 3 ends before the lines its hunk header counts",
     ],
   ])("%s reads as text, with the reason", (_, text, reason) => {
     expect(rejected(text)).toContain(reason);
@@ -328,9 +332,7 @@ describe("readPatchFile", () => {
     expect(rejected(hunk("@@ -1 +1 @@"))).toBe(
       "Line 6 continues a hunk past the lines its header counts.",
     );
-    expect(rejected(hunk("@@ -1,2 +1,3 @@"))).toBe(
-      "Line 3 starts a hunk whose lines don't match the counts in its header.",
-    );
+    expect(rejected(hunk("@@ -1,2 +1,3 @@"))).toBe("Line 7 breaks off the hunk above it.");
     expect(parsed(hunk("@@ -1 +1,2 @@").replace("diff --git a/y b/y\n", "")).files).toBe(1);
   });
 
@@ -348,6 +350,7 @@ describe("readPatchFile", () => {
       "From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001",
       "From: =?UTF-8?q?Zo=C3=AB=20M=C3=BCller=20=E5=B1=B1=E7=94=B0=E5=A4=AA?=",
       " =?UTF-8?q?=E9=83=8E?= <z@e.x>",
+      "Date: Mon, 1 Jan 2024 00:00:00 +0000",
       "Subject: [PATCH] s",
       "",
       "---",
@@ -366,7 +369,7 @@ describe("readPatchFile", () => {
 
   test("a long author header costs a line's worth of work", () => {
     const author = `x${" ".repeat(100_000)}<${"y".repeat(100_000)}`;
-    const text = `From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001\nFrom: ${author}\nSubject: s\n\n---\ndiff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n`;
+    const text = `From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001\nFrom: ${author}\nDate: Mon, 1 Jan 2024 00:00:00 +0000\nSubject: s\n\n---\ndiff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n`;
     expect(parsed(text).commits[0]!.authorName!.length).toBeLessThanOrEqual(2001);
   });
 
@@ -391,15 +394,13 @@ describe("review fixtures", () => {
     ["undercount.patch", "Line 9 continues a hunk past the lines its header counts."],
     [
       "overcount-plain.diff",
-      "Line 3 starts a hunk whose lines don't match the counts in its header.",
+      "Line 3 is a hunk whose counts run into the next file's --- / +++ header.",
     ],
-    ["badhunk.patch", "Line 5 has a hunk header the diff view can't read."],
-    ["prose.diff", "Line 4 has a --- / +++ pair with no hunk after it."],
-    ["prose2.patch", "Line 2 has a diff --git line with no change after it."],
-    [
-      "truncated-sig.patch",
-      "Line 11 starts a hunk whose lines don't match the counts in its header.",
-    ],
+    ["badhunk.patch", "Line 3 has a file header with no hunk after it."],
+    ["prose.diff", START],
+    ["prose2.patch", START],
+    // Hand-made: format-patch always writes a Date line.
+    ["truncated-sig.patch", "Line 1 starts a mail with no Date line."],
     [
       "git-show-merge-cc.patch",
       "Line 8 is part of a combined merge diff, which the diff view can't show.",
@@ -409,7 +410,7 @@ describe("review fixtures", () => {
   });
 
   test.each(["plain-context.diff"])("review/%s (no unified diff) reads as text", (name) => {
-    expect(rejected(fixture(`review/${name}`))).toBe("This file holds no diff.");
+    expect(rejected(fixture(`review/${name}`))).toBe(START);
   });
 
   test("valid inputs git accepts still draw", () => {
@@ -421,7 +422,8 @@ describe("review fixtures", () => {
     expect(counts("samepath.patch")).toEqual(["f.txt +1 -1", "f.txt +1 -1"]);
     expect(counts("sqlish.patch")).toEqual(["q.sql +1 -1"]);
     expect(counts("sqlish-plain.diff")).toEqual(["q.sql +1 -1"]);
-    expect(counts("svn.diff")).toEqual(["trunk/foo.c +1 -1", "trunk/bar.c +1 -1"]);
+    // svn's Index: form is outside the forms the diff view draws.
+    expect(rejected(fixture("review/svn.diff"))).toBe(START);
   });
 
   test("custom, mnemonic and missing prefixes give the repository path", () => {
@@ -450,9 +452,8 @@ describe("review fixtures", () => {
     expect(read.commits[0]!.files.map(({ file }) => file.path)).not.toContain("new behaviour");
   });
 
-  test("diff -r's one-line binary pair is a binary card", () => {
-    const files = parsed("Binary files a/nul.dat and b/nul.dat differ\n").commits[0]!.files;
-    expect(files.map(({ file }) => [file.path, file.binary])).toEqual([["nul.dat", true]]);
+  test("diff -r's one-line binary pair reads as text", () => {
+    expect(rejected("Binary files a/nul.dat and b/nul.dat differ\n")).toBe(BIN);
   });
 
   test("diff -r's Only in records read as text, never dropped", () => {
@@ -463,7 +464,7 @@ describe("review fixtures", () => {
 
   test("a hunk that runs back before the one above it reads as text", () => {
     expect(rejected(fixture("review/omitted.patch"))).toBe(
-      "Line 7 starts a hunk inside the range of the hunk before it, so the diff view can't be sure of it.",
+      "Line 7 starts a hunk inside or before the hunk above it.",
     );
   });
 });
@@ -486,60 +487,31 @@ describe("review round 2 fixtures", () => {
     expect(files("gnu-suppress-blank-empty.diff").map(({ file }) => file.path)).toEqual(["x.txt"]);
   });
 
-  test("a signature whose trailing space an editor trimmed still ends the mail", () => {
-    expect(
-      files("sig-nospace.patch").map(
-        ({ file }) => `${file.path} +${file.additions} -${file.deletions}`,
-      ),
-    ).toEqual(["f.txt +1 -1"]);
+  test("a signature after a plain git diff, not a mail, reads as text", () => {
+    expect(rejected(fixture("review2/sig-nospace.patch"))).toBe(
+      "Line 8 continues a hunk past the lines its header counts.",
+    );
   });
 
   test.each([
-    [
-      "under-blank-extra.patch",
-      "Line 9 follows a finished hunk as one of its lines, past what its header counts.",
-    ],
-    [
-      "two-hunks-blank-late.patch",
-      "Line 14 follows a finished hunk as one of its lines, past what its header counts.",
-    ],
-    [
-      "trailing-bullets.patch",
-      "Line 9 follows a finished hunk as one of its lines, past what its header counts.",
-    ],
-    ["r1-badheader.patch", "Line 4 has a hunk header the diff view can't read."],
+    ["under-blank-extra.patch", "Line 8 isn't part of any file the diff view knows."],
+    ["two-hunks-blank-late.patch", "Line 12 isn't part of any file the diff view knows."],
+    ["trailing-bullets.patch", "Line 8 isn't part of any file the diff view knows."],
+    ["r1-badheader.patch", "Line 2 has a file header with no hunk after it."],
   ])("%s reads as text: %s", (name, reason) => {
     expect(read(name)).toEqual({ ok: false, reason });
   });
 
-  test("diff -r binary lines name both files, GNU's shell quoting undone", () => {
-    const names = (name: string) =>
-      files(name)
-        .filter(({ file }) => file.binary)
-        .map(({ file }) => file.path);
-    expect(names("gnu-ru-binary.diff")).toEqual(["my file.bin", "plain.bin", "x and y.bin"]);
-    expect(names("gnu-ru-names.diff")).toEqual([
-      "d2/it's.bin",
-      "d2/my file.bin",
-      "d2/plain.bin",
-      'd2/q"uote.bin',
-      "d2/tab\there.bin",
-      "d2/x and y.bin",
-    ]);
-    expect(names("plain-binary-and.diff")).toEqual(["x and y.bin"]);
+  test("diff -r binary records read as text, however their names are quoted", () => {
+    for (const name of ["gnu-ru-binary.diff", "gnu-ru-names.diff", "plain-binary-and.diff"])
+      expect(rejected(fixture(`review2/${name}`))).toBe(BIN);
+    expect(rejected("Binary files a/q and b/q and c/q differ\n")).toBe(BIN);
   });
 
-  test("a binary line whose names can't be told apart reads as text", () => {
-    expect(rejected("Binary files a/q and b/q and c/q differ\n")).toBe(
-      "Line 1 names binary files in a way the diff view can't split.",
-    );
-  });
-
-  test("a long line of ' and ' with no ' differ' is read in one pass", () => {
+  test("a long line of ' and ' is read in one pass", () => {
     // Quadratic before: 420 KB took 10 s, past the test's timeout.
-    expect(rejected(`Binary files a${" and x".repeat(70_000)}\n`)).toBe("This file holds no diff.");
-    const many = `Binary files a${" and x".repeat(70_000)} differ\n`;
-    expect(rejected(many)).toBe("Line 1 names binary files in a way the diff view can't split.");
+    expect(rejected(`Binary files a${" and x".repeat(70_000)}\n`)).toBe(BIN);
+    expect(rejected(`Binary files a${" and x".repeat(70_000)} differ\n`)).toBe(BIN);
   });
 
   test("a quoted path of 300 KB unquotes without overflowing the stack", () => {
@@ -549,21 +521,22 @@ describe("review round 2 fixtures", () => {
     expect(files2(rename)).toEqual([["y", "renamed", name]]);
   });
 
-  test("format-patch --attach and --inline end at their MIME boundary", () => {
+  test("format-patch --attach and --inline are MIME mails, read as text", () => {
     for (const name of ["format-patch-attach.patch", "format-patch-inline.patch"])
-      expect(
-        parsed(fixture(`review2/${name}`)).commits.map((c) => [c.subject, c.files.length]),
-      ).toEqual([["second: edit, delete, add", 3]]);
+      expect(rejected(fixture(`review2/${name}`))).toBe(
+        "Line 6 is a MIME mail with parts, which the diff view doesn't read.",
+      );
   });
 
-  test("git log --abbrev-commit and --format=fuller start a section per commit", () => {
-    for (const name of ["log-abbrev.patch", "log-fuller-stat.patch"]) {
-      const commits = parsed(fixture(`review2/${name}`)).commits;
-      expect(commits.map((c) => [c.subject, c.files.length])).toEqual([
-        ["second: edit, delete, add", 3],
-        ["first commit", 2],
-      ]);
-    }
+  test("git log --abbrev-commit starts a section per commit; --format=fuller reads as text", () => {
+    const commits = parsed(fixture("review2/log-abbrev.patch")).commits;
+    expect(commits.map((c) => [c.subject, c.files.length])).toEqual([
+      ["second: edit, delete, add", 3],
+      ["first commit", 2],
+    ]);
+    expect(rejected(fixture("review2/log-fuller-stat.patch"))).toBe(
+      "Line 3 isn't git log's default Date line, which the diff view needs.",
+    );
     // --oneline has no commit lines: its subjects fall between files, which the strict reading refuses.
     expect(read("log-oneline-stat.patch")).toMatchObject({ ok: false });
   });
@@ -582,23 +555,11 @@ describe("review round 3", () => {
     expect(rejected(`${one}--flag\n`)).toBe(
       "Line 6 continues a hunk past the lines its header counts.",
     );
-    expect(rejected(`${one}\n--flag\n`)).toBe(
-      "Line 7 follows a finished hunk as one of its lines, past what its header counts.",
-    );
+    expect(rejected(`${one}\n--flag\n`)).toBe("Line 6 isn't part of any file the diff view knows.");
   });
 
-  test("only the boundary the mail declares ends its patch", () => {
-    const text = fixture("review2/format-patch-attach.patch");
-    const boundary = /boundary="([^"]+)"/.exec(text)![1]!;
-    expect(parsed(text).files).toBe(3);
-    expect(rejected(text.replace(`--${boundary}--`, "--other-boundary--"))).toMatch(
-      /^Line \d+ (?:reads as a hunk line|follows a finished hunk)/,
-    );
-  });
-
-  test("a bare --label binary name keeps its backslash", () => {
-    const files = parsed("Binary files a/dir\\file and b/dir\\file differ\n").commits[0]!.files;
-    expect(files.map(({ file }) => file.path)).toEqual(["dir\\file"]);
+  test("a bare --label binary name reads as text, as any diff -r binary record", () => {
+    expect(rejected("Binary files a/dir\\file and b/dir\\file differ\n")).toBe(BIN);
   });
 
   test("a decoded path with a NUL reads as text", () => {
@@ -616,31 +577,21 @@ describe("review round 3", () => {
   });
 
   test("empty binary names read as text", () => {
-    expect(rejected("Binary files  and  differ\n")).toBe(
-      "Line 1 names binary files in a way the diff view can't split.",
-    );
+    expect(rejected("Binary files  and  differ\n")).toBe(BIN);
   });
 });
 
 describe("review round 3 corpus", () => {
   const read = (name: string) => readPatchFile(fixture(`review3/${name}`));
 
-  test("an mbox series with b4's From lines starts a section per message", () => {
-    const result = read("mbox-series.patch");
-    if (!result.ok) throw new Error(result.reason);
-    expect(result.read.commits.map((c) => [c.subject, c.id, c.files.length])).toEqual([
-      ["Rework files: rename, add, delete", null, 4],
-      ["Add logo and a fourth line", null, 2],
-    ]);
+  test("an mbox series with b4's From lines is outside the forms the diff view draws", () => {
+    expect(read("mbox-series.patch")).toEqual({ ok: false, reason: START });
   });
 
   test.each([
-    // The parser takes the stray text as the file's end; the guard finds the + and - after it.
-    ["under-stray-extra.patch", "Line 9 reads as a hunk line, but no file's hunk holds it."],
-    // An svn property change has no hunk the diff view can draw.
-    ["svn-props.diff", "Line 16 reads as a hunk line, but no file's hunk holds it."],
-    // A custom git log format has no commit line to start a message at: its "- " body reads as lost lines.
-    ["log-custom-format.patch", "Line 14 reads as a hunk line, but no file's hunk holds it."],
+    ["under-stray-extra.patch", "Line 8 isn't part of any file the diff view knows."],
+    ["svn-props.diff", START],
+    ["log-custom-format.patch", START],
   ])("%s reads as text: %s", (name, reason) => {
     expect(read(name)).toEqual({ ok: false, reason });
   });
@@ -657,22 +608,17 @@ describe("review round 4: a strict second reading", () => {
     ]);
   };
 
-  test("a log whose commit has no blank before its diff keeps every commit and file", () => {
-    const result = read("custom-log.patch");
-    if (!result.ok) throw new Error(result.reason);
-    expect(result.read.commits).toHaveLength(2);
-    expect(result.read.files).toBe(10);
-    expect([result.read.additions, result.read.deletions]).toEqual([212, 11]);
-    expect(result.read.commits[1]!.files.map(({ file }) => file.path)).toEqual([
-      "plugins/source-control/src/app/page/guided-view.tsx",
-    ]);
+  // Round 4 drew these two; round 5 narrowed the input to git's default forms, so they read as text.
+  test("a custom git log format reads as text", () => {
+    expect(summary4("custom-log.patch")).toBe(
+      "Line 3 isn't git log's default Date line, which the diff view needs.",
+    );
   });
 
-  test("a mail whose Subject runs straight into its diff keeps its files", () => {
-    expect(summary4("mail-separator-removed.patch")).toEqual([
-      ["mainline", ["code.py +1 -0"]],
-      ["odd names", ['quo"te.txt +1 -0', "tab\there.txt +1 -0", "ünï/fïle.txt +1 -0"]],
-    ]);
+  test("a mail whose Subject runs straight into its diff reads as text", () => {
+    expect(summary4("mail-separator-removed.patch")).toBe(
+      "Line 7 reads as part of a patch inside the mail's message, before its --- line.",
+    );
   });
 
   test.each([
@@ -683,7 +629,7 @@ describe("review round 4: a strict second reading", () => {
     ["empty-label.diff", "Line 2 names no file, so the diff view can't be sure of it."],
     [
       "two-files-bad-counts.diff",
-      "Line 8 starts a hunk inside the range of the hunk before it, so the diff view can't be sure of it.",
+      "Line 3 is a hunk whose counts run into the next file's --- / +++ header.",
     ],
   ])("%s reads as text: %s", (name, reason) => {
     expect(read(name)).toEqual({ ok: false, reason });
@@ -692,4 +638,135 @@ describe("review round 4: a strict second reading", () => {
   test("the control draws both files", () => {
     expect(summary4("two-files.diff")).toEqual([[null, ["first +1 -1", "second +1 -1"]]]);
   });
+});
+
+describe("review round 5: only the forms the diff view knows draw", () => {
+  const read = (name: string) => readPatchFile(fixture(`review5/${name}`));
+
+  test.each([
+    // 1: a diff inside a mail's message, which git am would apply and the cards would hide.
+    [
+      "inline.mbox.patch",
+      "Line 6 reads as part of a patch inside the mail's message, before its --- line.",
+    ],
+    [
+      "only.mbox.patch",
+      "Line 6 reads as part of a patch inside the mail's message, before its --- line.",
+    ],
+    // 2: counts that run on into the next file's header.
+    [
+      "inflated-counts.diff",
+      "Line 3 is a hunk whose counts run into the next file's --- / +++ header.",
+    ],
+    // 3: git diff --submodule=log.
+    ["submodule.patch", "Line 1 is a submodule log, which the diff view doesn't draw."],
+    // 4: a diff -u binary record after a git binary file.
+    [
+      "binary-pair.diff",
+      "Line 4 is a binary record outside a git diff, which the diff view doesn't draw.",
+    ],
+    // 5: a deleted file whose +++ names a file.
+    ["kind.patch", "Line 4 says its file is deleted but +++ names a file."],
+    // 6: a backslash line git doesn't write.
+    ["marker.patch", "Line 6 is a \\ line git doesn't write."],
+    // 7: quoted-printable mail.
+    [
+      "encoding.patch",
+      "Line 7 encodes its text as quoted-printable, which the diff view doesn't decode.",
+    ],
+    // 8: a mail with no files.
+    ["empty-mail.patch", "Line 21 starts a mail with no files, which the diff view can't show."],
+    // 9: an in-body From that git am takes as the author.
+    [
+      "relay.patch",
+      "Line 9 overrides the mail's header in its body, which the diff view doesn't follow.",
+    ],
+    // Follow-up: git show --format=raw.
+    ["raw.patch", "Line 2 isn't git log's default Author line, which the diff view needs."],
+  ])("%s reads as text: %s", (name, reason) => {
+    expect(read(name)).toEqual({ ok: false, reason });
+  });
+
+  test("10: a path with a character outside the BMP and an escaped tab draws by its name", () => {
+    const files = parsed(fixture("review5/astro.patch")).commits[0]!.files;
+    expect(files.map(({ file }) => [file.path, file.kind, file.additions, file.deletions])).toEqual(
+      [["astral\u{1F600}\tq", "modified", 1, 1]],
+    );
+  });
+
+  test("a name with trailing spaces keeps them, as git writes it before a tab", () => {
+    const files = parsed(fixture("review5/space.patch")).commits[0]!.files;
+    expect(files.map(({ file }) => file.path)).toEqual(["spaced "]);
+  });
+
+  test("an unchanged file after a fileless commit in git log reads as text", () => {
+    const log = fixture("real/git-log-p-scratch.patch");
+    const empty = `commit ${"f".repeat(40)}\nAuthor: T <t@t>\nDate:   Mon Jan 1 00:00:00 2024 +0000\n\n    empty\n\n`;
+    expect(rejected(`${empty}${log}`)).toBe(
+      "Line 1 starts a commit with no files, which the diff view can't show.",
+    );
+  });
+});
+
+describe("real output from this repository still draws", () => {
+  const shown = (name: string) => {
+    const read = parsed(fixture(`real/${name}`));
+    return read.commits.map((commit) => [
+      commit.subject,
+      commit.files.map(
+        ({ file }) => `${file.kind} ${file.path} +${file.additions} -${file.deletions}`,
+      ),
+    ]);
+  };
+  const SCRATCH = [
+    "added added.txt +1 -0",
+    "modified blob.bin +0 -0",
+    "deleted gone.txt +0 -1",
+    "modified keep.txt +2 -1",
+    "renamed new-name.txt +0 -0",
+    "modified run.sh +0 -0",
+  ];
+
+  test("git diff with mnemonic prefixes, new, deleted, renamed, mode and binary files", () => {
+    expect(shown("git-diff-staged.diff")).toEqual([[null, SCRATCH]]);
+    expect(shown("git-diff-binary.diff")).toEqual([[null, SCRATCH]]);
+  });
+
+  test("git format-patch of the same commit", () => {
+    expect(shown("format-patch-scratch.patch")).toEqual([["change things", SCRATCH]]);
+  });
+
+  test("git log -p over two commits", () => {
+    const commits = shown("git-log-p-scratch.patch");
+    expect(commits.map(([subject]) => subject)).toEqual(["change things", "init"]);
+    expect(commits[0]![1]).toEqual(SCRATCH);
+  });
+
+  test("diff -u of one file, of several, and diff -ru of two directories", () => {
+    expect(shown("diff-u-one.diff")).toEqual([[null, ["modified f.txt +1 -1"]]]);
+    expect(shown("diff-u-multi.diff")).toEqual([
+      [null, ["modified f.txt +1 -1", "modified sub/g.txt +0 -1"]],
+    ]);
+    expect(shown("diff-ru-dirs.diff")).toEqual([
+      [null, ["modified f.txt +1 -1", "modified sub/g.txt +0 -1"]],
+    ]);
+  });
+
+  test("the task's own patch: git sections with no index lines, a new and a deleted file by /dev/null", () => {
+    const [commit] = shown("migration.patch");
+    expect(commit![1]).toHaveLength(11);
+    expect((commit![1] as string[]).filter((file) => !file.startsWith("modified"))).toEqual([
+      "added scripts/lib/browser.mjs +102 -0",
+      "deleted scripts/lib/playwright-loader.mjs +0 -32",
+    ]);
+  });
+
+  test.each(["git-show.patch", "git-diff-commits.diff", "git-log-p.patch", "format-patch.patch"])(
+    "this repository's %s draws every file",
+    (name) => {
+      const read = parsed(fixture(`real/${name}`));
+      expect(read.files).toBeGreaterThan(0);
+      expect(read.omitted).toBe(0);
+    },
+  );
 });

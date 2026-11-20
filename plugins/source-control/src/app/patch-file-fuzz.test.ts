@@ -226,7 +226,7 @@ test.each(corpus.map(({ name, text }, seed) => [relative(".", name), text, seed]
   },
 );
 
-/** The reviewer's eleven variations of each input, and the input itself as the control. */
+/** The reviewers' variations of each input, and the input itself as the control. */
 const VARIATIONS: [string, (text: string) => string][] = [
   ["control", (text) => text],
   ["an added line after the end", (text) => `${text.replace(/\n?$/, "\n")}+extra\n`],
@@ -257,6 +257,16 @@ const VARIATIONS: [string, (text: string) => string][] = [
     (text) => `${text.replace(/\n?$/, "\n")}@@ -1 +1 @@\n-p\n+q\n`,
   ],
   ["a doubled diff --git line", (text) => text.replace(/^(diff --git .*)$/m, "$1\n$1")],
+  // Round 5's: a backslash line git doesn't write, a signature, a no-newline marker at the end.
+  [
+    "a bad marker after a deletion",
+    (text) => text.replace(/^(-[^-].*)$/m, "$1\n\\ arbitrary-marker"),
+  ],
+  ["a dash signature at the end", (text) => `${text.replace(/\n?$/, "\n")}-- \n2.0\n`],
+  [
+    "a no-newline marker at the end",
+    (text) => `${text.replace(/\n?$/, "\n")}\\ No newline at end of file\n`,
+  ],
   [
     "a mail message that runs into its diff",
     (text) => text.replace(/^(Subject: .*)\n(?:.*\n)*?(?=diff --git )/m, "$1\n"),
@@ -275,17 +285,39 @@ const TEXT_CONTROLS = new Set([
   "review/omitted.patch",
   "review/plain-context.diff",
   "review/plain-ru-nul.diff",
+  "review/svn.diff",
+  "review2/format-patch-attach.patch",
+  "review2/format-patch-inline.patch",
+  "review2/gnu-ru-binary.diff",
+  "review2/gnu-ru-names.diff",
+  "review2/log-fuller-stat.patch",
   "review2/log-oneline-stat.patch",
+  "review2/plain-binary-and.diff",
   "review2/r1-badheader.patch",
+  "review2/sig-nospace.patch",
   "review2/trailing-bullets.patch",
   "review2/two-hunks-blank-late.patch",
   "review2/under-blank-extra.patch",
   "review3/log-custom-format.patch",
+  "review3/mbox-series.patch",
   "review3/svn-props.diff",
   "review3/under-stray-extra.patch",
+  "review4/custom-log.patch",
   "review4/empty-label.diff",
+  "review4/mail-separator-removed.patch",
   "review4/only-in.diff",
   "review4/two-files-bad-counts.diff",
+  "review5/binary-pair.diff",
+  "review5/empty-mail.patch",
+  "review5/encoding.patch",
+  "review5/inflated-counts.diff",
+  "review5/inline.mbox.patch",
+  "review5/kind.patch",
+  "review5/marker.patch",
+  "review5/only.mbox.patch",
+  "review5/raw.patch",
+  "review5/relay.patch",
+  "review5/submodule.patch",
 ]);
 
 /** What a draw shows, file by file: its commit's subject, path and counts. */

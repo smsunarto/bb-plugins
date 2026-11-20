@@ -18,6 +18,8 @@ export type StrictFile = {
   /** Line where the file's record starts. */
   start: number;
   kind: "text" | "binary" | "meta" | "only-in";
+  /** What the record's headers say happened to the file. */
+  change: "added" | "deleted" | "modified" | "renamed" | "copied";
   /**
    * Every name the file's record could give, unquoted: each side whole, and
    * each way a bare `diff --git` or `Binary files` line splits. Its path is
@@ -224,6 +226,7 @@ class Walk {
       start: this.at,
       kind,
       names,
+      change: "modified",
       additions: 0,
       deletions: 0,
     });
@@ -237,6 +240,7 @@ class Walk {
       start: this.at,
       kind: "meta",
       names: gitLineNames(this.source[this.at]!.slice("diff --git ".length)),
+      change: "modified",
       additions: 0,
       deletions: 0,
     };
@@ -248,6 +252,7 @@ class Walk {
         described = true;
         const renamed = /^(?:rename|copy) to (.*)$/.exec(line);
         if (renamed) file.names.push(unquote(renamed[1]!, this.at));
+        file.change = changeOf(line) ?? file.change;
         this.at++;
       } else if (line.startsWith("Binary files ") && line.endsWith(" differ")) {
         file.kind = "binary";
@@ -274,6 +279,7 @@ class Walk {
       start: this.at,
       kind: "text",
       names: [],
+      change: "modified",
       additions: 0,
       deletions: 0,
     };
@@ -292,6 +298,7 @@ class Walk {
     for (const [index, line] of [old, next].entries()) {
       const name = headerName(line.slice(4), this.at + index);
       if (name === "") throw new NotStrict(this.at + index, "names no file");
+      if (name === "/dev/null") file.change = index === 0 ? "added" : "deleted";
       file.names.push(name);
     }
     this.at += 2;
@@ -385,6 +392,15 @@ function logCommit(fields: Map<string, string>, subject: string | null): StrictC
   return { start: -1, id: null, subject, author: fields.get("Author") ?? null, date };
 }
 
+/** The change a git extended header line names, if any. */
+function changeOf(line: string): StrictFile["change"] | null {
+  if (line.startsWith("new file mode ")) return "added";
+  if (line.startsWith("deleted file mode ")) return "deleted";
+  if (line.startsWith("rename to ")) return "renamed";
+  if (line.startsWith("copy to ")) return "copied";
+  return null;
+}
+
 function boundaryOf(value: string): string | null {
   const match = /^multipart\/.*\bboundary="?([^";\s]+)/i.exec(value);
   return match ? match[1]! : null;
@@ -404,8 +420,9 @@ function headerName(value: string, line: number): string {
     const end = closing(value);
     if (end > 0) return unquote(value.slice(0, end + 1), line);
   }
+  // Before a tab, the name is exact: git ends a name with trailing spaces in one.
   const tab = value.indexOf("\t");
-  return (tab < 0 ? value : value.slice(0, tab)).trimEnd();
+  return tab < 0 ? value.trimEnd() : value.slice(0, tab);
 }
 
 /** The names a `diff --git` line gives: each C-quoted side, or the line itself when bare. */
@@ -489,7 +506,9 @@ function doubleWord(text: string, index: number, add: (chars: string) => void): 
   for (let at = index; at < text.length; at++) {
     if (text[at] === '"') return at + 1;
     if (text[at] === "\\" && /[\\"$`]/.test(text[at + 1] ?? "")) at++;
-    add(text[at]!);
+    const point = String.fromCodePoint(text.codePointAt(at)!);
+    add(point);
+    at += point.length - 1;
   }
   return -1;
 }
@@ -501,7 +520,9 @@ function dollarWord(text: string, index: number, bytes: number[]): number {
     const char = text[at]!;
     if (char === "'") return at + 1;
     if (char !== "\\") {
-      bytes.push(...encoder.encode(char));
+      const point = String.fromCodePoint(text.codePointAt(at)!);
+      bytes.push(...encoder.encode(point));
+      at += point.length - 1;
       continue;
     }
     const octal = /^[0-7]{1,3}/.exec(text.slice(at + 1, at + 4));
@@ -607,7 +628,10 @@ function unquote(text: string, line: number): string {
   for (let index = 1; index < text.length - 1; index++) {
     const char = text[index]!;
     if (char !== "\\") {
-      for (const byte of encoder.encode(char)) bytes.push(byte);
+      // A whole code point, so a character outside the BMP encodes as itself, not as two halves.
+      const point = String.fromCodePoint(text.codePointAt(index)!);
+      for (const byte of encoder.encode(point)) bytes.push(byte);
+      index += point.length - 1;
       continue;
     }
     const rest = text.slice(index + 1, index + 4);

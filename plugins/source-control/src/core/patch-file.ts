@@ -11,6 +11,7 @@
  * shows the file as text with that reason.
  */
 import type { FilePatch } from "./change.ts";
+import { checkAllowed } from "./patch-allow.ts";
 import { checkDrawn, CLAIM, isMailTrailer, type DrawnFile, type Section } from "./patch-guard.ts";
 import { readStrict, type StrictCommit, type StrictFile, type StrictRead } from "./patch-strict.ts";
 import { QUOTED_ESCAPES, quotedPath } from "./quoted-path.ts";
@@ -82,6 +83,16 @@ function malformed(index: number, what: string): Malformed {
 
 export function readPatchFile(text: string): PatchRead {
   try {
+    // Only the forms the diff view knows draw: anything else is text, with the reason.
+    const allowed = checkAllowed(text);
+    if (!allowed.ok)
+      return {
+        ok: false,
+        reason:
+          allowed.line < 0
+            ? "This file holds no diff."
+            : `Line ${allowed.line + 1} ${allowed.why}.`,
+      };
     const reader = new Reader(splitLines(text));
     const read = reader.read();
     if (read.files + read.omitted === 0) return { ok: false, reason: "This file holds no diff." };
@@ -89,7 +100,7 @@ export function readPatchFile(text: string): PatchRead {
     const lost = checkDrawn(reader.lines, reader.claims, reader.sections, reader.drawn);
     if (lost !== null) return { ok: false, reason: lost };
     // A second, strict reading must find the same files, in the same commits, with the same counts.
-    const disagreement = strictDisagreement(readStrict(text), reader.heads, reader.drawn);
+    const disagreement = strictDisagreement(readStrict(text), reader.heads, reader.drawn, read);
     return disagreement === null ? { ok: true, read } : { ok: false, reason: disagreement };
   } catch (error) {
     if (error instanceof Malformed) return { ok: false, reason: `${error.message}.` };
@@ -103,6 +114,7 @@ function strictDisagreement(
   strict: StrictRead,
   heads: readonly Head[],
   files: readonly DrawnFile[],
+  read: PatchFile,
 ): string | null {
   if (!strict.strict)
     return `Line ${strict.line + 1} ${strict.why}, so the diff view can't be sure of it.`;
@@ -117,6 +129,29 @@ function strictDisagreement(
     const other = strict.files[index]!;
     if (!sameFile(file, other))
       return `Line ${other.start + 1} reads differently to a strict reading, so the diff view can't be sure of it.`;
+  }
+  return shownDisagreement(strict.commits, files, read);
+}
+
+/**
+ * The commits the cards show, each the strict reading's commit for its
+ * files: the same header and message, in the same order.
+ */
+function shownDisagreement(
+  commits: readonly StrictCommit[],
+  files: readonly DrawnFile[],
+  read: PatchFile,
+): string | null {
+  const starts: number[] = [];
+  for (const file of files)
+    if (file.entry !== null && starts.at(-1) !== file.commit) starts.push(file.commit);
+  if (starts.length !== read.commits.length)
+    return `A strict reading finds ${starts.length} commits with files where the diff view shows ${read.commits.length}.`;
+  for (const [index, shown] of read.commits.entries()) {
+    const strict = commits.find((commit) => commit.start === starts[index]);
+    const head = { start: starts[index]!, ...shown };
+    if (strict ? !sameCommit(head, strict) : starts[index] !== -1 || shown.subject !== null)
+      return `Line ${starts[index]! + 1} starts a commit the diff view shows differently to a strict reading, so it can't be sure of it.`;
   }
   return null;
 }
@@ -144,18 +179,31 @@ function sameField(field: string | null, strict: string | null): boolean {
   );
 }
 
+/** What the file's card shows, when it has one: path, change and counts as the strict reading has them. */
+function sameCard({ entry, path }: DrawnFile, strict: StrictFile): boolean {
+  if (entry === null) return true;
+  const { file } = entry;
+  return (
+    file.kind === strict.change &&
+    file.additions === strict.additions &&
+    file.deletions === strict.deletions &&
+    (file.path === path || (file.kind === "deleted" && namesPath(strict.names, file.path)))
+  );
+}
+
+const namesPath = (names: readonly string[], path: string) =>
+  path !== "" && names.some((name) => name === path || name.slice(name.indexOf("/") + 1) === path);
+
 function sameFile(file: DrawnFile, strict: StrictFile): boolean {
   return (
+    sameCard(file, strict) &&
     file.start === strict.start &&
     file.commit === strict.commit &&
     file.kind === strict.kind &&
     file.additions === strict.additions &&
     file.deletions === strict.deletions &&
-    file.path !== "" &&
     // The path is one of the record's names, or one past its a/ or b/ style first directory.
-    strict.names.some(
-      (name) => name === file.path || name.slice(name.indexOf("/") + 1) === file.path,
-    )
+    namesPath(strict.names, file.path)
   );
 }
 
@@ -769,8 +817,9 @@ function headerName(value: string): string {
     const end = closingQuote(value);
     if (end > 0) return quotedPath(value.slice(0, end + 1));
   }
+  // Before a tab, the name is exact: git ends a name with trailing spaces in one.
   const tab = value.indexOf("\t");
-  return (tab < 0 ? value : value.slice(0, tab)).trimEnd();
+  return tab < 0 ? value.trimEnd() : value.slice(0, tab);
 }
 
 function closingQuote(text: string): number {
