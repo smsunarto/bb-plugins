@@ -14,6 +14,12 @@ const captainId = /\/threads\/(thr_[\w-]+)$/u.exec(url.pathname)?.[1];
 assert(captainId, "Use a thread URL");
 
 const shortDetail = "Use the shared cache.";
+const longOptions = [
+  "Roll out in small waves with a rollback checkpoint after each batch",
+  "Switch every workspace immediately",
+  "WorkspaceNotificationCacheCompatibilityCheck",
+  "Keep the old cache until the migration is verified",
+];
 const longCommand = `bun run captain --project ${"workspace/".repeat(24)}config.json`;
 const diagram = "```mermaid\nflowchart LR\n  A[Proposed] --> B[Approved]\n```";
 const longDetail = [
@@ -58,7 +64,28 @@ async function seed(context: BrowserContext, name: string, detail: string) {
                     text: "Merge PR #212 · Stacked PR card",
                     options: ["Merge", "Hold"],
                   }
-                : ask,
+                : name === "mobile-queue"
+                  ? {
+                      ...ask,
+                      text: "Choose the rollout strategy for the workspace notification cache migration",
+                      options: longOptions,
+                    }
+                  : ask,
+              ...(name === "mobile-queue"
+                ? [
+                    "Confirm the migration window for accounts with queued notifications",
+                    "Select the rollback strategy for accounts with overdue workspace digests",
+                    "Choose the alert threshold while migrating the notification cache",
+                    "Pick the next environment for the workspace notification cache experiment",
+                  ].map((text, index) =>
+                    Object.assign({}, ask, {
+                      id: `m${index}`,
+                      key: `ask:m${index}`,
+                      text,
+                      since: ask.since + index + 1,
+                    }),
+                  )
+                : []),
               ...(name === "link" || name === "parallel"
                 ? [
                     {
@@ -140,7 +167,7 @@ async function assertBalancedPadding(banner: Locator) {
   assert.ok(Math.abs(insets[0]! - insets[1]!) < 1, `Panel insets differ: ${insets}`);
 }
 
-async function assertInlineOther(banner: Locator, screenshot?: string) {
+async function assertInlineOther(banner: Locator, mobile: boolean, screenshot?: string) {
   const other = banner.getByRole("button", { name: "Other…" });
   const later = banner.getByRole("button", { name: "Later" });
   assert.equal(
@@ -154,13 +181,15 @@ async function assertInlineOther(banner: Locator, screenshot?: string) {
   const input = banner.getByRole("textbox", { name: "Your answer" });
   await input.fill("Keep task order");
   assert.equal(await input.evaluate((node) => node === document.activeElement), true);
-  assert.deepEqual(await row.boundingBox(), before);
+  if (!mobile) assert.deepEqual(await row.boundingBox(), before);
   assert.equal(await later.count(), 0);
   if (screenshot) await banner.screenshot({ path: screenshot });
   await input.press("Escape");
   assert.equal(await other.evaluate((node) => node === document.activeElement), true);
 
-  for (const selector of ['[role="tablist"]', "[data-captain-answers]"]) {
+  for (const selector of mobile
+    ? ['[role="tablist"]']
+    : ['[role="tablist"]', "[data-captain-answers]"]) {
     const state = await banner.locator(selector).evaluate((node) => {
       const { scrollbarWidth, overflowX } = getComputedStyle(node);
       const canScroll = node.scrollWidth > node.clientWidth;
@@ -170,6 +199,44 @@ async function assertInlineOther(banner: Locator, screenshot?: string) {
     });
     assert.deepEqual(state, { scrollbarWidth: "none", overflowX: "auto", scrolls: true });
   }
+}
+
+async function assertMobileQueue(banner: Locator) {
+  const strip = banner.getByRole("tablist");
+  const tabs = strip.getByRole("tab");
+  assert.equal(await tabs.count(), 5);
+  assert.ok(
+    await strip.evaluate((node) => node.scrollWidth > node.clientWidth),
+    "only the tab strip scrolls horizontally",
+  );
+  assert.ok(
+    await banner.evaluate((node) => {
+      const strip = node.querySelector('[role="tablist"]');
+      const panel = node.querySelector('[role="tabpanel"]');
+      return (
+        node.scrollWidth === node.clientWidth &&
+        strip &&
+        panel &&
+        strip.getBoundingClientRect().bottom <= panel.getBoundingClientRect().top
+      );
+    }),
+    "the queue fits the banner and the tabs sit above the panel",
+  );
+  const choices = banner.locator("[data-captain-answers]");
+  assert.equal(
+    await choices.evaluate((node) => node.scrollWidth === node.clientWidth),
+    true,
+    "all choices fit without horizontal scrolling",
+  );
+  for (const label of longOptions) {
+    const choice = choices.getByRole("button", { name: new RegExp(label, "u") });
+    const labelSpan = choice.getByText(label, { exact: true });
+    assert.equal(await labelSpan.evaluate((node) => node.scrollWidth <= node.clientWidth), true);
+    await choice.tap({ trial: true });
+  }
+  await tabs.last().tap();
+  assert.equal(await tabs.last().getAttribute("aria-selected"), "true");
+  await assertInlineOther(banner, true);
 }
 
 async function assertParallelAnswer(page: Page, banner: Locator, release: () => void) {
@@ -228,7 +295,8 @@ const modes = [
   { name: "desktop", width: 1096, height: 780, mobile: false, top: 0, bottom: 0 },
   { name: "393-safe-area", width: 393, height: 852, mobile: true, top: 59, bottom: 34 },
   { name: "393-no-insets", width: 393, height: 852, mobile: true, top: 0, bottom: 0 },
-  { name: "390-safe-area", width: 390, height: 852, mobile: true, top: 59, bottom: 34 },
+  { name: "390-safe-area", width: 390, height: 844, mobile: true, top: 47, bottom: 34 },
+  { name: "430-safe-area", width: 430, height: 932, mobile: true, top: 59, bottom: 34 },
 ];
 const browser = await launchScreenshotBrowser();
 try {
@@ -239,7 +307,12 @@ try {
       ["short", shortDetail],
       ["mermaid", diagram],
       ["code", "```sh\nbun test\n```"],
-      ...(mode.mobile ? [["command", `\`\`\`sh\n${longCommand}\n\`\`\``]] : []),
+      ...(mode.mobile
+        ? [
+            ["command", `\`\`\`sh\n${longCommand}\n\`\`\``],
+            ["mobile-queue", shortDetail],
+          ]
+        : []),
       ...(!mode.mobile
         ? [
             ["ship", "`branch → main`\n\nReview passed."],
@@ -290,8 +363,11 @@ try {
           await assertBalancedPadding(banner);
           await assertInlineOther(
             banner,
+            mode.mobile,
             outputDir ? join(outputDir, `${mode.name}-other.png`) : undefined,
           );
+        } else if (name === "mobile-queue") {
+          await assertMobileQueue(banner);
         } else if (name === "ship") {
           await banner.getByText("Review passed.", { exact: true }).waitFor();
           await assertBalancedPadding(banner);

@@ -51,7 +51,8 @@ const FAR = Number.MAX_SAFE_INTEGER;
 /** Every control a phone user taps gets a 44px target. */
 export const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 const ICON_BUTTON = cn(TAP, "size-8 shrink-0");
-const COMPACT_ANSWER = "max-sm:gap-1 max-sm:px-1 max-sm:text-[11px]";
+const MOBILE_ANSWER =
+  "max-sm:h-auto max-sm:px-2 max-sm:py-2 max-sm:text-[12px] max-sm:leading-4 max-sm:whitespace-normal";
 const ANSWER_ROW =
   "col-start-2 flex min-w-0 items-start gap-1.5 max-sm:col-span-3 max-sm:col-start-1";
 const HORIZONTAL_SCROLL = "overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
@@ -372,11 +373,17 @@ function AnswerRow({
   }
   const showOther = item.kind === "ask" && kind !== "ship";
   return (
-    <div data-captain-answer-row="" className={ANSWER_ROW}>
+    <div
+      data-captain-answer-row=""
+      className={cn(ANSWER_ROW, "max-sm:flex-wrap max-sm:justify-end")}
+    >
       {actions.length > 0 || plan ? (
         <div
           data-captain-answers=""
-          className={cn(HORIZONTAL_SCROLL, "-m-0.5 flex min-w-0 items-center gap-1.5 p-0.5")}
+          className={cn(
+            HORIZONTAL_SCROLL,
+            "-m-0.5 flex min-w-0 items-center gap-1.5 p-0.5 max-sm:m-0 max-sm:grid max-sm:w-full max-sm:grid-cols-2 max-sm:items-stretch max-sm:overflow-visible max-sm:p-0",
+          )}
         >
           {actions.map((action, index) => (
             <ActionButton key={action.label} action={action} index={index} bannerKind={kind} />
@@ -386,7 +393,7 @@ function AnswerRow({
               type="button"
               size="sm"
               variant="outline"
-              className={cn(TAP, COMPACT_ANSWER)}
+              className={cn(TAP, MOBILE_ANSWER, "max-sm:col-span-full")}
               aria-expanded={plan.open}
               aria-controls={plan.id}
               onClick={plan.toggle}
@@ -432,7 +439,7 @@ function AnswerRow({
           >
             <path d="M13 21h8m.174-14.188a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
           </svg>
-          <span className="max-sm:sr-only">Other…</span>
+          <span>Other…</span>
         </Button>
       ) : null}
     </div>
@@ -637,7 +644,7 @@ function QueueTabs({
         aria-label="Captain queue"
         className={cn(
           HORIZONTAL_SCROLL,
-          "-m-0.5 flex min-w-0 flex-1 items-center gap-0.5 p-0.5 max-sm:basis-full",
+          "-m-0.5 flex min-w-0 flex-1 items-center gap-0.5 p-0.5 max-sm:mt-1 max-sm:w-full max-sm:flex-none max-sm:items-stretch max-sm:gap-1",
         )}
         onKeyDown={(event) => {
           const index = tabs.indexOf(selected);
@@ -664,13 +671,16 @@ function QueueTabs({
               tabIndex={active ? 0 : -1}
               className={cn(
                 TAP,
-                "h-6 max-w-42 shrink-0 gap-1.5 px-2",
+                "h-6 max-w-42 shrink-0 gap-1.5 px-2 max-sm:h-auto max-sm:max-w-52 max-sm:py-1.5 max-sm:text-[12px] max-sm:leading-4",
                 active ? "bg-(--surface-selected) text-foreground" : "text-muted-foreground",
               )}
               onClick={() => onSelect(entry)}
             >
               <Icon name={BANNER_ICONS[bannerKind(entry)]} aria-hidden data-icon="inline-start" />
-              <span title={tabTitle(entry)} className="min-w-0 truncate [unicode-bidi:plaintext]">
+              <span
+                title={tabTitle(entry)}
+                className="min-w-0 truncate [unicode-bidi:plaintext] max-sm:wrap-anywhere max-sm:text-start max-sm:whitespace-normal"
+              >
                 {tabTitle(entry)}
               </span>
               {entry.since === null ? null : (
@@ -728,8 +738,8 @@ function Heading({
 
 /**
  * One answer; the recommended one says so. A long answer wraps inside the
- * card (a new ask's options are capped at 12 columns, but older asks may be
- * longer) and keeps "Recommended" whole.
+ * phone card (a new ask's options are capped at 12 columns, but older asks
+ * may be longer). The Overview keeps "Recommended" whole.
  */
 export function ActionButton({
   action,
@@ -754,7 +764,7 @@ export function ActionButton({
       className={cn(
         TAP,
         bannerKind
-          ? cn(COMPACT_ANSWER, "shrink-0")
+          ? cn(MOBILE_ANSWER, "shrink-0 max-sm:min-w-0")
           : "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal",
         bannerKind &&
           action.primary &&
@@ -772,7 +782,12 @@ export function ActionButton({
           data-icon="inline-start"
         />
       ) : null}
-      <span className="min-w-0 text-start break-words [unicode-bidi:plaintext]">
+      <span
+        className={cn(
+          "min-w-0 text-start break-words [unicode-bidi:plaintext]",
+          bannerKind && "max-sm:wrap-anywhere",
+        )}
+      >
         {action.label}
       </span>
       {action.recommended ? (
