@@ -4,6 +4,8 @@
 // exactly like a row's own button.
 export interface PublishedSidebarActions {
   settle(threadId: string): void;
+  /** False for a thread that stays open (lib/long-lived). */
+  canSettle(threadId: string): boolean;
 }
 
 let current: PublishedSidebarActions | null = null;
@@ -18,6 +20,11 @@ export function forgetSidebarActions(published: PublishedSidebarActions): void {
 
 export function hasSidebarActions(): boolean {
   return current !== null;
+}
+
+/** Whether the mounted list would settle `threadId`; false with no list mounted. */
+export function canSettleThread(threadId: string): boolean {
+  return current?.canSettle(threadId) ?? false;
 }
 
 export function settleThread(threadId: string): void {

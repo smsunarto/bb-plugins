@@ -18,6 +18,11 @@ export type RowLifecycleState =
   | {
       kind: "active";
       canPark: boolean;
+      /**
+       * Why this thread stays open (lib/long-lived), or null. Settle and
+       * Snooze then stay listed, disabled with the reason.
+       */
+      stayOpenReason: string | null;
       snoozeUntilTomorrow: () => void;
       settle: () => void;
     }
@@ -30,6 +35,8 @@ export interface ThreadAction {
   id: ThreadActionId;
   label: string;
   icon: IconName;
+  /** Set when the action is listed but unavailable; says why. */
+  disabledReason?: string;
   execute: () => void;
 }
 
@@ -44,6 +51,20 @@ export type ThreadActionPlan = readonly ThreadAction[];
 export function buildThreadActionPlan(lifecycle: RowLifecycleState): ThreadActionPlan {
   switch (lifecycle.kind) {
     case "active": {
+      const reason = lifecycle.stayOpenReason;
+      if (reason !== null) {
+        const noop = () => {};
+        return [
+          { id: "settle", label: "Settle", icon: "Check", disabledReason: reason, execute: noop },
+          {
+            id: "snooze-tomorrow",
+            label: SNOOZE_TOMORROW_LABEL,
+            icon: "Clock",
+            disabledReason: reason,
+            execute: noop,
+          },
+        ];
+      }
       // Settle is bb's archive, which bb offers on every thread, so it is not
       // gated on `canPark` the way a snooze is.
       const actions: ThreadAction[] = [
@@ -84,11 +105,13 @@ export function rowActionPlan(
   threadId: string,
   canPark: boolean,
   command: DispatchRowCommand,
+  stayOpenReason: string | null = null,
 ): ThreadActionPlan {
   if (shelf === "active") {
     return buildThreadActionPlan({
       kind: "active",
       canPark,
+      stayOpenReason,
       snoozeUntilTomorrow: () =>
         command({ kind: "snooze", threadId, until: snoozeUntilTomorrow(new Date()) }),
       settle: () => command({ kind: "settle", threadId }),

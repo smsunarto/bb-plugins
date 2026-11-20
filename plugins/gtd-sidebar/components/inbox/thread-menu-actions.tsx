@@ -71,6 +71,10 @@ function menuGroups(
         key: `gtd/${action.id}`,
         label: action.label,
         icon: <Icon name={action.icon} className="size-full" />,
+        // An unavailable move stays listed, its reason on the muted line.
+        ...(action.disabledReason === undefined
+          ? {}
+          : { disabled: true, detail: action.disabledReason }),
         run: action.execute,
       })),
     );

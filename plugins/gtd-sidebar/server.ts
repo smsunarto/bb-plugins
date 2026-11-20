@@ -11,7 +11,8 @@ import { defineCli, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
 import type { ThreadLifecycleRow } from "./lib/lifecycle.ts";
 import { createMachineVisibilityStore } from "./lib/machine-visibility-store.ts";
-import { threadFamilyIds } from "./lib/thread-family.ts";
+import { threadFamily, threadFamilyIds } from "./lib/thread-family.ts";
+import { stayOpenReason } from "./lib/long-lived.ts";
 import { registerThreadNaming } from "./thread-naming-server.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
 import { RETIRED_PROJECT_MIGRATIONS } from "./lib/retired-project-migrations.ts";
@@ -136,19 +137,16 @@ export default async function plugin(bb: BbPluginApi) {
   /** One page is already generous; the loop is for the account that isn't. */
   const THREAD_PAGE_SIZE = 200;
 
+  const listFamilyChildren = (parentThreadId: string, offset: number) =>
+    bb.sdk.threads.list({
+      archived: false,
+      includeHidden: true,
+      parentThreadId,
+      limit: THREAD_PAGE_SIZE,
+      offset,
+    });
   const familyIds = (threadId: string) =>
-    threadFamilyIds(
-      threadId,
-      (parentThreadId, offset) =>
-        bb.sdk.threads.list({
-          archived: false,
-          includeHidden: true,
-          parentThreadId,
-          limit: THREAD_PAGE_SIZE,
-          offset,
-        }),
-      THREAD_PAGE_SIZE,
-    );
+    threadFamilyIds(threadId, listFamilyChildren, THREAD_PAGE_SIZE);
 
   const machineVisibility = createMachineVisibilityStore(bb.storage.kv);
 
@@ -241,7 +239,8 @@ export default async function plugin(bb: BbPluginApi) {
       // Each write refreshes every window's lifecycle read.
       snooze: ({ threadId, snoozedUntil }) =>
         serializeLifecycle(async () => {
-          const ids = await familyIds(threadId);
+          const ids = await snoozableFamilyIds(bb, threadId, listFamilyChildren, THREAD_PAGE_SIZE);
+          if (ids === null) return { ok: false, rows: readAll() };
           const snoozedAt = Date.now();
           db.transaction(() => {
             for (const id of ids) writeSnooze.run(id, snoozedUntil, snoozedAt);
@@ -299,4 +298,29 @@ export default async function plugin(bb: BbPluginApi) {
       },
     }),
   );
+}
+
+/**
+ * The family a snooze would write, or null when it holds a thread that stays
+ * open (lib/long-lived). The app never offers that snooze; this refuses one
+ * from the CLI or an older window too.
+ */
+async function snoozableFamilyIds(
+  bb: BbPluginApi,
+  threadId: string,
+  listChildren: Parameters<typeof threadFamily>[1],
+  pageSize: number,
+): Promise<string[] | null> {
+  const [root, family] = await Promise.all([
+    // An unreadable root leaves the check to its listed members; the app has
+    // already checked the root.
+    (async () => bb.sdk.threads.get({ threadId }))().catch(() => null),
+    threadFamily(threadId, listChildren, pageSize),
+  ]);
+  const members = [
+    { id: threadId, originPluginId: root?.originPluginId ?? null },
+    ...family.slice(1),
+  ];
+  if (stayOpenReason(members) !== null) return null;
+  return members.map((member) => member.id);
 }

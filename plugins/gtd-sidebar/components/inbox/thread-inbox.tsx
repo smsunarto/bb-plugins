@@ -72,6 +72,7 @@ import {
 } from "../../lib/project-groups";
 import { ProjectGroup, SortableProjectGroup } from "./project-group";
 import { isShelvedThread } from "../../lib/settled-threads";
+import { rosterStayOpenReason, stayOpenReason } from "../../lib/long-lived";
 import { useStableThreads } from "../../hooks/use-stable-threads";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
 import { useRetained } from "../../hooks/use-retained";
@@ -383,6 +384,7 @@ function InboxList({
         branchName={branchName}
         isActive={thread.id === activeThreadId}
         canPark={canParkFamily(row.node, lifecycle)}
+        stayOpenReason={familyStayOpenReason(row.node)}
         isCompactViewport={isCompactViewport}
         command={command}
         drag={drag}
@@ -488,6 +490,7 @@ function InboxList({
           threadId,
           !parked && canParkFamily(row.node, lifecycle),
           command,
+          parked ? null : familyStayOpenReason(row.node),
         ),
       };
     }
@@ -813,6 +816,18 @@ function threadDropAllowed(
   return source?.kind === "thread" && nestDropAllowed(tree, source.threadId, threadId);
 }
 
+/** Why the drawn family may not be settled or snoozed (lib/long-lived), or null. */
+function familyStayOpenReason(node: InboxThreadNode): string | null {
+  const members: PluginSidebarThread[] = [];
+  const pending = [node];
+  while (pending.length > 0) {
+    const current = pending.shift()!;
+    members.push(current.thread);
+    pending.push(...current.children);
+  }
+  return stayOpenReason(members);
+}
+
 /** A family can park only when every member can park. */
 function canParkFamily(node: InboxThreadNode, lifecycle: LifecycleApi): boolean {
   const pending = [node];
@@ -926,7 +941,15 @@ function useRowCommands({
     openThread(pending.nextThreadId);
   }, [activeThreadId, threads, openThread]);
 
+  // A long-lived thread, or a family holding one, is never settled or
+  // snoozed: every caller (menus, row buttons, the palette, the phone
+  // header) lands here, so this one check covers them all.
+  const staysOpen = useCommittedEvent(
+    (threadId: string) => rosterStayOpenReason(threads, threadId) !== null,
+  );
+
   const settle = useCommittedEvent((threadId: string) => {
+    if (staysOpen(threadId)) return;
     const settled = visibleActiveRows.find((entry) => entry.row.node.thread.id === threadId);
     if (settled !== undefined) {
       // The advance stays inside the settled row's own shelf, and skips its
@@ -961,10 +984,10 @@ function useRowCommands({
   // The palette's settle row runs this same dispatcher, and a mounted list
   // is the only place it exists.
   useEffect(() => {
-    const published = { settle };
+    const published = { settle, canSettle: (threadId: string) => !staysOpen(threadId) };
     publishSidebarActions(published);
     return () => forgetSidebarActions(published);
-  }, [settle]);
+  }, [settle, staysOpen]);
 
   const command = useCommittedEvent((command: RowCommand) => {
     switch (command.kind) {
@@ -976,6 +999,7 @@ function useRowCommands({
         settle(command.threadId);
         return;
       case "snooze":
+        if (staysOpen(command.threadId)) return;
         lifecycle.snooze(command.threadId, command.until);
         return;
       case "restore":

@@ -9,6 +9,7 @@ import {
 import { Button } from "../ui/button";
 import { ARCHIVE_ACTION_KEY, toThreadActionTarget } from "../../lib/thread-action-target";
 import { hasSidebarActions, settleThread } from "../../lib/sidebar-actions-bridge";
+import { rosterStayOpenReason } from "../../lib/long-lived";
 import { useComposerHostId } from "../../hooks/use-machine-visibility";
 
 /** The attribute `header-settle-style.ts` keys the "…" hide on. */
@@ -84,14 +85,22 @@ function CompactHeaderSettle({ threadId }: { threadId: string }) {
   const row = threads.find((thread) => thread.id === threadId);
   // A settled or unlisted thread keeps bb's menu, where Unarchive lives.
   if (row === undefined || row.isArchived) return null;
-  return <SettleButton thread={row} />;
+  return <SettleButton thread={row} stayOpenReason={rosterStayOpenReason(threads, row.id)} />;
 }
 
-function SettleButton({ thread }: { thread: PluginSidebarThread }) {
+function SettleButton({
+  thread,
+  stayOpenReason,
+}: {
+  thread: PluginSidebarThread;
+  /** Set on a thread that stays open, such as a Captain: the button is then disabled. */
+  stayOpenReason: string | null;
+}) {
   const target = useMemo(() => toThreadActionTarget(thread), [thread]);
   const [archive] = useThreadActions(target, { keys: ARCHIVE_KEYS });
   const [running, setRunning] = useState(false);
   const settle = () => {
+    if (stayOpenReason !== null) return;
     // The mounted sidebar settles as its rows do: archive, then open the
     // next thread on the shelf. Without it, bb's own Archive.
     if (hasSidebarActions()) {
@@ -112,9 +121,14 @@ function SettleButton({ thread }: { thread: PluginSidebarThread }) {
       data-bb-plugin="gtd-sidebar"
       data-bb-plugin-scope-gtd-sidebar=""
       variant="ghost"
-      aria-label="Settle"
-      title="Settle"
-      disabled={running || archive === undefined || archive.action.disabled === true}
+      aria-label={stayOpenReason === null ? "Settle" : `Settle: ${stayOpenReason}`}
+      title={stayOpenReason ?? "Settle"}
+      disabled={
+        stayOpenReason !== null ||
+        running ||
+        archive === undefined ||
+        archive.action.disabled === true
+      }
       onClick={settle}
       className={ICON_BUTTON_CLASS}
     >

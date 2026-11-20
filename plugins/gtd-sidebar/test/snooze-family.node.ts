@@ -112,4 +112,53 @@ describe("family snooze RPC", () => {
       await harness.lifecycle.dispose();
     }
   });
+
+  // A Captain thread stays open: the RPC refuses to snooze it or a family
+  // holding one, even from the CLI, and still wakes one parked earlier.
+  it("refuses to snooze a Captain or its family, but wakes one", async () => {
+    const threads = [
+      makeThreadResponse({ id: "lead", parentThreadId: null }),
+      makeThreadResponse({ id: "captain", parentThreadId: "lead", originPluginId: "captain" }),
+      makeThreadResponse({ id: "crew", parentThreadId: "captain", originPluginId: "scott-tasks" }),
+    ];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "gtd-sidebar",
+      sdk: {
+        subscribe: () => () => {},
+        threads: {
+          get: async ({ threadId }) => threads.find((thread) => thread.id === threadId)!,
+          list: async (args) =>
+            threads
+              .filter((thread) => thread.parentThreadId === args?.parentThreadId)
+              .slice(args?.offset ?? 0, (args?.offset ?? 0) + (args?.limit ?? 200)),
+        },
+      },
+    });
+    await plugin(bb);
+    try {
+      const snoozedUntil = Date.now() + 86_400_000;
+      for (const threadId of ["captain", "lead"]) {
+        assert.deepEqual(await harness.behavior.callRpc("snooze", { threadId, snoozedUntil }), {
+          ok: false,
+          rows: [],
+        });
+      }
+      // Crew is not a Captain thread and snoozes as before.
+      const crew = (await harness.behavior.callRpc("snooze", {
+        threadId: "crew",
+        snoozedUntil,
+      })) as { ok: boolean; rows: ThreadLifecycleRow[] };
+      assert.equal(crew.ok, true);
+      assert.deepEqual(
+        crew.rows.map((row) => row.threadId),
+        ["crew"],
+      );
+      assert.deepEqual(await harness.behavior.callRpc("unsnooze", { threadId: "captain" }), {
+        ok: true,
+        rows: [],
+      });
+    } finally {
+      await harness.lifecycle.dispose();
+    }
+  });
 });
