@@ -1,10 +1,18 @@
-import { type Dirent, lstatSync, opendirSync, watch } from "node:fs";
+import {
+  type Dirent,
+  type FSWatcher,
+  type Stats,
+  lstatSync,
+  opendirSync,
+  realpathSync,
+  watch,
+} from "node:fs";
 import { join } from "node:path";
 import { DRIVE_EXCERPT_BYTES, type CrewThreadItem, type DriveFileItem } from "../contract/rpc.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { ensureStorageRoot } from "./commands/deps.ts";
 import { isActive, joinCrew } from "./crew.ts";
-import { DRIVE_FILES } from "./drive.ts";
+import { DRIVE_FILES, isInside } from "./drive.ts";
 import { READ_DEADLINE_MS, type CrewSnapshot } from "./queue.ts";
 import { ROLE_SPECS } from "./roles.ts";
 
@@ -80,13 +88,18 @@ export type ModelNames = ReturnType<typeof createModelNames>;
  */
 export async function crewThreads(
   deps: Pick<CommandDeps, "store">,
-  readCrew: (captainId: string) => Promise<CrewSnapshot>,
+  readCrew: (captainId: string) => CrewSnapshot,
   modelName: ModelNames,
   captainId: string,
 ): Promise<CrewThreadItem[]> {
-  const { threads, rows } = await readCrew(captainId);
+  const crew = readCrew(captainId);
+  const threads = await crew.threads;
   const signal = AbortSignal.timeout(READ_DEADLINE_MS);
-  const models = await Promise.all(threads.map((thread) => modelName(thread, signal)));
+  // Models need only the threads: they are read while Tasks answers.
+  const [rows, models] = await Promise.all([
+    crew.rows,
+    Promise.all(threads.map((thread) => modelName(thread, signal))),
+  ]);
   return joinCrew(deps, threads, rows)
     .map(({ thread, role, rows: own }, index) => ({
       id: thread.id,
@@ -128,10 +141,11 @@ export async function driveFiles(
   primaryHost: () => Promise<string | null>,
   captainId: string,
 ): Promise<DriveListing> {
-  const root = await ensureStorageRoot(deps);
-  const dir = root === null ? null : deps.registry.driveDir(captainId);
+  const dir = await validDriveDir(deps, captainId);
   if (dir === null) return { total: 0, truncated: false, files: [], folder: null };
-  const { files: listed, truncated } = listDrive(dir);
+  const real = realDriveDir(dir);
+  if (real === null) return { total: 0, truncated: false, files: [], folder: null };
+  const { files: listed, truncated } = listDrive(real);
   const pinned = DRIVE_FILES.flatMap((name) => listed.filter((file) => file.path === name));
   const rest = listed
     .filter((file) => !pinned.includes(file))
@@ -143,7 +157,7 @@ export async function driveFiles(
       name,
       folder,
       modifiedAt,
-      excerpt: TEXT_FILE.test(name) ? excerpt(deps, join(dir, ...path.split("/"))) : null,
+      excerpt: TEXT_FILE.test(name) ? excerpt(deps, real, path) : null,
     }));
   const hostId = await primaryHost();
   return {
@@ -152,6 +166,34 @@ export async function driveFiles(
     files,
     folder: hostId === null ? null : { hostId, path: dir },
   };
+}
+
+/**
+ * The Captain's Drive folder, when it is a real folder inside the storage
+ * root: not a symlink, and resolving inside the root. Anything else, such as
+ * a Drive replaced by a link out of thread storage, reads as no Drive.
+ */
+export async function validDriveDir(deps: CommandDeps, captainId: string): Promise<string | null> {
+  const root = await ensureStorageRoot(deps);
+  const dir = root === null ? null : deps.registry.driveDir(captainId);
+  if (root === null || dir === null) return null;
+  try {
+    const stat = lstatSync(dir, { throwIfNoEntry: false });
+    if (stat === undefined || !stat.isDirectory()) return null;
+    return isInside(realpathSync(root), realpathSync(dir)) ? dir : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A Drive folder's real path, or null when it is gone, unreadable or a symlink. */
+function realDriveDir(dir: string): string | null {
+  try {
+    if (lstatSync(dir).isSymbolicLink()) return null;
+    return realpathSync(dir);
+  } catch {
+    return null;
+  }
 }
 
 /** The bb server's machine, where every Drive lives: read once, again after a failure. */
@@ -179,7 +221,9 @@ type Listed = Omit<DriveFileItem, "excerpt">;
  * time, so the bound holds even inside one huge folder.
  */
 export function listDrive(dir: string): { files: Listed[]; truncated: boolean } {
-  const walk: Walk = { dir, files: [], folders: [""], budget: DRIVE_WALK_MAX };
+  const root = realDriveDir(dir);
+  if (root === null) return { files: [], truncated: false };
+  const walk: Walk = { dir: root, files: [], folders: [""], budget: DRIVE_WALK_MAX };
   for (let next = walk.folders.shift(); next !== undefined; next = walk.folders.shift()) {
     if (!readFolder(walk, next)) return { files: walk.files, truncated: true };
   }
@@ -191,11 +235,27 @@ type Walk = { dir: string; files: Listed[]; folders: string[]; budget: number };
 const drivePathOf = (dir: string, path: string) =>
   path === "" ? dir : join(dir, ...path.split("/"));
 
+/**
+ * Whether a path still resolves inside the Drive (the Drive itself for its
+ * root), checked as it is opened: a folder or file swapped for a link after
+ * the walk saw it is not read.
+ */
+function inDrive(root: string, path: string): boolean {
+  try {
+    const real = realpathSync(path);
+    return real === root || isInside(root, real);
+  } catch {
+    return false;
+  }
+}
+
 /** Reads one folder's entries into the walk; false once the walk's budget is spent. */
 function readFolder(walk: Walk, folder: string): boolean {
+  const path = drivePathOf(walk.dir, folder);
   let handle;
   try {
-    handle = opendirSync(drivePathOf(walk.dir, folder));
+    if (!inDrive(walk.dir, path)) return true;
+    handle = opendirSync(path);
   } catch {
     return true;
   }
@@ -231,9 +291,14 @@ function addEntry(walk: Walk, folder: string, entry: Dirent): void {
   });
 }
 
-/** A file's head, at most the excerpt cap, however much of it the Drive cache holds. */
-function excerpt(deps: Pick<CommandDeps, "drive">, path: string): string | null {
+/**
+ * A file's head, at most the excerpt cap, however much of it the Drive cache
+ * holds; null for a file that is no longer a regular file inside the Drive.
+ */
+function excerpt(deps: Pick<CommandDeps, "drive">, root: string, file: string): string | null {
+  const path = drivePathOf(root, file);
   try {
+    if (!lstatSync(path).isFile() || !isInside(root, realpathSync(path))) return null;
     return deps.drive.head(path, DRIVE_EXCERPT_BYTES);
   } catch {
     return null;
@@ -281,64 +346,148 @@ export async function watchDrive(options: {
   }
 }
 
-/** One watch of one folder; resolves when it ends, or at once if it cannot start. */
+/** A watch covers at most this many of the Drive's folders, the shallowest first. */
+const DRIVE_WATCH_FOLDERS_MAX = 256;
+
+type WatchHooks = Pick<Parameters<typeof watchDrive>[0], "onChange" | "onLive" | "warn">;
+
+/**
+ * One watch of one Drive; resolves when it ends, or at once if it cannot
+ * start. Each folder gets its own plain watcher rather than one recursive
+ * watch: Node's recursive watch on Linux stats every changed entry inside its
+ * own event handler, where a permission error escapes as an uncaught
+ * exception. The folder set is read again after each refresh, so a new folder
+ * is watched from then on.
+ */
 function watchOnce(
   dir: string,
   signal: AbortSignal,
-  {
-    onChange,
-    onLive,
-    warn,
-  }: Pick<Parameters<typeof watchDrive>[0], "onChange" | "onLive" | "warn">,
+  { onChange, onLive, warn }: WatchHooks,
   catchUp: boolean,
   settleMs: number,
 ): Promise<void> {
   return new Promise((resolve) => {
-    const folder = lstatSync(dir, { throwIfNoEntry: false });
-    if (folder === undefined || !folder.isDirectory()) return resolve();
+    const folder = folderStat(dir);
+    if (folder === null) return resolve();
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let watcher: ReturnType<typeof watch> | null = null;
+    const watchers = new Map<string, FSWatcher>();
     let ended = false;
     const end = () => {
       if (ended) return;
       ended = true;
       if (timer !== null) clearTimeout(timer);
       signal.removeEventListener("abort", end);
-      watcher?.close();
+      for (const watcher of watchers.values()) watcher.close();
+      watchers.clear();
       onLive(false);
       resolve();
     };
+    const changed = () => {
+      timer ??= setTimeout(fire, settleMs);
+    };
+    /** Watch every folder the Drive has now, and stop watching the ones gone. */
+    const sync = () => {
+      const folders = new Set(driveFolders(dir));
+      for (const [path, watcher] of watchers) {
+        if (path !== "" && !folders.has(path)) {
+          watcher.close();
+          watchers.delete(path);
+        }
+      }
+      for (const path of folders) {
+        if (!watchers.has(path)) watchFolder(path);
+      }
+    };
+    const watchFolder = (path: string) => {
+      let watcher: FSWatcher;
+      try {
+        watcher = watch(drivePathOf(dir, path), changed);
+      } catch (error) {
+        // The Drive's own folder must be watched; a subfolder may have just gone.
+        if (path === "" && (error as NodeJS.ErrnoException).code !== "ENOENT") {
+          warn(`drive watch for ${dir}: ${(error as Error).message}`);
+        }
+        if (path === "") end();
+        return;
+      }
+      watchers.set(path, watcher);
+      watcher.on("error", (error) => {
+        if (path === "") {
+          warn(`drive watch for ${dir}: ${error.message}; restarting`);
+          end();
+          return;
+        }
+        watcher.close();
+        watchers.delete(path);
+        changed();
+      });
+      if (path === "") watcher.on("close", end);
+    };
     const fire = () => {
       timer = null;
-      const now = lstatSync(dir, { throwIfNoEntry: false });
-      // The folder went or was replaced: this watch sees nothing of the new one.
-      if (now === undefined || now.ino !== folder.ino) {
+      const now = folderStat(dir);
+      // The folder went, was replaced or can no longer be reached: this watch
+      // sees nothing of what follows, so it ends and the next one catches up.
+      if (now === null || now.ino !== folder.ino) {
         onChange();
         end();
         return;
       }
       onChange();
+      sync();
     };
-    try {
-      watcher = watch(dir, { recursive: true }, () => {
-        timer ??= setTimeout(fire, settleMs);
-      });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        warn(`drive watch for ${dir}: ${(error as Error).message}`);
-      }
-      return resolve();
-    }
-    watcher.on("error", (error) => {
-      warn(`drive watch for ${dir}: ${error.message}; restarting`);
-      end();
-    });
-    watcher.on("close", end);
+    watchFolder("");
+    if (ended) return;
+    sync();
     signal.addEventListener("abort", end, { once: true });
     onLive(true);
     // A restarted watch missed what changed while it was down.
     if (catchUp) onChange();
   });
+}
+
+/**
+ * The Drive's folders, the Drive itself first then breadth first, with the
+ * walk's own skips: dot folders and symlinks. Bounded in folders kept and in
+ * entries read, so a huge Drive costs no more to watch than to list.
+ */
+function driveFolders(dir: string): string[] {
+  const folders = [""];
+  let budget = DRIVE_WALK_MAX;
+  for (let index = 0; index < folders.length; index += 1) {
+    const folder = folders[index] ?? "";
+    let handle;
+    try {
+      handle = opendirSync(drivePathOf(dir, folder));
+    } catch {
+      continue;
+    }
+    try {
+      for (let entry = handle.readSync(); entry !== null; entry = handle.readSync()) {
+        if (budget === 0 || folders.length >= DRIVE_WATCH_FOLDERS_MAX) return folders;
+        budget -= 1;
+        if (entry.isDirectory() && !entry.name.startsWith(".")) {
+          folders.push(folder === "" ? entry.name : `${folder}/${entry.name}`);
+        }
+      }
+    } catch {
+      // A folder that fails mid-read keeps what it gave.
+    } finally {
+      handle.closeSync();
+    }
+  }
+  return folders;
+}
+
+/** The folder's own stat when it is a folder, not a link; null when missing or unreachable. */
+function folderStat(dir: string): Stats | null {
+  try {
+    const stat = lstatSync(dir, { throwIfNoEntry: false });
+    return stat?.isDirectory() === true ? stat : null;
+  } catch {
+    // EACCES on a parent, say: as missing, so the watch retries.
+    return null;
+  }
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {

@@ -177,6 +177,41 @@ describe("crew status changes", () => {
   });
 });
 
+describe("the shared crew read", () => {
+  test("the banner's interaction read and the Overview's model reads start while Tasks answers", async () => {
+    const { host, captainId, as, rpc, crew } = await overviewHost();
+    host.addTask("BBPLUGINS-2");
+    const blocked = await dispatch(as, "BBPLUGINS-2");
+    host.updateThread(blocked, { status: "idle", hasPendingInteraction: true });
+    host.interactions.set(blocked, [
+      {
+        id: "int_1",
+        threadId: blocked,
+        status: "pending",
+        createdAt: 1_000,
+        payload: { kind: "plugin", title: "Approve", data: null },
+      },
+    ]);
+    let release = () => undefined as void;
+    host.crewSnapshotHold.gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    host.interactionReads.length = 0;
+    const models = host.providerModels.calls;
+    const banner = rpc("crew", { captainId });
+    const overview = crew();
+    await settle();
+    // Tasks has not answered, yet both reads that need only the threads ran.
+    expect(host.interactionReads).toEqual([blocked]);
+    expect(host.providerModels.calls).toBe(models + 1);
+    host.crewSnapshotHold.gate = null;
+    release();
+    const items = ((await banner) as { items: { kind: string; task: string | null }[] }).items;
+    expect(items).toEqual([expect.objectContaining({ kind: "blocked", task: "BBPLUGINS-2" })]);
+    expect(await overview).toEqual([expect.objectContaining({ id: blocked, task: "BBPLUGINS-2" })]);
+  });
+});
+
 describe("the crew poll", () => {
   test("the banner's and the Overview's watched reads share one poll per Captain", async () => {
     // A poll interval far longer than the test: each running loop polls exactly once.
@@ -227,6 +262,31 @@ describe("Drive bounds", () => {
     expect(Buffer.byteLength(head)).toBeLessThanOrEqual(1_200);
     expect(head).toBe(`a${"é".repeat(599)}`);
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("a cold read and a warm one cut at the same whole character, keeping a literal U+FFFD", () => {
+    const dir = mkdtempSync(join(tmpdir(), "captain-drive-"));
+    const file = join(dir, "x.md");
+    const text = `${"a".repeat(1_196)}\uFFFD🙂 and more`;
+    writeFileSync(file, text);
+    // 1,196 + 3 bytes of U+FFFD fill 1,199; the 4-byte emoji does not fit.
+    const expected = `${"a".repeat(1_196)}\uFFFD`;
+    expect(createDrive().head(file, 1_200)).toBe(expected);
+    const warm = createDrive();
+    warm.read(file);
+    expect(warm.head(file, 1_200)).toBe(expected);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("a Drive that is itself a symlink out of thread storage lists nothing and offers no folder", async () => {
+    const { drive, driveDir } = await overviewHost();
+    const outside = mkdtempSync(join(tmpdir(), "captain-outside-"));
+    writeFileSync(join(outside, "SECRET.md"), "# secret");
+    rmSync(driveDir, { recursive: true, force: true });
+    symlinkSync(outside, driveDir);
+    expect(await drive()).toEqual({ total: 0, truncated: false, files: [], folder: null });
+    expect(listDrive(driveDir).files).toEqual([]);
+    rmSync(outside, { recursive: true, force: true });
   });
 
   test("symlinks are never followed, and a symlink loop does not hang the walk", () => {
@@ -320,6 +380,50 @@ describe("Drive watch", () => {
     await watch.stop();
     expect(watch.live.at(-1)).toBe(false);
     rmSync(root, { recursive: true, force: true });
+  });
+
+  test("losing access to the Drive's parent, at start or while watching, retries rather than ends", async () => {
+    const root = mkdtempSync(join(tmpdir(), "captain-watch-"));
+    const parent = join(root, "storage");
+    const dir = join(parent, "drive");
+    mkdirSync(dir, { recursive: true });
+    chmodSync(parent, 0o000);
+    const watch = watched(() => dir);
+    await settle(100);
+    expect(watch.live).not.toContain(true);
+    chmodSync(parent, 0o755);
+    await settle(150);
+    expect(watch.live.at(-1)).toBe(true);
+
+    // A change whose refresh runs after access is gone.
+    writeFileSync(join(dir, "NOTES.md"), "one");
+    chmodSync(parent, 0o000);
+    await settle(100);
+    expect(watch.live.at(-1)).toBe(false);
+    chmodSync(parent, 0o755);
+    await settle(200);
+    expect(watch.live.at(-1)).toBe(true);
+    await watch.stop();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("a change in a nested folder, existing or made while watching, refreshes the read", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "captain-watch-"));
+    mkdirSync(join(dir, "briefs", "old"), { recursive: true });
+    const watch = watched(() => dir);
+    await settle(60);
+    writeFileSync(join(dir, "briefs", "old", "A.md"), "a");
+    await settle(120);
+    const existing = watch.changes.length;
+    expect(existing).toBeGreaterThan(0);
+    mkdirSync(join(dir, "repos", "new"), { recursive: true });
+    await settle(120);
+    const created = watch.changes.length;
+    writeFileSync(join(dir, "repos", "new", "B.md"), "b");
+    await settle(120);
+    expect(watch.changes.length).toBeGreaterThan(created);
+    await watch.stop();
+    rmSync(dir, { recursive: true, force: true });
   });
 
   test("a steady stream of writes keeps refreshing rather than waiting for a pause", async () => {

@@ -14,9 +14,9 @@ import {
   createPrimaryHost,
   crewThreads,
   driveFiles,
+  validDriveDir,
   watchDrive,
 } from "./overview.ts";
-import { ensureStorageRoot } from "./commands/deps.ts";
 import {
   askItems,
   createCrewReads,
@@ -150,9 +150,9 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
     const captainId = captainOf(read);
     if (captainId === null) return Promise.resolve();
     return watchDrive({
-      // The storage root may not be read yet when the watch starts.
-      resolveDir: async () =>
-        (await ensureStorageRoot(deps)) === null ? null : deps.registry.driveDir(captainId),
+      // The storage root may not be read yet when the watch starts; a Drive
+      // that is not a real folder inside it is not watched.
+      resolveDir: () => validDriveDir(deps, captainId),
       signal,
       onChange: () => bb.rpc.experimental_invalidate([driveTag(captainId)]),
       onLive: (live) => deps.registry.setDriveWatched(captainId, live),

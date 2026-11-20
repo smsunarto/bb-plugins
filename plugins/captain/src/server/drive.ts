@@ -67,7 +67,7 @@ function realExisting(path: string): string {
   }
 }
 
-function isInside(root: string, path: string): boolean {
+export function isInside(root: string, path: string): boolean {
   const inside = relative(root, path);
   return inside !== "" && !inside.startsWith(`..${sep}`) && inside !== ".." && !isAbsolute(inside);
 }
@@ -101,7 +101,7 @@ export function createDrive() {
     ) {
       return cached.text;
     }
-    const text = readHead(path, Math.min(Number(stat.size), maxBytes));
+    const text = readHead(path, Math.min(Number(stat.size), maxBytes), stat.size > maxBytes);
     cache.set(path, { ino: stat.ino, size: stat.size, mtimeNs: stat.mtimeNs, cap: maxBytes, text });
     return text;
   }
@@ -115,13 +115,10 @@ export function createDrive() {
     head(path: string, maxBytes: number): string | null {
       const text = read(path, maxBytes);
       if (text === null || text.length <= maxBytes / 4) return text;
+      // At most maxBytes characters already cover maxBytes bytes.
       const bytes = Buffer.from(text.slice(0, maxBytes), "utf8");
       if (bytes.byteLength <= maxBytes) return text.slice(0, maxBytes);
-      // A character the cap cut in two is dropped.
-      return bytes
-        .subarray(0, maxBytes)
-        .toString("utf8")
-        .replace(/\uFFFD+$/u, "");
+      return completePrefix(bytes.subarray(0, maxBytes));
     },
     /** Size in bytes, or null when missing. */
     size(path: string): number | null {
@@ -180,7 +177,16 @@ export function createDrive() {
   };
 }
 
-function readHead(path: string, maxBytes: number): string {
+/**
+ * The characters wholly inside `bytes`: a character the cut split in two is
+ * left out, rather than decoded as U+FFFD.
+ */
+function completePrefix(bytes: Uint8Array): string {
+  return new TextDecoder("utf-8").decode(bytes, { stream: true });
+}
+
+/** A file's first `maxBytes`; `cut` when the file is longer, so its last character may be split. */
+function readHead(path: string, maxBytes: number, cut = false): string {
   const fd = openSync(path, "r");
   try {
     const buffer = Buffer.alloc(maxBytes);
@@ -190,7 +196,8 @@ function readHead(path: string, maxBytes: number): string {
       if (read === 0) break;
       length += read;
     }
-    return buffer.subarray(0, length).toString("utf8");
+    const head = buffer.subarray(0, length);
+    return cut ? completePrefix(head) : head.toString("utf8");
   } finally {
     closeSync(fd);
   }

@@ -166,6 +166,10 @@ export async function captainHost(options: FakeOptions = {}) {
   const providerModels = { calls: 0, fails: 0 };
   /** The parent of every `threads.list` read, in order, to count crew polls. */
   const threadLists: (string | undefined)[] = [];
+  /** While `gate` is set, Tasks' `crewSnapshot` waits for it. */
+  const crewSnapshotHold: { gate: Promise<void> | null } = { gate: null };
+  /** Each `interactions.list` call's thread, in order. */
+  const interactionReads: string[] = [];
   /** Thread metadata by `<threadId> <pluginId>`, as other plugins read it. */
   const metadata = new Map<string, Record<string, unknown>>();
   /** Messages held by a spawn's `sendAt`, until sent now. */
@@ -391,6 +395,7 @@ export async function captainHost(options: FakeOptions = {}) {
         );
         return { threadId: input["threadId"] };
       case "crewSnapshot": {
+        if (crewSnapshotHold.gate !== null) await crewSnapshotHold.gate;
         const ids = new Set(input["threadIds"] as string[]);
         const rows = tasks.taskThreads
           .filter((row) => ids.has(row.threadId))
@@ -552,7 +557,10 @@ export async function captainHost(options: FakeOptions = {}) {
           return {} as never;
         },
         interactions: {
-          list: async ({ threadId }) => (interactions.get(threadId) ?? []) as never,
+          list: async ({ threadId }) => {
+            interactionReads.push(threadId);
+            return (interactions.get(threadId) ?? []) as never;
+          },
         },
         defaultExecutionOptions: async ({ threadId }) =>
           ({
@@ -763,6 +771,8 @@ export async function captainHost(options: FakeOptions = {}) {
     threads,
     threadLists,
     providerModels,
+    crewSnapshotHold,
+    interactionReads,
     metadata,
     queued,
     released,

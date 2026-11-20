@@ -25,30 +25,35 @@ export type QueueDeps = Pick<CommandDeps, "bb" | "store" | "registry" | "tasks" 
 /** bb's own reads for the banner; a hung read must not hold the card. */
 export const READ_DEADLINE_MS = 8_000;
 
-/** A Captain's unarchived crew and their Tasks rows, as one read. */
-export type CrewSnapshot = { threads: ListedThread[]; rows: CrewRow[] };
+/**
+ * A Captain's unarchived crew, and their Tasks rows once the crew is listed.
+ * Two promises, so a caller that needs only the threads, such as the banner's
+ * interaction read, starts as soon as they are listed rather than waiting for
+ * Tasks.
+ */
+export type CrewSnapshot = { threads: Promise<ListedThread[]>; rows: Promise<CrewRow[]> };
 
 /**
- * List the Captain's crew and join their Tasks rows, under bb's read deadline.
- * Tasks only names the rows' tasks, so a Tasks failure keeps every thread
- * with no rows.
+ * List the Captain's crew under bb's read deadline, then join their Tasks
+ * rows. Tasks only names the rows' tasks, so a Tasks failure keeps every
+ * thread with no rows.
  */
-export async function readCrewSnapshot(
+export function readCrewSnapshot(
   deps: Pick<QueueDeps, "bb" | "tasks">,
   captainId: string,
-): Promise<CrewSnapshot> {
-  const signal = AbortSignal.timeout(READ_DEADLINE_MS);
-  const threads = await listChildren(deps.bb, captainId, false, signal);
-  const rows =
-    threads.length === 0
+): CrewSnapshot {
+  const threads = listChildren(deps.bb, captainId, false, AbortSignal.timeout(READ_DEADLINE_MS));
+  const rows = threads.then((listed) =>
+    listed.length === 0
       ? []
-      : await deps.tasks
-          .crewSnapshot(threads.map((thread) => thread.id))
-          .catch((error: unknown) => {
-            if (!(error instanceof TasksError)) throw error;
-            deps.bb.log.warn(`crew read without Tasks: ${error.message}`);
-            return [] as CrewRow[];
-          });
+      : deps.tasks.crewSnapshot(listed.map((thread) => thread.id)).catch((error: unknown) => {
+          if (!(error instanceof TasksError)) throw error;
+          deps.bb.log.warn(`crew read without Tasks: ${error.message}`);
+          return [] as CrewRow[];
+        }),
+  );
+  // A caller that stops at a failed listing never awaits the rows; the failure is its.
+  rows.catch(() => undefined);
   return { threads, rows };
 }
 
@@ -56,13 +61,13 @@ export async function readCrewSnapshot(
  * One crew read for every RPC that needs it: the banner's `crew` and the
  * Overview's `crewThreads` carry the same tag, so one change refreshes both
  * at once. A read in flight is shared by the calls that arrive while it runs;
- * once it settles, the next call reads afresh. `changed` drops a read in
- * flight, so a call after a change never gets the read from before it.
+ * once both its parts settle, the next call reads afresh. `changed` drops a
+ * read in flight, so a call after a change never gets the read from before it.
  */
 export function createCrewReads(deps: Pick<QueueDeps, "bb" | "tasks">) {
-  const inFlight = new Map<string, Promise<CrewSnapshot>>();
+  const inFlight = new Map<string, CrewSnapshot>();
   return {
-    read(captainId: string): Promise<CrewSnapshot> {
+    read(captainId: string): CrewSnapshot {
       const running = inFlight.get(captainId);
       if (running !== undefined) return running;
       const read = readCrewSnapshot(deps, captainId);
@@ -70,7 +75,8 @@ export function createCrewReads(deps: Pick<QueueDeps, "bb" | "tasks">) {
       const settle = () => {
         if (inFlight.get(captainId) === read) inFlight.delete(captainId);
       };
-      read.then(settle, settle);
+      // The rows settle after the threads, and fail when the listing does.
+      read.rows.then(settle, settle);
       return read;
     },
     changed(captainId: string): void {
@@ -139,17 +145,22 @@ function answerHealth(deps: Pick<QueueDeps, "store">, ask: Ask, answer: string):
 export async function crewItems(
   deps: QueueDeps,
   captainId: string,
-  readCrew: (captainId: string) => Promise<CrewSnapshot> = (id) => readCrewSnapshot(deps, id),
+  readCrew: (captainId: string) => CrewSnapshot = (id) => readCrewSnapshot(deps, id),
 ): Promise<(BlockedItem | HealthItem)[]> {
   const signal = AbortSignal.timeout(READ_DEADLINE_MS);
-  const [{ threads, rows }, own] = await Promise.all([
-    readCrew(captainId),
+  const crew = readCrew(captainId);
+  const [threads, own] = await Promise.all([
+    crew.threads,
     deps.bb.sdk.threads.get({ threadId: captainId, signal }).catch(() => null),
   ]);
-  const interactions = await readInteractions(
-    deps,
-    threads.filter((thread) => thread.hasPendingInteraction).map((thread) => thread.id),
-  );
+  // Interactions need only the threads: they are read while Tasks answers.
+  const [rows, interactions] = await Promise.all([
+    crew.rows,
+    readInteractions(
+      deps,
+      threads.filter((thread) => thread.hasPendingInteraction).map((thread) => thread.id),
+    ),
+  ]);
   const now = deps.now();
   const items: (BlockedItem | HealthItem)[] = [];
   if (own?.status === "error") {
