@@ -6,7 +6,13 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { PluginFileOpenerSource } from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { readPatchFile } from "../core/patch-file.ts";
-import { MAX_PATCH_BYTES, patchFileUrl, readCapped, undrawableFile } from "./patch-file-opener.tsx";
+import {
+  MAX_PATCH_BYTES,
+  NOT_UTF8,
+  patchFileUrl,
+  readCapped,
+  undrawableFile,
+} from "./patch-file-opener.tsx";
 
 // Pierre's diff element adopts a constructed stylesheet; jsdom has no `replaceSync`.
 const sheet = CSSStyleSheet.prototype as unknown as { replaceSync?: (text: string) => void };
@@ -495,5 +501,34 @@ describe("a file Pierre can't draw as it reads", () => {
     const { patch } = read.read.commits[0]!.files[0]!;
     patch.patch = patch.patch.replace("@@ -1 +1 @@", "@@ -1,2 +1 @@");
     expect(undrawableFile(read.read)).toBe("one.txt");
+  });
+});
+
+describe("bytes that aren't UTF-8", () => {
+  // Round 6: caf\xE9 and caf\xE8 would both decode to "caf\uFFFD" and draw the same line.
+  const latin1 = readFileSync(join(FIXTURES, "review6/latin1.patch"));
+
+  test("readCapped says so rather than replacing them, streamed or whole", async () => {
+    expect(await readCapped(new Response(latin1), MAX_PATCH_BYTES)).toBe(NOT_UTF8);
+    const split = new ReadableStream({
+      start(controller) {
+        controller.enqueue(latin1.subarray(0, 100));
+        controller.enqueue(latin1.subarray(100));
+        controller.close();
+      },
+    });
+    expect(await readCapped(new Response(split), MAX_PATCH_BYTES)).toBe(NOT_UTF8);
+    expect(await readCapped(new Response("é ok"), 16)).toBe("é ok");
+  });
+
+  test("the file shows as text, with the reason", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(latin1)),
+    );
+    renderSlot(opener, { path: "work/latin1.patch", source: STORAGE, Original });
+    expect((await screen.findByTestId("sc-patch-file-notice")).textContent).toContain(
+      "isn't UTF-8 text",
+    );
   });
 });

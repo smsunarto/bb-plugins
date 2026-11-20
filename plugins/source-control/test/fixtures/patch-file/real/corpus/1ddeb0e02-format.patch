@@ -1,0 +1,146 @@
+From 1ddeb0e021dfbb16d938a14cae7bdf6a893a605b Mon Sep 17 00:00:00 2001
+From: Scott Sunarto <github@smsunarto.com>
+Date: Sun, 15 Nov 2026 19:17:32 -0800
+Subject: [PATCH] fix(source-control): an unclaimed Escape stays on the Source
+ Control page
+
+bb's Back to app (app.back, a window listener) left the page on any Escape
+nothing handled. A document bubble listener stops one from the page, its
+sidebar, or no focus short of window, without marking it handled, so
+Agentation's toolbar and other document listeners still get it.
+---
+ .../source-control/src/app/escape.test.tsx    | 47 ++++++++++++++++++-
+ plugins/source-control/src/app/escape.ts      | 33 +++++++++++++
+ .../source-control/src/app/review-entry.tsx   |  4 +-
+ 3 files changed, 82 insertions(+), 2 deletions(-)
+
+diff --git a/plugins/source-control/src/app/escape.test.tsx b/plugins/source-control/src/app/escape.test.tsx
+index f037eb46f..93a036bbe 100644
+--- a/plugins/source-control/src/app/escape.test.tsx
++++ b/plugins/source-control/src/app/escape.test.tsx
+@@ -2,7 +2,12 @@
+ import { act, cleanup, fireEvent, render } from "@testing-library/react";
+ import { useRef, useState } from "react";
+ import { afterEach, expect, test } from "vitest";
+-import { resetEscapeLayers, useEscapeLayer, useFocusContainment } from "./escape.ts";
++import {
++  resetEscapeLayers,
++  useEscapeLayer,
++  useFocusContainment,
++  useKeepPageOnEscape,
++} from "./escape.ts";
+ 
+ afterEach(() => {
+   cleanup();
+@@ -258,3 +263,43 @@ test("a layer that wraps its own trigger leaves focus on the trigger", async ()
+   await act(async () => {});
+   expect(document.activeElement).toBe(send);
+ });
++
++function Page() {
++  useKeepPageOnEscape();
++  return (
++    <div data-bb-plugin="source-control">
++      <button type="button">On the page</button>
++    </div>
++  );
++}
++
++test("the open page keeps an unclaimed Escape from its own focus or none, and leaves bb's elsewhere", () => {
++  // bb's Back to app listens on window; Agentation's toolbar on document, possibly added later.
++  const left: EventTarget[] = [];
++  const back = (event: KeyboardEvent) => {
++    if (event.key === "Escape" && !event.defaultPrevented) left.push(event.target!);
++  };
++  window.addEventListener("keydown", back);
++  const outside = document.createElement("button");
++  document.body.append(outside);
++  const view = render(<Page />);
++  const toolbar: boolean[] = [];
++  const onToolbar = (event: KeyboardEvent) => void toolbar.push(event.defaultPrevented);
++  document.addEventListener("keydown", onToolbar);
++
++  view.getByText("On the page").focus();
++  escape();
++  (document.activeElement as HTMLElement).blur();
++  escape();
++  expect(left).toEqual([]);
++  expect(toolbar).toEqual([false, false]);
++
++  outside.focus();
++  escape();
++  expect(left).toEqual([outside]);
++  view.unmount();
++  fireEvent.keyDown(document.body, { key: "Escape" });
++  expect(left).toEqual([outside, document.body]);
++  window.removeEventListener("keydown", back);
++  document.removeEventListener("keydown", onToolbar);
++});
+diff --git a/plugins/source-control/src/app/escape.ts b/plugins/source-control/src/app/escape.ts
+index dae8a071e..8caec13d6 100644
+--- a/plugins/source-control/src/app/escape.ts
++++ b/plugins/source-control/src/app/escape.ts
+@@ -78,6 +78,39 @@ function install() {
+   document.addEventListener("focusin", onFocusIn, true);
+ }
+ 
++let pages = 0;
++
++/**
++ * Bubble phase on document: after every handler inside the page and every
++ * Radix overlay (they handle Escape at document capture and mark it). It
++ * stops the key short of window, where bb's Back to app (`app.back`)
++ * listens, without marking it: other document listeners, such as
++ * Agentation's toolbar, skip a marked key and may be added after this one.
++ */
++function keepPage(event: KeyboardEvent) {
++  if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
++  const target = event.target;
++  const onPage =
++    target === document.body ||
++    target === document.documentElement ||
++    (target instanceof Element && target.closest(ROOT) !== null);
++  if (onPage) event.stopPropagation();
++}
++
++/**
++ * While the Source Control page is open, an Escape nothing else claimed
++ * stays on it rather than going back to the app, when focus is on the page,
++ * its sidebar, or nowhere. Back to app stays a click away in bb's sidebar.
++ */
++export function useKeepPageOnEscape() {
++  useEffect(() => {
++    if (pages++ === 0) document.addEventListener("keydown", keepPage);
++    return () => {
++      if (--pages === 0) document.removeEventListener("keydown", keepPage);
++    };
++  }, []);
++}
++
+ /** Test-only: forget every layer and the listeners' state. */
+ export function resetEscapeLayers() {
+   layers.length = 0;
+diff --git a/plugins/source-control/src/app/review-entry.tsx b/plugins/source-control/src/app/review-entry.tsx
+index 681099362..b95f95cf0 100644
+--- a/plugins/source-control/src/app/review-entry.tsx
++++ b/plugins/source-control/src/app/review-entry.tsx
+@@ -11,13 +11,15 @@ import { useMemo } from "react";
+ import type { ChangeKey } from "../core/ids.ts";
+ import { parseReviewPath } from "../core/review.ts";
+ import { sourceControlContract } from "../contract/rpc.ts";
++import { useKeepPageOnEscape } from "./escape.ts";
+ import { ChangesList } from "./page/changes-nav.tsx";
+ import { ReviewPage } from "./page/review-page.tsx";
+ 
+ type PanelProps = { subPath: string };
+ 
+-/** The nav panel's page: the selected Change's review. */
++/** The nav panel's page: the selected Change's review. Escape never leaves it. */
+ export function ReviewPanel({ subPath }: PanelProps) {
++  useKeepPageOnEscape();
+   return <ReviewPage subPath={subPath} />;
+ }
+ 
+-- 
+2.56.0
+

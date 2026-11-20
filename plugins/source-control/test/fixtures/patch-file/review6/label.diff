@@ -1,0 +1,5 @@
+--- base
++++ "prod" tenant
+@@ -1 +1 @@
+-text
++hello

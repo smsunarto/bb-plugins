@@ -870,17 +870,21 @@ function readMailHeader(
       continue;
     }
     const colon = line.indexOf(":");
-    last = colon > 0 && /^[A-Za-z-]+$/.test(line.slice(0, colon)) ? line.slice(0, colon) : null;
+    // Field names are case-insensitive, as the gate reads them.
+    last =
+      colon > 0 && /^[A-Za-z-]+$/.test(line.slice(0, colon))
+        ? line.slice(0, colon).toLowerCase()
+        : null;
     if (last !== null) fields.set(last, cap(line.slice(colon + 1).trim()));
   }
-  const from = fields.get("From");
-  const subject = fields.get("Subject");
+  const from = fields.get("from");
+  const subject = fields.get("subject");
   meta.author = from === undefined ? null : decodeWords(from);
-  meta.date = fields.get("Date") ?? null;
+  meta.date = fields.get("date") ?? null;
   meta.subject =
     subject === undefined ? null : decodeWords(subject).replace(/^\[[^\]]*\]\s*/, "") || null;
   const multipart = /^multipart\/[^;]*;.*\bboundary="?([^";\s]+)"?/i.exec(
-    fields.get("Content-Type") ?? "",
+    fields.get("content-type") ?? "",
   );
   return { next: index, boundary: multipart?.[1] ?? null };
 }

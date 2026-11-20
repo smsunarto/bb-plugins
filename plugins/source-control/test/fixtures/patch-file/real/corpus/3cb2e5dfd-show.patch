@@ -1,0 +1,70 @@
+commit 3cb2e5dfd25fbf7ee5b62b8f34b0d6cb038f7289
+Author: Scott <github@smsunarto.com>
+Date:   Wed Nov 18 15:39:13 2026 -0800
+
+    fix(ci): green main's Build and Test jobs (#174)
+    
+    * fix(agentation,gtd-sidebar): ship every file the bb entries load
+    
+    agentation's host entry (fec3ee86f) and gtd-sidebar's thread-naming-server.ts
+    never reached the files allowlist, so package:check refused both tarballs and
+    the host bundle would not install from npm.
+    
+    * test(agent-instructions): install the DOM before nav.test loads the editors
+    
+    nav.ts reaches Radix components, whose useLayoutEffect binds to a no-op when no
+    document exists at load. Imported statically, it ran before installDom(), so
+    every later test file in the process rendered no Radix portal: CI's file order
+    put catalog/app/app.test.tsx after it and its delete dialog never opened.
+
+diff --git a/plugins/agent-instructions/src/app/nav.test.tsx b/plugins/agent-instructions/src/app/nav.test.tsx
+index 40475f7e8..25491ef88 100644
+--- a/plugins/agent-instructions/src/app/nav.test.tsx
++++ b/plugins/agent-instructions/src/app/nav.test.tsx
+@@ -1,9 +1,12 @@
+ import { installDom } from "@bb-plugins/testing";
+ import { afterEach, expect, test } from "bun:test";
+ import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
+-import { pageTrail, type Names } from "./nav.ts";
++import type { Names } from "./nav.ts";
+ 
++// nav.ts reaches the editors' Radix components, which bind their layout effect
++// to a no-op when no DOM exists at load and keep it for every later test file.
+ installDom();
++const { pageTrail } = await import("./nav.ts");
+ const { fireEvent, render } = await import("@testing-library/react");
+ const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
+ const { queryClient } = await import("./query.ts");
+diff --git a/plugins/agentation/package.json b/plugins/agentation/package.json
+index 9bfc44fb9..04aff9191 100644
+--- a/plugins/agentation/package.json
++++ b/plugins/agentation/package.json
+@@ -52,6 +52,8 @@
+   "files": [
+     "dist/server.js",
+     "dist/server.meta.json",
++    "dist/host.js",
++    "dist/host.meta.json",
+     "dist/app.js",
+     "dist/app.meta.json",
+     "dist/app.css",
+@@ -62,6 +64,7 @@
+     "LICENSE",
+     "THIRD_PARTY_NOTICES.md",
+     "server.ts",
++    "host.ts",
+     "app.tsx",
+     "app.css",
+     "lib/",
+diff --git a/plugins/gtd-sidebar/package.json b/plugins/gtd-sidebar/package.json
+index ebd697797..98b3570da 100644
+--- a/plugins/gtd-sidebar/package.json
++++ b/plugins/gtd-sidebar/package.json
+@@ -64,6 +64,7 @@
+     "app.tsx",
+     "app.css",
+     "thread-namer.ts",
++    "thread-naming-server.ts",
+     "thread-title-inference.ts",
+     "lib/",
+     "shared/",

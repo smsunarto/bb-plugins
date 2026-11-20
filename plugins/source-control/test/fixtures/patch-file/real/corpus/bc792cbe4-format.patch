@@ -1,0 +1,196 @@
+From bc792cbe49e4ff43896f7a8ef85cf2d0513180ba Mon Sep 17 00:00:00 2001
+From: Scott Sunarto <github@smsunarto.com>
+Date: Thu, 19 Nov 2026 18:51:34 -0800
+Subject: [PATCH] fix(source-control): let a format-patch MIME boundary end the
+ patch (BBP-51 review 2)
+
+format-patch --attach and --inline close with a --boundary-- line after the
+last hunk; the new check for lines past a finished hunk read it as a lost
+deletion and sent the file to text.
+---
+ .../src/core/patch-file.test.ts               |  7 +++
+ plugins/source-control/src/core/patch-file.ts | 13 +++--
+ .../review2/format-patch-attach.patch         | 55 +++++++++++++++++++
+ .../review2/format-patch-inline.patch         | 55 +++++++++++++++++++
+ 4 files changed, 124 insertions(+), 6 deletions(-)
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/format-patch-attach.patch
+ create mode 100644 plugins/source-control/test/fixtures/patch-file/review2/format-patch-inline.patch
+
+diff --git a/plugins/source-control/src/core/patch-file.test.ts b/plugins/source-control/src/core/patch-file.test.ts
+index 204b9f0f9..77d6da533 100644
+--- a/plugins/source-control/src/core/patch-file.test.ts
++++ b/plugins/source-control/src/core/patch-file.test.ts
+@@ -538,6 +538,13 @@ describe("review round 2 fixtures", () => {
+     expect(files2(rename)).toEqual([["y", "renamed", name]]);
+   });
+ 
++  test("format-patch --attach and --inline end at their MIME boundary", () => {
++    for (const name of ["format-patch-attach.patch", "format-patch-inline.patch"])
++      expect(
++        parsed(fixture(`review2/${name}`)).commits.map((c) => [c.subject, c.files.length]),
++      ).toEqual([["second: edit, delete, add", 3]]);
++  });
++
+   test("git log --abbrev-commit and --format=fuller start a section per commit", () => {
+     for (const name of ["log-abbrev.patch", "log-fuller-stat.patch"]) {
+       const commits = parsed(fixture(`review2/${name}`)).commits;
+diff --git a/plugins/source-control/src/core/patch-file.ts b/plugins/source-control/src/core/patch-file.ts
+index e8a88468e..70f581746 100644
+--- a/plugins/source-control/src/core/patch-file.ts
++++ b/plugins/source-control/src/core/patch-file.ts
+@@ -231,10 +231,10 @@ class Reader {
+   /**
+    * A hunk line where its hunk has ended: one it held past its counts, or one
+    * it lost across a blank line or a signature. Returns whether the line is a
+-   * mail signature.
++   * mail signature or MIME boundary.
+    */
+   private checkPastHunk(index: number, line: string): boolean {
+-    if (isSignature(line, this.lines[index + 1])) return true;
++    if (isMailTrailer(line, this.lines[index + 1])) return true;
+     if (this.afterHunk && /^[+\- ]/.test(line))
+       throw malformed(index, "continues a hunk past the lines its header counts");
+     if (this.trailing && /^[+-]/.test(line))
+@@ -324,12 +324,13 @@ function commitStarts(lines: string[], index: number): boolean {
+ }
+ 
+ /**
+- * A mail signature's `-- ` line, or `--` once an editor trimmed its space:
+- * the version line after it is no hunk line.
++ * A mail line that ends a patch's text: the signature's `-- `, or `--` once
++ * an editor trimmed its space, or a MIME boundary (`--------------2.43.0--`)
++ * from `format-patch --attach` or `--inline`. The line after it is no hunk line.
+  */
+-function isSignature(line: string, next: string | undefined): boolean {
++function isMailTrailer(line: string, next: string | undefined): boolean {
+   if (line === "-- ") return true;
+-  return line === "--" && !/^[+\- @\\]/.test(next ?? "");
++  return /^--\S*$/.test(line) && !/^[+\- @\\]/.test(next ?? "");
+ }
+ 
+ /** Whether a git file is still in its extended header, before its `---`/`+++` pair. */
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/format-patch-attach.patch b/plugins/source-control/test/fixtures/patch-file/review2/format-patch-attach.patch
+new file mode 100644
+index 000000000..1bacbc364
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/format-patch-attach.patch
+@@ -0,0 +1,55 @@
++From f277771ce300ac821fbe1893a43bfdc4d09e0a1d Mon Sep 17 00:00:00 2001
++From: T <t@e.x>
++Date: Thu, 19 Nov 2026 18:33:55 -0800
++Subject: [PATCH] second: edit, delete, add
++MIME-Version: 1.0
++Content-Type: multipart/mixed; boundary="------------2.56.0"
++
++This is a multi-part message in MIME format.
++--------------2.56.0
++Content-Type: text/plain; charset=UTF-8; format=fixed
++Content-Transfer-Encoding: 8bit
++
++---
++ f.txt      | 3 ++-
++ g.txt      | 1 -
++ sp ace.txt | 1 +
++ 3 files changed, 3 insertions(+), 2 deletions(-)
++ delete mode 100644 g.txt
++ create mode 100644 sp ace.txt
++
++
++--------------2.56.0
++Content-Type: text/x-patch; name="0001-second-edit-delete-add.patch"
++Content-Transfer-Encoding: 8bit
++Content-Disposition: attachment; filename="0001-second-edit-delete-add.patch"
++
++diff --git a/f.txt b/f.txt
++index aedc0ee..b236982 100644
++--- a/f.txt
+++++ b/f.txt
++@@ -1,4 +1,5 @@
++ one
++ 
++-two
+++TWO
++ three
+++four
++diff --git a/g.txt b/g.txt
++deleted file mode 100644
++index 587be6b..0000000
++--- a/g.txt
+++++ /dev/null
++@@ -1 +0,0 @@
++-x
++diff --git a/sp ace.txt b/sp ace.txt
++new file mode 100644
++index 0000000..8ba3a16
++--- /dev/null
+++++ b/sp ace.txt	
++@@ -0,0 +1 @@
+++n
++
++--------------2.56.0--
++
++
+diff --git a/plugins/source-control/test/fixtures/patch-file/review2/format-patch-inline.patch b/plugins/source-control/test/fixtures/patch-file/review2/format-patch-inline.patch
+new file mode 100644
+index 000000000..d3fe24742
+--- /dev/null
++++ b/plugins/source-control/test/fixtures/patch-file/review2/format-patch-inline.patch
+@@ -0,0 +1,55 @@
++From f277771ce300ac821fbe1893a43bfdc4d09e0a1d Mon Sep 17 00:00:00 2001
++From: T <t@e.x>
++Date: Thu, 19 Nov 2026 18:33:55 -0800
++Subject: [PATCH] second: edit, delete, add
++MIME-Version: 1.0
++Content-Type: multipart/mixed; boundary="------------2.56.0"
++
++This is a multi-part message in MIME format.
++--------------2.56.0
++Content-Type: text/plain; charset=UTF-8; format=fixed
++Content-Transfer-Encoding: 8bit
++
++---
++ f.txt      | 3 ++-
++ g.txt      | 1 -
++ sp ace.txt | 1 +
++ 3 files changed, 3 insertions(+), 2 deletions(-)
++ delete mode 100644 g.txt
++ create mode 100644 sp ace.txt
++
++
++--------------2.56.0
++Content-Type: text/x-patch; name="0001-second-edit-delete-add.patch"
++Content-Transfer-Encoding: 8bit
++Content-Disposition: inline; filename="0001-second-edit-delete-add.patch"
++
++diff --git a/f.txt b/f.txt
++index aedc0ee..b236982 100644
++--- a/f.txt
+++++ b/f.txt
++@@ -1,4 +1,5 @@
++ one
++ 
++-two
+++TWO
++ three
+++four
++diff --git a/g.txt b/g.txt
++deleted file mode 100644
++index 587be6b..0000000
++--- a/g.txt
+++++ /dev/null
++@@ -1 +0,0 @@
++-x
++diff --git a/sp ace.txt b/sp ace.txt
++new file mode 100644
++index 0000000..8ba3a16
++--- /dev/null
+++++ b/sp ace.txt	
++@@ -0,0 +1 @@
+++n
++
++--------------2.56.0--
++
++
+-- 
+2.56.0
+

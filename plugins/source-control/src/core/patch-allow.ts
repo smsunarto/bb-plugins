@@ -38,7 +38,7 @@ class NotAllowed extends Error {
 const MAIL_START = /^From [0-9a-f]{40}(?:[0-9a-f]{24})? Mon Sep 17 00:00:00 2001$/;
 const LOG_START = /^commit [0-9a-f]{7,64}(?: \(.+\))?$/;
 const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$/;
-const NO_NEWLINE = "\\ No newline at end of file";
+
 const MAIL_FIELD = /^([A-Za-z][A-Za-z0-9-]*):(.*)$/;
 /** A diff -r command line before a file's `---`/`+++` pair. */
 const DIFF_COMMAND = /^diff -(?!-git )\S+ \S/;
@@ -92,6 +92,33 @@ class Gate {
     if (/^[-+ ]/.test(this.now() ?? ""))
       this.fail("continues a hunk past the lines its header counts");
     this.fail("isn't part of any file the diff view knows");
+  }
+
+  /** Every C-quoted name on the line must hold UTF-8: other bytes would decode to the same � as each other. */
+  private checkNames(line: string): void {
+    for (const [quoted] of line.matchAll(/"(?:[^"\\]|\\.)*"/g))
+      if (!isUtf8Name(quoted)) this.fail("names a file whose bytes aren't UTF-8 text");
+  }
+
+  /** A `---`/`+++` label: a quoted name may be followed only by a tab and its timestamp. */
+  private checkLabel(label: string): void {
+    this.checkNames(label);
+    const quoted = /^"(?:[^"\\]|\\.)*"/.exec(label);
+    if (quoted && label.length > quoted[0].length && label[quoted[0].length] !== "\t")
+      this.fail("has a quoted name followed by more text, which leaves the name unclear");
+  }
+
+  /** A git section's binary line must name the files its diff --git line does. */
+  private checkBinaryNames(line: string, names: string): void {
+    this.checkNames(line);
+    const pair = line.slice("Binary files ".length, -" differ".length);
+    const sides = [pair.split(" and ")[0]!, pair.slice(pair.lastIndexOf(" and ") + 5)];
+    const [old, next] = sides;
+    const agrees =
+      (old === "/dev/null" || names.startsWith(`${old} `)) &&
+      (next === "/dev/null" || names.endsWith(` ${next}`));
+    if (!agrees)
+      this.fail("names other files than its diff --git line, so which file changed is unclear");
   }
 
   /** Whether a file header starts here: a `---` line, a `+++` line, and a hunk header. */
@@ -149,6 +176,12 @@ class Gate {
     this.at++;
     while (this.now()?.startsWith("    ")) this.at++;
     if (this.now() === "") this.at++;
+    // git show's notes: a Notes: or Notes (ref): line, its text indented, then a blank line.
+    while (/^Notes(?: \(.+\))?:$/.test(this.now() ?? "")) {
+      this.at++;
+      while (this.now()?.startsWith("    ")) this.at++;
+      if (this.now() === "") this.at++;
+    }
     if (/^diff --(?:cc|combined) /.test(this.now() ?? ""))
       this.fail("is part of a combined merge diff, which the diff view can't show");
     if (!this.now()?.startsWith("diff --git "))
@@ -202,22 +235,36 @@ class Gate {
   }
 
   /** The message up to its `---` line, then the diffstat up to the first file. */
+  /** git mailinfo reads From, Date and Subject anywhere in the body's leading block as the author's. */
+  private checkOverrides(): void {
+    let at = this.at;
+    while (this.lines[at] === "") at++;
+    for (; at < this.lines.length && this.lines[at] !== ""; at++)
+      if (/^(?:from|date|subject):/i.test(this.lines[at]!))
+        this.fail(
+          "overrides the mail's header in its body, which the diff view doesn't follow",
+          at,
+        );
+  }
+
   private readMessage(start: number): void {
-    let first = this.at;
-    while (this.lines[first] === "") first++;
-    if (/^(?:from|date|subject):/i.test(this.lines[first] ?? ""))
-      this.fail(
-        "overrides the mail's header in its body, which the diff view doesn't follow",
-        first,
-      );
-    while (this.now() !== "---") {
-      const line = this.now();
-      // A message that ends with no --- line and no patch-like line before it holds no files.
-      if (line === undefined || MAIL_START.test(line) || line === "-- ")
-        this.fail("starts a mail with no files, which the diff view can't show", start);
-      if (PATCH_LIKE.test(line) || this.startsFileHeader())
+    this.checkOverrides();
+    // The message runs to the last --- line before the first file: a --- in the prose is a rule.
+    let end = this.at;
+    while (end < this.lines.length && !this.lines[end]!.startsWith("diff --git ")) {
+      if (MAIL_START.test(this.lines[end]!) || this.lines[end] === "-- ") break;
+      end++;
+    }
+    let separator = -1;
+    for (let at = this.at; at < end; at++) if (this.lines[at] === "---") separator = at;
+    const message = separator < 0 ? end : separator;
+    for (; this.at < message; this.at++)
+      if (PATCH_LIKE.test(this.now()!) || this.startsFileHeader())
         this.fail("reads as part of a patch inside the mail's message, before its --- line");
-      this.at++;
+    if (separator < 0) {
+      if (this.now()?.startsWith("diff --git "))
+        this.fail("reads as part of a patch inside the mail's message, before its --- line");
+      this.fail("starts a mail with no files, which the diff view can't show", start);
     }
     this.at++;
     // The diffstat: indented lines, and blank lines.
@@ -256,11 +303,15 @@ class Gate {
 
   private readGitSection(): void {
     const start = this.at;
+    const names = this.now()!.slice("diff --git ".length);
+    this.checkNames(names);
     this.at++;
     const { header, described } = this.readExtendedHeader(start);
     const line = this.now() ?? "";
-    if (/^Binary files .+ differ$/.test(line)) this.at++;
-    else if (line === "GIT binary patch") this.readBinaryBody();
+    if (/^Binary files .+ differ$/.test(line)) {
+      this.checkBinaryNames(line, names);
+      this.at++;
+    } else if (line === "GIT binary patch") this.readBinaryBody();
     else if (line.startsWith("--- ")) this.readFile(header);
     else if (!described) this.fail("has a diff --git line with no change after it", start);
   }
@@ -270,16 +321,21 @@ class Gate {
     const header = { added: false, deleted: false };
     let described = false;
     let renaming: "rename" | "copy" | null = null;
+    let renamed = false;
     for (;;) {
       const line = this.now() ?? "";
       if (/^new file mode [0-7]{6}$/.test(line)) header.added = true;
       else if (/^deleted file mode [0-7]{6}$/.test(line)) header.deleted = true;
-      else if (/^(?:rename|copy) from /.test(line))
+      else if (/^(?:rename|copy) from /.test(line)) {
+        if (renamed) this.fail("renames or copies its file twice in one section");
         renaming = line.startsWith("rename") ? "rename" : "copy";
-      else if (/^(?:rename|copy) to /.test(line)) {
+        this.checkNames(line);
+      } else if (/^(?:rename|copy) to /.test(line)) {
         if (renaming === null || !line.startsWith(renaming))
           this.fail(`has a ${line.split(" ")[0]} to line with no from line`);
+        this.checkNames(line);
         renaming = null;
+        renamed = true;
       } else if (/^index [0-9a-f]+\.\.[0-9a-f]+(?: [0-7]{6})?$/.test(line)) {
         this.at++;
         continue;
@@ -328,6 +384,8 @@ class Gate {
     const start = this.at;
     const next = this.lines[this.at + 1];
     if (!next?.startsWith("+++ ")) this.fail("starts a file header without its +++ line");
+    this.checkLabel(this.now()!.slice(4));
+    this.checkLabel(next.slice(4));
     const sides = { added: isDevNull(this.now()!.slice(4)), deleted: isDevNull(next.slice(4)) };
     if (sides.added && sides.deleted) this.fail("names /dev/null on both sides");
     if (header) this.checkSides(header, sides, start);
@@ -369,6 +427,8 @@ class Gate {
     const header = this.at++;
     let old = oldCount;
     let next = nextCount;
+    // A `\` marker says the line above it ends without a newline: it needs a line above it.
+    let marked = true;
     while (old > 0 || next > 0) {
       const line = this.now();
       if (line === undefined) this.fail("ends before the lines its hunk header counts", header);
@@ -381,19 +441,68 @@ class Gate {
           this.fail("is a hunk whose counts run into the next file's --- / +++ header", header);
         old--;
       } else if (line.startsWith("+")) next--;
-      else if (line !== NO_NEWLINE)
-        this.fail(
-          line.startsWith("\\") ? "is a \\ line git doesn't write" : "breaks off the hunk above it",
-        );
+      else if (line.startsWith("\\")) {
+        this.readMarker(marked);
+        marked = true;
+        continue;
+      } else this.fail("breaks off the hunk above it");
+      marked = false;
       if (old < 0 || next < 0) this.fail("holds more lines than its hunk header counts", header);
       this.at++;
     }
-    if (this.now() === NO_NEWLINE) this.at++;
-    else if (this.now()?.startsWith("\\")) this.fail("is a \\ line git doesn't write");
+    if (this.now()?.startsWith("\\")) this.readMarker(marked);
+  }
+
+  /**
+   * A no-newline marker, in any language GNU diff writes it: `\ ` and text,
+   * right after the line it marks.
+   */
+  private readMarker(marked: boolean): void {
+    if (!this.now()!.startsWith("\\ ")) this.fail("is a \\ line git doesn't write");
+    if (marked) this.fail("is a no-newline marker with no line above it to mark");
+    this.at++;
   }
 }
 
 /** `/dev/null`, maybe followed by diff's tab and timestamp. */
 function isDevNull(name: string): boolean {
   return name === "/dev/null" || name.startsWith("/dev/null\t");
+}
+
+const NAMED_ESCAPES: Readonly<Record<string, number>> = {
+  a: 7,
+  b: 8,
+  t: 9,
+  n: 10,
+  v: 11,
+  f: 12,
+  r: 13,
+  '"': 34,
+  "\\": 92,
+};
+
+/** Whether a C-quoted name's bytes, its octal escapes included, are UTF-8. */
+function isUtf8Name(quoted: string): boolean {
+  const bytes: number[] = [];
+  const encoder = new TextEncoder();
+  const body = quoted.slice(1, -1);
+  for (let index = 0; index < body.length; index++) {
+    if (body[index] !== "\\") {
+      const point = String.fromCodePoint(body.codePointAt(index)!);
+      bytes.push(...encoder.encode(point));
+      index += point.length - 1;
+    } else if (/^[0-7]{3}$/.test(body.slice(index + 1, index + 4))) {
+      bytes.push(Number.parseInt(body.slice(index + 1, index + 4), 8));
+      index += 3;
+    } else {
+      bytes.push(NAMED_ESCAPES[body[index + 1] ?? ""] ?? 0);
+      index++;
+    }
+  }
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(bytes));
+    return true;
+  } catch {
+    return false;
+  }
 }

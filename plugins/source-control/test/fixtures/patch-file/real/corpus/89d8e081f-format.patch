@@ -1,0 +1,187 @@
+From 89d8e081facd928feb2efab33dc943f88d14b712 Mon Sep 17 00:00:00 2001
+From: Scott <github@smsunarto.com>
+Date: Thu, 19 Nov 2026 16:26:11 -0800
+Subject: [PATCH] style(monokai): remove built-in navigation rail styling
+ (#198)
+
+* style(monokai): remove disabled navigation rail styling
+
+* style(monokai): remove remaining rail collapse styling
+---
+ .../monokai/scripts/bb-monokai.template.css   | 30 ++++---------------
+ plugins/monokai/test/theme-contract.test.ts   |  2 +-
+ plugins/monokai/themes/bb-monokai.css         | 30 ++++---------------
+ 3 files changed, 13 insertions(+), 49 deletions(-)
+
+diff --git a/plugins/monokai/scripts/bb-monokai.template.css b/plugins/monokai/scripts/bb-monokai.template.css
+index 8c6e98e32..44dd3dd2d 100644
+--- a/plugins/monokai/scripts/bb-monokai.template.css
++++ b/plugins/monokai/scripts/bb-monokai.template.css
+@@ -469,15 +469,11 @@
+  * the title bar: bb's own 8px frame lip keeps it off the window's edges, and
+  * all four corners round at 12px under a 0.5px hairline, as on the unframed
+  * page. bb's card mask (8px corners, the top-left squared beside an open
+- * sidebar), title-bar seam, and the rail's own 4% fill go. */
++ * sidebar) and title-bar seam go. */
+ .dark [data-testid="app-layout-root"][data-framed] {
+   background-image: none;
+ }
+ 
+-.dark [data-framed] [data-testid="sidebar-navigation-rail"] {
+-  background-color: transparent;
+-}
+-
+ .dark [data-framed] [data-sidebar="collapsible-body"] {
+   border-color: transparent;
+   border-radius: 0;
+@@ -548,8 +544,8 @@
+  * drift 16px with it: in over 200ms after a 40ms lag, out over 120ms. Rules
+  * key on the state being entered, so a closing sidebar runs the close
+  * timing. bb's left/right/width/visibility list is restated whole, or the
+- * closing panel would go hidden on its first frame. A sidebar collapsed to a
+- * rail keeps its rail in view, so only the off-canvas sidebar fades.
++ * closing panel would go hidden on its first frame. The off-canvas sidebar
++ * fades its contents as it closes.
+  * bb's resize drag still wins with its own !important zero duration.
+  *
+  * The right panel has no width animation: the timeline panel, resize handle,
+@@ -603,10 +599,6 @@
+       visibility 0s linear 150ms;
+   }
+ 
+-  .dark [data-collapsible="rail"] [data-sidebar="collapsible-body"] {
+-    transition: visibility 0s linear 150ms;
+-  }
+-
+   .dark
+     [data-variant="sidebar"][data-side="left"][data-state="expanded"]
+     > [data-sidebar="panel"]
+@@ -692,7 +684,6 @@
+     [data-variant="sidebar"][data-side="left"][data-state]
+     ~ [data-sidebar="inset"]
+     [data-testid="app-page-header-content-row"],
+-  .dark [data-collapsible="rail"] [data-sidebar="collapsible-body"],
+   .dark [id^="thread-detail-secondary-panel"] > aside[aria-hidden] > div {
+     transition: none;
+   }
+@@ -1890,23 +1881,14 @@
+     visibility: hidden;
+   }
+ 
+-  /* bb drops data-panel-shelf only once the drawer has opened. Its toggle is
+-   * fixed above the drawer, so during a tapped open's slide it sat over the
+-   * rail's first item. Hide it whenever the page is open or moving aside. */
++  /* bb drops data-panel-shelf only once the drawer has opened. Hide the fixed
++   * toggle while the page is open or moving aside so it does not overlap
++   * the drawer's content. */
+   .dark [data-sidebar="inset"][data-sidebar-shelf="open"] ~ [data-testid="app-sidebar-trigger-overlay"],
+   .dark [data-sidebar="inset"][data-vaul-animate] ~ [data-testid="app-sidebar-trigger-overlay"] {
+     visibility: hidden;
+   }
+ 
+-  /* bb keeps a header-row spacer atop the drawer's nav rail for that toggle.
+-   * With the toggle gone, drop the spacer so the rail starts at the top. */
+-  .dark
+-    [data-sidebar="panel"][data-vaul-drawer-direction="left"]
+-    [data-testid="sidebar-navigation-rail"]
+-    > .h-\(--bb-app-chrome-row-height\) {
+-    display: none;
+-  }
+-
+   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
+     gap: 0;
+   }
+diff --git a/plugins/monokai/test/theme-contract.test.ts b/plugins/monokai/test/theme-contract.test.ts
+index fc1d209f8..5397ec7b1 100644
+--- a/plugins/monokai/test/theme-contract.test.ts
++++ b/plugins/monokai/test/theme-contract.test.ts
+@@ -407,7 +407,7 @@ describe("bb Monokai contract audit", () => {
+       `[data-state="collapsed"] > [data-sidebar="gap"] {\n    transition: width 150ms ${quint};`,
+     );
+     expect(theme).toContain(`width 150ms ${quint},\n      visibility 0s linear 150ms;`);
+-    // Only the off-canvas sidebar fades its contents; a rail stays in view.
++    // The off-canvas sidebar fades its contents as it closes.
+     expect(theme).toContain(
+       '[data-collapsible="offcanvas"]\n    > [data-sidebar="panel"]\n    > [data-sidebar="sidebar"] {\n    opacity: 0;\n    translate: -16px 0;',
+     );
+diff --git a/plugins/monokai/themes/bb-monokai.css b/plugins/monokai/themes/bb-monokai.css
+index 408ccf833..bb6a9a801 100644
+--- a/plugins/monokai/themes/bb-monokai.css
++++ b/plugins/monokai/themes/bb-monokai.css
+@@ -471,15 +471,11 @@
+  * the title bar: bb's own 8px frame lip keeps it off the window's edges, and
+  * all four corners round at 12px under a 0.5px hairline, as on the unframed
+  * page. bb's card mask (8px corners, the top-left squared beside an open
+- * sidebar), title-bar seam, and the rail's own 4% fill go. */
++ * sidebar) and title-bar seam go. */
+ .dark [data-testid="app-layout-root"][data-framed] {
+   background-image: none;
+ }
+ 
+-.dark [data-framed] [data-testid="sidebar-navigation-rail"] {
+-  background-color: transparent;
+-}
+-
+ .dark [data-framed] [data-sidebar="collapsible-body"] {
+   border-color: transparent;
+   border-radius: 0;
+@@ -550,8 +546,8 @@
+  * drift 16px with it: in over 200ms after a 40ms lag, out over 120ms. Rules
+  * key on the state being entered, so a closing sidebar runs the close
+  * timing. bb's left/right/width/visibility list is restated whole, or the
+- * closing panel would go hidden on its first frame. A sidebar collapsed to a
+- * rail keeps its rail in view, so only the off-canvas sidebar fades.
++ * closing panel would go hidden on its first frame. The off-canvas sidebar
++ * fades its contents as it closes.
+  * bb's resize drag still wins with its own !important zero duration.
+  *
+  * The right panel has no width animation: the timeline panel, resize handle,
+@@ -605,10 +601,6 @@
+       visibility 0s linear 150ms;
+   }
+ 
+-  .dark [data-collapsible="rail"] [data-sidebar="collapsible-body"] {
+-    transition: visibility 0s linear 150ms;
+-  }
+-
+   .dark
+     [data-variant="sidebar"][data-side="left"][data-state="expanded"]
+     > [data-sidebar="panel"]
+@@ -694,7 +686,6 @@
+     [data-variant="sidebar"][data-side="left"][data-state]
+     ~ [data-sidebar="inset"]
+     [data-testid="app-page-header-content-row"],
+-  .dark [data-collapsible="rail"] [data-sidebar="collapsible-body"],
+   .dark [id^="thread-detail-secondary-panel"] > aside[aria-hidden] > div {
+     transition: none;
+   }
+@@ -1892,23 +1883,14 @@
+     visibility: hidden;
+   }
+ 
+-  /* bb drops data-panel-shelf only once the drawer has opened. Its toggle is
+-   * fixed above the drawer, so during a tapped open's slide it sat over the
+-   * rail's first item. Hide it whenever the page is open or moving aside. */
++  /* bb drops data-panel-shelf only once the drawer has opened. Hide the fixed
++   * toggle while the page is open or moving aside so it does not overlap
++   * the drawer's content. */
+   .dark [data-sidebar="inset"][data-sidebar-shelf="open"] ~ [data-testid="app-sidebar-trigger-overlay"],
+   .dark [data-sidebar="inset"][data-vaul-animate] ~ [data-testid="app-sidebar-trigger-overlay"] {
+     visibility: hidden;
+   }
+ 
+-  /* bb keeps a header-row spacer atop the drawer's nav rail for that toggle.
+-   * With the toggle gone, drop the spacer so the rail starts at the top. */
+-  .dark
+-    [data-sidebar="panel"][data-vaul-drawer-direction="left"]
+-    [data-testid="sidebar-navigation-rail"]
+-    > .h-\(--bb-app-chrome-row-height\) {
+-    display: none;
+-  }
+-
+   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
+     gap: 0;
+   }
+-- 
+2.56.0
+

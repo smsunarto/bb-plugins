@@ -11,10 +11,16 @@ import { expect, test } from "vitest";
 import { readPatchFile } from "../core/patch-file.ts";
 import { readStrict } from "../core/patch-strict.ts";
 import { parsePatch } from "./file-cards.tsx";
+import { undrawableFile } from "./patch-file-opener.tsx";
 
 const FIXTURES = join(import.meta.dirname, "../../test/fixtures/patch-file");
-const corpus = readdirSync(FIXTURES, { recursive: true, encoding: "utf8" })
-  .filter((name) => /\.(?:patch|diff)$/.test(name))
+const all = readdirSync(FIXTURES, { recursive: true, encoding: "utf8" }).filter((name) =>
+  /\.(?:patch|diff)$/.test(name),
+);
+/** Real output from this repository, kept as a regression sample: tested below, not mutated. */
+const REAL = "real/corpus/";
+const corpus = all
+  .filter((name) => !name.startsWith(REAL))
   .map((name) => ({ name, text: readFileSync(join(FIXTURES, name), "utf8") }));
 const HUNK = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/;
 const INSERTS = [
@@ -313,11 +319,16 @@ const TEXT_CONTROLS = new Set([
   "review5/inflated-counts.diff",
   "review5/inline.mbox.patch",
   "review5/kind.patch",
-  "review5/marker.patch",
   "review5/only.mbox.patch",
   "review5/raw.patch",
   "review5/relay.patch",
   "review5/submodule.patch",
+  "review6/binary-conflict.diff",
+  "review6/label.diff",
+  "review6/marker-start.diff",
+  "review6/override0.patch",
+  "review6/rawpaths.patch",
+  "review6/rename-conflict.diff",
 ]);
 
 /** What a draw shows, file by file: its commit's subject, path and counts. */
@@ -380,3 +391,14 @@ test.each(corpus.map(({ name, text }) => [relative(".", name), text] as const))(
     if (!TEXT_CONTROLS.has(name)) expect(draws, name).toBeGreaterThan(0);
   },
 );
+
+test("every git show, git format-patch and git diff of 20 commits from this repository draws", () => {
+  const real = all.filter((name) => name.startsWith(REAL));
+  expect(real.length).toBe(60);
+  for (const name of real) {
+    const read = readPatchFile(readFileSync(join(FIXTURES, name), "utf8"));
+    if (!read.ok) throw new Error(`${name}: ${read.reason}`);
+    expect(undrawableFile(read.read), name).toBeNull();
+    checkFaithful(readFileSync(join(FIXTURES, name), "utf8"));
+  }
+});

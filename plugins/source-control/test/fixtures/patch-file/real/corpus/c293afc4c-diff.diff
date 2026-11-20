@@ -1,0 +1,143 @@
+diff --git a/plugins/vimium/test/link-hints-dom.test.ts b/plugins/vimium/test/link-hints-dom.test.ts
+index f8d947ad4..06ab77e36 100644
+--- a/plugins/vimium/test/link-hints-dom.test.ts
++++ b/plugins/vimium/test/link-hints-dom.test.ts
+@@ -1,6 +1,6 @@
+ import "./helpers/dom.ts";
+ import "./helpers/bb-keybindings.ts";
+-import { afterEach, describe, expect, mock, test } from "bun:test";
++import { afterEach, beforeEach, describe, expect, jest, mock, test } from "bun:test";
+ import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
+ import { mountLinkHints, setBbNavigation } from "../src/app/link-hints.ts";
+ 
+@@ -162,17 +162,25 @@ function markers(): string[] {
+   );
+ }
+ 
+-// The hint code polls on chained timers, which drift when the whole suite runs
+-// in parallel. Retry an assertion until it holds instead of racing a sleep.
++// The hint code polls on chained 60-80 ms timers. Every test runs on fake
++// timers, so those windows pass instantly and never drift under load.
++// setImmediate stays real, so it lets promise continuations run between steps.
++async function wait(ms: number): Promise<void> {
++  for (let elapsed = 0; elapsed < ms; elapsed += 10) {
++    jest.advanceTimersByTime(Math.min(10, ms - elapsed));
++    await new Promise((resolve) => setImmediate(resolve));
++  }
++}
++
++/** Retry an assertion until it holds, advancing the fake clock between tries. */
+ async function eventually(assertion: () => void, timeoutMs = 2000): Promise<void> {
+-  const deadline = Date.now() + timeoutMs;
+-  for (;;) {
++  for (let elapsed = 0; ; elapsed += 20) {
+     try {
+       assertion();
+       return;
+     } catch (error) {
+-      if (Date.now() > deadline) throw error;
+-      await new Promise((resolve) => setTimeout(resolve, 20));
++      if (elapsed >= timeoutMs) throw error;
++      await wait(20);
+     }
+   }
+ }
+@@ -216,7 +224,12 @@ function installMenuTrigger(
+   });
+ }
+ 
++beforeEach(() => {
++  jest.useFakeTimers();
++});
++
+ afterEach(() => {
++  jest.useRealTimers();
+   setBbNavigation(null);
+   document.body.innerHTML = "";
+ });
+@@ -582,7 +595,7 @@ describe("mountLinkHints", () => {
+ 
+     pressKey("p");
+     expect(document.querySelector(".vimium-hint-layer")).toBeNull();
+-    await new Promise((resolve) => setTimeout(resolve, 700));
++    await wait(700);
+     expect(markers()).toEqual([]);
+     const search = document.querySelector<HTMLInputElement>('input[aria-label="Search projects"]')!;
+     search.focus();
+@@ -631,7 +644,7 @@ describe("mountLinkHints", () => {
+       });
+ 
+       pressKey(picker.key);
+-      await new Promise((resolve) => setTimeout(resolve, 700));
++      await wait(700);
+       expect(markers()).toEqual([]);
+       const popup = document.getElementById("picker") as HTMLElement;
+       const search = popup.querySelector("input") as HTMLInputElement;
+@@ -1188,7 +1201,7 @@ describe("mountLinkHints", () => {
+     expect(pressKey("s", document.getElementById("composer") as HTMLElement)).toBe(true);
+     expect(paletteOpens).toBe(0);
+     expect(pressKey("s")).toBe(false);
+-    await new Promise((resolve) => setTimeout(resolve, 100));
++    await wait(100);
+     expect(paletteOpens).toBe(1);
+     expect(searchOpens).toBe(1);
+ 
+@@ -1284,7 +1297,7 @@ describe("mountLinkHints", () => {
+           if (opening === "hint") pressKey("f");
+           expect(pressKey("m")).toBe(false);
+         }
+-        await new Promise((resolve) => setTimeout(resolve, 700));
++        await wait(700);
+         expect(markers()).toEqual([]);
+         const search = document.querySelector<HTMLInputElement>("#model-search")!;
+         expect(document.activeElement).toBe(search);
+@@ -1298,7 +1311,7 @@ describe("mountLinkHints", () => {
+         expect(picked).toBe("Sol");
+         if (opening !== "shortcut" && opening !== "hint") {
+           trigger.textContent = "Sol";
+-          await new Promise((resolve) => setTimeout(resolve, 700));
++          await wait(700);
+           expect(markers()).toEqual([]);
+           expect(pressKey("2", search)).toBe(true);
+           void dispose();
+@@ -1375,12 +1388,12 @@ describe("mountLinkHints", () => {
+     const activeMarkers = markers();
+     expect(activeMarkers.length).toBeGreaterThan(0);
+     trigger.textContent = "Changed after picker closed";
+-    await new Promise((resolve) => setTimeout(resolve, 600));
++    await wait(600);
+     expect(markers()).toEqual(activeMarkers);
+     void dispose();
+     controller.abort();
+     trigger.textContent = "After disposal";
+-    await new Promise((resolve) => setTimeout(resolve, 600));
++    await wait(600);
+     expect(markers()).toEqual([]);
+   });
+ 
+@@ -1395,7 +1408,7 @@ describe("mountLinkHints", () => {
+     installMenuTrigger(machine, picked);
+ 
+     expect(pressKey("l")).toBe(false);
+-    await new Promise((resolve) => setTimeout(resolve, 700));
++    await wait(700);
+     expect(markers()).toEqual([]);
+     expect(pressKey("f", document.querySelector('[role="menu"]')!)).toBe(true);
+     expect(picked).toEqual([]);
+@@ -1651,14 +1664,14 @@ describe("mountLinkHints", () => {
+     window.history.pushState({}, "", "/threads/thr_1");
+     expect(pressKey("]")).toBe(false);
+     expect(clicked).toEqual(["t2"]);
+-    await new Promise((resolve) => setTimeout(resolve, 60));
++    await wait(60);
+     expect(document.activeElement).toBe(editor);
+ 
+     editor.blur();
+     window.history.pushState({}, "", "/threads/thr_2");
+     expect(pressKey("[")).toBe(false);
+     expect(clicked).toEqual(["t2", "t1"]);
+-    await new Promise((resolve) => setTimeout(resolve, 60));
++    await wait(60);
+     expect(document.activeElement).toBe(editor);
+ 
+     window.history.pushState({}, "", "/");

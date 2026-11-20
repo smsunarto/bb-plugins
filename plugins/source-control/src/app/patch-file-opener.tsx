@@ -77,32 +77,55 @@ export function patchFileUrl(path: string, source: PluginFileOpenerSource): stri
   }
 }
 
-/** The body as text, or null once it passes `max` bytes: the cap holds without a content-length. */
+/** A body whose bytes aren't UTF-8: decoding would replace them, and two names or lines could read the same. */
+export const NOT_UTF8 = Symbol("not UTF-8");
+
+/**
+ * The body as text, null once it passes `max` bytes (the cap holds without a
+ * content-length), or NOT_UTF8 when its bytes aren't UTF-8.
+ */
 export async function readCapped(
   response: Response,
   max: number,
   onProgress: () => void = () => {},
-): Promise<string | null> {
+): Promise<string | null | typeof NOT_UTF8> {
   const size = response.headers.get("content-length");
   if (size !== null && Number(size) > max) {
     void response.body?.cancel();
     return null;
   }
-  if (!response.body) return response.text();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  if (!response.body) return decodeAll(decoder, new Uint8Array(await response.arrayBuffer()));
   const reader = response.body.getReader();
-  const decoder = new TextDecoder();
   let total = 0;
   let text = "";
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) return text + decoder.decode();
+    if (done) return decodeAll(decoder, undefined, text);
     onProgress();
     total += value.byteLength;
     if (total > max) {
       void reader.cancel();
       return null;
     }
-    text += decoder.decode(value, { stream: true });
+    try {
+      text += decoder.decode(value, { stream: true });
+    } catch {
+      void reader.cancel();
+      return NOT_UTF8;
+    }
+  }
+}
+
+function decodeAll(
+  decoder: TextDecoder,
+  bytes: Uint8Array | undefined,
+  before = "",
+): string | typeof NOT_UTF8 {
+  try {
+    return before + decoder.decode(bytes);
+  } catch {
+    return NOT_UTF8;
   }
 }
 
@@ -128,7 +151,12 @@ function failure(response: Response | null): string {
   return `BB answered ${response.status}.`;
 }
 
-type Known = { url: string; text: string | null; etag: string | null; modified: string | null };
+type Known = {
+  url: string;
+  text: string | null | typeof NOT_UTF8;
+  etag: string | null;
+  modified: string | null;
+};
 type Shown = { url: string | null; value: Loaded };
 
 /** How a read's outcome lands: what shows for `url`, and whether to keep retrying. */
@@ -179,9 +207,13 @@ function afterFailure(
   return { value: { state: "text", reason: null }, retry: false };
 }
 
+const NOT_UTF8_REASON =
+  "This file isn't UTF-8 text, so the diff view can't be sure which bytes each line or name holds.";
+
 /** What a newly read file shows. */
-function shownFor(text: string | null): Loaded {
+function shownFor(text: string | null | typeof NOT_UTF8): Loaded {
   if (text === null) return { state: "text", reason: TOO_LARGE };
+  if (text === NOT_UTF8) return { state: "text", reason: NOT_UTF8_REASON };
   const read = readPatchFile(text);
   if (!read.ok) return { state: "text", reason: read.reason };
   const undrawable = undrawableFile(read.read);

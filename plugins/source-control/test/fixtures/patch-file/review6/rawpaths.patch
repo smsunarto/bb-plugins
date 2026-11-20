@@ -1,0 +1,29 @@
+From d3b7dfb77c9a0053ce8d90789059a5b50df3548e Mon Sep 17 00:00:00 2001
+From: A <a@local>
+Date: Thu, 19 Nov 2026 20:36:28 -0800
+Subject: [PATCH] Import documents
+
+---
+ "caf\351.txt" | 1 +
+ "caf\377.txt" | 1 +
+ 2 files changed, 2 insertions(+)
+ create mode 100644 "caf\351.txt"
+ create mode 100644 "caf\377.txt"
+
+diff --git "a/caf\351.txt" "b/caf\351.txt"
+new file mode 100644
+index 0000000..3e75765
+--- /dev/null
++++ "b/caf\351.txt"
+@@ -0,0 +1 @@
++new
+diff --git "a/caf\377.txt" "b/caf\377.txt"
+new file mode 100644
+index 0000000..3e75765
+--- /dev/null
++++ "b/caf\377.txt"
+@@ -0,0 +1 @@
++new
+-- 
+2.56.0
+

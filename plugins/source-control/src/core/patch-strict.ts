@@ -190,7 +190,7 @@ class Walk {
     commit.start = this.commit;
     commit.id = COMMIT_MAIL.test(first) || !mail ? (first.split(" ")[1] ?? null) : null;
     this.commits.push(commit);
-    this.boundary = mail ? boundaryOf(fields.get("Content-Type") ?? "") : null;
+    this.boundary = mail ? boundaryOf(fields.get("content-type") ?? "") : null;
     this.region = mail ? "mail-body" : "free";
   }
 
@@ -202,7 +202,7 @@ class Walk {
       const line = this.source[this.at]!;
       if (FIELD.test(line)) {
         const colon = line.indexOf(":");
-        last = line.slice(0, colon);
+        last = line.slice(0, colon).toLowerCase();
         fields.set(last, line.slice(colon + 1).trim());
       } else if (mail && /^[ \t]/.test(line) && line.trim() !== "") {
         if (last !== null) fields.set(last, `${fields.get(last)} ${line.trim()}`);
@@ -374,22 +374,22 @@ class Walk {
 }
 
 function mailCommit(fields: Map<string, string>): StrictCommit {
-  const subject = fields.get("Subject");
-  const author = fields.get("From");
+  const subject = fields.get("subject");
+  const author = fields.get("from");
   return {
     start: -1,
     id: null,
     subject:
       subject === undefined ? null : decodeHeader(subject).replace(/^\[[^\]]*\]\s*/, "") || null,
     author: author === undefined ? null : decodeHeader(author),
-    date: fields.get("Date") ?? null,
+    date: fields.get("date") ?? null,
   };
 }
 
 function logCommit(fields: Map<string, string>, subject: string | null): StrictCommit {
   let date: string | null = null;
-  for (const [name, value] of fields) if (name === "Date" || name === "AuthorDate") date = value;
-  return { start: -1, id: null, subject, author: fields.get("Author") ?? null, date };
+  for (const [name, value] of fields) if (name === "date" || name === "authordate") date = value;
+  return { start: -1, id: null, subject, author: fields.get("author") ?? null, date };
 }
 
 /** The change a git extended header line names, if any. */

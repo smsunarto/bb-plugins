@@ -301,7 +301,7 @@ describe("readPatchFile", () => {
     const text = [
       'diff --git "a/caf\\303\\251.txt" "b/caf\\303\\251.txt"',
       "index 1..2 100644",
-      "Binary files a/x and b/x differ",
+      'Binary files "a/caf\\303\\251.txt" and "b/caf\\303\\251.txt" differ',
     ].join("\n");
     expect(summary(parsed(text))![0]![0]).toMatchObject({ path: "café.txt", binary: true });
   });
@@ -667,8 +667,6 @@ describe("review round 5: only the forms the diff view knows draw", () => {
     ],
     // 5: a deleted file whose +++ names a file.
     ["kind.patch", "Line 4 says its file is deleted but +++ names a file."],
-    // 6: a backslash line git doesn't write.
-    ["marker.patch", "Line 6 is a \\ line git doesn't write."],
     // 7: quoted-printable mail.
     [
       "encoding.patch",
@@ -769,4 +767,66 @@ describe("real output from this repository still draws", () => {
       expect(read.omitted).toBe(0);
     },
   );
+});
+
+describe("review round 6", () => {
+  const read = (name: string) => readPatchFile(fixture(`review6/${name}`));
+  const shown = (name: string) =>
+    parsed(fixture(`review6/${name}`)).commits.map((commit) => [
+      commit.subject,
+      commit.authorName,
+      commit.date,
+      commit.files.map(({ file }) => `${file.path} +${file.additions} -${file.deletions}`),
+    ]);
+
+  test.each([
+    // 1: a quoted name whose octal bytes aren't UTF-8 (raw bytes in the body are the opener's check).
+    ["rawpaths.patch", "Line 13 names a file whose bytes aren't UTF-8 text."],
+    // 2: an override after Git's in-body subject line, still in the body's leading block.
+    [
+      "override0.patch",
+      "Line 7 overrides the mail's header in its body, which the diff view doesn't follow.",
+    ],
+    // 4: a binary line naming other files than its section, and two rename pairs in one section.
+    [
+      "binary-conflict.diff",
+      "Line 3 names other files than its diff --git line, so which file changed is unclear.",
+    ],
+    ["rename-conflict.diff", "Line 5 renames or copies its file twice in one section."],
+    // 5: a quoted label with more text after it.
+    [
+      "label.diff",
+      "Line 1 has a quoted name followed by more text, which leaves the name unclear.",
+    ],
+    // 6: a no-newline marker with no line above it.
+    ["marker-start.diff", "Line 4 is a no-newline marker with no line above it to mark."],
+  ])("%s reads as text: %s", (name, reason) => {
+    expect(read(name)).toEqual({ ok: false, reason });
+  });
+
+  test("3: lowercase mail header names keep the commit's subject, author and date", () => {
+    expect(shown("lowercase.patch")).toEqual([
+      ["Change 0", "John Smith", "Thu, 19 Nov 2026 20:35:53 -0800", ["simple +1 -0"]],
+    ]);
+  });
+
+  test("7: GNU diff's no-newline marker draws in any language", () => {
+    const counts = (name: string) => shown(name)[0]![3];
+    expect(counts("gnu-en.diff")).toEqual(["no-eol-new +1 -1"]);
+    expect(counts("gnu-fr.diff")).toEqual(["no-eol-new +1 -1"]);
+    // Round 5's arbitrary marker is a marker too, right after the line it marks.
+    expect(parsed(fixture("review5/marker.patch")).files).toBe(1);
+  });
+
+  test("8: git show's Notes block before the first file", () => {
+    const [commit] = shown("notes.patch");
+    expect(commit![0]).toMatch(/^fix\(source-control\): read mbox series/);
+    expect(commit![3]).toHaveLength(9);
+  });
+
+  test("9: a --- rule in a format-patch message isn't its separator", () => {
+    const [commit] = shown("divider.patch");
+    expect(commit![0]).toBe("Document installation");
+    expect(commit![3]).toHaveLength(9);
+  });
 });

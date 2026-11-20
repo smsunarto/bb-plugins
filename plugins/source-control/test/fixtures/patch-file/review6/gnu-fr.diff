@@ -1,0 +1,7 @@
+--- no-eol-old	2026-11-19 20:36:17.255880852 -0800
++++ no-eol-new	2026-11-19 20:36:17.255880852 -0800
+@@ -1 +1 @@
+-one
+\ Pas de fin de ligne à la fin du fichier
++two
+\ Pas de fin de ligne à la fin du fichier
