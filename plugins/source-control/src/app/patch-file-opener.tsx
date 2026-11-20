@@ -18,6 +18,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -77,7 +78,11 @@ export function patchFileUrl(path: string, source: PluginFileOpenerSource): stri
 }
 
 /** The body as text, or null once it passes `max` bytes: the cap holds without a content-length. */
-export async function readCapped(response: Response, max: number): Promise<string | null> {
+export async function readCapped(
+  response: Response,
+  max: number,
+  onProgress: () => void = () => {},
+): Promise<string | null> {
   const size = response.headers.get("content-length");
   if (size !== null && Number(size) > max) {
     void response.body?.cancel();
@@ -91,6 +96,7 @@ export async function readCapped(response: Response, max: number): Promise<strin
   for (;;) {
     const { done, value } = await reader.read();
     if (done) return text + decoder.decode();
+    onProgress();
     total += value.byteLength;
     if (total > max) {
       void reader.cancel();
@@ -108,8 +114,12 @@ type Loaded =
   | { state: "text"; reason: string | null };
 
 const TOO_LARGE = `This file is over ${MAX_PATCH_BYTES / 1024 / 1024} MB, too large for the diff view.`;
-/** A read running longer than this no longer holds off the next one: a hung request can't stall re-reads. */
-const READ_DEADLINE_MS = 30_000;
+/**
+ * A read that has received nothing for this long has stalled: the next poll
+ * gives it up and asks again. A slow read still sending its file runs on.
+ */
+const STALL_MS = 60_000;
+const STALLED = "BB sent nothing for a minute.";
 
 /** Why a re-read failed, after "Couldn't re-read:". */
 function failure(response: Response | null): string {
@@ -119,6 +129,32 @@ function failure(response: Response | null): string {
 }
 
 type Known = { url: string; text: string | null; etag: string | null; modified: string | null };
+type Shown = { url: string | null; value: Loaded };
+
+/** How a read's outcome lands: what shows for `url`, and whether to keep retrying. */
+function outcomes(
+  url: string,
+  shown: { current: Shown },
+  retrying: { current: boolean },
+  setLoaded: (value: Shown) => void,
+) {
+  const current = () => (shown.current.url === url ? shown.current.value : null);
+  const put = (value: Loaded) => {
+    shown.current = { url, value };
+    setLoaded(shown.current);
+  };
+  const succeed = () => {
+    retrying.current = false;
+    const value = current();
+    if (value?.state === "diff" && value.failed) put({ ...value, failed: null });
+  };
+  const fail = (why: string) => {
+    const next = afterFailure(current(), why);
+    retrying.current = next.retry;
+    if (next.value) put(next.value);
+  };
+  return { current, put, succeed, fail };
+}
 
 const validators = (response: Response) => ({
   etag: response.headers.get("etag"),
@@ -160,7 +196,7 @@ function shownFor(text: string | null): Loaded {
  */
 function usePatchFile(url: string | null) {
   const visible = useTabVisible();
-  const [loaded, setLoaded] = useState<{ url: string | null; value: Loaded }>({
+  const [loaded, setLoaded] = useState<Shown>({
     url,
     value: { state: "loading" },
   });
@@ -169,33 +205,28 @@ function usePatchFile(url: string | null) {
   const last = useRef<Known | null>(null);
   /** A re-read failed while something drew: keep asking until one succeeds. */
   const retrying = useRef(false);
-  const inflight = useRef<{ controller: AbortController; started: number } | null>(null);
+  const inflight = useRef<{ controller: AbortController; progressed: number } | null>(null);
+  /** A re-read has run past a poll while a diff shows: say the copy shown may be old. */
+  const [slow, setSlow] = useState(false);
 
   const load = useCallback(
     async (force: boolean) => {
       if (url === null) return;
       const running = inflight.current;
-      // A poll or focus waits for the read already running, unless it is past its deadline.
-      if (running && !force && Date.now() - running.started < READ_DEADLINE_MS) return;
+      // A poll or focus waits for the read already running while it still makes progress.
+      const stalled = running !== null && Date.now() - running.progressed >= STALL_MS;
+      if (running && !force && !stalled) return;
       running?.controller.abort();
       const controller = new AbortController();
-      inflight.current = { controller, started: Date.now() };
+      const flight = { controller, progressed: Date.now() };
+      inflight.current = flight;
+      const progress = () => {
+        flight.progressed = Date.now();
+      };
+      const slowTimer = setTimeout(() => setSlow(inflight.current === flight), POLL_MS);
       const known = last.current?.url === url ? last.current : null;
-      const current = () => (shown.current.url === url ? shown.current.value : null);
-      const put = (value: Loaded) => {
-        shown.current = { url, value };
-        setLoaded(shown.current);
-      };
-      const succeed = () => {
-        retrying.current = false;
-        const value = current();
-        if (value?.state === "diff" && value.failed) put({ ...value, failed: null });
-      };
-      const fail = (why: string) => {
-        const next = afterFailure(current(), why);
-        retrying.current = next.retry;
-        if (next.value) put(next.value);
-      };
+      const { current, put, succeed, fail } = outcomes(url, shown, retrying, setLoaded);
+      if (stalled) fail(STALLED);
       try {
         const response = await fetch(url, {
           credentials: "same-origin",
@@ -203,12 +234,13 @@ function usePatchFile(url: string | null) {
           headers: conditional(known),
           signal: controller.signal,
         });
+        progress();
         if (response.status === 304) return succeed();
         if (!response.ok) {
           void response.body?.cancel();
           return fail(failure(response));
         }
-        const text = await readCapped(response, MAX_PATCH_BYTES);
+        const text = await readCapped(response, MAX_PATCH_BYTES, progress);
         if (controller.signal.aborted) return;
         last.current = { url, text, ...validators(response) };
         // Unchanged text keeps the drawn diff, its open cards and its scroll.
@@ -218,9 +250,11 @@ function usePatchFile(url: string | null) {
       } catch {
         if (!controller.signal.aborted) fail(failure(null));
       } finally {
-        if (inflight.current?.controller === controller) {
+        clearTimeout(slowTimer);
+        if (inflight.current === flight) {
           inflight.current = null;
           setRefreshing(false);
+          setSlow(false);
         }
       }
     },
@@ -264,7 +298,7 @@ function usePatchFile(url: string | null) {
       : loaded.url === url
         ? loaded.value
         : { state: "loading" };
-  return { loaded: value, refresh, refreshing };
+  return { loaded: value, refresh, refreshing, slow };
 }
 
 /** A patch store already holding every file, keyed by entry: a path may show twice. */
@@ -350,6 +384,20 @@ function RefreshButton({ refreshing, onRefresh }: { refreshing: boolean; onRefre
   );
 }
 
+/**
+ * Each commit section's identity: its hash, or its place when it has none, so
+ * a file added above its first card keeps the section, and the focus in it.
+ */
+function sectionKeys(read: PatchFile): string[] {
+  const seen = new Map<string, number>();
+  return read.commits.map((commit, index) => {
+    const base = commit.id ?? `#${index}`;
+    const count = (seen.get(base) ?? 0) + 1;
+    seen.set(base, count);
+    return `${count}:${base}`;
+  });
+}
+
 /** Each card's place among all of them, keyed by entry, so the first few draw at once. */
 function placesOf(read: PatchFile): Map<string, number> {
   const places = new Map<string, number>();
@@ -370,30 +418,31 @@ function PatchColumn({
   const column = useColumn(scroller, NOOP);
   const store = useMemo(() => storeOf(read), [read]);
   const places = useMemo(() => placesOf(read), [read]);
-  const [open, setOpen] = useState<Readonly<Record<string, boolean>>>({});
+  // A Map: a file named "toString" or "__proto__" is a key like any other.
+  const [open, setOpen] = useState<ReadonlyMap<string, boolean>>(() => new Map());
   const paths = useMemo(() => {
     const byKey = new Map<string, string>();
     for (const commit of read.commits)
       for (const entry of commit.files) byKey.set(entry.key, entry.file.path);
     return byKey;
   }, [read]);
-  const isOpen = (key: string, path: string) => open[key] ?? !startsCollapsed(path);
+  const isOpen = (key: string, path: string) => open.get(key) ?? !startsCollapsed(path);
   const toggle = useCallback(
     (key: string) =>
-      setOpen((state) => ({
-        ...state,
-        [key]: !(state[key] ?? !startsCollapsed(paths.get(key) ?? key)),
-      })),
+      setOpen((state) =>
+        new Map(state).set(key, !(state.get(key) ?? !startsCollapsed(paths.get(key) ?? key))),
+      ),
     [paths],
   );
+  const sections = useMemo(() => sectionKeys(read), [read]);
   const headed = read.commits.length > 1 || read.commits.some((commit) => commit.subject);
   return (
     <ColumnContext.Provider value={column}>
       <DiffColumn scroller={scroller}>
         <div className="flex min-w-0 flex-col gap-4 px-3 py-3 @3xl:px-6 @3xl:py-4">
-          {read.commits.map((commit) => (
+          {read.commits.map((commit, index) => (
             <section
-              key={commit.files[0]!.key}
+              key={sections[index]}
               aria-label={commit.subject ?? commit.id ?? "Files"}
               className="flex min-w-0 flex-col gap-2"
               data-testid="sc-patch-commit"
@@ -428,6 +477,18 @@ function PatchColumn({
   );
 }
 
+/** Says the diff shown may be old: its last re-read failed, or one is still running. */
+function StaleNotice({ loaded, slow }: { loaded: Loaded; slow: boolean }) {
+  if (loaded.state !== "diff" || !(loaded.failed || slow)) return null;
+  return (
+    <span className="block text-warning" data-testid="sc-patch-file-stale">
+      {loaded.failed
+        ? `Couldn't re-read: ${loaded.failed} Showing the last copy read.`
+        : "Reading the file again… Showing the last copy read."}
+    </span>
+  );
+}
+
 function summary(read: PatchFile): ReactNode {
   return (
     <>
@@ -454,7 +515,11 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
       source.experimental_hostId,
     ],
   );
-  const { loaded, refresh, refreshing } = usePatchFile(url);
+  const { loaded, refresh, refreshing, slow } = usePatchFile(url);
+  // BB's preview has its own Refresh, which reloads only its text: read the file again with it.
+  const onPreviewClick = (event: MouseEvent<HTMLElement>) => {
+    if ((event.target as Element).closest("button")) refresh();
+  };
   const [asText, setAsText] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -471,7 +536,7 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
         <Toolbar>
           <span data-testid="sc-patch-file-notice">Shown as text. {loaded.reason}</span>
         </Toolbar>
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1" onClickCapture={onPreviewClick}>
           <Original />
         </div>
       </div>
@@ -496,11 +561,7 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
         }
       >
         {asText ? "Showing the patch as text" : read ? summary(read) : "Reading the patch…"}
-        {loaded.state === "diff" && loaded.failed ? (
-          <span className="block text-warning" data-testid="sc-patch-file-stale">
-            Couldn't re-read: {loaded.failed} Showing the last copy read.
-          </span>
-        ) : null}
+        <StaleNotice loaded={loaded} slow={slow} />
       </Toolbar>
       <div className="relative min-h-0 flex-1">
         {read ? (
@@ -521,7 +582,11 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
           </div>
         )}
         {asText ? (
-          <div className="absolute inset-0 bg-background" data-testid="sc-patch-file-text">
+          <div
+            className="absolute inset-0 bg-background"
+            data-testid="sc-patch-file-text"
+            onClickCapture={onPreviewClick}
+          >
             <Original />
           </div>
         ) : null}

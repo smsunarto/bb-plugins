@@ -318,3 +318,134 @@ test("a file's diff too large to draw points to Open as text", async () => {
   const empty = await screen.findByTestId("sc-patch-empty");
   expect(empty.textContent).toBe("This file's diff is too large to draw. Open as text to read it.");
 });
+
+describe("review round 3", () => {
+  const file = (name: string) => `--- a/${name}\n+++ b/${name}\n@@ -1 +1 @@\n-a\n+b\n`;
+  const paths = () =>
+    screen.queryAllByTestId("sc-file-card").map((card) => card.getAttribute("data-path"));
+  const tick = async (ms: number) => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+  const sentTag = (init: RequestInit) => (init.headers as Record<string, string>)["If-None-Match"];
+  const render = () => renderSlot(opener, { path: "work/change.patch", source: STORAGE, Original });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("a re-read taking 36 s lands, with a notice while it runs", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let etag = '"1"';
+    let body = file("x.txt");
+    let aborted = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init: RequestInit) => {
+        const sent = sentTag(init);
+        if (sent === etag) return Promise.resolve(new Response(null, { status: 304 }));
+        if (sent === undefined) return Promise.resolve(new Response(body, { headers: { etag } }));
+        return new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(
+            () => resolve(new Response(body, { headers: { etag } })),
+            36_000,
+          );
+          init.signal!.addEventListener("abort", () => {
+            clearTimeout(timer);
+            aborted++;
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        });
+      }),
+    );
+    render();
+    await waitFor(() => expect(paths()).toEqual(["x.txt"]));
+    body += file("y.txt");
+    etag = '"2"';
+    await tick(11_000);
+    expect(screen.getByTestId("sc-patch-file-stale").textContent).toBe(
+      "Reading the file again… Showing the last copy read.",
+    );
+    for (let index = 0; index < 7; index++) await tick(5000);
+    expect(paths()).toEqual(["x.txt", "y.txt"]);
+    expect(aborted).toBe(0);
+    expect(screen.queryByTestId("sc-patch-file-stale")).toBeNull();
+  });
+
+  test("a read that sends nothing for a minute is given up and asked again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init: RequestInit) => {
+        calls++;
+        if (calls === 1)
+          return Promise.resolve(new Response(file("x.txt"), { headers: { etag: '"1"' } }));
+        return new Promise<Response>((_resolve, reject) =>
+          init.signal!.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          ),
+        );
+      }),
+    );
+    render();
+    await waitFor(() => expect(paths()).toEqual(["x.txt"]));
+    for (let index = 0; index < 14; index++) await tick(5000);
+    expect(screen.getByTestId("sc-patch-file-stale").textContent).toBe(
+      "Couldn't re-read: BB sent nothing for a minute. Showing the last copy read.",
+    );
+    expect(calls).toBe(3);
+    expect(paths()).toEqual(["x.txt"]);
+  });
+
+  test("focus in a card survives a file added above its section", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let etag = '"1"';
+    let body = file("x.txt") + file("y.txt");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) =>
+        sentTag(init) === etag
+          ? new Response(null, { status: 304 })
+          : new Response(body, { headers: { etag } }),
+      ),
+    );
+    render();
+    await waitFor(() => expect(paths()).toEqual(["x.txt", "y.txt"]));
+    const toggle = screen.getAllByRole("button", { expanded: true })[1]!;
+    toggle.focus();
+    body = file("w.txt") + body;
+    etag = '"2"';
+    await tick(5000);
+    await waitFor(() => expect(paths()).toEqual(["w.txt", "x.txt", "y.txt"]));
+    expect(toggle.isConnected).toBe(true);
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  test("BB's own Refresh in the text fallback reads the file again", async () => {
+    let body = "--- a/x.txt\n+++ b/x.txt\n@@ -1 +1 @@\n-a\n";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body)),
+    );
+    function Preview() {
+      return <button type="button">Refresh file</button>;
+    }
+    renderSlot(opener, { path: "work/change.patch", source: STORAGE, Original: Preview });
+    await screen.findByTestId("sc-patch-file-notice");
+    body += "+b\n";
+    fireEvent.click(screen.getByRole("button", { name: "Refresh file" }));
+    await waitFor(() => expect(paths()).toEqual(["x.txt"]));
+    expect(screen.queryByTestId("sc-patch-file-notice")).toBeNull();
+  });
+
+  test("files named toString and __proto__ open like any other", async () => {
+    open(file("toString") + file("__proto__"));
+    await waitFor(() => expect(paths()).toEqual(["toString", "__proto__"]));
+    const toggles = screen
+      .getAllByTestId("sc-file-card")
+      .map((card) => card.querySelector("[aria-expanded]")?.getAttribute("aria-expanded"));
+    expect(toggles).toEqual(["true", "true"]);
+  });
+});
