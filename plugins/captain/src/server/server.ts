@@ -13,6 +13,7 @@ import { createRegistry } from "./registry.ts";
 import { registerRpc } from "./rpc.ts";
 import { createTaskGuard } from "./spawn.ts";
 import { openStore } from "./store.ts";
+import { dropTitleSuffixes } from "./title.ts";
 import { createTasksClient } from "./tasks-client.ts";
 
 export type StartOptions = {
@@ -84,7 +85,12 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     (error: unknown) =>
       bb.log.warn(`Captains not marked person-facing: ${(error as Error).message}`),
   );
-  return { store, registry, drive, files, check, ready, fieldsReady, audienceReady };
+  // Captains started as "<name> Captain" lose the suffix once; the sidebar icon marks them now.
+  const titlesReady = dropTitleSuffixes(bb, store, deps.now).then(
+    (warnings) => void warnings.forEach((warning) => bb.log.warn(warning)),
+    (error: unknown) => bb.log.warn(`Captain titles not checked: ${(error as Error).message}`),
+  );
+  return { store, registry, drive, files, check, ready, fieldsReady, audienceReady, titlesReady };
 }
 
 const CAPTAINS_FOLDER = "Captains";

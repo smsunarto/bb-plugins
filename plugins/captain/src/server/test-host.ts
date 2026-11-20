@@ -555,8 +555,16 @@ export async function captainHost(options: FakeOptions = {}) {
       },
       environments: { get: async () => ({ id: "env_mac", hostId: MAC_HOST }) as never },
       files: {
-        read: async ({ path }) =>
-          ({ content: readFileSync(path, "utf8"), contentEncoding: "utf8" }) as never,
+        // As bb serves files: text as UTF-8, anything else, such as a PNG, as base64.
+        read: async ({ path }) => {
+          const bytes = readFileSync(path);
+          const text = bytes.toString("utf8");
+          return (
+            Buffer.from(text, "utf8").equals(bytes)
+              ? { content: text, contentEncoding: "utf8" }
+              : { content: bytes.toString("base64"), contentEncoding: "base64" }
+          ) as never;
+        },
       },
       plugins: {
         callRpc: async (args: {

@@ -12,6 +12,7 @@ bb captain repo add rampage [--tasks RAMP]
 bb captain repo remove RAMP
 bb captain drive read CREW.md
 bb captain drive write NOTES.md --file ./notes.md
+bb captain icon Star                 # or ./crest.png, --clear, or no argument to show it
 bb captain archive
 
 bb captain dispatch PLUG-14 PLUG-15 --role Implement [--base-branch <ref>] [--rung <n>] [--again] [--dry-run]
@@ -41,6 +42,14 @@ Run `bb captain --help` for every option. Every command takes `--json`.
 - The Plan, Implement and Review presets in Tasks, when missing.
 
 Rerunning `new` with a live Captain's name converges that Captain instead of starting a second one.
+
+## Sidebar icon
+
+The thread is titled with the Captain's name alone; its sidebar icon marks it as a Captain. A Captain shows the declared `captain/captain` glyph until it gets its own icon: a name from bb's built-in icon set (Hugeicons-style names such as `Star`, `Target` or `Brain`; a name bb lacks draws the default glyph), or a PNG, JPEG, GIF, WebP or SVG of at most 128 KB. Set it with `bb captain icon` or in Captain settings (Captain icons), which scales an upload down to 96 px. `--clear`, or Use default, goes back to the glyph. It is stored in `data.db`, so it survives a reload and a restart.
+
+gtd-sidebar reads it through the keyed `icons` RPC, one batched read over the rows bb's Captain started, and draws it in place of the machine globe. A thread that is not a live Captain, such as crew, gets no entry and keeps its globe; so does every row while Captain is disabled or the read fails.
+
+Captains started before this were titled "<name> Captain". On plugin start each one still titled exactly that is renamed to its name, once; a title the user changed is left alone.
 
 ## Instructions
 

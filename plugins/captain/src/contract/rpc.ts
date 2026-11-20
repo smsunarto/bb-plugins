@@ -8,6 +8,7 @@
  */
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { captainIconSchema, iconChoiceSchema } from "./icon.ts";
 import { LADDER_ROLES, ladderSchema, rungSchema } from "./ladder.ts";
 import { ASK_KINDS } from "./queue.ts";
 
@@ -77,6 +78,9 @@ export const asksTag = (captainId: string) => `asks:${captainId}`;
 export const crewTag = (captainId: string) => `crew:${captainId}`;
 export const sinceTag = (captainId: string) => `since:${captainId}`;
 export const CAPTAINS_TAG = "captains";
+export const iconTag = (captainId: string) => `icon:${captainId}`;
+/** Any Captain's icon changed: the settings list reads every one. */
+export const ICONS_TAG = "icons";
 export const LADDERS_TAG = "ladders";
 
 /** Later and Skip may write only these `notices` keys; the check's own keys stay its own. */
@@ -212,6 +216,37 @@ export const captainContract = defineRpcContract({
         .strict(),
       z.object({ ok: z.literal(false), blockers: z.array(blocker) }).strict(),
     ]),
+  },
+  /**
+   * Each live Captain's sidebar icon, for a thread list's rows: one batched
+   * read over the rows' thread ids. A thread that is not a live Captain has no
+   * entry, so a list keeps its own lead for it.
+   */
+  icons: {
+    experimental_description:
+      "Read the sidebar icon of each thread id that is a live Captain: its default glyph, a bb icon name, or an image data URL; other threads have no entry.",
+    input: z.object({ keys: z.array(z.string().min(1).max(200)).max(500) }).strict(),
+    output: z.record(z.string(), captainIconSchema),
+    keyTags: (captainId) => [iconTag(captainId)],
+  },
+  /** Every live Captain with its name and icon, for the icon setter in settings. */
+  captainIcons: {
+    input: z.object({}).strict(),
+    output: z
+      .object({
+        captains: z.array(
+          z.object({ threadId, name: z.string(), icon: captainIconSchema }).strict(),
+        ),
+      })
+      .strict(),
+    tags: () => [CAPTAINS_TAG, ICONS_TAG],
+  },
+  /** Set a Captain's sidebar icon, as `bb captain icon` does; null goes back to the default. */
+  setIcon: {
+    experimental_description:
+      "Set a live Captain's sidebar icon to a bb icon name or an image data URL; null restores the default Captain glyph.",
+    input: z.object({ captainId: threadId, icon: iconChoiceSchema }).strict(),
+    output: captainIconSchema,
   },
 });
 

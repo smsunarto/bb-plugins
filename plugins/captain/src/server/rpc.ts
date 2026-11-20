@@ -7,6 +7,7 @@ import { DEFAULT_LADDERS, roleLadder } from "./ladder.ts";
 import { ROLE_SPECS } from "./roles.ts";
 import { Refusal } from "./output.ts";
 import { startCaptain } from "./commands/new.ts";
+import { captainIcons, IconImageError, setCaptainIcon } from "./icon.ts";
 import { askItems, crewItems, deferItem, markSeen, needsYouCount, sinceYouLeft } from "./queue.ts";
 
 /** How often a watched banner rechecks the crew for a new or answered interaction. */
@@ -75,6 +76,23 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
         return { ok: true as const, threadId, state, warnings };
       } catch (error) {
         if (error instanceof Refusal) return { ok: false as const, blockers: error.blockers };
+        throw error;
+      }
+    },
+    icons: ({ keys }) => captainIcons(deps, keys),
+    captainIcons: () => ({
+      captains: deps.store.liveCaptains().map((captain) => ({
+        threadId: captain.threadId,
+        name: captain.name,
+        icon: deps.store.captainIcon(captain.threadId),
+      })),
+    }),
+    setIcon: ({ captainId, icon }) => {
+      try {
+        return setCaptainIcon(deps, captainId, icon);
+      } catch (error) {
+        if (error instanceof IconImageError)
+          throw new Error(`Image not used: ${error.message}`, { cause: error });
         throw error;
       }
     },
