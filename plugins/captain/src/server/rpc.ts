@@ -1,5 +1,21 @@
 import { LADDER_ROLES, type LadderRole } from "../contract/ladder.ts";
-import { captainContract, crewOfTag, crewTag, driveTag, LADDERS_TAG } from "../contract/rpc.ts";
+import {
+  describeSchedule,
+  routinesTag,
+  type Routine,
+  type RoutineFields,
+  type RoutineView,
+} from "../contract/routines.ts";
+import {
+  captainContract,
+  crewOfTag,
+  crewTag,
+  driveTag,
+  LADDERS_TAG,
+  type RoutineDraft,
+  type RoutineRow,
+  type SaveRoutineResult,
+} from "../contract/rpc.ts";
 import { adoptFromMenu, adoptOptions, crewOf } from "./adopt.ts";
 import { resolveAsk } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
@@ -31,6 +47,8 @@ import {
 export const CREW_POLL_MS = 10_000;
 /** How often a watched Overview rechecks Tasks for a change made outside the crew. */
 export const TASKS_POLL_MS = 30_000;
+/** Runs an opened routine shows. */
+const ROUTINE_RUNS_SHOWN = 5;
 
 /**
  * The banner's RPCs. Logic lives in `queue.ts` and `asks.ts`, shared with the
@@ -56,7 +74,9 @@ export function registerRpc(
     ...roleLadder(deps.store, role),
     defaults: [...DEFAULT_LADDERS[role]],
   });
+  const routines = routineHandlers(deps, live);
   bb.rpc.register(captainContract, {
+    ...routines,
     ladders: () => ({ roles: LADDER_ROLES.map(ladderOf) }),
     setLadder: ({ role, rungs }) => {
       deps.store.setLadderJson(role, rungs === null ? null : JSON.stringify(rungs), deps.now());
@@ -151,7 +171,6 @@ export function registerRpc(
   registerEvents(deps, crewReads.changed);
 }
 
-/** The live Captain a watched read names, or null. */
 /**
  * A watched banner or Overview: bb's thread events cover run states; a new or
  * answered interaction has no event, so the crew list is rechecked while
@@ -233,6 +252,7 @@ function registerDriveScan(
   });
 }
 
+/** The live Captain a watched read names, or null. */
 function captainOfRead(registry: CommandDeps["registry"], read: object): string | null {
   if (!("input" in read)) return null;
   const captainId = (read.input as { captainId?: unknown } | null)?.captainId;
@@ -328,6 +348,208 @@ function registerEvents(deps: CommandDeps, changed: (captainId: string) => void)
   ] as const) {
     bb.events.on(event, refresh);
   }
+}
+
+/** A routine's live schedule as Automations last gave it. */
+type LiveSchedule = Pick<RoutineView, "automation" | "automationError" | "done" | "missed">;
+
+const liveOf = (view: RoutineView): LiveSchedule => ({
+  automation: view.automation,
+  automationError: view.automationError,
+  done: view.done,
+  missed: view.missed,
+});
+
+/**
+ * The Overview's Routines RPCs over the routine service the CLI uses. Every
+ * call names its Captain and is refused for a routine of another one.
+ *
+ * The list never waits on Automations: it answers from `data.db` with the
+ * live schedule last read for each routine, then reads Automations in the
+ * background and refreshes the list's tag when that read changed anything.
+ */
+function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
+  const serverTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  /** Per Captain, per routine: the live schedule last read. */
+  const schedules = new Map<string, Map<string, LiveSchedule>>();
+  /** Background reads in flight, per Captain; `again` asks for one more pass. */
+  const reading = new Map<string, { again: boolean }>();
+  const known = (captainId: string) => {
+    let map = schedules.get(captainId);
+    if (map === undefined) schedules.set(captainId, (map = new Map()));
+    return map;
+  };
+  /** Store a routine's live schedule; publish the list when it changed, as a reader may hold the old one. */
+  const remember = (view: RoutineView): boolean => {
+    const map = known(view.captainId);
+    const next = liveOf(view);
+    if (JSON.stringify(next) === JSON.stringify(map.get(view.id))) return false;
+    map.set(view.id, next);
+    deps.bb.rpc.experimental_invalidate([routinesTag(view.captainId)]);
+    return true;
+  };
+  const owned = (captainId: string, routineId: string): Routine => {
+    live(captainId);
+    const routine = deps.store.routine(routineId);
+    if (routine === null || routine.captainId !== captainId)
+      throw new Error(`${captainId} has no routine ${routineId}`);
+    return routine;
+  };
+  const row = (routine: Routine): RoutineRow => {
+    const last = schedules.get(routine.captainId)?.get(routine.id);
+    return {
+      ...routine,
+      when: describeSchedule(
+        routine.schedule,
+        "at" in routine.schedule ? serverTimezone : undefined,
+      ),
+      lastRun: deps.store.routineRuns(routine.id, 1)[0] ?? null,
+      ...(last ?? { automation: null, automationError: null, done: false, missed: false }),
+      scheduleLoading: last === undefined,
+    };
+  };
+  /** Read every routine's live schedule, publishing each as it arrives, so a slow one holds back none. */
+  const readSchedules = (captainId: string): void => {
+    const running = reading.get(captainId);
+    if (running !== undefined) {
+      running.again = true;
+      return;
+    }
+    const pass = { again: false };
+    reading.set(captainId, pass);
+    const once = async () => {
+      const routines = deps.store.routinesOf(captainId);
+      const map = known(captainId);
+      for (const id of map.keys()) {
+        if (!routines.some((routine) => routine.id === id)) map.delete(id);
+      }
+      await Promise.all(
+        routines.map((routine) => deps.routines.view(routine).then(remember, () => false)),
+      );
+    };
+    void (async () => {
+      try {
+        do {
+          pass.again = false;
+          await once();
+        } while (pass.again);
+      } finally {
+        reading.delete(captainId);
+      }
+    })().catch((error: unknown) =>
+      deps.bb.log.warn(`routine schedules of ${captainId}: ${(error as Error).message}`),
+    );
+  };
+  const refused = (error: unknown): SaveRoutineResult => {
+    if (error instanceof Refusal) return { ok: false, blockers: error.blockers, stale: false };
+    throw error;
+  };
+  return {
+    routines: ({ captainId }: { captainId: string }) => {
+      live(captainId);
+      const rows = deps.store.routinesOf(captainId).map(row);
+      readSchedules(captainId);
+      return { routines: rows, serverTimezone };
+    },
+    routineRuns: ({
+      captainId,
+      routineId,
+      limit,
+    }: {
+      captainId: string;
+      routineId: string;
+      limit?: number | undefined;
+    }) => {
+      const routine = owned(captainId, routineId);
+      return { runs: deps.store.routineRuns(routine.id, limit ?? ROUTINE_RUNS_SHOWN) };
+    },
+    routineAction: async ({
+      captainId,
+      routineId,
+      action,
+    }: {
+      captainId: string;
+      routineId: string;
+      action: "pause" | "resume" | "run" | "delete";
+    }) => {
+      const routine = owned(captainId, routineId);
+      const requestedAt = deps.now();
+      try {
+        const result = await deps.routines.act(routine, action);
+        if (result.view === null) schedules.get(captainId)?.delete(routineId);
+        else remember(result.view);
+        return { runId: result.runId, requestedAt };
+      } catch (error) {
+        if (error instanceof Refusal) throw new Error(error.message, { cause: error });
+        throw error;
+      }
+    },
+    saveRoutine: async ({
+      captainId,
+      routineId,
+      updatedAt,
+      routine: draft,
+    }: {
+      captainId: string;
+      routineId?: string | undefined;
+      updatedAt?: number | undefined;
+      routine: RoutineDraft;
+    }): Promise<SaveRoutineResult> => {
+      try {
+        if (routineId === undefined) {
+          live(captainId);
+          const captain = deps.store.captain(captainId);
+          if (captain === null) throw new Error(`${captainId} is not a live Captain`);
+          const owner = {
+            threadId: captain.threadId,
+            name: captain.name,
+            homeProjectId: captain.homeProjectId,
+          };
+          const created = await deps.routines.create(owner, draft);
+          remember(created);
+          return { ok: true, routine: created };
+        }
+        const before = owned(captainId, routineId);
+        if (updatedAt !== undefined && updatedAt !== before.updatedAt) {
+          return {
+            ok: false,
+            stale: true,
+            blockers: [
+              {
+                reason: "this routine changed elsewhere since the form opened",
+                fix: "reload the form and make the edit again",
+              },
+            ],
+          };
+        }
+        const updated = await deps.routines.update(before, changes(before, draft));
+        remember(updated);
+        return { ok: true, routine: updated };
+      } catch (error) {
+        return refused(error);
+      }
+    },
+  };
+}
+
+/**
+ * The fields a form save changes. `update` treats any schedule it is given as
+ * new, so an unchanged one is left out: a one-shot that already ran stays
+ * editable by name or instruction.
+ */
+function changes(before: Routine, draft: RoutineDraft): Partial<RoutineFields> {
+  const words = (text: string) => text.trim().split(/\s+/u).join(" ");
+  const sameSchedule =
+    "at" in draft.schedule
+      ? "at" in before.schedule && before.schedule.at === draft.schedule.at
+      : "cron" in before.schedule &&
+        words(draft.schedule.cron) === before.schedule.cron &&
+        draft.schedule.timezone.trim() === before.schedule.timezone;
+  return {
+    ...(draft.name.trim() === before.name ? {} : { name: draft.name }),
+    ...(draft.instruction.trim() === before.instruction ? {} : { instruction: draft.instruction }),
+    ...(sameSchedule ? {} : { schedule: draft.schedule as RoutineFields["schedule"] }),
+  };
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {

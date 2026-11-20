@@ -1,6 +1,8 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { asksTag, CAPTAINS_TAG, captainContract, crewTag, sinceTag } from "../contract/rpc.ts";
+import { routinesTag } from "../contract/routines.ts";
+import { ROUTINE_ENV } from "./automations-client.ts";
 import { ANSWER_MAX_ATTEMPTS } from "./asks.ts";
 import { NOTICE } from "./store.ts";
 import { captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
@@ -354,5 +356,247 @@ describe("New Captain from the app", () => {
       blockers: [expect.objectContaining({ reason: 'no bb project is "proj_gone"' })],
     });
     expect(await rpc("captains", {})).toEqual({ ids: [] });
+  });
+});
+
+describe("the Overview's routines", () => {
+  const SWEEP = {
+    name: "Stalled crew sweep",
+    instruction: "Nudge stalled crew.",
+    schedule: { cron: "0 9 * * 1-5", timezone: "UTC" },
+  };
+  async function routinesHost() {
+    const host = await captainHost();
+    const captainId = await newCaptain(host);
+    const rpc = (method: string, input: unknown) => host.harness.behavior.callRpc(method, input);
+    const list = async () =>
+      (
+        (await rpc("routines", { captainId })) as {
+          routines: {
+            id: string;
+            name: string;
+            when: string;
+            automation: unknown;
+            scheduleLoading: boolean;
+          }[];
+          serverTimezone: string;
+        }
+      ).routines;
+    const save = (routine: unknown, routineId?: string) =>
+      rpc("saveRoutine", {
+        captainId,
+        routine,
+        ...(routineId === undefined ? {} : { routineId }),
+      }) as Promise<{ ok: boolean; routine?: { id: string }; blockers?: { reason: string }[] }>;
+    return { host, captainId, rpc, list, save };
+  }
+
+  test("saveRoutine creates, then lists it with its schedule in words and live state", async () => {
+    const { list, save, host } = await routinesHost();
+    const saved = await save(SWEEP);
+    expect(saved).toMatchObject({ ok: true, routine: { id: "r1", name: SWEEP.name } });
+    expect(await list()).toEqual([
+      expect.objectContaining({
+        id: "r1",
+        when: "Every weekday at 9:00 AM",
+        automation: expect.objectContaining({ enabled: true }),
+      }),
+    ]);
+    expect(host.automations.rows.size).toBe(1);
+  });
+
+  test("a refused save lists the reasons in words and stores nothing", async () => {
+    const { list, save } = await routinesHost();
+    await save(SWEEP);
+    const duplicate = await save({ ...SWEEP, name: "stalled crew SWEEP" });
+    expect(duplicate.ok).toBe(false);
+    expect(duplicate.blockers?.[0]?.reason).toMatch(/r1 is already named/);
+    const frequent = await save({
+      ...SWEEP,
+      name: "Too often",
+      schedule: { cron: "*/5 * * * *", timezone: "UTC" },
+    });
+    expect(frequent.blockers?.[0]?.reason).toMatch(/at most every 15 minutes/);
+    const zone = await save({
+      ...SWEEP,
+      name: "Bad zone",
+      schedule: { cron: "0 9 * * *", timezone: "Mars/Olympus" },
+    });
+    expect(zone.blockers?.[0]?.reason).toMatch(/unknown time zone/);
+    expect((await list()).map((routine) => routine.id)).toEqual(["r1"]);
+  });
+
+  test("an edit sends only what changed, so a spent one-shot stays renameable", async () => {
+    const { host, list, save } = await routinesHost();
+    const at = host.now() + 60_000;
+    await save({ ...SWEEP, schedule: { at } });
+    host.setNow(host.now() + 120_000);
+    const renamed = await save({ ...SWEEP, name: "Renamed", schedule: { at } }, "r1");
+    expect(renamed.ok).toBe(true);
+    expect((await list())[0]?.name).toBe("Renamed");
+    // A changed schedule in the past is still refused.
+    const past = await save({ ...SWEEP, schedule: { at: at - 1 } }, "r1");
+    expect(past.blockers?.[0]?.reason).toMatch(/time has passed/);
+  });
+
+  test("an update moves the cron and the time zone together", async () => {
+    const { host, save } = await routinesHost();
+    await save(SWEEP);
+    await save({ ...SWEEP, schedule: { cron: "0 16 * * 5", timezone: "Europe/Berlin" } }, "r1");
+    expect([...host.automations.rows.values()][0]?.trigger).toMatchObject({
+      cron: "0 16 * * 5",
+      timezone: "Europe/Berlin",
+    });
+  });
+
+  test("routineAction pauses, resumes, tests and deletes; routineRuns returns the test run", async () => {
+    const { host, captainId, rpc, list, save } = await routinesHost();
+    await save(SWEEP);
+    await rpc("routineAction", { captainId, routineId: "r1", action: "pause" });
+    expect((await list())[0]?.automation).toMatchObject({ enabled: false });
+    await rpc("routineAction", { captainId, routineId: "r1", action: "resume" });
+    expect((await list())[0]?.automation).toMatchObject({ enabled: true });
+    host.automations.onRun = async (row, runId) => {
+      await host.server.routines.fire(row.execution.env?.[ROUTINE_ENV] as string, {
+        automationId: row.id,
+        runId,
+      });
+    };
+    const test = (await rpc("routineAction", { captainId, routineId: "r1", action: "run" })) as {
+      runId: string | null;
+      requestedAt: number;
+    };
+    expect(test).toEqual({ runId: expect.stringMatching(/^arun_/u), requestedAt: host.now() });
+    const runs = async () =>
+      ((await rpc("routineRuns", { captainId, routineId: "r1" })) as { runs: unknown[] }).runs;
+    await vi.waitFor(async () => expect(await runs()).toHaveLength(1));
+    expect(await runs()).toEqual([
+      expect.objectContaining({ routineId: "r1", trigger: "test", status: "sent" }),
+    ]);
+    await rpc("routineAction", { captainId, routineId: "r1", action: "delete" });
+    expect(await list()).toEqual([]);
+    expect(host.automations.rows.size).toBe(0);
+  });
+
+  test("a save from a stale revision is refused and changes nothing", async () => {
+    const { host, captainId, list, save, rpc } = await routinesHost();
+    const created = (await save(SWEEP)) as unknown as { routine: { updatedAt: number } };
+    const opened = created.routine.updatedAt;
+    host.setNow(host.now() + 1_000);
+    // Another client changes the cron.
+    const moved = (await rpc("saveRoutine", {
+      captainId,
+      routineId: "r1",
+      updatedAt: opened,
+      routine: { ...SWEEP, schedule: { cron: "0 16 * * 5", timezone: "UTC" } },
+    })) as { ok: boolean };
+    expect(moved.ok).toBe(true);
+    // This client still holds the original cron and renames.
+    const stale = await rpc("saveRoutine", {
+      captainId,
+      routineId: "r1",
+      updatedAt: opened,
+      routine: { ...SWEEP, name: "Renamed" },
+    });
+    expect(stale).toMatchObject({ ok: false, stale: true });
+    expect((await list())[0]).toMatchObject({
+      name: SWEEP.name,
+      schedule: { cron: "0 16 * * 5", timezone: "UTC" },
+    });
+  });
+
+  test("a routine of another Captain is refused", async () => {
+    const { host, captainId, rpc, save } = await routinesHost();
+    await save(SWEEP);
+    const other = await newCaptain(host, ["--name", "Rampage", "--repo", "rampage"]);
+    await expect(
+      rpc("routineAction", { captainId: other, routineId: "r1", action: "delete" }),
+    ).rejects.toThrow(/has no routine r1/);
+    await expect(rpc("routineRuns", { captainId: other, routineId: "r1" })).rejects.toThrow(
+      /has no routine r1/,
+    );
+    expect(host.server.store.routinesOf(captainId)).toHaveLength(1);
+  });
+
+  test("the list answers from data.db at once, then refreshes with the live schedule", async () => {
+    const { host, captainId, list } = await routinesHost();
+    // Made by the CLI: the list has read nothing from Automations for it yet.
+    const captain = host.server.store.captain(captainId)!;
+    await host.server.routines.create(captain, SWEEP);
+    let release = () => {};
+    host.automations.gate = { until: new Promise<void>((resolve) => (release = resolve)) };
+    const before = host.harness.inspection.experimental_rpcInvalidations.length;
+    const rows = await list();
+    expect(rows[0]).toMatchObject({
+      name: SWEEP.name,
+      when: "Every weekday at 9:00 AM",
+      automation: null,
+      scheduleLoading: true,
+    });
+    host.automations.gate = null;
+    release();
+    await vi.waitFor(() =>
+      expect(host.harness.inspection.experimental_rpcInvalidations.slice(before).flat()).toContain(
+        routinesTag(captainId),
+      ),
+    );
+    expect((await list())[0]).toMatchObject({
+      scheduleLoading: false,
+      automation: expect.objectContaining({ enabled: true }),
+    });
+  });
+
+  test("each row's live schedule is published as it arrives; a slow one holds back none", async () => {
+    const { host, captainId, list } = await routinesHost();
+    const captain = host.server.store.captain(captainId)!;
+    await host.server.routines.create(captain, SWEEP);
+    const slow = await host.server.routines.create(captain, { ...SWEEP, name: "Digest" });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    // Hold only the Digest routine's lookup.
+    const call = host.automations.call;
+    host.automations.call = async (method, input) => {
+      if (method === "automations_get" && input["automationId"] === slow.automationId) await held;
+      return call(method, input);
+    };
+    await list();
+    await vi.waitFor(async () =>
+      expect((await list()).map((row) => [row.name, row.scheduleLoading])).toEqual([
+        [SWEEP.name, false],
+        ["Digest", true],
+      ]),
+    );
+    release();
+    await vi.waitFor(async () =>
+      expect((await list()).every((row) => !row.scheduleLoading)).toBe(true),
+    );
+  });
+
+  test("a write that changes the cached schedule publishes the list again", async () => {
+    const { host, captainId, rpc, save } = await routinesHost();
+    await save(SWEEP);
+    const before = host.harness.inspection.experimental_rpcInvalidations.length;
+    // The service publishes before the RPC caches its result; the cache change publishes too.
+    await rpc("routineAction", { captainId, routineId: "r1", action: "pause" });
+    const tags = host.harness.inspection.experimental_rpcInvalidations.slice(before);
+    expect(
+      tags.filter((each) => each?.includes(routinesTag(captainId))).length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  test("with Automations down, a row says its schedule is unavailable", async () => {
+    const { host, captainId, list, save, rpc } = await routinesHost();
+    await save(SWEEP);
+    host.automations.down = true;
+    await rpc("routineAction", { captainId, routineId: "r1", action: "pause" }).catch(() => null);
+    await list();
+    await vi.waitFor(async () =>
+      expect((await list())[0]).toMatchObject({
+        name: SWEEP.name,
+        automation: null,
+        automationError: expect.stringMatching(/^Schedule unavailable/u),
+        scheduleLoading: false,
+      }),
+    );
   });
 });

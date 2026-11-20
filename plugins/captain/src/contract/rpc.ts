@@ -11,6 +11,15 @@ import { z } from "zod";
 import { captainIconSchema, iconChoiceSchema } from "./icon.ts";
 import { LADDER_ROLES, ladderSchema, rungSchema } from "./ladder.ts";
 import { ASK_KINDS } from "./queue.ts";
+import {
+  ROUTINE_ACTIONS,
+  ROUTINE_INSTRUCTION_MAX,
+  ROUTINE_NAME_MAX,
+  ROUTINE_RUNS_KEPT,
+  routineRunSchema,
+  routinesTag,
+  routineViewSchema,
+} from "./routines.ts";
 
 const threadId = z.string().regex(/^thr_[A-Za-z0-9_-]+$/u);
 const askId = z.string().regex(/^a\d+$/u);
@@ -232,6 +241,42 @@ const adoptResultSchema = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(false), blockers: z.array(blocker) }).strict(),
 ]);
 
+const routineId = z.string().regex(/^r\d+$/u);
+
+/**
+ * What the form saves. Loose on purpose: the server parses it with the CLI's
+ * rules, so a refusal comes back in its words rather than as a schema error.
+ */
+const routineDraftSchema = z
+  .object({
+    name: z.string().max(ROUTINE_NAME_MAX * 4),
+    instruction: z.string().max(ROUTINE_INSTRUCTION_MAX * 2),
+    schedule: z.union([
+      z.object({ cron: z.string().max(200), timezone: z.string().max(200) }).strict(),
+      z.object({ at: z.number() }).strict(),
+    ]),
+  })
+  .strict();
+
+const saveRoutineResultSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), routine: routineViewSchema }).strict(),
+  z
+    .object({
+      ok: z.literal(false),
+      blockers: z.array(blocker),
+      /** The routine changed since the form opened; nothing was saved. */
+      stale: z.boolean(),
+    })
+    .strict(),
+]);
+
+/**
+ * A routine as the Overview lists it: its stored fields at once, with the
+ * live schedule last read from Automations. `scheduleLoading` holds until
+ * the first read for it answers; the read refreshes the list when it does.
+ */
+const routineRowSchema = routineViewSchema.extend({ scheduleLoading: z.boolean() }).strict();
+
 export const captainContract = defineRpcContract({
   /** Each dispatched role's model ladder, as Captain settings edit it. */
   ladders: {
@@ -434,6 +479,65 @@ export const captainContract = defineRpcContract({
       .strict(),
     tags: () => [CAPTAINS_TAG, ICONS_TAG],
   },
+  /**
+   * The Overview's Routines: every routine from `data.db`, each with its live
+   * schedule from Automations. A row Automations does not answer in time comes
+   * back with `automation: null` and why, so the list never waits on it.
+   */
+  routines: {
+    input: z.object({ captainId: threadId }).strict(),
+    output: z
+      .object({
+        routines: z.array(routineRowSchema),
+        /** The bb server's time zone: a one-shot's time and a CLI cron default to it. */
+        serverTimezone: z.string(),
+      })
+      .strict(),
+    tags: ({ captainId }) => [routinesTag(captainId)],
+  },
+  /** One routine's newest runs, newest first. */
+  routineRuns: {
+    input: z
+      .object({
+        captainId: threadId,
+        routineId,
+        limit: z.number().int().min(1).max(ROUTINE_RUNS_KEPT).optional(),
+      })
+      .strict(),
+    output: z.object({ runs: z.array(routineRunSchema) }).strict(),
+    tags: ({ captainId }) => [routinesTag(captainId)],
+  },
+  /** Pause, resume, run now (Test) or delete a routine, as `bb captain routine` does. */
+  routineAction: {
+    experimental_description:
+      "Pause, resume, test-run or delete one of a Captain's routines, as `bb captain routine pause|resume|run|remove` does.",
+    input: z.object({ captainId: threadId, routineId, action: z.enum(ROUTINE_ACTIONS) }).strict(),
+    output: z
+      .object({
+        runId: z.string().nullable(),
+        /** When the server took it: a test's delivery is the first test run recorded from then. */
+        requestedAt: z.number(),
+      })
+      .strict(),
+  },
+  /**
+   * Create a routine, or change one when given its id, with the CLI's
+   * validation. Refusals list every blocker and change nothing.
+   */
+  saveRoutine: {
+    experimental_description:
+      "Create a Captain routine, or update one by id, as `bb captain routine add|update` does. Refusals list every blocker and change nothing.",
+    input: z
+      .object({
+        captainId: threadId,
+        routineId: routineId.optional(),
+        /** The routine's `updatedAt` the form opened from; a later change refuses the save as stale. */
+        updatedAt: z.number().optional(),
+        routine: routineDraftSchema,
+      })
+      .strict(),
+    output: saveRoutineResultSchema,
+  },
   /** Set a Captain's sidebar icon, as `bb captain icon` does; null goes back to the default. */
   setIcon: {
     experimental_description:
@@ -450,3 +554,6 @@ export type AdoptResult = z.infer<typeof adoptResultSchema>;
 export type ChangeRef = z.infer<typeof changeRef>;
 export type CaptainTaskItem = z.infer<typeof captainTask>;
 export type DriveFileItem = z.infer<typeof driveFile>;
+export type RoutineDraft = z.infer<typeof routineDraftSchema>;
+export type SaveRoutineResult = z.infer<typeof saveRoutineResultSchema>;
+export type RoutineRow = z.infer<typeof routineRowSchema>;

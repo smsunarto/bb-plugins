@@ -10,6 +10,7 @@ import {
   type CaptainTaskItem,
   type DriveFileItem,
 } from "../contract/rpc.ts";
+import type { RoutineView } from "../contract/routines.ts";
 
 const app = await loadPluginApp(() => import("./app.tsx"));
 const tab = app.tabs.find((each) => each.id === "overview")!;
@@ -82,6 +83,7 @@ type State = {
   truncated?: boolean;
   /** Reads that fail while set. */
   failing?: Set<string>;
+  routines?: RoutineView[];
 };
 
 function render(
@@ -119,6 +121,11 @@ function render(
             crewError: state.crewError ?? null,
             unavailable: state.unavailable ?? [],
           };
+        },
+        routines: () => {
+          calls.push("routines");
+          fails("routines");
+          return { routines: state.routines ?? [], serverTimezone: "UTC" };
         },
         drive: () => {
           calls.push("drive");
@@ -534,6 +541,21 @@ test("each section has an empty state", async () => {
   await slot.findByText("Nothing needs you.");
   await slot.findByText("No open tasks in this Captain's repos.");
   await slot.findByText("The Drive is empty.");
+  await slot.findByText(/Ask the Captain to set a routine/u);
+});
+
+test("Routines sits between Tasks and Drive, and a failed routines read leaves the others loaded", async () => {
+  const { slot } = render({ ...seeded, failing: new Set(["routines"]) });
+  await within(await section(slot, "Drive")).findByRole("button", {
+    name: "Open briefs/BBP-43.md",
+  });
+  const order = [...slot.container.querySelectorAll("section[data-section]")].map((node) =>
+    node.getAttribute("data-section"),
+  );
+  expect(order).toEqual(["needs", "tasks", "routines", "drive"]);
+  const routines = await section(slot, "Routines");
+  await within(routines).findByText(/Couldn't load · routines unavailable/u);
+  await within(await section(slot, "Tasks")).findByText("Fix the sidebar");
 });
 
 test("a hidden tab reads nothing", async () => {
@@ -549,6 +571,7 @@ test("a hidden tab reads nothing", async () => {
         { tasks: [], total: 0, truncated: false, crewError: null, unavailable: [] }
       ),
       drive: () => (calls.push("drive"), { total: 0, truncated: false, files: [], folder: null }),
+      routines: () => (calls.push("routines"), { routines: [], serverTimezone: "UTC" }),
     } as never,
   });
   await new Promise((settle) => setTimeout(settle, 30));
