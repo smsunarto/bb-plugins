@@ -138,6 +138,7 @@ export async function spawnCrew(
         taskId: start.taskId,
         presetId: start.preset.id,
         parentThreadId: captain.threadId,
+        senderThreadId: captain.threadId,
         parentNotifications: "stuck",
         reportContract: deps.files.read("report"),
         extraInstructions: roleContract(deps, start.role),

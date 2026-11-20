@@ -15,6 +15,11 @@ export const delegationRpcContract = defineRpcContract({
         extraInstructions: z.string().optional(),
         /** Spawns the thread as this thread's child, so bb reports its turns to the parent. */
         parentThreadId: threadIdSchema.optional(),
+        /**
+         * The thread delegating, sent with the spawn as its sender. bb 0.50.1 uses
+         * it only to count agent-started threads; the first message stays the user's.
+         */
+        senderThreadId: threadIdSchema.optional(),
         /** Which child turns bb reports to the parent; bb defaults to `auto`. Needs `parentThreadId`. */
         parentNotifications: z.enum(PARENT_NOTIFICATIONS).optional(),
         /** Starts a new worktree from this branch instead of the preset's environment. */

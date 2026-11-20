@@ -1488,6 +1488,7 @@ describe("bb tasks CLI", () => {
               },
             ],
             mode: "steer-if-active",
+            senderThreadId: "thr_local_worker",
           },
         ],
       ]);

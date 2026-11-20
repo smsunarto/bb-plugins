@@ -98,6 +98,14 @@ export class TasksError extends Error {
   }
 }
 
+/** The code bb answers with when a plugin's RPC schema refuses the input, before its handler runs. */
+function isInputRefusal(error: unknown): boolean {
+  const cause = error instanceof TasksError ? error.cause : undefined;
+  return (
+    typeof cause === "object" && cause !== null && "code" in cause && cause.code === "invalid_input"
+  );
+}
+
 export type TasksClient = ReturnType<typeof createTasksClient>;
 
 export function createTasksClient(
@@ -200,17 +208,29 @@ export function createTasksClient(
     async updateTaskStatus(taskId: string, status: string, authorName: string): Promise<TasksTask> {
       return await mutate("updateTask", { taskId, status, authorName });
     },
-    /** Spawn a thread for a task through a preset; resolves once Tasks attached it. */
+    /**
+     * Spawn a thread for a task through a preset; resolves once Tasks attached it.
+     * A Tasks older than `senderThreadId` refuses the whole input before it
+     * spawns anything, so that refusal is retried once without the sender.
+     */
     async delegate(input: {
       taskId: string;
       presetId: string;
       parentThreadId: string;
+      senderThreadId: string;
       parentNotifications: "stuck";
       reportContract: string;
       extraInstructions: string;
       baseBranch?: string;
     }): Promise<string> {
-      return (await call("delegate", input, z.object({ threadId: z.string() }))).threadId;
+      const output = z.object({ threadId: z.string() });
+      try {
+        return (await call("delegate", input, output)).threadId;
+      } catch (error) {
+        if (!isInputRefusal(error)) throw error;
+        const { senderThreadId: _sender, ...withoutSender } = input;
+        return (await call("delegate", withoutSender, output)).threadId;
+      }
     },
     /** One task's owned-field values; empty when the task has none or no longer exists. */
     async taskFields(taskId: string): Promise<TaskFieldValue[]> {

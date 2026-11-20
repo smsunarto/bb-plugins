@@ -331,6 +331,7 @@ describe("task delegation", () => {
         taskId: task.id,
         presetId: preset.id,
         parentThreadId: "thr_captain",
+        senderThreadId: "thr_captain",
         parentNotifications: "stuck",
         baseBranch: "feature/base",
       }),
@@ -340,6 +341,7 @@ describe("task delegation", () => {
       [
         expect.objectContaining({
           parentThreadId: "thr_captain",
+          senderThreadId: "thr_captain",
           parentNotifications: "stuck",
           environment: {
             type: "host",
@@ -480,6 +482,7 @@ describe("task delegation", () => {
     const [[args]] = harness.sdk.callsTo("threads.spawn") as [[Record<string, unknown>]];
     expect(args).not.toHaveProperty("parentThreadId");
     expect(args).not.toHaveProperty("parentNotifications");
+    expect(args).not.toHaveProperty("senderThreadId");
 
     await expect(
       harness.callRpc("delegate", {
