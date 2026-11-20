@@ -1,17 +1,29 @@
 /**
  * Merge a pull request: a modal shadcn Dialog that squashes on confirm. It
- * reads nothing first; the server checks GitHub's requirements as it merges
- * and the dialog reports any it refuses. The merge is pinned to the head and
- * base the reader saw when they opened it, and never retried.
+ * reads nothing first and closes at once; the server checks GitHub's
+ * requirements as it merges, and bb's toast follows the merge to its end and
+ * says why GitHub refused it. The merge is pinned to the head and base the
+ * reader saw when they opened it, and runs again only when the reader asks.
  */
-import { experimental_useRpcMutation as useRpcMutation } from "@get-bb/plugin-sdk/app";
-import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { describeProblem, type ForgeResult, type Problem } from "../core/change.ts";
+import {
+  experimental_PluginRpcCallError as PluginRpcCallError,
+  experimental_useRpcMutation as useRpcMutation,
+  useBbNavigate,
+} from "@get-bb/plugin-sdk/app";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+import { toast } from "sonner";
+import { describeProblem, type ForgeResult } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import { parseChangeKey, type ChangeDetail } from "../core/review.ts";
 import type { MergeMethod } from "../core/merge.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { cx } from "./format.ts";
 import { Button, type ButtonProps } from "./components/ui/button.tsx";
 import {
   Dialog,
@@ -37,25 +49,11 @@ export type MergeTarget = {
 /** Merges `target` with `method`, pinned to the head and base it holds. */
 export type SubmitMerge = (target: MergeTarget, method: MergeMethod) => Promise<ForgeResult>;
 
-/** Merge through the thread's own pull request (the tab). */
-export function useThreadMerge(threadId: string): SubmitMerge {
-  const mutation = useRpcMutation({ contract: sourceControlContract, method: "forgeAction" });
-  const mutate = useRef(mutation.mutate);
-  useLayoutEffect(() => {
-    mutate.current = mutation.mutate;
-  });
-  return useCallback(
-    (target, method) =>
-      mutate.current({
-        threadId,
-        action: { kind: "merge", method, base: target.base },
-        expected: { number: target.number, head: target.head },
-      }),
-    [threadId],
-  );
-}
-
-/** Merge a Change's pull request by its key (the review page and chat cards). */
+/**
+ * Merge a Change's pull request by its key, from every surface: the key
+ * names the repository and branch the reader confirmed, so a Retry after the
+ * thread's checkout moved still merges that pull request or nothing.
+ */
 export function useChangeMerge(): SubmitMerge {
   const mutation = useRpcMutation({ contract: sourceControlContract, method: "changeForgeAction" });
   const mutate = useRef(mutation.mutate);
@@ -113,19 +111,186 @@ export function repoOfKey(key: ChangeKey): string {
   return parsed?.kind === "gh" ? `${parsed.repo.owner}/${parsed.repo.name}` : "";
 }
 
-function problemText(problem: Problem): string {
-  return "detail" in problem ? problem.detail : describeProblem(problem);
+/**
+ * Merges in this window, by pull request (`owner/name#number`), whichever
+ * surface started them. A merge stays `merging` until the server answers.
+ * Merged is kept for the window's life and outranks any stale open read of
+ * that pull request, so no surface offers Merge for it again; the oldest
+ * merged entries go past MERGED_KEPT. A refusal clears the entry. A merge
+ * outlives the surface that started it: the request is the server's once
+ * sent, and the toast here follows it.
+ */
+type Run = { phase: "merging" | "merged" };
+export type MergePhase = "idle" | Run["phase"];
+
+/** Merged pull requests a window remembers; the oldest beyond this are forgotten. */
+export const MERGED_KEPT = 100;
+
+/** In insertion order, so the first merged entry is the oldest. */
+const runs = new Map<string, Run>();
+const listeners = new Set<() => void>();
+
+function setRun(key: string, run: Run | null) {
+  runs.delete(key);
+  if (run) runs.set(key, run);
+  if (run?.phase === "merged") {
+    let merged = [...runs.values()].filter((entry) => entry.phase === "merged").length;
+    for (const [old, entry] of runs) {
+      if (merged <= MERGED_KEPT) break;
+      if (entry.phase !== "merged") continue;
+      runs.delete(old);
+      merged -= 1;
+    }
+  }
+  for (const listener of listeners) listener();
 }
 
-/** What the reader is told after a merge that did not simply happen. */
-function resultText(result: ForgeResult): string | null {
-  if (result.status === "conflict") return result.detail;
-  if (result.status === "failed")
-    return `${problemText(result.problem)} Refreshing the pull request to check its current state.`;
-  return null;
+/** A pull request as the run store names it: `owner/name` and its number. */
+type PullRequestRef = Pick<MergeTarget, "repo" | "number">;
+
+function runKey(target: PullRequestRef): string {
+  return `${target.repo}#${target.number}`;
 }
 
-/** A button that opens the merge dialog for `target`, returning focus to itself on close. */
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => void listeners.delete(listener);
+}
+
+/** Where a merge of `pullRequest` stands in this window; idle for none. */
+export function useMergePhase(pullRequest: PullRequestRef | null): MergePhase {
+  const key = pullRequest ? runKey(pullRequest) : null;
+  return useSyncExternalStore(subscribe, () => (key ? runs.get(key)?.phase : null) ?? "idle");
+}
+
+/** For tests: forget every merge this window ran. */
+export function resetMergeRuns() {
+  runs.clear();
+  for (const listener of listeners) listener();
+}
+
+/**
+ * Past this, the toast stops spinning and says the outcome is unknown. The
+ * run stays open, so Merge stays off, until the server's answer lands.
+ */
+export const MERGE_DEADLINE_MS = 120_000;
+
+/** Why a merge did not happen, and what the reader can do about it. */
+type Refusal = { reason: string; next: "retry" | "github" };
+
+/** GitHub refused it for the pull request's own state: Retry would only be refused again. */
+function refusalOf(result: ForgeResult): Refusal | null {
+  switch (result.status) {
+    case "done":
+    case "upToDate":
+      return null;
+    case "conflict":
+      return { reason: result.detail, next: "github" };
+    case "failed":
+      if (result.problem.kind === "failed")
+        return { reason: plain(result.problem.detail), next: "github" };
+      // describeProblem speaks of reads, which bb retries itself; a merge waits for the reader.
+      if (result.problem.kind === "rate-limited")
+        return {
+          reason: `GitHub is rate-limiting ${result.problem.site}. Try again in a few minutes.`,
+          next: "retry",
+        };
+      return { reason: describeProblem(result.problem), next: "retry" };
+  }
+}
+
+/** GitHub's reason without the status code `gh` appends, such as "(HTTP 405)". */
+function plain(detail: string): string {
+  return detail.replace(/\s*\(HTTP \d{3}\)\s*$/, "");
+}
+
+function thrownRefusal(error: unknown): Refusal {
+  if (error instanceof PluginRpcCallError && error.code === "transport_error")
+    return {
+      reason: "bb could not reach its server, so the merge may not have started.",
+      next: "retry",
+    };
+  const detail = error instanceof Error && error.message ? ` ${error.message}` : "";
+  return { reason: `The bb server could not run the merge.${detail}`, next: "retry" };
+}
+
+/** The pull request on GitHub; `repo` is `owner/name`. */
+function gitHubUrl(target: MergeTarget): string {
+  return `https://github.com/${target.repo}/pull/${target.number}`;
+}
+
+type MergeRun = { target: MergeTarget; submit: SubmitMerge; openUrl: (url: string) => void };
+
+/**
+ * Starts squash-merging `target` unless this window is already merging it or
+ * has merged it; returns whether it started. One toast per pull request
+ * follows it: Merging…, then Merged or the reason with Retry or Open on
+ * GitHub. Each run settles once, on the server's answer, however late.
+ */
+export function startMerge(merge: MergeRun): boolean {
+  const { target, submit } = merge;
+  const key = runKey(target);
+  if (runs.has(key)) return false;
+  setRun(key, { phase: "merging" });
+  const id = `sc-merge:${key}`;
+  toast.loading(`Merging ${key}…`, { id });
+  const timer = setTimeout(() => {
+    toast.warning(`Still merging #${target.number}`, {
+      id,
+      description: "bb has not heard back. It may still merge; check the pull request on GitHub.",
+      duration: Number.POSITIVE_INFINITY,
+      action: { label: "Open on GitHub", onClick: () => merge.openUrl(gitHubUrl(target)) },
+    });
+  }, MERGE_DEADLINE_MS);
+  const settle = (refusal: Refusal | null) => {
+    clearTimeout(timer);
+    if (refusal === null) {
+      setRun(key, { phase: "merged" });
+      toast.success(`Merged #${target.number}`, { id, description: target.title });
+      return;
+    }
+    setRun(key, null);
+    refused(merge, id, refusal);
+  };
+  void submit(target, "squash").then(
+    (result) => settle(refusalOf(result)),
+    (error: unknown) => settle(thrownRefusal(error)),
+  );
+  return true;
+}
+
+function refused(merge: MergeRun, id: string, refusal: Refusal) {
+  const { target, openUrl } = merge;
+  toast.error(`Couldn't merge #${target.number}`, {
+    id,
+    description: refusal.reason,
+    duration: 12_000,
+    action:
+      refusal.next === "retry"
+        ? {
+            label: "Retry",
+            onClick: (event) => {
+              // The same toast turns back into Merging…; sonner would close it after this.
+              event.preventDefault();
+              startMerge(merge);
+            },
+          }
+        : { label: "Open on GitHub", onClick: () => openUrl(gitHubUrl(target)) },
+  });
+}
+
+/** What the trigger is called, with the merge's progress, after the toast has gone. */
+const PHASE_NAME: Record<MergePhase, (number: number) => string> = {
+  idle: (number) => `Merge #${number}`,
+  merging: (number) => `Merging #${number}…`,
+  merged: (number) => `Merged #${number}`,
+};
+
+/**
+ * A button that opens the merge dialog for `target`, returning focus to
+ * itself on close. While the merge runs it reads Merging… and stays
+ * focusable but inert, so focus has somewhere to return to.
+ */
 export function MergeButton({
   target,
   submit,
@@ -145,26 +310,36 @@ export function MergeButton({
 }) {
   const [open, setOpen] = useState<MergeTarget | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const navigate = useBbNavigate();
+  const phase = useMergePhase(target);
+  const busy = phase !== "idle";
   return (
     <>
       <Button
         size="sm"
         ref={trigger}
         variant={variant}
-        className={cn("h-7", className)}
+        className={cn("h-7", busy && "cursor-default opacity-70", className)}
         data-testid={testId}
+        data-phase={phase}
         disabled={disabled}
-        aria-label={`Merge #${target.number}`}
+        aria-disabled={busy || undefined}
+        aria-busy={phase === "merging" || undefined}
+        aria-label={PHASE_NAME[phase](target.number)}
         // The dialog keeps the head and base seen now, whatever arrives while it is open.
-        onClick={() => setOpen(target)}
+        onClick={() => {
+          if (!busy) setOpen(target);
+        }}
       >
-        <Pending pending={false} icon="GitMerge" />
-        {label}
+        <Pending pending={phase === "merging"} icon={phase === "merged" ? "Check" : "GitMerge"} />
+        {phase === "merging" ? "Merging…" : phase === "merged" ? "Merged" : label}
       </Button>
       {open ? (
         <MergeDialog
           target={open}
-          submit={submit}
+          onConfirm={() =>
+            startMerge({ target: open, submit, openUrl: (url) => void navigate.openUrl(url) })
+          }
           onClose={() => setOpen(null)}
           returnFocus={() => trigger.current?.focus()}
         />
@@ -173,52 +348,24 @@ export function MergeButton({
   );
 }
 
-/** The confirm step: squashes once, closes when done or already merged, else says why. */
-function useConfirmMerge(target: MergeTarget, submit: SubmitMerge, onClose: () => void) {
-  const [pending, setPending] = useState(false);
-  const [outcome, setOutcome] = useState<string | null>(null);
-  const confirm = async () => {
-    setPending(true);
-    setOutcome(null);
-    let text: string | null;
-    try {
-      const result = await submit(target, "squash");
-      text = resultText(result);
-      if (result.status === "done" || result.status === "upToDate") {
-        onClose();
-        return;
-      }
-    } catch (error) {
-      text = `${error instanceof Error ? error.message : "The request failed."} Refreshing the pull request to check its current state.`;
-    }
-    setPending(false);
-    setOutcome(text);
-  };
-  return { pending, outcome, confirm };
-}
-
 export function MergeDialog({
   target,
-  submit,
+  onConfirm,
   onClose,
   returnFocus,
 }: {
   target: MergeTarget;
-  submit: SubmitMerge;
+  /** Starts the merge; the dialog closes as it does. */
+  onConfirm: () => void;
   onClose: () => void;
   /** Where focus goes once the dialog is gone; Radix's trap would undo it any earlier. */
   returnFocus?: () => void;
 }) {
-  const merge = useConfirmMerge(target, submit, onClose);
-  const close = () => {
-    if (!merge.pending) onClose();
-  };
   return (
-    // Escape or a click outside: a merge in flight keeps the dialog open.
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) close();
+        if (!open) onClose();
       }}
     >
       <DialogContent
@@ -232,31 +379,21 @@ export function MergeDialog({
             {target.repo}#{target.number}: {target.title}. Destination: {target.base}.
           </DialogDescription>
         </DialogHeader>
-        {merge.outcome ? (
-          <p role="alert" className="m-0 text-[12px] leading-4 text-destructive-text">
-            {merge.outcome}
-          </p>
-        ) : null}
         <DialogFooter>
-          <Button
-            size="sm"
-            className="h-7"
-            variant="outline"
-            disabled={merge.pending}
-            onClick={close}
-          >
+          <Button size="sm" className="h-7" variant="outline" onClick={onClose}>
             Cancel
           </Button>
           <Button
             size="sm"
             variant="default"
             data-testid="sc-merge-confirm"
-            disabled={merge.pending}
-            onClick={() => void merge.confirm()}
-            className={cx("h-7", merge.pending && "cursor-progress")}
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
+            className="h-7"
           >
-            <Pending pending={merge.pending} />
-            {merge.pending ? "Merging…" : "Squash and merge"}
+            Squash and merge
           </Button>
         </DialogFooter>
       </DialogContent>

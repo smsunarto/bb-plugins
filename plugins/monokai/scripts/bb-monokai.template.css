@@ -3009,6 +3009,27 @@ diffs-container {
   color: var(--muted-foreground);
 }
 
+/* Under a finger, toast actions and Dismiss keep their compact 28px look but
+ * take at least the 44px hit area Apple's HIG asks for, through a centred
+ * pseudo-element the button owns, so taps just outside still land. */
+@media (pointer: coarse) {
+  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > .flex-wrap > button,
+  .dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"] {
+    position: relative;
+  }
+
+  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > .flex-wrap > button::after,
+  .dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"]::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+}
+
 @media (hover: hover) {
   .dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"]:hover {
     background: var(--state-hover);
