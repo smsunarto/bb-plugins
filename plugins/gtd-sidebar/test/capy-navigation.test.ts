@@ -93,12 +93,25 @@ describe("CapyNavigation", () => {
     assert.equal(mount().queryByRole("button", { name: "More" }), null);
   });
 
-  it("keeps More outside the rows' scrolling region", () => {
+  it("scrolls the rows on phones while More stays put", () => {
     const slot = mount(items({}, { isVisible: false }));
     const more = slot.getByRole("button", { name: "More" });
-    const region = slot.getByRole("button", { name: "Search threads" }).parentElement!;
-    assert.equal(region.contains(more), false);
-    assert.equal(region.parentElement, more.parentElement);
+    const nav = slot.getByRole("navigation");
+    // jsdom lays nothing out, so find what scrolls by its overflow utility:
+    // More moves with a scroll exactly when one of its ancestors scrolls.
+    const scrolls = (element: Element) =>
+      /(^|\s|:)overflow-(y-)?(auto|scroll)\b/.test(element.className);
+    const scrollers = [nav, ...nav.querySelectorAll("*")].filter(scrolls);
+    assert.equal(scrollers.length, 1, "one element scrolls");
+    const [scroller] = scrollers;
+    assert.ok(
+      scroller!.contains(slot.getByRole("button", { name: "Search threads" })),
+      "the rows scroll",
+    );
+    for (let node: Element | null = more; node !== null; node = node.parentElement) {
+      assert.equal(scrolls(node), false, "nothing that scrolls holds More");
+      if (node === nav) break;
+    }
   });
 
   it("shows Search's shortcut while the modifier is held", () => {
@@ -128,7 +141,10 @@ describe("CapyNavigation", () => {
     }
 
     /** jsdom lays nothing out: give the region a scroll position and rows a place. */
+    let height = 50;
+
     function layout(slot: ReturnType<typeof mount>) {
+      height = 50;
       const region = slot.getByRole("button", { name: "Search threads" }).parentElement!;
       let top = 0;
       Object.defineProperty(region, "scrollTop", {
@@ -137,7 +153,7 @@ describe("CapyNavigation", () => {
           top = v;
         },
       });
-      Object.defineProperty(region, "clientHeight", { value: 50 });
+      Object.defineProperty(region, "clientHeight", { get: () => height });
       for (const [index, row] of [...region.children].entries()) {
         Object.defineProperty(row, "offsetTop", { value: index * 44 });
         Object.defineProperty(row, "offsetHeight", { value: 44 });
@@ -153,16 +169,45 @@ describe("CapyNavigation", () => {
 
     it("resets the rows when the drawer closes, showing the active row", async () => {
       const page = inset("open");
+      const slot = mount(items(), { activeItemId: SEARCH }, true);
+      const region = layout(slot);
+      region.scrollTop = 40;
+      await frame();
+      assert.equal(region.scrollTop, 40, "an open drawer keeps a scroll that shows the active row");
+      page.setAttribute("data-sidebar-shelf", "closed");
+      await frame();
+      await frame();
+      // Search is the second row: its bottom (88px) less the 50px region.
+      assert.equal(region.scrollTop, 38);
+    });
+
+    it("brings the active row back into view when the drawer opens after a resize", async () => {
+      const page = inset("closed");
       const slot = mount(items(), { activeItemId: "__bb__/extensions" }, true);
       const region = layout(slot);
-      region.scrollTop = 7;
-      await frame();
-      assert.equal(region.scrollTop, 7, "an open drawer keeps its scroll");
+      height = 200;
       page.setAttribute("data-sidebar-shelf", "closed");
+      await frame();
+      await frame();
+      assert.equal(region.scrollTop, 0, "all three rows fit the tall drawer");
+      // The screen shrinks while the drawer is closed; nothing re-places it.
+      height = 50;
+      page.setAttribute("data-sidebar-shelf", "open");
       await frame();
       await frame();
       // Plugins is the third row: its bottom (132px) less the 50px region.
       assert.equal(region.scrollTop, 82);
+    });
+
+    it("leaves an open drawer's scroll alone while the active row is in view", async () => {
+      const page = inset("closed");
+      const slot = mount(items(), { activeItemId: "__bb__/new-thread" }, true);
+      const region = layout(slot);
+      await frame();
+      page.setAttribute("data-sidebar-shelf", "open");
+      await frame();
+      await frame();
+      assert.equal(region.scrollTop, 0);
     });
 
     it("returns to the top when the active item has no row", async () => {

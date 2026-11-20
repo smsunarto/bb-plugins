@@ -41,7 +41,8 @@ import { markScrolled, revealFocusedRow, useNavScroll } from "./nav-scroll";
  */
 const SCROLL_CLASS = cn(
   "relative flex min-h-0 flex-col",
-  "max-md:pointer-coarse:max-h-[calc(round(down,40dvh_-_74px,44px)_+_22px)]",
+  // Never below one row, however short the screen.
+  "max-md:pointer-coarse:max-h-[max(44px,calc(round(down,40dvh_-_74px,44px)_+_22px))]",
   "max-md:pointer-coarse:overflow-y-auto max-md:pointer-coarse:overscroll-contain",
   "data-[gtd-nav-scrolled]:[mask-image:linear-gradient(to_bottom,transparent,currentColor_24px)]",
 );
