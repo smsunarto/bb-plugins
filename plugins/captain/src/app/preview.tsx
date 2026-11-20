@@ -66,14 +66,32 @@ function tableRow(line: string): string {
     .join(" · ");
 }
 
-/** Inline Markdown as its text: images and links keep their label, marks and tags go. */
+/** A code span: a run of backticks, its text, and the same run again. */
+const CODE_SPAN = /(`+)(.+?)\1/gu;
+
+/**
+ * Inline Markdown as its text. Code spans keep their text verbatim, `<` and
+ * all; outside them, images and links keep their label, autolinks their
+ * target, and marks and HTML tags go.
+ */
 function inline(text: string): string {
+  let out = "";
+  let last = 0;
+  for (const match of text.matchAll(CODE_SPAN)) {
+    out += prose(text.slice(last, match.index));
+    out += match[2] ?? "";
+    last = match.index + match[0].length;
+  }
+  return (out + prose(text.slice(last))).trim();
+}
+
+function prose(text: string): string {
   return text
     .replace(/!\[([^\]]*)\]\([^)]*\)/gu, "$1")
     .replace(/\[([^\]]*)\]\([^)]*\)/gu, "$1")
-    .replace(/<[^>]+>/gu, "")
-    .replace(/(\*\*|__|~~|`)/gu, "")
-    .trim();
+    .replace(/<([a-z][a-z0-9+.-]*:[^<>\s]+|[^<>\s@]+@[^<>\s@]+)>/giu, "$1")
+    .replace(/<\/?[a-z][^<>]*>/giu, "")
+    .replace(/(\*\*|__|~~)/gu, "");
 }
 
 /** The preview, memoized on its text: a refresh with the same excerpt redraws nothing. */

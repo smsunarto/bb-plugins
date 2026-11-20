@@ -386,23 +386,40 @@ test("Needs you counts and lists the banner's queue: an ask under Later is left 
   expect(within(needs).queryByText("Ship the sidebar fix")).toBeNull();
 });
 
-test("answering: no number shortcuts, Other… sends once and clears, focus stays in the panel", async () => {
-  let release: () => void = () => undefined;
-  const sent: unknown[] = [];
-  const slot = renderSlot(tab as never, { threadId: CAPTAIN, environment: null } as never, {
+/** A tab whose asks and answer replies a test controls. */
+function answering(rpc: { asks: () => QueueItem[]; resolveAsk: (input: unknown) => unknown }) {
+  return renderSlot(tab as never, { threadId: CAPTAIN, environment: null } as never, {
     experimental_rpcContract: captainContract,
     rpc: {
       captains: () => ({ ids: [CAPTAIN] }),
-      asks: () => ({ items: [decision] }),
+      asks: () => ({ items: rpc.asks() }),
       crewThreads: () => ({ threads: [] }),
       drive: () => ({ total: 0, truncated: false, files: [], folder: null }),
-      resolveAsk: (input: unknown) => {
-        sent.push(input);
-        return new Promise((resolve) => {
-          release = () => resolve({ state: "answered", warnings: [] });
-        });
-      },
+      resolveAsk: rpc.resolveAsk,
     } as never,
+  });
+}
+
+/** Leave no ask open for the next test: the open ask outlives a remount on purpose. */
+async function closeOpenAsk() {
+  cleanup();
+  const slot = answering({ asks: () => [decision], resolveAsk: () => undefined });
+  const row = await slot.findByRole("button", { name: /Pick the cache backend/u });
+  if (row.getAttribute("aria-expanded") === "true") fireEvent.click(row);
+}
+
+test("answering: no number shortcuts, Other… sends once, and focus stays in the panel as the ask leaves", async () => {
+  let release: () => void = () => undefined;
+  const sent: unknown[] = [];
+  let asks: QueueItem[] = [decision];
+  const slot = answering({
+    asks: () => asks,
+    resolveAsk: (input) => {
+      sent.push(input);
+      return new Promise((resolve) => {
+        release = () => resolve({ state: "answered", warnings: [] });
+      });
+    },
   });
   fireEvent.click(await slot.findByRole("button", { name: /Pick the cache backend/u }));
   const answer = await slot.findByTestId("captain-overview-answer");
@@ -415,12 +432,49 @@ test("answering: no number shortcuts, Other… sends once and clears, focus stay
   fireEvent.submit(box.closest("form")!);
   fireEvent.submit(box.closest("form") ?? document.createElement("form"));
   await waitFor(() => expect(sent).toEqual([{ askId: "a1", answer: "Valkey" }]));
-  // The draft is gone and focus is on the panel, not the page.
+  // The form is gone and focus is on the panel, not the page.
   expect(within(answer).queryByRole("textbox")).toBeNull();
   expect(document.activeElement).toBe(answer);
+
+  // The server takes it and delivers it: the ask leaves the list, and focus
+  // moves to the section's toggle rather than falling to the page.
+  asks = [];
   release();
-  // Close it, so no other test starts with it open.
-  fireEvent.click(slot.getByRole("button", { name: /Pick the cache backend/u }));
+  await slot.behavior.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  await waitFor(() => expect(slot.queryByTestId("captain-overview-answer")).toBeNull());
+  const needs = await slot.findByRole("region", { name: "Needs you" });
+  expect(document.activeElement).toBe(within(needs).getByRole("button", { name: /Needs you/u }));
+  await closeOpenAsk();
+});
+
+test("a refused Other… answer keeps its draft for the next try", async () => {
+  const slot = answering({
+    asks: () => [decision],
+    resolveAsk: () => {
+      throw new Error("the Captain is not running");
+    },
+  });
+  fireEvent.click(await slot.findByRole("button", { name: /Pick the cache backend/u }));
+  const answer = await slot.findByTestId("captain-overview-answer");
+  fireEvent.click(within(answer).getByRole("button", { name: "Other…" }));
+  const box = within(answer).getByRole("textbox", { name: "Your answer" });
+  fireEvent.change(box, { target: { value: "Valkey" } });
+  fireEvent.submit(box.closest("form")!);
+  await within(answer).findByText(/the Captain is not running/u);
+  fireEvent.click(await within(answer).findByRole("button", { name: "Other…" }));
+  const again = within(answer).getByRole("textbox", { name: "Your answer" });
+  expect((again as HTMLInputElement).value).toBe("Valkey");
+  // Escape drops the draft, so no other test starts with it.
+  fireEvent.keyDown(again, { key: "Escape" });
+  await closeOpenAsk();
+});
+
+test("a walk that stopped before finding a file is not an empty Drive", async () => {
+  const { slot } = render({ asks: [], threads: [], files: [], total: 0, truncated: true });
+  const drive = await section(slot, "Drive");
+  await within(drive).findByRole("button", { name: /^More in the Drive/u });
+  expect(within(drive).queryByText("The Drive is empty.")).toBeNull();
+  expect(drive.textContent).toContain("Drive0+");
 });
 
 test("the Drive says how many files the cards leave out, with + past the walk's bound", async () => {

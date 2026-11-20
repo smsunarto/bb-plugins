@@ -220,18 +220,21 @@ export function useItemCommands(
     if (root?.contains(document.activeElement)) root.focus();
   };
   const fail = (failure: unknown) => setError((failure as Error).message);
-  const deliver = async (askId: string, text: string) => {
+  /** True once the server holds the answer, even if sending it on failed. */
+  const deliver = async (askId: string, text: string): Promise<boolean> => {
     try {
       const result = await resolve.mutate({ askId, answer: text });
       if (result.state === "undelivered") setError(result.warnings.join("; "));
+      return true;
     } catch (failure) {
       fail(failure);
+      return false;
     }
   };
-  const answer = (askId: string, text: string) => {
+  const answer = (askId: string, text: string): Promise<boolean> => {
     keepFocus();
     setError(null);
-    void deliver(askId, text);
+    return deliver(askId, text);
   };
   const deferItem = (action: "later" | "skip") => {
     keepFocus();

@@ -24,7 +24,16 @@ import {
   useBbNavigate,
   useSdk,
 } from "@get-bb/plugin-sdk/app";
-import { useCallback, useId, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { age, isSending, orderQueue, type QueueItem } from "../contract/queue.ts";
 import { captainContract, type CrewThreadItem, type DriveFileItem } from "../contract/rpc.ts";
 import { ActionButton, OtherAnswer, TAP, itemActions, useItemCommands, useNow } from "./banner.tsx";
@@ -132,26 +141,40 @@ export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
           action={<OpenDrive folder={drived?.folder ?? null} />}
         >
           <ReadState read={drive} rows={0} cards>
-            {drived === undefined ? null : drived.files.length === 0 ? (
-              <Empty>The Drive is empty.</Empty>
-            ) : (
-              <>
-                <ul className={cn("m-0 list-none px-2 py-1", CARD_GRID)}>
-                  {drived.files.map((file) => (
-                    <DriveCard key={file.path} threadId={threadId} file={file} />
-                  ))}
-                </ul>
-                <MoreInDrive
-                  more={drived.total - drived.files.length}
-                  truncated={drived.truncated}
-                  folder={drived.folder}
-                />
-              </>
-            )}
+            {drived === undefined ? null : <DriveBody threadId={threadId} listing={drived} />}
           </ReadState>
         </Section>
       </div>
     </div>
+  );
+}
+
+type DriveListing = {
+  total: number;
+  truncated: boolean;
+  files: DriveFileItem[];
+  folder: { hostId: string; path: string } | null;
+};
+
+/** The Drive's cards and the link to what they leave out. */
+function DriveBody({ threadId, listing }: { threadId: string; listing: DriveListing }) {
+  // A walk that stopped before finding a file is not an empty Drive.
+  if (listing.files.length === 0 && !listing.truncated) return <Empty>The Drive is empty.</Empty>;
+  return (
+    <>
+      {listing.files.length === 0 ? null : (
+        <ul className={cn("m-0 list-none px-2 py-1", CARD_GRID)}>
+          {listing.files.map((file) => (
+            <DriveCard key={file.path} threadId={threadId} file={file} />
+          ))}
+        </ul>
+      )}
+      <MoreInDrive
+        more={listing.total - listing.files.length}
+        truncated={listing.truncated}
+        folder={listing.folder}
+      />
+    </>
   );
 }
 
@@ -322,6 +345,7 @@ function Section({
           type="button"
           aria-expanded={!collapsed}
           aria-controls={body}
+          data-overview-toggle=""
           onClick={() => onToggle(id)}
           className={cn(
             TAP,
@@ -380,8 +404,18 @@ function AskRow({ captainId, item, now }: { captainId: string; item: QueueItem; 
   const title = item.kind === "ask" ? item.text : item.title;
   const kind = item.kind === "ask" ? item.askKind : item.kind;
   const sub = [item.task, sending ? "sending" : kind].filter(Boolean).join(" · ");
+  const row = useRef<HTMLLIElement>(null);
+  // An answered ask leaves the list: focus inside it moves to the section's
+  // own toggle, not the page. Runs before React removes the row.
+  useLayoutEffect(() => {
+    const node = row.current;
+    return () => {
+      if (node === null || !node.contains(document.activeElement)) return;
+      node.closest("section")?.querySelector<HTMLElement>("[data-overview-toggle]")?.focus();
+    };
+  }, []);
   return (
-    <li className="flex min-w-0 flex-col">
+    <li ref={row} className="flex min-w-0 flex-col">
       <button
         type="button"
         aria-expanded={open}
@@ -458,14 +492,16 @@ function Answer({ id, captainId, item }: { id: string; captainId: string; item: 
           }}
           onSubmit={(text) => {
             root?.focus();
-            setOther(null);
-            answer(item.id, text);
+            // The form closes; its draft stays until the server takes the
+            // answer, so a refused one reopens with what was typed.
+            setOtherState(null);
+            void answer(item.id, text).then((accepted) => accepted && otherDrafts.delete(item.key));
           }}
         />
       ) : null}
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         {sending && item.kind === "ask" ? (
-          <output className="text-muted-foreground">
+          <output className="max-w-full min-w-0 wrap-anywhere text-muted-foreground">
             Answered {JSON.stringify(item.answer)} · Sending…
           </output>
         ) : null}
@@ -478,7 +514,7 @@ function Answer({ id, captainId, item }: { id: string; captainId: string; item: 
             size="sm"
             variant="ghost"
             className={cn(TAP, "text-muted-foreground")}
-            onClick={() => setOther("")}
+            onClick={() => setOther(otherDrafts.get(item.key) ?? "")}
           >
             Other…
           </Button>
@@ -711,7 +747,8 @@ function MoreInDrive({
 }) {
   const open = useOpenDrive(folder);
   if (more <= 0 && !truncated) return null;
-  const label = `${more}${truncated ? "+" : ""} more in the Drive`;
+  // A walk that stopped before finding any file knows only that there is more.
+  const label = more > 0 ? `${more}${truncated ? "+" : ""} more in the Drive` : "More in the Drive";
   return open === null ? (
     <p className="m-0 px-2 py-1 text-xs text-muted-foreground">{label}</p>
   ) : (
