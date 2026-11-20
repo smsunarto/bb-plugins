@@ -1,12 +1,5 @@
 import { LADDER_ROLES, type LadderRole } from "../contract/ladder.ts";
-import {
-  bannerTasksTag,
-  captainContract,
-  crewOfTag,
-  crewTag,
-  driveTag,
-  LADDERS_TAG,
-} from "../contract/rpc.ts";
+import { captainContract, crewOfTag, crewTag, driveTag, LADDERS_TAG } from "../contract/rpc.ts";
 import { adoptFromMenu, adoptOptions, crewOf } from "./adopt.ts";
 import { resolveAsk } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
@@ -26,7 +19,6 @@ import {
 } from "./overview.ts";
 import {
   askItems,
-  bannerTasks,
   createCrewReads,
   crewItems,
   deferItem,
@@ -37,7 +29,6 @@ import {
 
 /** How often a watched banner rechecks the crew for a new or answered interaction. */
 export const CREW_POLL_MS = 10_000;
-const BANNER_TASKS_POLL_MS = 60_000;
 
 /**
  * The banner's RPCs. Logic lives in `queue.ts` and `asks.ts`, shared with the
@@ -75,10 +66,6 @@ export function registerRpc(
     crew: async ({ captainId }) => {
       live(captainId);
       return { items: await crewItems(deps, captainId, readCrew) };
-    },
-    bannerTasks: async ({ captainId }) => {
-      live(captainId);
-      return { tasks: await bannerTasks(deps, readCrew(captainId)) };
     },
     crewThreads: async ({ captainId }) => {
       live(captainId);
@@ -153,16 +140,6 @@ export function registerRpc(
   const captainOf = (read: object) => captainOfRead(deps.registry, read);
   registerCrewWatch(deps, captainOf, createCrewWatch(deps, crewPollMs, crewReads.changed));
   registerDriveScan(deps, captainOf, driveScanMs);
-  // Task status can change without a crew event. Only the watched idle banner
-  // needs this refresh, and it leaves the other crew reads alone.
-  bb.rpc.experimental_whileWatched("bannerTasks", async (read, signal) => {
-    const captainId = captainOf(read);
-    if (captainId === null) return;
-    while (!signal.aborted) {
-      await sleep(BANNER_TASKS_POLL_MS, signal);
-      if (!signal.aborted) bb.rpc.experimental_invalidate([bannerTasksTag(captainId)]);
-    }
-  });
 
   registerEvents(deps, crewReads.changed);
 }

@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { QueueItem } from "../contract/queue.ts";
-import { asksTag, captainContract, type BannerTask } from "../contract/rpc.ts";
+import { asksTag, captainContract } from "../contract/rpc.ts";
 
 const app = await loadPluginApp(() => import("./app.tsx"));
 const banner = app.composerCustomizations.find((each) => each.id === "needs-you")!.banners![0]!;
@@ -42,11 +42,13 @@ function render(
   threadId: string,
   asks: QueueItem[] | (() => QueueItem[]),
   options: {
-    since?: unknown;
     crew?: QueueItem[];
     crewFails?: boolean;
     sdk?: unknown;
-    tasks?: BannerTask[];
+    resolve?: (input: {
+      askId: string;
+      answer: string;
+    }) => Promise<{ state: "answered"; warnings: string[] }>;
   } = {},
 ) {
   const calls: Calls = [];
@@ -59,6 +61,7 @@ function render(
   const slot = renderSlot(banner as never, {} as never, {
     experimental_rpcContract: captainContract,
     composer: { scope: { kind: "thread", threadId } },
+    experimental_panel: { openTab: () => true },
     rpc: {
       captains: log("captains", () => ({ ids: [CAPTAIN] })),
       asks: log("asks", () => ({ items: typeof asks === "function" ? asks() : asks })),
@@ -66,14 +69,11 @@ function render(
         if (options.crewFails) throw new Error("bb did not answer");
         return { items: options.crew ?? [] };
       }),
-      bannerTasks: log("bannerTasks", () => ({ tasks: options.tasks ?? [] })),
-      sinceYouLeft: log(
-        "sinceYouLeft",
-        () => options.since ?? { cutoff: null, done: [], ready: [], failed: [] },
+      resolveAsk: log(
+        "resolveAsk",
+        (input) => options.resolve?.(input) ?? { state: "answered", warnings: [] },
       ),
-      resolveAsk: log("resolveAsk", () => ({ state: "answered", warnings: [] })),
       defer: log("defer", () => ({ snoozedUntil: null, skipOrder: null })),
-      markSeen: log("markSeen", () => ({ at: NOW })),
     } as never,
     ...(options.sdk === undefined ? {} : { sdk: options.sdk as never }),
   });
@@ -98,7 +98,7 @@ test("two items show readable tabs in queue order and one answer panel", async (
   expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
   expect(slot.getByRole("tabpanel").textContent).toContain("PLUG-8");
   expect(slot.getByRole("button", { name: "Grant read-only Recommended" })).toBeDefined();
-  expect(of("bannerTasks")).toEqual([]);
+  expect(of("crew")).toHaveLength(1);
 
   act(() => tabs[1]!.click());
   expect(tabs[1]?.getAttribute("aria-selected")).toBe("true");
@@ -589,44 +589,32 @@ test("the Later icon defers the item on show", async () => {
   );
 });
 
-test("an empty queue shows Since you left; a count opens its tasks and Mark seen advances the cutoff", async () => {
-  const { slot, of } = render(CAPTAIN, [], {
-    since: {
-      cutoff: NOW - 3_600_000,
-      done: [
-        { task: "PLUG-1", title: "One", threadId: null },
-        { task: "PLUG-2", title: "Two", threadId: null },
-      ],
-      ready: [{ task: "PLUG-3", title: "Three", threadId: null }],
-      failed: [],
+test("an empty queue is one clear line with an action that opens Captain Overview", async () => {
+  const { slot, calls } = render(CAPTAIN, []);
+  const overview = await slot.findByRole("button", { name: "Overview" });
+  expect(overview.parentElement?.textContent).toBe("All clearOverview");
+  expect(overview.parentElement?.querySelector("ul")).toBeNull();
+  fireEvent.click(overview);
+  expect(slot.experimental_panelCalls).toEqual([
+    {
+      method: "openTab",
+      options: {
+        tab: {
+          id: "overview",
+          context: { kind: "thread" },
+          availability: "fixed",
+        },
+      },
     },
-  });
-  const line = await slot.findByTestId("captain-since");
-  expect(line.textContent).toContain("All clear · since you left:");
-  expect(line.textContent).toContain("2 done");
-  expect(line.textContent).toContain("1 ready to ship");
-  expect(line.textContent).not.toContain("failed");
-  act(() => slot.getByRole("button", { name: "2 done" }).click());
-  expect(slot.getByRole("link", { name: "PLUG-2" }).getAttribute("href")).toBe(
-    "/plugins/scott-tasks/tasks/task/PLUG-2",
-  );
-  act(() => slot.getByRole("button", { name: "Mark seen" }).click());
-  await waitFor(() => expect(of("markSeen")).toHaveLength(1));
+  ]);
+  expect(calls.map(({ method }) => method).sort()).toEqual(["asks", "captains", "crew"]);
 });
 
-test("an empty queue with nothing since you left draws nothing", async () => {
-  const { slot, of } = render(CAPTAIN, []);
-  await waitFor(() => expect(of("sinceYouLeft")).toHaveLength(1));
-  expect(slot.queryByTestId("captain-since")).toBeNull();
-  expect(slot.queryByTestId("captain-needs-you")).toBeNull();
-});
-
-test("leaving the thread records last seen; showing it does not", async () => {
-  const { slot, of } = render(CAPTAIN, [decision]);
-  await slot.findByTestId("captain-needs-you");
-  expect(of("markSeen")).toHaveLength(0);
-  slot.lifecycle.unmount();
-  await waitFor(() => expect(of("markSeen")).toHaveLength(1));
+test("unavailable crew does not report All clear", async () => {
+  const { slot } = render(CAPTAIN, [], { crewFails: true });
+  await slot.findByText("Crew status unavailable");
+  expect(slot.queryByText("All clear")).toBeNull();
+  expect(slot.getByRole("button", { name: "Overview" })).toBeDefined();
 });
 
 test("a blocked crew row opens its thread", async () => {
@@ -727,33 +715,101 @@ test("a Plan decision opens its full detail from the action row", async () => {
   expect(details?.textContent).toContain(plan.detail);
 });
 
-test("no-action rows show task phases, open Tasks, and collapse", async () => {
-  const { slot } = render(CAPTAIN, [], {
-    tasks: [
-      {
-        key: "PLUG-8",
-        title: "Board drag reorder",
-        status: "in_progress",
-        roles: ["implement"],
-        updatedAt: NOW,
-      },
-      {
-        key: "PLUG-9",
-        title: "Stacked PR card",
-        status: "in_review",
-        roles: ["implement", "review"],
-        updatedAt: NOW,
-      },
-    ],
-  });
-  const toggle = await slot.findByRole("button", { name: /No action needed/u });
-  expect(toggle.textContent).toContain("2 in progress");
-  expect(slot.getByRole("link", { name: "Open task PLUG-8" }).getAttribute("href")).toBe(
-    "/plugins/scott-tasks/tasks/task/PLUG-8",
+test("two in-flight answers each have a selectable Sending panel until delivered", async () => {
+  const delivered = new Set<string>();
+  const release = new Map<string, () => void>();
+  const { slot } = render(
+    CAPTAIN,
+    () => [decision, access].filter((item) => !delivered.has(item.id)),
+    {
+      resolve: ({ askId }) =>
+        new Promise((done) => {
+          release.set(askId, () => {
+            delivered.add(askId);
+            done({ state: "answered", warnings: [] });
+          });
+        }),
+    },
   );
-  expect(slot.getByText("Impl")).toBeDefined();
-  expect(slot.getByText("Review")).toBeDefined();
-  act(() => toggle.click());
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  expect(slot.queryByRole("link", { name: "Open task PLUG-8" })).toBeNull();
+  fireEvent.click(await slot.findByRole("button", { name: "Grant read-write" }));
+  fireEvent.click(await slot.findByRole("button", { name: "SQLite" }));
+  const decisionTab = await slot.findByRole("tab", { name: /Pick the cache/u });
+  const accessTab = slot.getByRole("tab", { name: /Grant the crew/u });
+  fireEvent.click(decisionTab);
+  const panel = slot.getByRole("tabpanel");
+  expect(panel.textContent).toContain('Answered "SQLite"');
+  expect(panel.getAttribute("aria-labelledby")).toBe(decisionTab.id);
+
+  act(() => decisionTab.focus());
+  fireEvent.keyDown(decisionTab, { key: "ArrowRight" });
+  expect(document.activeElement).toBe(accessTab);
+  expect(accessTab.getAttribute("aria-selected")).toBe("true");
+  expect(panel.getAttribute("aria-labelledby")).toBe(accessTab.id);
+  expect(panel.textContent).toContain('Answered "Grant read-write"');
+
+  await act(async () => release.get("a2")!());
+  await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  await waitFor(() => expect(slot.getAllByRole("tab")).toEqual([decisionTab]));
+  expect(panel.textContent).toContain('Answered "SQLite"');
+  await act(async () => release.get("a1")!());
+  await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  await waitFor(() => expect(slot.queryByRole("tabpanel")).toBeNull());
+});
+
+test("a single rendered line has neither fade nor More, even for a code block", async () => {
+  const layout = layOut({ lines: 1, content: 1 });
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    const card = await slot.findByTestId("captain-needs-you");
+    const box = card.querySelector("[data-detail-box]")!;
+    const code = document.createElement("pre");
+    code.innerHTML = "<button>Copy</button><code>bun test</code>";
+    box.append(code);
+    layout.relayout({ lines: 1, content: 1 });
+    expect(slot.queryByRole("button", { name: "More" })).toBeNull();
+    expect(box.parentElement?.hasAttribute("data-preview-fade")).toBe(false);
+  } finally {
+    layout.restore();
+  }
+});
+
+test("Later comes before the accessible pen button and Other replaces the action row", async () => {
+  const { slot } = render(CAPTAIN, [decision]);
+  const trigger = await slot.findByRole("button", { name: "Other…" });
+  const later = slot.getByRole("button", { name: "Later" });
+  expect(later.nextElementSibling).toBe(trigger);
+  expect(trigger.querySelector("svg[aria-hidden=true]")).not.toBeNull();
+  fireEvent.click(trigger);
+  const input = slot.getByRole("textbox", { name: "Your answer" });
+  expect(document.activeElement).toBe(input);
+  expect(slot.queryByRole("button", { name: "Later" })).toBeNull();
+  expect(slot.queryByRole("button", { name: "SQLite" })).toBeNull();
+  fireEvent.keyDown(input, { key: "Escape" });
+  const returned = slot.getByRole("button", { name: "Other…" });
+  expect(document.activeElement).toBe(returned);
+  fireEvent.click(returned);
+  fireEvent.click(slot.getByRole("button", { name: "Cancel" }));
+  expect(document.activeElement).toBe(slot.getByRole("button", { name: "Other…" }));
+});
+
+test("a rejected typed answer leaves the draft focused in the answer row", async () => {
+  let fail!: (error: Error) => void;
+  const { slot } = render(CAPTAIN, [decision], {
+    resolve: () =>
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+  });
+  fireEvent.click(await slot.findByRole("button", { name: "Other…" }));
+  const input = slot.getByRole("textbox", { name: "Your answer" }) as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "Keep it local" } });
+  fireEvent.submit(input.form!);
+  expect(input.readOnly).toBe(true);
+  expect(document.activeElement).toBe(input);
+  await waitFor(() => expect(fail).toBeTypeOf("function"));
+  await act(async () => fail(new Error("Try again")));
+  await slot.findByText("Try again");
+  expect(input.value).toBe("Keep it local");
+  expect(input.readOnly).toBe(false);
+  expect(document.activeElement).toBe(input);
 });

@@ -45,26 +45,6 @@ async function dispatched(
 }
 
 describe("the banner's reads", () => {
-  test("banner task rows follow Tasks status when crew is idle", async () => {
-    const { host, captainId, as, rpc } = await bannerHost();
-    const threadId = await dispatched(as, "BBPLUGINS-1");
-    host.updateThread(threadId, { status: "idle" });
-    const task = host.tasks.tasks.find((entry) => entry.key === "BBPLUGINS-1")!;
-    task.status = "in_progress";
-    expect(await rpc("bannerTasks", { captainId })).toEqual({
-      tasks: [
-        expect.objectContaining({
-          key: "BBPLUGINS-1",
-          title: "Render PR images",
-          status: "in_progress",
-          roles: ["implement"],
-        }),
-      ],
-    });
-    task.status = "done";
-    expect(await rpc("bannerTasks", { captainId })).toEqual({ tasks: [] });
-  });
-
   test("captains lists the live Captains, and new and archive refresh it", async () => {
     const { host, captainId, rpc, invalidations } = await bannerHost();
     expect(await rpc("captains", {})).toEqual({ ids: [captainId] });

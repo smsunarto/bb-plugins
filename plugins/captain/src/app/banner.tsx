@@ -6,7 +6,7 @@
  */
 import {
   Markdown,
-  experimental_usePluginId as usePluginId,
+  experimental_useAppPanel as useAppPanel,
   experimental_useRpcMutation as useRpcMutation,
   experimental_useRpcQuery as useRpcQuery,
   useBbNavigate,
@@ -22,7 +22,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
-  type ReactNode,
   type RefObject,
 } from "react";
 import {
@@ -33,7 +32,7 @@ import {
   type HealthItem,
   type QueueItem,
 } from "../contract/queue.ts";
-import { captainContract, TASK_PHASES, type BannerTask, type ChangeRef } from "../contract/rpc.ts";
+import { captainContract } from "../contract/rpc.ts";
 import { surface } from "@bb-plugins/ui/surface";
 import { Button } from "./components/ui/button.tsx";
 import { Icon } from "./components/ui/icon.tsx";
@@ -51,6 +50,14 @@ const FAR = Number.MAX_SAFE_INTEGER;
 export const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 const ICON_BUTTON = cn(TAP, "size-8 shrink-0");
 const COMPACT_ANSWER = "max-sm:gap-1 max-sm:px-1 max-sm:text-[11px]";
+const ANSWER_ROW =
+  "col-start-2 flex min-w-0 items-start gap-1.5 max-sm:col-span-3 max-sm:col-start-1";
+const HORIZONTAL_SCROLL = "overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+export const CAPTAIN_OVERVIEW_TAB = {
+  id: "overview",
+  context: { kind: "thread" },
+  availability: "fixed",
+} as const;
 
 export function NeedsYouBanner() {
   const { scope } = useComposer();
@@ -59,7 +66,9 @@ export function NeedsYouBanner() {
 
 function CaptainGate({ threadId }: { threadId: string }) {
   const captains = useRpcQuery({ contract: captainContract, method: "captains", input: NO_INPUT });
-  return captains.data?.ids.includes(threadId) ? <Banner captainId={threadId} /> : null;
+  return captains.data?.ids.includes(threadId) ? (
+    <Banner key={threadId} captainId={threadId} />
+  ) : null;
 }
 
 export type Action = { label: string; run: () => void; primary?: boolean; recommended?: boolean };
@@ -74,30 +83,9 @@ function Banner({ captainId }: { captainId: string }) {
     [asks.data, crew.data],
   );
   const items = useMemo(() => orderQueue(allItems, now), [allItems, now]);
-  const loaded = asks.data !== undefined;
-  const tasks = useRpcQuery({
-    contract: captainContract,
-    method: "bannerTasks",
-    input,
-    enabled: loaded && items.length === 0 && crew.data !== undefined,
-  });
-  const since = useRpcQuery({
-    contract: captainContract,
-    method: "sinceYouLeft",
-    input,
-    enabled: loaded && items.length === 0,
-  });
-  useLastSeen(captainId);
-
-  if (!loaded) return null;
+  if (asks.data === undefined) return null;
   if (items.length === 0) {
-    const active = tasks.data?.tasks ?? [];
-    return (
-      <>
-        {active.length > 0 ? <InProgress tasks={active} now={now} /> : null}
-        {since.data ? <SinceYouLeft captainId={captainId} since={since.data} /> : null}
-      </>
-    );
+    return crew.data || crew.error ? <AllClear crewUnavailable={crew.error !== null} /> : null;
   }
   const laterCount = allItems.length - items.length;
   return (
@@ -109,6 +97,28 @@ function Banner({ captainId }: { captainId: string }) {
       now={now}
       crewError={crew.error?.message}
     />
+  );
+}
+
+function AllClear({ crewUnavailable }: { crewUnavailable: boolean }) {
+  const panel = useAppPanel();
+  return (
+    <div
+      data-bb-plugin="captain"
+      data-bb-plugin-scope-captain=""
+      className="flex min-w-0 items-center gap-2 px-3 text-xs text-muted-foreground"
+    >
+      <span>{crewUnavailable ? "Crew status unavailable" : "All clear"}</span>
+      <Button
+        type="button"
+        size="sm"
+        variant="link"
+        className={cn(TAP, "h-7 px-1")}
+        onClick={() => panel.openTab({ tab: CAPTAIN_OVERVIEW_TAB })}
+      >
+        Overview
+      </Button>
+    </div>
   );
 }
 
@@ -130,17 +140,29 @@ function Queue({
   const id = useId();
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const first = items[0]!;
-  const item = items.find((entry) => entry.key === selected && !isSending(entry)) ?? first;
+  const waiting = items.filter((entry) => !isSending(entry));
+  const tabs = waiting.length > 0 ? waiting : items;
+  const item = tabs.find((entry) => entry.key === selected) ?? tabs[0]!;
   const sending = isSending(item);
-  const { other, error, planOpen, patchUi } = useItemUi(item.key);
+  const { other, error, planOpen, patchUi, clearOther } = useItemUi(item.key);
   const setOther = (value: string | null) => patchUi({ other: value });
-  const { answer, later, skip, fail } = useItemCommands(captainId, item.key, root, (value) =>
-    patchUi({ error: value }),
+  const { answer, later, skip, fail, pending } = useItemCommands(
+    captainId,
+    item.key,
+    root,
+    (value) => patchUi({ error: value }),
+    other !== null,
   );
+  const restoreOtherFocus = useRef(false);
+  const focusOther = useCallback((node: HTMLButtonElement | null) => {
+    if (node && restoreOtherFocus.current) {
+      restoreOtherFocus.current = false;
+      node.focus();
+    }
+  }, []);
   const actions = sending ? [] : itemActions(item, { answer, navigate, sdk, fail });
   const kind = bannerKind(item);
-  const showTabs = items.length > 1 || kind !== "plan" || laterCount > 0;
+  const showTabs = tabs.length > 1 || kind !== "plan" || laterCount > 0;
   const detail = item.kind === "blocked" ? null : item.detail;
   const plan = kind === "plan" && detail;
   const dismiss = () => {
@@ -164,7 +186,7 @@ function Queue({
     toggleGone.current = true;
   }, [root]);
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (!keyboardFocus.current) return;
+    if (!keyboardFocus.current || other !== null) return;
     const swallow = toggleGone.current && event.key === "Enter";
     toggleGone.current = false;
     if (swallow) {
@@ -208,7 +230,8 @@ function Queue({
       {showTabs ? (
         <QueueTabs
           id={id}
-          items={items}
+          tabs={tabs}
+          waitingCount={waiting.length}
           selected={item}
           laterCount={laterCount}
           now={now}
@@ -221,7 +244,7 @@ function Queue({
         aria-labelledby={showTabs ? `${id}-${item.key}` : undefined}
         className={cn(
           showTabs && surface.divider,
-          "grid min-w-0 grid-cols-[18px_minmax(0,1fr)] gap-x-2 gap-y-2.5 px-3 pt-2.5 pb-3",
+          "grid min-w-0 grid-cols-[18px_minmax(0,1fr)_18px] gap-x-2 gap-y-2.5 px-3 pt-2.5 pb-3",
         )}
       >
         <Icon
@@ -252,39 +275,49 @@ function Queue({
             )}
           </div>
         ) : null}
-        {other !== null ? (
-          <div className="col-start-2 min-w-0">
+        {other !== null && item.kind === "ask" && !sending ? (
+          <div data-captain-answer-row="" className={ANSWER_ROW}>
             <OtherAnswer
               value={other}
+              pending={pending}
+              showCancel
               onChange={setOther}
               onCancel={() => {
+                restoreOtherFocus.current = true;
                 setOther(null);
-                root?.focus();
               }}
-              onSubmit={(text) => item.kind === "ask" && answer(item.id, text)}
+              onSubmit={(text) => {
+                void answer(item.id, text).then((accepted) => {
+                  if (!accepted) return;
+                  clearOther();
+                  if (root?.contains(document.activeElement)) root.focus();
+                });
+              }}
             />
           </div>
-        ) : null}
-        <AnswerRow
-          item={item}
-          kind={kind}
-          actions={actions}
-          later={later}
-          openOther={other === null ? () => setOther("") : null}
-          plan={
-            plan
-              ? {
-                  id: `${id}-plan`,
-                  open: planOpen,
-                  toggle: () => {
-                    const content = document.getElementById(`${id}-plan`);
-                    if (planOpen && content) content.scrollTop = 0;
-                    patchUi({ planOpen: !planOpen });
-                  },
-                }
-              : null
-          }
-        />
+        ) : (
+          <AnswerRow
+            item={item}
+            kind={kind}
+            actions={actions}
+            later={later}
+            openOther={() => setOther("")}
+            focusOther={focusOther}
+            plan={
+              plan
+                ? {
+                    id: `${id}-plan`,
+                    open: planOpen,
+                    toggle: () => {
+                      const content = document.getElementById(`${id}-plan`);
+                      if (planOpen && content) content.scrollTop = 0;
+                      patchUi({ planOpen: !planOpen });
+                    },
+                  }
+                : null
+            }
+          />
+        )}
         {error ? (
           <p className="col-start-2 m-0 min-w-0 break-words text-destructive">{error}</p>
         ) : null}
@@ -299,13 +332,15 @@ function AnswerRow({
   actions,
   later,
   openOther,
+  focusOther,
   plan,
 }: {
   item: QueueItem;
   kind: BannerKind;
   actions: Action[];
   later: () => void;
-  openOther: (() => void) | null;
+  openOther: () => void;
+  focusOther: (node: HTMLButtonElement | null) => void;
   plan: { id: string; open: boolean; toggle: () => void } | null;
 }) {
   if (item.kind === "ask" && item.answer !== null) {
@@ -315,13 +350,13 @@ function AnswerRow({
       </output>
     );
   }
-  const other = item.kind === "ask" && kind !== "ship" ? openOther : null;
+  const showOther = item.kind === "ask" && kind !== "ship";
   return (
-    <div className="col-start-2 flex min-w-0 items-start gap-1.5 max-sm:col-span-2 max-sm:col-start-1">
-      {actions.length > 0 || other || plan ? (
+    <div data-captain-answer-row="" className={ANSWER_ROW}>
+      {actions.length > 0 || plan ? (
         <div
           data-captain-answers=""
-          className="-m-0.5 flex min-w-0 items-center gap-1.5 overflow-x-auto p-0.5"
+          className={cn(HORIZONTAL_SCROLL, "-m-0.5 flex min-w-0 items-center gap-1.5 p-0.5")}
         >
           {actions.map((action, index) => (
             <ActionButton key={action.label} action={action} index={index} bannerKind={kind} />
@@ -340,17 +375,6 @@ function AnswerRow({
               {plan.open ? "Close plan" : "Read plan"}
             </Button>
           ) : null}
-          {other ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className={cn(TAP, COMPACT_ANSWER, "text-muted-foreground")}
-              onClick={other}
-            >
-              Other…
-            </Button>
-          ) : null}
         </div>
       ) : null}
       <Button
@@ -365,6 +389,32 @@ function AnswerRow({
       >
         <Icon name="Clock" aria-hidden />
       </Button>
+      {showOther ? (
+        <Button
+          ref={focusOther}
+          type="button"
+          size="sm"
+          variant="ghost"
+          aria-label="Other…"
+          className={cn(TAP, "shrink-0 gap-1.5 text-muted-foreground")}
+          onClick={openOther}
+        >
+          <svg
+            data-icon="inline-start"
+            aria-hidden="true"
+            className="size-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M13 21h8m.174-14.188a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+          </svg>
+          <span className="max-sm:sr-only">Other…</span>
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -375,7 +425,9 @@ function useItemUi(key: string) {
   const { other, error, planOpen } = ui.key === key ? ui : NO_UI;
   const patchUi = (patch: Partial<Omit<ItemUi, "key">>) =>
     setUi((current) => ({ ...(current.key === key ? current : NO_UI), ...patch, key }));
-  return { other, error, planOpen, patchUi };
+  const clearOther = () =>
+    setUi((current) => (current.key === key ? { ...current, other: null } : current));
+  return { other, error, planOpen, patchUi, clearOther };
 }
 
 /**
@@ -387,8 +439,9 @@ export function useItemCommands(
   key: string,
   root: HTMLElement | null,
   setError: (value: string | null) => void,
+  editInPlace = false,
 ) {
-  const { resolve, defer } = useQueueMutations(captainId);
+  const { resolve, defer } = useQueueMutations(captainId, editInPlace);
   const keepFocus = () => {
     if (root?.contains(document.activeElement)) root.focus();
   };
@@ -405,7 +458,7 @@ export function useItemCommands(
     }
   };
   const answer = (askId: string, text: string): Promise<boolean> => {
-    keepFocus();
+    if (!editInPlace) keepFocus();
     setError(null);
     return deliver(askId, text);
   };
@@ -424,11 +477,14 @@ export function useItemCommands(
 }
 
 /** The answer and defer mutations, each updating the cached queue before the server replies. */
-function useQueueMutations(captainId: string) {
+function useQueueMutations(captainId: string, editInPlace: boolean) {
   const resolve = useRpcMutation({
     contract: captainContract,
     method: "resolveAsk",
     optimistic({ askId, answer }, cache) {
+      // Keep a typed answer in its row until the server accepts it, so a
+      // rejected send leaves both the input and the draft in place.
+      if (editInPlace) return;
       cache.update("asks", { captainId }, (current) => ({
         items: current.items.map((item) =>
           item.kind === "ask" && item.id === askId ? { ...item, answer } : item,
@@ -512,26 +568,26 @@ function tabTitle(item: QueueItem): string {
 
 function QueueTabs({
   id,
-  items,
+  tabs,
+  waitingCount,
   selected,
   laterCount,
   now,
   onSelect,
 }: {
   id: string;
-  items: readonly QueueItem[];
+  tabs: readonly QueueItem[];
+  waitingCount: number;
   selected: QueueItem;
   laterCount: number;
   now: number;
   onSelect: (item: QueueItem) => void;
 }) {
-  const waiting = items.filter((item) => !isSending(item));
-  const tabs = waiting.length > 0 ? waiting : items;
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 px-3 py-1.5">
       <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground" aria-live="polite">
         <span className="min-w-4.5 rounded-full bg-(--surface-attention) px-1 text-center font-semibold text-warning-text">
-          {waiting.length}
+          {waitingCount}
         </span>
         waiting
       </span>
@@ -539,7 +595,10 @@ function QueueTabs({
         role="tablist"
         tabIndex={-1}
         aria-label="Captain queue"
-        className="-m-0.5 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto p-0.5 max-sm:basis-full"
+        className={cn(
+          HORIZONTAL_SCROLL,
+          "-m-0.5 flex min-w-0 flex-1 items-center gap-0.5 p-0.5 max-sm:basis-full",
+        )}
         onKeyDown={(event) => {
           const index = tabs.indexOf(selected);
           const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
@@ -703,24 +762,26 @@ const PREVIEW =
  */
 const SUMMARISED = "button, table, img";
 
-/** The full width of the fade opens the preview. Its center labels the action. */
+/** The fade stays inside the preview. The disclosure has a separate hit area. */
 function Detail({ content, onToggleGone }: { content: string; onToggleGone: () => void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const toggle = useToggleShown({ box, onToggleGone, open, content });
   const id = useId();
   return (
-    <div className="relative min-w-0">
-      <div
-        ref={box}
-        id={id}
-        data-detail-box=""
-        className={cn(DETAIL_BOX, open ? "max-h-[10lh] overflow-y-auto" : PREVIEW)}
-        onScroll={(event) => {
-          if (!open) revealFocusedDetail(event.currentTarget, () => setOpen(true));
-        }}
-      >
-        <Markdown content={content} className={DETAIL_TEXT} />
+    <div className="min-w-0">
+      <div className="relative min-w-0 after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:hidden after:h-6 after:max-h-full after:bg-linear-to-b after:from-transparent after:to-(--surface-raised-solid) data-[preview-fade]:after:block">
+        <div
+          ref={box}
+          id={id}
+          data-detail-box=""
+          className={cn(DETAIL_BOX, open ? "max-h-[10lh] overflow-y-auto" : PREVIEW)}
+          onScroll={(event) => {
+            if (!open) revealFocusedDetail(event.currentTarget, () => setOpen(true));
+          }}
+        >
+          <Markdown content={content} className={DETAIL_TEXT} />
+        </div>
       </div>
       <Button
         ref={toggle}
@@ -729,11 +790,8 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
         variant="ghost"
         hidden
         className={cn(
-          "z-1 flex w-full items-end justify-center rounded-none px-1 pb-0.5 text-muted-foreground [&[hidden]]:hidden",
-          open
-            ? "relative h-7"
-            : "absolute inset-x-0 bottom-0 h-11 bg-linear-to-b from-transparent via-(--surface-raised-solid) to-(--surface-raised-solid)",
           TAP,
+          "flex h-6 w-full justify-center rounded-none px-1 text-muted-foreground [&[hidden]]:hidden",
         )}
         aria-controls={id}
         aria-expanded={open}
@@ -767,8 +825,8 @@ function revealFocusedDetail(node: HTMLElement, expand: () => void): void {
 }
 
 /**
- * Shows More only when the collapsed preview leaves something out: lines past
- * the clamp, or a block it shows in summary. The ResizeObserver callback
+ * A single rendered line stays plain. In a longer preview, clipping or a
+ * summarised block shows More. Only clipped text gets the noninteractive fade. The ResizeObserver callback
  * measures after layout and, being before paint, sets the toggle's `hidden`
  * there, so More paints with the text it belongs to; a state update would
  * paint a frame later. The box's size changes as bb's renderer adds its
@@ -777,7 +835,7 @@ function revealFocusedDetail(node: HTMLElement, expand: () => void): void {
  * the collapse until measured. Should the preview turn out to fit, the toggle
  * goes; if it held focus, `onToggleGone` first keeps focus in the banner
  * rather than letting it fall to the page. New content under a box that stays
- * two lines tall changes no size, so it observes afresh. React sets `hidden`
+ * fixed height changes no size, so it observes afresh. React sets `hidden`
  * only as the toggle mounts, so with nothing to measure it stays hidden.
  */
 function useToggleShown({
@@ -796,12 +854,21 @@ function useToggleShown({
   useLayoutEffect(() => {
     const node = box.current;
     const button = toggle.current;
-    if (open || node === null || button === null || typeof ResizeObserver === "undefined") return;
+    const preview = node?.parentElement;
+    if (preview == null || node === null || button === null) return;
+    if (open) {
+      preview.removeAttribute("data-preview-fade");
+      return;
+    }
+    if (typeof ResizeObserver === "undefined") return;
     const sizes = new ResizeObserver(() => {
-      const clipped =
-        node.scrollHeight > node.clientHeight + 1 || node.querySelector(SUMMARISED) !== null;
-      if (!clipped && button.contains(document.activeElement)) onToggleGone();
-      button.hidden = !clipped;
+      const lineHeight = Number.parseFloat(getComputedStyle(node).lineHeight) || 16;
+      const longEnough = node.clientHeight > lineHeight * 1.5;
+      const clipped = node.scrollHeight > node.clientHeight + 1;
+      const showMore = longEnough && (clipped || node.querySelector(SUMMARISED) !== null);
+      preview.toggleAttribute("data-preview-fade", longEnough && clipped);
+      if (!showMore && button.contains(document.activeElement)) onToggleGone();
+      button.hidden = !showMore;
     });
     sizes.observe(node);
     return () => sizes.disconnect();
@@ -877,6 +944,7 @@ export function OtherAnswer({
   onCancel,
   onSubmit,
   pending = false,
+  showCancel = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -884,10 +952,17 @@ export function OtherAnswer({
   onSubmit: (text: string) => void;
   /** An answer is sending: Send waits, so one answer goes once. */
   pending?: boolean;
+  showCancel?: boolean;
 }) {
+  const cancelOnEscape = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    if (!showCancel || !pending) onCancel();
+  };
   return (
     <form
-      className="flex min-w-0 items-center gap-1.5"
+      className={cn("flex min-w-0 items-center gap-1.5", showCancel && "flex-1")}
+      aria-busy={showCancel && pending}
       onSubmit={(event) => {
         event.preventDefault();
         if (value.trim() !== "" && !pending) onSubmit(value.trim());
@@ -899,286 +974,40 @@ export function OtherAnswer({
         placeholder="Your answer"
         maxLength={200}
         value={value}
+        readOnly={showCancel && pending}
         className={cn(TAP, "h-8 min-w-0 flex-1")}
         onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            onCancel();
-          }
-        }}
+        onKeyDown={cancelOnEscape}
       />
-      <Button type="submit" size="sm" className={TAP} disabled={value.trim() === "" || pending}>
+      <Button
+        type="submit"
+        size="sm"
+        className={TAP}
+        disabled={value.trim() === "" || pending}
+        onKeyDown={cancelOnEscape}
+      >
         Send
       </Button>
-    </form>
-  );
-}
-
-const PHASE_LABEL = { plan: "Plan", implement: "Impl", review: "Review", merge: "Merge" };
-
-function InProgress({ tasks, now }: { tasks: BannerTask[]; now: number }) {
-  const [open, setOpen] = useState(true);
-  const id = useId();
-  return (
-    <section
-      aria-label="No action needed"
-      data-bb-plugin="captain"
-      data-bb-plugin-scope-captain=""
-      className="min-w-0 text-xs"
-    >
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        className={cn(TAP, "h-9 w-full justify-start gap-2 px-3 font-normal")}
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={() => setOpen(!open)}
-      >
-        <Icon name="CircleCheck" aria-hidden className="text-muted-foreground" />
-        No action needed
-        <span className="text-muted-foreground">· {tasks.length} in progress</span>
-        <Icon
-          name={open ? "ChevronDown" : "ChevronRight"}
-          aria-hidden
-          className="ms-auto text-muted-foreground"
-        />
-      </Button>
-      <ul
-        id={id}
-        hidden={!open}
-        className={cn("m-0 max-h-56 list-none overflow-y-auto p-0", !open && "hidden")}
-      >
-        {tasks.map((task) => (
-          <li
-            key={task.key}
-            className={cn(
-              surface.divider,
-              "flex h-9 min-w-0 items-center gap-2.5 ps-3 pe-1.5 pointer-coarse:h-11",
-            )}
-          >
-            <span className="w-19 shrink-0 truncate font-mono text-[11px] text-muted-foreground max-sm:w-auto max-sm:max-w-16">
-              {task.key}
-            </span>
-            <span title={task.title} className="min-w-0 flex-1 truncate text-[13px]">
-              {task.title}
-            </span>
-            <TaskPhase task={task} />
-            {task.updatedAt > 0 ? (
-              <span className="w-7 shrink-0 text-end text-muted-foreground tabular-nums max-sm:hidden">
-                {age(now, task.updatedAt)}
-              </span>
-            ) : null}
-            <Button
-              asChild
-              size="icon"
-              variant="ghost"
-              className={cn(ICON_BUTTON, "text-muted-foreground")}
-            >
-              <a
-                href={taskHref(task.key)}
-                aria-label={`Open task ${task.key}`}
-                title={`Open task ${task.key}`}
-              >
-                <Icon name="ListTodo" aria-hidden />
-              </a>
-            </Button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function TaskPhase({ task }: { task: BannerTask }) {
-  const current = TASK_PHASES.findLast(
-    (phase) => task.roles.includes(phase) || (phase === "review" && task.status === "in_review"),
-  );
-  return (
-    <>
-      <span className="w-24 shrink-0 truncate text-muted-foreground max-md:hidden">
-        {task.roles.length > 0 && current ? `crew · ${PHASE_LABEL[current].toLowerCase()}` : null}
-      </span>
-      <span className="flex w-29.5 shrink-0 items-center gap-2 max-sm:w-auto">
-        {current ? (
-          <>
-            <span aria-hidden className="flex items-center gap-0.5 max-sm:hidden">
-              {TASK_PHASES.map((phase, index) => (
-                <span
-                  key={phase}
-                  className={cn(
-                    "h-1 w-3 rounded-sm bg-foreground",
-                    phase === current
-                      ? "opacity-100"
-                      : index < TASK_PHASES.indexOf(current)
-                        ? "opacity-45"
-                        : "opacity-15",
-                  )}
-                />
-              ))}
-            </span>
-            <span
-              className="font-medium"
-              aria-label={current === "implement" ? "Implement" : undefined}
-            >
-              {PHASE_LABEL[current]}
-            </span>
-          </>
-        ) : null}
-      </span>
-    </>
-  );
-}
-
-function taskHref(key: string): string {
-  return `/plugins/scott-tasks/tasks/task/${encodeURIComponent(key)}`;
-}
-
-type Since = { cutoff: number | null; done: ChangeRef[]; ready: ChangeRef[]; failed: ChangeRef[] };
-
-/** One line of what changed since you last had this thread open; nothing when nothing did. */
-function SinceYouLeft({ captainId, since }: { captainId: string; since: Since }) {
-  const [open, setOpen] = useState<keyof Omit<Since, "cutoff"> | null>(null);
-  const pluginId = usePluginId();
-  const seen = useRpcMutation({ contract: captainContract, method: "markSeen" });
-  const counts = (
-    [
-      ["done", since.done, "done"],
-      ["ready", since.ready, "ready to ship"],
-      ["failed", since.failed, "failed"],
-    ] as const
-  ).filter(([, refs]) => refs.length > 0);
-  if (counts.length === 0) return null;
-  const refs = open === null ? [] : since[open];
-  return (
-    <section
-      aria-label="Since you left"
-      data-bb-plugin="captain"
-      data-bb-plugin-scope-captain=""
-      data-testid="captain-since"
-      className="flex min-w-0 flex-col gap-1 px-3 py-1.5 text-xs text-muted-foreground"
-    >
-      <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5">
-        <span>All clear · since you left:</span>
-        {counts.map(([kind, list, label], index) => (
-          <Separated key={kind} first={index === 0}>
-            <Button
-              type="button"
-              size="sm"
-              variant="link"
-              className={cn(TAP, "h-auto px-0 py-0")}
-              aria-expanded={open === kind}
-              onClick={() => setOpen((current) => (current === kind ? null : kind))}
-            >
-              {list.length} {label}
-            </Button>
-          </Separated>
-        ))}
+      {showCancel ? (
         <Button
           type="button"
           size="sm"
           variant="ghost"
-          className={cn(TAP, "ms-auto text-muted-foreground")}
-          disabled={seen.isPending}
-          onClick={() =>
-            void seen.mutate({ captainId, client: clientId(pluginId) }).catch(() => undefined)
-          }
+          className={TAP}
+          disabled={pending}
+          onClick={onCancel}
+          onKeyDown={cancelOnEscape}
         >
-          Mark seen
+          Cancel
         </Button>
-      </div>
-      {refs.length > 0 ? (
-        <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0">
-          {refs.map((ref) => (
-            <li key={ref.task ?? ref.threadId}>
-              <RefLink change={ref} />
-            </li>
-          ))}
-        </ul>
       ) : null}
-    </section>
-  );
-}
-
-function Separated({ first, children }: { first: boolean; children: ReactNode }) {
-  return (
-    <>
-      {first ? null : <span aria-hidden>·</span>}
-      {children}
-    </>
-  );
-}
-
-/** A task opens in Tasks; a failed thread with no task opens the thread. */
-function RefLink({ change }: { change: ChangeRef }) {
-  const navigate = useBbNavigate();
-  const label = change.task ?? change.threadId ?? "";
-  if (change.task === null) {
-    return (
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className={TAP}
-        onClick={() => change.threadId && navigate.toThread(change.threadId)}
-      >
-        {label}
-      </Button>
-    );
-  }
-  return (
-    <Button asChild size="sm" variant="outline" className={TAP}>
-      <a href={taskHref(change.task)} title={change.title ?? undefined}>
-        {label}
-      </a>
-    </Button>
+    </form>
   );
 }
 
 /** The answer box opens on request, so it takes focus as it mounts. */
 function focusOnMount(node: HTMLInputElement | null): void {
   node?.focus();
-}
-
-/** One id per browser profile, so last-seen times are kept per client. Read when sending, not in render. */
-function clientId(pluginId: string): string {
-  const key = `${pluginId}:client`;
-  try {
-    const stored = window.localStorage.getItem(key);
-    if (stored) return stored;
-    const id = `c_${Math.random().toString(36).slice(2, 12)}`;
-    window.localStorage.setItem(key, id);
-    return id;
-  } catch {
-    return "c_unknown";
-  }
-}
-
-/**
- * Advance the cutoff when the pane is hidden: on leaving the thread or hiding
- * the page. Never while it shows, so the line reads against the previous value.
- */
-function useLastSeen(captainId: string): void {
-  const pluginId = usePluginId();
-  const seen = useRpcMutation({ contract: captainContract, method: "markSeen" });
-  // The latest mutate, without making it an effect dependency: a re-run would mark seen.
-  const mark = useRef(seen.mutate);
-  useEffect(() => {
-    mark.current = seen.mutate;
-  });
-  useEffect(() => {
-    const leave = () =>
-      void mark.current({ captainId, client: clientId(pluginId) }).catch(() => undefined);
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") leave();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      leave();
-    };
-  }, [captainId, pluginId]);
 }
 
 /** The clock for ages and Later: a coarse tick, plus a wake when the next Later ends. */
