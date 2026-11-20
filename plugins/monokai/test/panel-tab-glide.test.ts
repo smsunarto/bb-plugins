@@ -396,15 +396,21 @@ test("a swipe between chips of one width slides the row under a still fill", asy
   dispose();
 });
 
-test("a swipe between chips of different widths is instant", async () => {
-  const { root, chips, page } = pager([112, 140], 0);
-  const { dispose } = mount();
-  select(chips[0]!, chips[1]!);
-  page(1);
-  await frame();
-  expect(root.querySelector(GLIDE)).toBeNull();
-  expect(animations).toHaveLength(0);
-  dispose();
+test("a swipe between chips of different widths is instant, narrow to wide and wide to narrow", async () => {
+  for (const widths of [
+    [112, 140],
+    [140, 112],
+  ]) {
+    const { root, chips, page } = pager(widths, 0);
+    const { dispose } = mount();
+    select(chips[0]!, chips[1]!);
+    page(1);
+    await frame();
+    expect(root.querySelector(GLIDE)).toBeNull();
+    expect(animations).toHaveLength(0);
+    dispose();
+    root.remove();
+  }
 });
 
 test("a chip still outside the viewport when the switch lands is instant", async () => {

@@ -290,15 +290,19 @@ export function mountPanelTabGlide({
     const host = pager.getBoundingClientRect();
     const toComputed = win.getComputedStyle(to);
     const step = pagerStep(pager, oldStyles, win);
-    const end = boxOf(to, fillOf(to, toComputed), step, "end");
+    const toFill = fillOf(to, toComputed);
+    const fromFill = fillOf(from, win.getComputedStyle(from));
+    const end = boxOf(to, toFill, step, "end");
     const previous = flights.get(pager);
     const current =
       previous?.ghost.isConnected === true
         ? boxOfInset(win.getComputedStyle(previous.ghost).clipPath, host)
         : null;
-    const start = current ?? boxOf(from, fillOf(from, win.getComputedStyle(from)), step, "start");
+    const start = current ?? boxOf(from, fromFill, step, "start");
     // The highlight never changes size in flight: between sizes, switch instantly.
-    if (!sameSize(start, end)) {
+    // Compare the tabs themselves too: clipping a wide chip to the narrower
+    // viewport bb has already resized would make two sizes look like one.
+    if (!sameSize(fromFill, toFill) || !sameSize(start, end)) {
       land(pager);
       return;
     }
