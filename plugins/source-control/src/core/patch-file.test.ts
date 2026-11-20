@@ -241,7 +241,14 @@ describe("readPatchFile", () => {
     expect(read.commits).toHaveLength(1);
     const files = read.commits[0]!.files;
     expect(files.map((entry) => entry.file.path)).toEqual(["x.txt", "x.txt"]);
-    expect(new Set(files.map((entry) => entry.key)).size).toBe(2);
+    // Keyed by path and occurrence, so a re-read with a file added above keeps each card's key.
+    expect(files.map((entry) => entry.key)).toEqual(["x.txt", "x.txt\u00002"]);
+    const again = parsed(`--- a/w.txt\n+++ b/w.txt\n@@ -1 +1 @@\n-a\n+b\n${file}${file}`);
+    expect(again.commits[0]!.files.map((entry) => entry.key)).toEqual([
+      "w.txt",
+      "x.txt",
+      "x.txt\u00002",
+    ]);
   });
 
   test("a message line that reads like a commit line does not start a section", () => {
@@ -386,7 +393,7 @@ describe("review fixtures", () => {
       "overcount-plain.diff",
       "Line 3 starts a hunk whose lines don't match the counts in its header.",
     ],
-    ["badhunk.patch", "Line 3 has a --- / +++ pair with no hunk after it."],
+    ["badhunk.patch", "Line 5 has a hunk header the diff view can't read."],
     ["prose.diff", "Line 4 has a --- / +++ pair with no hunk after it."],
     ["prose2.patch", "Line 2 has a diff --git line with no change after it."],
     [
@@ -449,3 +456,103 @@ describe("review fixtures", () => {
     expect(files.map(({ file }) => [file.path, file.binary])).toContainEqual(["nul.dat", true]);
   });
 });
+
+describe("review round 2 fixtures", () => {
+  const read = (name: string) => readPatchFile(fixture(`review2/${name}`));
+  const files = (name: string) =>
+    parsed(fixture(`review2/${name}`)).commits.flatMap((c) => c.files);
+
+  test("a blank line standing for context is read as that context line", () => {
+    const [entry] = files("blank-context.patch");
+    expect(entry!.file).toMatchObject({ additions: 1, deletions: 1 });
+    expect(entry!.patch.patch.split("\n").slice(3, 8)).toEqual([
+      "@@ -1,3 +1,3 @@",
+      " a",
+      " ",
+      "-b",
+      "+B",
+    ]);
+    expect(files("gnu-suppress-blank-empty.diff").map(({ file }) => file.path)).toEqual(["x.txt"]);
+  });
+
+  test("a signature whose trailing space an editor trimmed still ends the mail", () => {
+    expect(
+      files("sig-nospace.patch").map(
+        ({ file }) => `${file.path} +${file.additions} -${file.deletions}`,
+      ),
+    ).toEqual(["f.txt +1 -1"]);
+  });
+
+  test.each([
+    [
+      "under-blank-extra.patch",
+      "Line 9 follows a finished hunk as one of its lines, past what its header counts.",
+    ],
+    [
+      "two-hunks-blank-late.patch",
+      "Line 14 follows a finished hunk as one of its lines, past what its header counts.",
+    ],
+    [
+      "trailing-bullets.patch",
+      "Line 9 follows a finished hunk as one of its lines, past what its header counts.",
+    ],
+    ["r1-badheader.patch", "Line 4 has a hunk header the diff view can't read."],
+  ])("%s reads as text: %s", (name, reason) => {
+    expect(read(name)).toEqual({ ok: false, reason });
+  });
+
+  test("diff -r binary lines name both files, GNU's shell quoting undone", () => {
+    const names = (name: string) =>
+      files(name)
+        .filter(({ file }) => file.binary)
+        .map(({ file }) => file.path);
+    expect(names("gnu-ru-binary.diff")).toEqual(["my file.bin", "plain.bin", "x and y.bin"]);
+    expect(names("gnu-ru-names.diff")).toEqual([
+      "d2/it's.bin",
+      "d2/my file.bin",
+      "d2/plain.bin",
+      'd2/q"uote.bin',
+      "d2/tab\there.bin",
+      "d2/x and y.bin",
+    ]);
+    expect(names("plain-binary-and.diff")).toEqual(["x and y.bin"]);
+  });
+
+  test("a binary line whose names can't be told apart reads as text", () => {
+    expect(rejected("Binary files a/q and b/q and c/q differ\n")).toBe(
+      "Line 1 names binary files in a way the diff view can't split.",
+    );
+  });
+
+  test("a long line of ' and ' with no ' differ' is read in one pass", () => {
+    // Quadratic before: 420 KB took 10 s, past the test's timeout.
+    expect(rejected(`Binary files a${" and x".repeat(70_000)}\n`)).toBe("This file holds no diff.");
+    const many = `Binary files a${" and x".repeat(70_000)} differ\n`;
+    expect(rejected(many)).toBe("Line 1 names binary files in a way the diff view can't split.");
+  });
+
+  test("a quoted path of 300 KB unquotes without overflowing the stack", () => {
+    const name = "a".repeat(300_000);
+    expect(quotedPath(`"${name}\\303\\251"`)).toBe(`${name}é`);
+    const rename = `diff --git a/x b/y\nsimilarity index 100%\nrename from "${name}"\nrename to y\n`;
+    expect(files2(rename)).toEqual([["y", "renamed", name]]);
+  });
+
+  test("git log --abbrev-commit and --format=fuller start a section per commit", () => {
+    for (const name of ["log-abbrev.patch", "log-fuller-stat.patch"]) {
+      const commits = parsed(fixture(`review2/${name}`)).commits;
+      expect(commits.map((c) => [c.subject, c.files.length])).toEqual([
+        ["second: edit, delete, add", 3],
+        ["first commit", 2],
+      ]);
+    }
+    // --oneline has no commit lines: one section, every file still drawn.
+    expect(files("log-oneline-stat.patch")).toHaveLength(5);
+  });
+});
+
+function files2(text: string) {
+  return parsed(text).commits.flatMap((c) =>
+    c.files.map(({ file }) => [file.path, file.kind, file.previousPath]),
+  );
+}

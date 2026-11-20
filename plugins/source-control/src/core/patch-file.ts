@@ -11,7 +11,7 @@
  * shows the file as text with that reason.
  */
 import type { FilePatch } from "./change.ts";
-import { quotedPath } from "./quoted-path.ts";
+import { QUOTED_ESCAPES, quotedPath } from "./quoted-path.ts";
 import type { ChangeFile } from "./review.ts";
 
 /** Cards drawn at most; the rest are counted, and the file opens as text to read them. */
@@ -22,7 +22,11 @@ export const MAX_FILE_PATCH_CHARS = 1_500_000;
 const MAX_HEADER_CHARS = 2000;
 
 export type PatchFileEntry = {
-  /** Unique within the file: a path may appear more than once, in one commit or across them. */
+  /**
+   * Unique within the file, and the same across re-reads while the file keeps
+   * its place among those of its path: the path, then `\0` and its occurrence
+   * for a path that appears again, in one commit or across them.
+   */
   key: string;
   file: ChangeFile;
   patch: FilePatch;
@@ -50,13 +54,12 @@ export type PatchFile = {
 
 export type PatchRead = { ok: true; read: PatchFile } | { ok: false; reason: string };
 
-/** `git format-patch`'s mail separator, with its fixed date, and `git log`'s commit line. */
+/** `git format-patch`'s mail separator, with its fixed date, and `git log`'s commit line, its hash maybe abbreviated. */
 const COMMIT_START =
-  /^(?:From ([0-9a-f]{40}|[0-9a-f]{64}) Mon Sep 17 00:00:00 2001$|commit ([0-9a-f]{40}|[0-9a-f]{64})\b)/;
+  /^(?:From ([0-9a-f]{40}|[0-9a-f]{64}) Mon Sep 17 00:00:00 2001$|commit ([0-9a-f]{7,64})\b)/;
 /** What follows `git log`'s commit line, so a message line reading "commit 1a2b…" is not one. */
 const LOG_FIELD = /^(?:Merge|Author|AuthorDate|Commit|CommitDate|Date):/;
 const HUNK = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/;
-const PLAIN_BINARY = /^Binary files (.+) and (.+) differ$/;
 const GIT_HEADER =
   /^(?:index |old mode |new mode |similarity index |dissimilarity index |new file mode |deleted file mode |rename from |rename to |copy from |copy to )/;
 
@@ -74,7 +77,8 @@ export function readPatchFile(text: string): PatchRead {
     return { ok: true, read };
   } catch (error) {
     if (error instanceof Malformed) return { ok: false, reason: `${error.message}.` };
-    throw error;
+    // Any other failure still says why the file shows as text.
+    return { ok: false, reason: "The diff view couldn't read this file." };
   }
 }
 
@@ -147,6 +151,10 @@ class Reader {
   private draft: Draft | null = null;
   /** Just past a hunk: a `+`, `-` or ` ` line here means the hunk held more than it counted. */
   private afterHunk = false;
+  /** Past a hunk across blank lines and a mail signature only: a `+` or `-` line here is one it lost. */
+  private trailing = false;
+  /** How often each path has a card, for keys that hold across re-reads. */
+  private readonly seen = new Map<string, number>();
   private index = 0;
   private kept = 0;
   private omitted = 0;
@@ -180,6 +188,7 @@ class Reader {
     this.commit = { ...header.meta, files: [] };
     this.index = header.next;
     this.afterHunk = false;
+    this.trailing = false;
   }
 
   private pushCommit(): void {
@@ -201,26 +210,45 @@ class Reader {
       draft.end = this.index;
       return;
     }
-    if (this.afterHunk && /^[+\- ]/.test(line) && line !== "-- ")
-      throw malformed(index, "continues a hunk past the lines its header counts");
+    const signature = this.checkPastHunk(index, line);
     // Anything else ends the file: a mail signature, a commit message, stray text.
     this.finishFile();
+    this.trailing = (this.afterHunk || this.trailing) && (line === "" || signature);
     this.afterHunk = false;
-    const binary = PLAIN_BINARY.exec(line);
+    const binary = plainBinary(line);
+    if (binary === "unclear")
+      throw malformed(index, "names binary files in a way the diff view can't split");
     if (binary) {
       // `diff -r` names a binary pair on one line, with no header of its own.
       const plain = newDraft(index, false);
-      plain.oldName = binary[1]!;
-      plain.newName = binary[2]!;
+      [plain.oldName, plain.newName] = binary;
       plain.binary = true;
       this.keep(plain);
     }
     this.index = index + 1;
   }
 
+  /**
+   * A hunk line where its hunk has ended: one it held past its counts, or one
+   * it lost across a blank line or a signature. Returns whether the line is a
+   * mail signature.
+   */
+  private checkPastHunk(index: number, line: string): boolean {
+    if (isSignature(line, this.lines[index + 1])) return true;
+    if (this.afterHunk && /^[+\- ]/.test(line))
+      throw malformed(index, "continues a hunk past the lines its header counts");
+    if (this.trailing && /^[+-]/.test(line))
+      throw malformed(
+        index,
+        "follows a finished hunk as one of its lines, past what its header counts",
+      );
+    return false;
+  }
+
   private startGit(index: number, line: string): void {
     this.finishFile();
     this.afterHunk = false;
+    this.trailing = false;
     // An ambiguous line (a rename between spaced names) leaves the names to the lines below it.
     const sides = splitGitPaths(line.slice("diff --git ".length));
     const draft = newDraft(index, true);
@@ -240,9 +268,12 @@ class Reader {
     draft.end = index + 2;
     this.draft = draft;
     this.afterHunk = false;
+    this.trailing = false;
     this.index = index + 2;
-    if (!HUNK.test(this.lines[index + 2] ?? ""))
-      throw malformed(index, "has a --- / +++ pair with no hunk after it");
+    const next = this.lines[index + 2] ?? "";
+    if (next.startsWith("@@") && !HUNK.test(next))
+      throw malformed(index + 2, "has a hunk header the diff view can't read");
+    if (!HUNK.test(next)) throw malformed(index, "has a --- / +++ pair with no hunk after it");
   }
 
   private hunk(index: number, line: string): void {
@@ -272,7 +303,11 @@ class Reader {
       this.omitted++;
       return;
     }
-    this.commit.files.push(toEntry(draft, this.lines, `${this.commits.length}:${this.kept}`));
+    const entry = toEntry(draft, this.lines);
+    const seen = (this.seen.get(entry.file.path) ?? 0) + 1;
+    this.seen.set(entry.file.path, seen);
+    if (seen > 1) entry.key = `${entry.file.path}\0${seen}`;
+    this.commit.files.push(entry);
     this.kept++;
   }
 }
@@ -286,6 +321,15 @@ function commitStarts(lines: string[], index: number): boolean {
   const match = COMMIT_START.exec(lines[index]!);
   if (!match) return false;
   return match[1] !== undefined || LOG_FIELD.test(lines[index + 1] ?? "");
+}
+
+/**
+ * A mail signature's `-- ` line, or `--` once an editor trimmed its space:
+ * the version line after it is no hunk line.
+ */
+function isSignature(line: string, next: string | undefined): boolean {
+  if (line === "-- ") return true;
+  return line === "--" && !/^[+\- @\\]/.test(next ?? "");
 }
 
 /** Whether a git file is still in its extended header, before its `---`/`+++` pair. */
@@ -303,6 +347,8 @@ function readHunk(lines: string[], start: number, header: RegExpExecArray, draft
     const line = lines[index];
     if (line === undefined || !countLine(line, left, draft))
       throw malformed(start, "starts a hunk whose lines don't match the counts in its header");
+    // Drawn as the context line it stands for, so the drawn lines match the header's counts.
+    if (line === "") lines[index] = " ";
     index++;
   }
   // "\ No newline at end of file" after the hunk's last line.
@@ -330,7 +376,7 @@ function countLine(line: string, left: { old: number; next: number }, draft: Dra
 
 /** Consumes a git file's extended header line; false when the line is not one. */
 function readGitHeader(line: string, draft: Draft): boolean {
-  if (/^Binary files .* differ$/.test(line) || line === "GIT binary patch") {
+  if ((line.startsWith(BINARY_HEAD) && line.endsWith(BINARY_TAIL)) || line === "GIT binary patch") {
     draft.binary = true;
     return true;
   }
@@ -363,6 +409,119 @@ function skipBinary(lines: string[], start: number): number {
   return index;
 }
 
+const BINARY_HEAD = "Binary files ";
+const BINARY_TAIL = " differ";
+const BINARY_JOIN = " and ";
+/** Splits of a `Binary files` line tried at most: each costs a pass over the line. */
+const MAX_BINARY_SPLITS = 16;
+
+/**
+ * `diff -r`'s `Binary files A and B differ`: both names, null for any other
+ * line, or "unclear" when no single split names the pair. GNU diff
+ * shell-quotes a name with a space or quote (`'a/my file'`, `"a/it's"`,
+ * `'a/tab'$'\t''x'`); BSD diff writes names bare. Both sides of a `diff -r`
+ * pair end in the same name, which picks the split when " and " repeats.
+ */
+function plainBinary(line: string): [string, string] | "unclear" | null {
+  if (!line.startsWith(BINARY_HEAD) || !line.endsWith(BINARY_TAIL)) return null;
+  const middle = line.slice(BINARY_HEAD.length, -BINARY_TAIL.length);
+  const splits: [string, string][] = [];
+  for (
+    let at = middle.indexOf(BINARY_JOIN);
+    at >= 0 && splits.length <= MAX_BINARY_SPLITS;
+    at = middle.indexOf(BINARY_JOIN, at + 1)
+  )
+    splits.push([shellName(middle.slice(0, at)), shellName(middle.slice(at + BINARY_JOIN.length))]);
+  if (splits.length === 1) return splits[0]!;
+  const aligned = splits.filter(([old, next]) => baseName(old) === baseName(next));
+  return aligned.length === 1 ? aligned[0]! : "unclear";
+}
+
+const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+/** A name as a shell word, unquoted; the text itself when it is not a whole quoted word. */
+function shellName(text: string): string {
+  return /['"\\$]/.test(text) ? (shellWord(text) ?? text) : text;
+}
+
+const SHELL_ESCAPES: Readonly<Record<string, string>> = { ...QUOTED_ESCAPES, e: "\x1b", E: "\x1b" };
+
+/** One shell word: '…', "…", $'…' and backslash escapes, joined; null for anything else. */
+function shellWord(text: string): string | null {
+  let out = "";
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index]!;
+    if (char === "'") {
+      const end = text.indexOf("'", index + 1);
+      if (end < 0) return null;
+      out += text.slice(index + 1, end);
+      index = end + 1;
+    } else if (char === '"') {
+      const read = doubleQuoted(text, index + 1);
+      if (!read) return null;
+      out += read.value;
+      index = read.next;
+    } else if (char === "$" && text[index + 1] === "'") {
+      const read = dollarQuoted(text, index + 2);
+      if (!read) return null;
+      out += read.value;
+      index = read.next;
+    } else if (char === "\\" && index + 1 < text.length) {
+      out += text[index + 1];
+      index += 2;
+    } else if (char === " " || char === "\\") return null;
+    else {
+      out += char;
+      index++;
+    }
+  }
+  return out;
+}
+
+function doubleQuoted(text: string, start: number): { value: string; next: number } | null {
+  let value = "";
+  for (let index = start; index < text.length; index++) {
+    const char = text[index]!;
+    if (char === '"') return { value, next: index + 1 };
+    if (char === "\\" && /["\\$`]/.test(text[index + 1] ?? "")) value += text[++index];
+    else value += char;
+  }
+  return null;
+}
+
+/** `$'…'`: C escapes, as bytes so a multi-byte character survives. */
+function dollarQuoted(text: string, start: number): { value: string; next: number } | null {
+  const bytes: number[] = [];
+  const encoder = new TextEncoder();
+  const add = (chars: string) => {
+    for (const byte of encoder.encode(chars)) bytes.push(byte);
+  };
+  for (let index = start; index < text.length; index++) {
+    const char = text[index]!;
+    if (char === "'")
+      return {
+        value: new TextDecoder("utf-8", { ignoreBOM: true }).decode(Uint8Array.from(bytes)),
+        next: index + 1,
+      };
+    if (char !== "\\") {
+      add(char);
+      continue;
+    }
+    const escaped = text[++index] ?? "";
+    const octal = /^[0-7]{1,3}/.exec(text.slice(index, index + 3));
+    const hex = escaped === "x" ? /^[0-9A-Fa-f]{1,2}/.exec(text.slice(index + 1, index + 3)) : null;
+    if (octal) {
+      bytes.push(Number.parseInt(octal[0], 8) & 0xff);
+      index += octal[0].length - 1;
+    } else if (hex) {
+      bytes.push(Number.parseInt(hex[0], 16));
+      index += hex[0].length;
+    } else add(SHELL_ESCAPES[escaped] ?? escaped);
+  }
+  return null;
+}
+
 const stripPrefix = (path: string | null, prefix: string | null) =>
   path !== null && prefix !== null && path !== "/dev/null" && path.startsWith(prefix)
     ? path.slice(prefix.length)
@@ -391,7 +550,7 @@ function kindOf(draft: Draft, oldPath: string | null, newPath: string | null): C
   return draft.copied ? "copied" : "renamed";
 }
 
-function toEntry(draft: Draft, lines: string[], key: string): PatchFileEntry {
+function toEntry(draft: Draft, lines: string[]): PatchFileEntry {
   const [oldPath, newPath] = pathsOf(draft);
   const kind = kindOf(draft, oldPath, newPath);
   const path = (kind === "deleted" ? oldPath : newPath) ?? oldPath ?? newPath!;
@@ -402,7 +561,7 @@ function toEntry(draft: Draft, lines: string[], key: string): PatchFileEntry {
   const truncated = patch.length > MAX_FILE_PATCH_CHARS;
   if (truncated) patch = "";
   return {
-    key,
+    key: path,
     file: {
       path,
       kind,

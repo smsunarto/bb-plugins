@@ -22,10 +22,12 @@ export function quotedPath(text: string): string {
     .slice(1, -1)
     .matchAll(/\\([0-7]{3})|\\(.)|([^\\]+)/gs)) {
     if (octal !== undefined) bytes.push(Number.parseInt(octal, 8));
+    // A byte at a time: spreading a long name into push() overflows the call stack.
     else
-      bytes.push(
-        ...encoder.encode(escaped === undefined ? raw : (QUOTED_ESCAPES[escaped] ?? escaped)),
-      );
+      for (const byte of encoder.encode(
+        escaped === undefined ? raw : (QUOTED_ESCAPES[escaped] ?? escaped),
+      ))
+        bytes.push(byte);
   }
   // A name may start with U+FEFF, which the default decoder drops as a BOM.
   return new TextDecoder("utf-8", { ignoreBOM: true }).decode(Uint8Array.from(bytes));
