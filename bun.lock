@@ -750,6 +750,7 @@
         "markdown-it": "^14.3.3",
         "react": "19.2.8",
         "react-dom": "19.2.8",
+        "sonner": "^1.7.4",
         "typescript": "^6.0.0",
         "vitest": "^4.1.1",
       },

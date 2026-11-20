@@ -27,6 +27,7 @@ import { usePullRequestLinks } from "./pr-links.ts";
 import { cx } from "./format.ts";
 import { KEEP_COMPOSER_FOCUS, Pending } from "./ui.tsx";
 import { usePullRequestActions } from "./status.tsx";
+import { repoOfKey, useMergePhase, type MergePhase } from "./merge.tsx";
 import { Button } from "./components/ui/button.tsx";
 
 /** bb's own changed-files segment, which already counts uncommitted files. */
@@ -76,12 +77,23 @@ const checks = (count: number, verb: string) =>
  * words it, or "Pushed, no pull request · scott/branch" before a pull request;
  * a conflict with the base comes before any check, as in the chips.
  */
-export function stripParts(summary: ChangeSummary, countUncommitted: boolean): Part[] {
+export function stripParts(
+  summary: ChangeSummary,
+  countUncommitted: boolean,
+  merge: MergePhase = "idle",
+): Part[] {
   const pr = summary.pullRequest;
   const counts = pr?.state === "open" ? pr.checks : null;
   const parts: Part[] = [
     { text: lead(changeState(summary)), tone: "font-semibold text-foreground" },
   ];
+  // A merge started from any surface, until the pull request's read catches up.
+  if (pr?.state === "open" && merge !== "idle")
+    parts.push(
+      merge === "merging"
+        ? { text: "Merging…", tone: "text-warning" }
+        : { text: "Merged", tone: "text-success" },
+    );
   // Without a pull request number, the branch is what names the Change.
   if (!pr && summary.branch)
     parts.push({ text: summary.branch.name, tone: "text-muted-foreground", icon: "GitBranch" });
@@ -120,10 +132,14 @@ export function StripSummary({
   segments,
 }: ExperimentalThreadContextSegmentProps) {
   const summary = stripSummary(useThreadChange(threadId, environment !== null));
+  const pr = summary?.pullRequest;
+  const merge = useMergePhase(
+    summary?.key && pr ? { repo: repoOfKey(summary.key), number: pr.number } : null,
+  );
   if (!summary) return null;
   const countUncommitted = !segments.some((segment) => segment.key === CHANGED_FILES_SEGMENT);
   const chips = attentionChips(summary);
-  const [first, ...rest] = stripParts(summary, countUncommitted);
+  const [first, ...rest] = stripParts(summary, countUncommitted, merge);
   const hasBranch = rest.some((part) => part.icon);
   return (
     <span

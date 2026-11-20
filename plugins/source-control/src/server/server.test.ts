@@ -1217,7 +1217,7 @@ describe("merge", () => {
       status: "failed",
       problem: {
         kind: "failed",
-        detail: expect.stringContaining("GitHub blocks merging: BLOCKED"),
+        detail: "Required checks or reviews have not passed yet.",
       },
     });
     world.merge = { methods: ["merge"] };

@@ -51,7 +51,25 @@ export function mergeIssue({
   if (policy.baseRefName !== base) return "The destination branch changed. Refresh before merging.";
   if (policy.isDraft) return "Mark the pull request ready before merging.";
   if (!MERGEABLE_STATES.has(policy.mergeStateStatus))
-    return `GitHub blocks merging: ${policy.mergeStateStatus}. Resolve the requirements or use GitHub for merge queues.`;
+    return blockedText(policy.mergeStateStatus, base);
   if (!policy.methods.includes(method)) return "This repository does not allow that merge method.";
   return null;
+}
+
+/** Why GitHub will not merge a pull request in `state` yet, in the reader's words. */
+function blockedText(state: string, base: string): string {
+  switch (state) {
+    case "DIRTY":
+      return `It has merge conflicts with ${base}. Resolve them, then merge again.`;
+    case "BEHIND":
+      return `The branch is behind ${base}. Update it, then merge again.`;
+    case "BLOCKED":
+      return "Required checks or reviews have not passed yet.";
+    case "DRAFT":
+      return "Mark the pull request ready before merging.";
+    case "UNKNOWN":
+      return "GitHub is still working out whether it can merge. Try again in a moment.";
+    default:
+      return `GitHub will not merge it yet (${state}). Check its requirements on GitHub.`;
+  }
 }

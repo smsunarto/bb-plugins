@@ -1,15 +1,37 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { useLayoutEffect, type ComponentType } from "react";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ExperimentalPanelController } from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import type { Branch, ThreadChange, WorkspaceValue } from "../core/change.ts";
+import type { Branch, ForgeResult, ThreadChange, WorkspaceValue } from "../core/change.ts";
 import { changeKeySchema } from "../core/ids.ts";
 import { reviewPath } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { offlineReason } from "./host-gate.ts";
 import { writeSnapshot } from "./snapshot.ts";
+import { MERGE_DEADLINE_MS, resetMergeRuns } from "./merge.tsx";
+
+type Toast = {
+  kind: "loading" | "success" | "error";
+  message: string;
+  options: {
+    id?: string;
+    description?: string;
+    action?: { label: string; onClick: () => void };
+  };
+};
+// bb shims sonner to its own toaster; here every toast is recorded instead.
+const toasts = vi.hoisted(() => [] as Toast[]);
+vi.mock("sonner", () => {
+  const record = (kind: Toast["kind"]) => (message: string, options: Toast["options"]) => {
+    toasts.push({ kind, message, options });
+    return options.id;
+  };
+  return {
+    toast: { loading: record("loading"), success: record("success"), error: record("error") },
+  };
+});
 
 const app = await loadPluginApp(() => import("./app.tsx"));
 type ThreadTab = {
@@ -119,7 +141,11 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  toasts.length = 0;
+  resetMergeRuns();
+});
 afterEach(cleanup);
 
 test("the last snapshot paints while the read is still pending", async () => {
@@ -326,6 +352,10 @@ function renderRow(
     {
       experimental_rpcContract: sourceControlContract,
       experimental_panel: panel,
+      openUrl: (url) => {
+        calls.push({ method: "openUrl", input: url });
+        return true;
+      },
       rpc: {
         changeForThread: () => ({ "thread-a": row }),
         refreshThread: record("refreshThread", () => ({ ok: true as const })),
@@ -598,22 +628,215 @@ test("Rename asks for a valid new name, then renames pinned to the head the read
   expect(of("vcsAction")).toHaveLength(1);
 });
 
-test("Merge squashes on confirm without reading first, pinned to the head and base the reader saw", async () => {
-  const { slot, of } = renderRow(readyToMerge());
+type Answer = { status: "done" } | Extract<ForgeResult, { status: "failed" | "conflict" }>;
+
+async function confirmMerge(slot: ReturnType<typeof renderRow>["slot"]) {
+  await act(async () => (await slot.findByRole("button", { name: "Merge #482" })).click());
+  await act(async () =>
+    ((await slot.findByTestId("sc-merge-confirm")) as HTMLButtonElement).click(),
+  );
+}
+
+const last = () => toasts.at(-1)!;
+
+test("Merge squashes on confirm without reading first, closes at once, and toasts the merge", async () => {
+  const answer = deferred<Answer>();
+  const { slot, of } = renderRow(readyToMerge(), { forgeAction: () => answer.promise });
   await act(async () => (await slot.findByRole("button", { name: "Merge #482" })).click());
   const confirm = (await slot.findByTestId("sc-merge-confirm")) as HTMLButtonElement;
-  expect(confirm.disabled).toBe(false);
   expect(confirm.textContent).toBe("Squash and merge");
   expect(slot.queryByTestId("sc-merge-method")).toBeNull();
   await act(async () => confirm.click());
-  await waitFor(() => expect(of("forgeAction")).toHaveLength(1));
+  // The dialog is gone before the server answers; the toast and the button carry the merge.
+  expect(slot.queryByTestId("sc-merge-dialog")).toBeNull();
   expect(of("forgeAction")[0]!.input).toEqual({
     threadId: "thread-a",
     action: { kind: "merge", method: "squash", base: "main" },
     expected: { number: 482, head: "c0ffee" },
   });
-  await waitFor(() => expect(slot.queryByTestId("sc-merge-dialog")).toBeNull());
+  expect(toasts).toEqual([
+    {
+      kind: "loading",
+      message: "Merging smsunarto/bb-plugins#482…",
+      options: { id: expect.any(String) },
+    },
+  ]);
+  const button = slot.getByRole("button", { name: "Merge #482" });
+  expect(button.textContent).toBe("Merging…");
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  // A second click while it runs opens nothing and starts nothing.
+  await act(async () => button.click());
+  expect(slot.queryByTestId("sc-merge-dialog")).toBeNull();
+  expect(of("forgeAction")).toHaveLength(1);
+
+  await act(async () => answer.resolve({ status: "done" }));
+  expect(last()).toMatchObject({
+    kind: "success",
+    message: "Merged #482",
+    options: { id: toasts[0]!.options.id },
+  });
+  // Merged stays off until the pull request's read says so.
+  expect(button.textContent).toBe("Merged");
+  expect(button.getAttribute("aria-disabled")).toBe("true");
   expect(of("mergePolicy")).toHaveLength(0);
+});
+
+test("a merge GitHub refuses says why in plain words, offers GitHub, and frees Merge", async () => {
+  const { slot, of } = renderRow(readyToMerge(), {
+    forgeAction: () => ({
+      status: "failed" as const,
+      problem: {
+        kind: "failed" as const,
+        site: "GitHub",
+        detail: 'Required status check "ci" is expected. (HTTP 405)',
+      },
+    }),
+  });
+  await confirmMerge(slot);
+  await waitFor(() => expect(last().kind).toBe("error"));
+  expect(last()).toMatchObject({
+    message: "Couldn't merge #482",
+    options: {
+      id: toasts[0]!.options.id,
+      description: 'Required status check "ci" is expected.',
+      action: { label: "Open on GitHub" },
+    },
+  });
+  const button = slot.getByRole("button", { name: "Merge #482" });
+  expect(button.textContent).toBe("Merge");
+  expect(button.getAttribute("aria-disabled")).toBeNull();
+  act(() => last().options.action!.onClick());
+  expect(of("openUrl").map((call) => call.input)).toEqual([
+    "https://github.com/smsunarto/bb-plugins/pull/482",
+  ]);
+  // Not retried by itself.
+  expect(of("forgeAction")).toHaveLength(1);
+});
+
+test("a head that moved since the reader looked is a refusal, not a retry", async () => {
+  const { slot } = renderRow(readyToMerge(), {
+    forgeAction: () => ({
+      status: "conflict" as const,
+      detail: "#482 moved to f00dfee since you looked.",
+    }),
+  });
+  await confirmMerge(slot);
+  await waitFor(() => expect(last().kind).toBe("error"));
+  expect(last().options).toMatchObject({
+    description: "#482 moved to f00dfee since you looked.",
+    action: { label: "Open on GitHub" },
+  });
+});
+
+test("a merge request that failed on the way offers Retry, which merges again pinned the same way", async () => {
+  let attempts = 0;
+  const { slot, of } = renderRow(readyToMerge(), {
+    forgeAction: () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("socket hang up");
+      return { status: "done" as const };
+    },
+  });
+  await confirmMerge(slot);
+  await waitFor(() => expect(last().kind).toBe("error"));
+  expect(last().options.description).toMatch(/could not run the merge/);
+  expect(last().options.action!.label).toBe("Retry");
+  await act(async () => last().options.action!.onClick());
+  await waitFor(() => expect(last()).toMatchObject({ kind: "success", message: "Merged #482" }));
+  const [first, second] = of("forgeAction");
+  expect(second!.input).toEqual(first!.input);
+  // One toast followed both attempts.
+  expect(new Set(toasts.map((entry) => entry.options.id)).size).toBe(1);
+});
+
+test("a rate-limited merge asks the reader to retry later, not that bb will", async () => {
+  const { slot } = renderRow(readyToMerge(), {
+    forgeAction: () => ({
+      status: "failed" as const,
+      problem: { kind: "rate-limited" as const, site: "the bb server", detail: "API rate limit" },
+    }),
+  });
+  await confirmMerge(slot);
+  await waitFor(() => expect(last().kind).toBe("error"));
+  expect(last().options).toMatchObject({
+    description: "GitHub is rate-limiting the bb server. Try again in a few minutes.",
+    action: { label: "Retry" },
+  });
+});
+
+test("a merge keeps going after the tab unmounts, and its toast still lands", async () => {
+  const answer = deferred<Answer>();
+  const { slot } = renderRow(readyToMerge(), { forgeAction: () => answer.promise });
+  await confirmMerge(slot);
+  slot.unmount();
+  await act(async () => answer.resolve({ status: "done" }));
+  expect(last()).toMatchObject({ kind: "success", message: "Merged #482" });
+  // A remounted tab still shows it merged, and cannot start it again.
+  const again = renderRow(readyToMerge());
+  const button = await again.slot.findByRole("button", { name: "Merge #482" });
+  expect(button.textContent).toBe("Merged");
+  await act(async () => button.click());
+  expect(again.slot.queryByTestId("sc-merge-dialog")).toBeNull();
+  expect(again.of("forgeAction")).toHaveLength(0);
+});
+
+test("Retry still merges after the surface that started it is gone", async () => {
+  let attempts = 0;
+  const answer = deferred<Answer>();
+  const { slot, of } = renderRow(readyToMerge(), {
+    forgeAction: () => {
+      attempts += 1;
+      return attempts === 1 ? answer.promise : { status: "done" as const };
+    },
+  });
+  await confirmMerge(slot);
+  slot.unmount();
+  await act(async () =>
+    answer.resolve({
+      status: "failed",
+      problem: { kind: "host-offline", host: "studio-mac" },
+    }),
+  );
+  expect(last()).toMatchObject({ kind: "error", options: { action: { label: "Retry" } } });
+  await act(async () => last().options.action!.onClick());
+  await waitFor(() => expect(last()).toMatchObject({ kind: "success", message: "Merged #482" }));
+  expect(of("forgeAction")).toHaveLength(2);
+});
+
+test("the composer strip shows a merge started from the tab, until it lands", async () => {
+  const answer = deferred<Answer>();
+  const { slot } = renderRow(readyToMerge(), { forgeAction: () => answer.promise });
+  const strip = renderStrip(readyToMerge(), [
+    { key: "bb--git/changed-files", pluginId: "bb--git" },
+  ]);
+  const line = await strip.summary.findByTestId("sc-strip");
+  expect(line.textContent).not.toContain("Merg");
+  await confirmMerge(slot);
+  expect(line.textContent).toContain("Merging…");
+  await act(async () => answer.resolve({ status: "done" }));
+  expect(line.textContent).toContain("Merged");
+  expect(line.textContent).not.toContain("Merging…");
+});
+
+test("a merge the server never answers stops spinning at the deadline and points to GitHub", async () => {
+  // Real time still passes, so the queries poll as usual.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"], shouldAdvanceTime: true });
+  try {
+    const answer = deferred<Answer>();
+    const { slot } = renderRow(readyToMerge(), { forgeAction: () => answer.promise });
+    await confirmMerge(slot);
+    await act(async () => void vi.advanceTimersByTime(MERGE_DEADLINE_MS));
+    expect(last()).toMatchObject({
+      kind: "error",
+      options: { action: { label: "Open on GitHub" } },
+    });
+    expect(slot.getByRole("button", { name: "Merge #482" }).textContent).toBe("Merge");
+    // A late success still lands.
+    await act(async () => answer.resolve({ status: "done" }));
+    expect(last()).toMatchObject({ kind: "success", message: "Merged #482" });
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("Escape closes the merge dialog and returns focus to Merge, never leaving the page", async () => {
@@ -632,22 +855,6 @@ test("Escape closes the merge dialog and returns focus to Merge, never leaving t
   await waitFor(() => expect(document.activeElement).toBe(opener));
   expect(left).toEqual([]);
   document.removeEventListener("keydown", leave);
-});
-
-test("a refused merge reports GitHub's reason and is not retried", async () => {
-  const { slot, of } = renderRow(readyToMerge(), {
-    forgeAction: () => ({
-      status: "failed" as const,
-      problem: { kind: "failed" as const, site: "GitHub", detail: "Head branch was modified." },
-    }),
-  });
-  await act(async () => (await slot.findByRole("button", { name: "Merge #482" })).click());
-  const confirm = (await slot.findByTestId("sc-merge-confirm")) as HTMLButtonElement;
-  await act(async () => confirm.click());
-  expect(await slot.findByText(/Head branch was modified\. Refreshing/)).toBeTruthy();
-  await new Promise((settle) => setTimeout(settle, 30));
-  expect(of("forgeAction")).toHaveLength(1);
-  expect(confirm.disabled).toBe(false);
 });
 
 test("Create PR on the thread's branch with no pull request names the head seen, then shows its child", async () => {

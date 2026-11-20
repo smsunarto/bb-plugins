@@ -33,8 +33,16 @@ describe("mergeIssue", () => {
       "The destination branch changed. Refresh before merging.",
     );
     expect(issue({ isDraft: true })).toBe("Mark the pull request ready before merging.");
-    expect(issue({ mergeStateStatus: "BEHIND" })).toContain("GitHub blocks merging: BEHIND");
-    expect(issue({ mergeStateStatus: "UNKNOWN" })).toContain("GitHub blocks merging: UNKNOWN");
+    expect(issue({ mergeStateStatus: "BEHIND" })).toBe(
+      "The branch is behind main. Update it, then merge again.",
+    );
+    expect(issue({ mergeStateStatus: "DIRTY" })).toBe(
+      "It has merge conflicts with main. Resolve them, then merge again.",
+    );
+    expect(issue({ mergeStateStatus: "BLOCKED" })).toBe(
+      "Required checks or reviews have not passed yet.",
+    );
+    expect(issue({ mergeStateStatus: "UNKNOWN" })).toContain("Try again in a moment");
     expect(issue({ methods: ["merge"] })).toBe("This repository does not allow that merge method.");
   });
 });
