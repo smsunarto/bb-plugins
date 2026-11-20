@@ -1,5 +1,12 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
-import { askBlockers, askItem, openAsk, resolveAsk, shipBlockers } from "../asks.ts";
+import {
+  ASK_OPTION_MAX,
+  askBlockers,
+  askItem,
+  openAsk,
+  resolveAsk,
+  shipBlockers,
+} from "../asks.ts";
 import { callerCaptain, readCallerFile } from "../caller.ts";
 import { resolveTask, taskFields, tasksOrRefuse } from "../crew.ts";
 import { guard, Refusal, render, type Blocker } from "../output.ts";
@@ -33,8 +40,7 @@ export function askCommand(deps: CommandDeps) {
         type: "string",
         repeatable: true,
         placeholder: "answer",
-        description:
-          "A button, the recommended one first; repeat it. A decision ask needs two or more; a ship ask takes none (Merge and Hold)",
+        description: `A button label of at most ${ASK_OPTION_MAX} characters, the recommended one first; repeat it. A decision ask needs two or more; a ship ask takes none (Merge and Hold)`,
       },
       detail: {
         type: "string",

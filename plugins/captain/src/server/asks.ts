@@ -14,6 +14,13 @@ import { TasksError, type TasksTask } from "./tasks-client.ts";
  */
 
 export const ASK_TEXT_MAX = 80;
+/**
+ * An option is a banner button, so every option fits on one row. Counted in
+ * graphemes, so an emoji or an accented letter is one. The "Recommended" tag
+ * the banner and the `Asked:` comment add sits outside the label and is not
+ * counted. Enforced only when an ask opens: stored asks keep their labels.
+ */
+export const ASK_OPTION_MAX = 12;
 export const SHIP_OPTIONS = ["Merge", "Hold"] as const;
 /** The banner picks options with keys 1 to 9. */
 const OPTIONS_MAX = 9;
@@ -72,17 +79,36 @@ export function askBlockers(draft: Omit<AskDraft, "task"> & { taskKey: string | 
         fix: "keep the options that matter",
       });
     }
-    if (options.some((option) => option === "" || option.length > ASK_TEXT_MAX)) {
-      blockers.push({
-        reason: `each option is 1 to ${ASK_TEXT_MAX} characters`,
-        fix: "shorten the option",
-      });
+    if (options.some((option) => option === "")) {
+      blockers.push({ reason: "an option is empty", fix: "drop the empty --option" });
     }
+    blockers.push(...options.flatMap(longOptionBlocker));
     if (new Set(options.map((option) => option.toLowerCase())).size !== options.length) {
       blockers.push({ reason: "two options are the same", fix: "drop the duplicate --option" });
     }
   }
   return blockers;
+}
+
+/** A blocker when one trimmed option is longer than a button label may be. */
+function longOptionBlocker(option: string): Blocker[] {
+  const length = graphemes(option);
+  if (length <= ASK_OPTION_MAX) return [];
+  return [
+    {
+      reason: `option "${option}" is ${length} characters; an option is at most ${ASK_OPTION_MAX}, so the buttons fit on one row`,
+      fix: 'shorten it to a label, such as "Redis"; move the detail into --detail-file',
+    },
+  ];
+}
+
+const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** Characters as a reader counts them: one per grapheme, not per UTF-16 unit. */
+function graphemes(text: string): number {
+  let count = 0;
+  for (const _ of segmenter.segment(text)) count++;
+  return count;
 }
 
 /** The ship gate: a ship ask needs a `review` verdict of passed or skipped. */
