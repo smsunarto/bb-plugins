@@ -14,8 +14,6 @@ const ATTEMPT_DEADLINE_MS = 30_000;
 const DUE_BATCH = 50;
 const FIRST_LINE_MAX_LENGTH = 200;
 
-type Thread = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["get"]>>;
-
 function retryDelayMs(attempt: number): number {
   const index = Math.min(attempt, PARENT_NOTIFY_BACKOFF_MS.length) - 1;
   return PARENT_NOTIFY_BACKOFF_MS[index] ?? PARENT_NOTIFY_IDLE_MS;
@@ -87,23 +85,25 @@ function ownsAttempt(
 }
 
 /**
- * The commenting thread when bb would accept it as the wake's sender, so the
- * parent reads the wake as that agent's message. Null when the reporter is the
- * parent itself, or is deleted or gone: the wake still goes, without a sender.
+ * The commenting thread as the wake's sender, so the parent reads the wake as
+ * that agent's message. bb answers 404 for a deleted thread, so a reporter that
+ * reads back is a sender bb accepts. Null when the reporter is the parent
+ * itself, or cannot be read for any reason: the sender is optional, and the
+ * wake still goes without one.
  */
 async function wakeSender(
   bb: BbPluginApi,
   commenter: string,
   target: string,
-  known: Thread | undefined,
+  alreadyRead: boolean,
 ): Promise<string | null> {
   if (commenter === target) return null;
+  if (alreadyRead) return commenter;
   try {
-    const thread = known ?? (await bb.sdk.threads.get({ threadId: commenter }));
-    return thread.deletedAt === null ? commenter : null;
-  } catch (error) {
-    if (sdkErrorCode(error) === "thread_not_found") return null;
-    throw error;
+    await bb.sdk.threads.get({ threadId: commenter });
+    return commenter;
+  } catch {
+    return null;
   }
 }
 
@@ -156,10 +156,11 @@ async function attemptDelivery(
   }
   const commenter = comment.source.threadId;
   let target = knownTargetThreadId;
-  let commenterThread: Thread | undefined;
+  let commenterRead = false;
   try {
     if (target === null) {
-      commenterThread = await bb.sdk.threads.get({ threadId: commenter });
+      const commenterThread = await bb.sdk.threads.get({ threadId: commenter });
+      commenterRead = true;
       if (commenterThread.parentThreadId === null) {
         return { kind: "undeliverable", reason: `thread ${commenter} has no parent thread` };
       }
@@ -181,7 +182,7 @@ async function attemptDelivery(
       presetName: store.getTaskThreadByThreadId(task.id, commenter)?.presetName ?? null,
       attachments: store.listAttachmentsForComment(comment.id),
     });
-    const sender = await wakeSender(bb, commenter, target, commenterThread);
+    const sender = await wakeSender(bb, commenter, target, commenterRead);
     // A read can outlive the deadline; a retry may have claimed or delivered since.
     if (!ownsAttempt(store, commentId, attempt, signal)) return SUPERSEDED;
     const sent = await sendWake(bb, target, text, sender, () =>

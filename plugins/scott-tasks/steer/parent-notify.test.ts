@@ -15,6 +15,8 @@ function notFound(threadId: string): Error {
 interface SetupOptions {
   threads?: Thread[];
   send?: (args: { senderThreadId?: string }) => Promise<void>;
+  /** Threads whose read fails with a server error. */
+  unreadable?: string[];
 }
 
 function setup(options: SetupOptions = {}) {
@@ -28,8 +30,12 @@ function setup(options: SetupOptions = {}) {
     sdk: {
       threads: {
         get: async ({ threadId }) => {
+          if (options.unreadable?.includes(threadId)) {
+            throw Object.assign(new Error("HTTP 503: unavailable"), { code: "unavailable" });
+          }
           const thread = threads.get(threadId);
-          if (!thread) throw notFound(threadId);
+          // bb answers 404 for a deleted thread, as for one that never existed.
+          if (!thread || thread.deletedAt !== null) throw notFound(threadId);
           return thread;
         },
         send: async (args) => {
@@ -345,11 +351,11 @@ describe("wake senders", () => {
       ],
     });
     const ids = [
-      // First attempt: the target comes from the deleted reporter's own record.
-      pending(store, task.id, "thr_deleted", null),
-      // A retry after the reporter was purged: only the recorded target is left.
+      // A retry after the reporter was deleted: only the recorded target is left.
+      pending(store, task.id, "thr_deleted", "thr_captain"),
+      // A retry after the reporter was purged.
       pending(store, task.id, "thr_gone", "thr_captain"),
-      // bb refuses a sender that is the target, so the wake goes without one.
+      // bb drops a sender that is the target, so the wake leaves it out.
       pending(store, task.id, "thr_captain", "thr_captain"),
     ];
 
@@ -368,6 +374,22 @@ describe("wake senders", () => {
       "thr_captain",
     ]);
     for (const args of sends) expect(args).not.toHaveProperty("senderThreadId");
+    await harness.dispose();
+  });
+
+  it("delivers without a sender when reading the reporter fails", async () => {
+    const { bb, harness, store, task } = setup({ unreadable: ["thr_crew"] });
+    const id = pending(store, task.id, "thr_crew", "thr_captain");
+
+    await deliverParentNotification(bb, store.tasks, id);
+
+    expect(store.tasks.getParentNotification(id)).toMatchObject({
+      state: "delivered",
+      attempts: 1,
+    });
+    const sends = sentArgs(harness);
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).not.toHaveProperty("senderThreadId");
     await harness.dispose();
   });
 
