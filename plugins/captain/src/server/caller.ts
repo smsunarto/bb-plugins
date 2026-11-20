@@ -3,6 +3,7 @@ import { isAbsolute, resolve } from "node:path";
 import { DRIVE_FILE_MAX_BYTES } from "./drive.ts";
 import { Refusal } from "./output.ts";
 import type { Captain, Registry } from "./registry.ts";
+import type { Store } from "./store.ts";
 
 /**
  * The Captain a command acts for: `--captain <id-or-name>` when given, else the
@@ -102,4 +103,31 @@ export async function readCallerFile(
     ]);
   }
   return file.content;
+}
+
+/**
+ * Refuse a crew thread: one whose parent is a Captain, or that Captain
+ * recorded as crew. Routines are the user's to set, so `--captain` does not
+ * lift it. A call with no thread (the user's shell, an automation's script)
+ * and a Captain's own thread pass.
+ */
+export async function refuseCrew(
+  bb: Pick<BbPluginApi, "sdk">,
+  registry: Registry,
+  store: Pick<Store, "captain" | "crewRole">,
+  ctx: PluginCliContext,
+): Promise<void> {
+  const threadId = ctx.threadId;
+  if (threadId === undefined || registry.get(threadId) !== null) return;
+  const role = store.crewRole(threadId);
+  const parentId =
+    role?.captainId ?? (await bb.sdk.threads.get({ threadId })).parentThreadId ?? null;
+  const parent = parentId === null ? null : (registry.get(parentId) ?? store.captain(parentId));
+  if (parent === null) return;
+  throw new Refusal([
+    {
+      reason: `${threadId} is crew of the ${parent.name} Captain; crew cannot manage routines`,
+      fix: `report the need to the ${parent.name} Captain (${parent.threadId}); only it or the user sets routines`,
+    },
+  ]);
 }
