@@ -592,7 +592,7 @@
 
 /* Compact navigation for touch devices. */
 [data-gtd-phone-nav] {
-  --gtd-nav-row-height: 56px;
+  --gtd-nav-row-height: 44px;
   padding: 0 18px 4px;
   color: var(--foreground);
 }
@@ -613,11 +613,11 @@
 }
 
 [data-gtd-phone-nav] [data-gtd-nav-scroll] {
-  /* Use up to 42% of the viewport, minus the 58px header, 44px More row
+  /* Use up to 42% of the viewport, minus the 58px header, the More row
      and 4px bottom padding. Round down so the region ends between rows. */
   max-height: max(
     var(--gtd-nav-row-height),
-    round(down, calc(42dvh - 106px), var(--gtd-nav-row-height))
+    round(down, calc(42dvh - 62px - var(--gtd-nav-row-height)), var(--gtd-nav-row-height))
   );
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -649,10 +649,10 @@
 [data-gtd-phone-nav] [data-sidebar-navigation-item],
 [data-gtd-phone-nav] [data-sidebar-navigation-more] {
   height: var(--gtd-nav-row-height);
-  gap: 14px;
+  gap: 12px;
   padding-inline: 4px 8px;
   border-radius: 12px;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 500;
   color: var(--foreground);
 }
@@ -663,13 +663,12 @@
 }
 
 [data-gtd-phone-nav] [data-sidebar-navigation-more] {
-  height: 44px;
   color: var(--muted-foreground);
 }
 
 [data-gtd-phone-nav] .gtd-nav-icon {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
 }
 
 [data-gtd-phone-nav] .gtd-nav-badge {
