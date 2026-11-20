@@ -1,5 +1,40 @@
 # @smsunarto/bb-plugin-monokai
 
+## [0.6.0](https://github.com/smsunarto/bb-plugins/compare/monokai/v0.5.0...monokai/v0.6.0) (2026-11-20)
+
+
+### Features
+
+* **mobile:** float the phone thread header over the stream ([#169](https://github.com/smsunarto/bb-plugins/issues/169)) ([6524391](https://github.com/smsunarto/bb-plugins/commit/6524391a33570dce62bbfd99542e599b015455e2))
+* **monokai:** add tertiary-foreground and info tokens ([b682abc](https://github.com/smsunarto/bb-plugins/commit/b682abc1b22704170a07ad919387d2893f8e9824))
+* **monokai:** Capy shell palette, inset page, and centered home ([aa70019](https://github.com/smsunarto/bb-plugins/commit/aa700196d332f367f0fbbc4594a1b6b7d7b47896))
+* **monokai:** Capy's inset page in the framed macOS window ([7d01fae](https://github.com/smsunarto/bb-plugins/commit/7d01faecddee3b3afa502b7e8a796842696705f5))
+* **monokai:** put the project clear button after the row on phones ([4231835](https://github.com/smsunarto/bb-plugins/commit/42318351d7f0b80df249df860319d9917dd66dff))
+* **monokai:** right panel opens on a new tab; bb search fields as shadcn inputs ([#179](https://github.com/smsunarto/bb-plugins/issues/179)) ([df951bb](https://github.com/smsunarto/bb-plugins/commit/df951bb775d32edeac23b38802312936c7d202e8))
+* **monokai:** sidebar motion on Capy's timing ([57fa9f0](https://github.com/smsunarto/bb-plugins/commit/57fa9f01f10ae4b7785b743ddb4216cb7001a067))
+* **source-control:** optimistic merge with in-app notification ([#212](https://github.com/smsunarto/bb-plugins/issues/212)) ([79b90c5](https://github.com/smsunarto/bb-plugins/commit/79b90c57993707cd051c9e3c5b805e9221321353))
+* **workarounds:** track bb-defect workarounds for removal after bb upgrades ([ffa279c](https://github.com/smsunarto/bb-plugins/commit/ffa279c466749a5dbf01dce7deae52dbf95abc36))
+
+
+### Bug Fixes
+
+* **markdown-editor,monokai:** keep Markdown editors at 16px on phones ([df71b59](https://github.com/smsunarto/bb-plugins/commit/df71b599720858853de114b46724923769d8be38))
+* **monokai,ui:** phone drawer depth and even control hairlines at 3x ([#171](https://github.com/smsunarto/bb-plugins/issues/171)) ([bd3be99](https://github.com/smsunarto/bb-plugins/commit/bd3be99be076d94727a632a822cc61060c5db3c7))
+* **monokai:** draw focus rings inside controls so containers cannot clip them ([f7bb56a](https://github.com/smsunarto/bb-plugins/commit/f7bb56ab360b3171ce7c391d402bfeddc0a52096))
+* **monokai:** draw the compact drawer's ring above its content ([34f9b55](https://github.com/smsunarto/bb-plugins/commit/34f9b55ffe18a1f2c8aa1e5fb9e655d65b590df7))
+* **monokai:** hold the New thread halftone still when the right panel opens ([3e141f8](https://github.com/smsunarto/bb-plugins/commit/3e141f8aadd57472fedfc80147d2c71355c12db5))
+* **monokai:** keep the chat still when the right panel closes with the context card open ([ddd2234](https://github.com/smsunarto/bb-plugins/commit/ddd2234d71ee3086435e226ecdc4fe02dc303655))
+* **monokai:** keep the thread title in step with the left sidebar ([53b1344](https://github.com/smsunarto/bb-plugins/commit/53b1344fe608c33dc3528d89ae01b8a465de2f5f))
+* **monokai:** launcher labels hide with the mobile shelf ([#214](https://github.com/smsunarto/bb-plugins/issues/214)) ([655d742](https://github.com/smsunarto/bb-plugins/commit/655d74294458241331ee358bc3be545ac034508a))
+* **monokai:** move inset hairline to BB 0.49's inset-edge outline ([cb0ccde](https://github.com/smsunarto/bb-plugins/commit/cb0ccdeeaa752a59ace2b11be6e4e89916b499e6))
+* **monokai:** panel tab switch without the expanding artifact ([#210](https://github.com/smsunarto/bb-plugins/issues/210)) ([dfb0139](https://github.com/smsunarto/bb-plugins/commit/dfb0139dbfb3dea21420d3dd22e590ca0d288365))
+* **ui:** let Monokai give shared controls the fills of bb's own ([3e5780a](https://github.com/smsunarto/bb-plugins/commit/3e5780a73b28303c7920d13a5f5a93667922707d))
+
+
+### Performance Improvements
+
+* **monokai:** scope diff-header scans to the secondary panel ([7ff396b](https://github.com/smsunarto/bb-plugins/commit/7ff396b3213402bd6b40122da755cc1d1f19870f))
+
 ## [0.5.0](https://github.com/smsunarto/bb-plugins/compare/monokai/v0.4.0...monokai/v0.5.0) (2026-10-21)
 
 ### Features
