@@ -1031,6 +1031,34 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
+  test("s clicks GTD Sidebar's Search row without opening the Quick palette", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+    document.body.innerHTML =
+      '<nav aria-label="Navigation"><button id="search" data-sidebar-navigation-item="__bb__/search-threads">Search threads</button></nav>';
+    const search = document.getElementById("search") as HTMLElement;
+    giveRect(search, 10, 10);
+    let clicks = 0;
+    let paletteOpens = 0;
+    search.addEventListener("click", () => {
+      clicks += 1;
+    });
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key === "k" && (event.metaKey || event.ctrlKey)) paletteOpens += 1;
+      },
+      { signal: controller.signal },
+    );
+
+    expect(pressKey("s")).toBe(false);
+    expect(clicks).toBe(1);
+    expect(paletteOpens).toBe(0);
+
+    void dispose();
+    controller.abort();
+  });
+
   test("n and s find current navigation buttons when their shortcut is unbound", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
@@ -1171,7 +1199,7 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
-  test("s opens Search threads through the Quick palette when GTD omits the button", async () => {
+  test("s opens Search threads through the Quick palette when no Search control is visible", async () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
     document.body.innerHTML =
