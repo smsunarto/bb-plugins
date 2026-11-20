@@ -4,11 +4,6 @@
 
 ### Patch Changes
 
-- GTD Sidebar now draws bb's navigation as a list above the thread list:
-  28px rows of an icon and a label, 44px on phones, in the order bb gives
-  them, with hidden items under More. Search is always one of the rows, even
-  when navigation settings hide it.
-
 - Background agents no longer rename threads. Codex's memory-consolidation
   agent renamed threads to "Consolidate agent memories" after their turn
   ended. A thread's agent now renames it only while a turn runs, once per
@@ -65,6 +60,12 @@
   thread switch. With reduced motion on, the title dims instead of sweeping.
 
 ### Minor Changes
+
+- GTD Sidebar now draws bb's navigation as a list above the thread list:
+  28px rows of an icon and a label, in the order bb gives them, with hidden
+  items under More. Search is always one of the rows and has no checkbox in
+  Customize navigation. On phones the rows are 44px and the list scrolls
+  within about 40% of the drawer, leaving the rest to the threads.
 
 - Add a Bots shelf above Next Action while the separate Bots plugin is enabled:
   each bot is a group of its conversations drawn as GTD cards. Thread menus gain

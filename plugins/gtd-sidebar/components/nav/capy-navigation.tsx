@@ -1,6 +1,7 @@
 // Sidebar navigation in Capy's list style: 28px rows of a 14px icon and a
-// 13px medium label above the thread list, Search included. bb owns the
-// items, their order, and what each one does; this file only draws them.
+// 13px medium label above the thread list, 44px on phones. bb owns the items,
+// their order, and what each one does. This file draws them, with one rule of
+// its own: Search is always a row.
 import { memo, useRef, type MouseEvent } from "react";
 import {
   experimental_ShortcutHint as ShortcutHint,
@@ -38,6 +39,18 @@ const SEARCH_ID = "__bb__/search-threads";
 
 const isRow = (item: NavigationItem) => item.isVisible || item.id === SEARCH_ID;
 
+/**
+ * On phones the 44px rows could push the thread list off screen, so the list
+ * scrolls inside about 40% of the drawer. The cap ends half way through a row,
+ * which shows there is more to scroll: 26px is the 4px top padding plus half
+ * a row.
+ */
+const NAV_CLASS = cn(
+  "flex shrink-0 flex-col px-2 py-1",
+  "max-md:pointer-coarse:max-h-[calc(round(down,40dvh_-_26px,44px)_+_26px)]",
+  "max-md:pointer-coarse:overflow-y-auto max-md:pointer-coarse:overscroll-contain",
+);
+
 const ROW_CLASS = cn(
   "flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-[6px] px-2",
   // 44px rows on phones, the minimum touch target.
@@ -63,7 +76,7 @@ export function CapyNavigation(_props: ExperimentalSidebarNavigationProps) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <nav aria-label="Navigation" className="flex shrink-0 flex-col px-2 py-1">
+        <nav aria-label="Navigation" className={NAV_CLASS}>
           {items.map((item) =>
             isRow(item) ? (
               <NavigationRow
@@ -140,7 +153,7 @@ const NavigationRow = memo(function NavigationRow({
   );
 });
 
-/** Items the user hid stay reachable here, with the editor that unhides them. */
+/** Items the user hid, other than Search, stay reachable here, with the editor that unhides them. */
 function MoreRow({ hidden, actions }: { hidden: NavigationItem[]; actions: NavigationActions }) {
   // A pick runs on select, the one event every input and the phone sheet
   // fire; the click before it, when there is one, says whether a modifier

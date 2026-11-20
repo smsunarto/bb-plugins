@@ -7,6 +7,7 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import { ThreadInbox } from "./components/inbox/thread-inbox";
 import { CapyNavigation } from "./components/nav/capy-navigation";
+import { mountSearchCustomizeStyle } from "./components/nav/search-customize-style";
 import { archiveThread, hasSidebarActions } from "./lib/sidebar-actions-bridge";
 import {
   HeaderSettle,
@@ -39,6 +40,13 @@ export default definePluginApp((app) => {
     description: "Capy-style rows above the thread list, Search included.",
     placement: "list",
     component: CapyNavigation,
+  });
+
+  // Search is always a row, so its checkbox in bb's Customize navigation
+  // editor would do nothing.
+  app.contentScripts.register({
+    id: "search-customize-style",
+    mount: ({ signal }) => mountSearchCustomizeStyle(document, signal),
   });
 
   // On a phone, New thread and Settle join the header; Settle takes the place
