@@ -23,14 +23,26 @@
 //   no per-directory config to load it from.
 // - bun removes the root in `afterAll`, which does not run after `bun test
 //   --bail` stops on a failure or after `process.exit()` in a test. Those runs,
-//   and killed ones, leave one bbt-* root behind. Each new claim removes bbt-*
-//   roots in the same temp dir that are older than STALE_MS.
-import { chmodSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+//   and killed ones, leave one bbt-* root behind. Each new claim removes such
+//   a root from the same temp dir once it is older than STALE_MS and the pid
+//   in its OWNER_FILE has exited; a dir without that file is never removed.
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const MARKER = "BB_TEST_TMP_ROOT";
 const PREFIX = "bbt-";
+/** Holds the pid of the process that claimed the root. */
+const OWNER_FILE = ".bbt-owner";
 /** No test run lasts this long, so an older root belongs to a run that never cleaned up. */
 const STALE_MS = 6 * 60 * 60 * 1000;
 
@@ -41,13 +53,15 @@ const STALE_MS = 6 * 60 * 60 * 1000;
  */
 export function claimTestTmpRoot() {
   const inherited = process.env[MARKER];
-  if (inherited !== undefined && existsSync(inherited)) return undefined;
   const previousTmpdir = process.env.TMPDIR;
+  // An empty value counts as unset; dirname("") would put the root in the cwd.
+  const marked = inherited || undefined;
+  if (marked !== undefined && existsSync(marked)) return undefined;
   // A marker whose root is gone usually came with a TMPDIR that points at it.
-  const base =
-    inherited !== undefined && previousTmpdir === inherited ? dirname(inherited) : tmpdir();
+  const base = marked !== undefined && previousTmpdir === marked ? dirname(marked) : tmpdir();
   sweepStaleRoots(base);
   const root = mkdtempSync(join(base, PREFIX));
+  writeFileSync(join(root, OWNER_FILE), `${process.pid}\n`);
   process.env[MARKER] = root;
   process.env.TMPDIR = root;
   let released = false;
@@ -79,9 +93,11 @@ function sweepStaleRoots(base) {
     if (!entry.isDirectory() || !entry.name.startsWith(PREFIX)) continue;
     const path = join(base, entry.name);
     try {
-      if (statSync(path).mtimeMs < cutoff) removeTree(path);
+      if (statSync(path).mtimeMs >= cutoff) continue;
+      const owner = Number.parseInt(readFileSync(join(path, OWNER_FILE), "utf8"), 10);
+      if (Number.isInteger(owner) && !isRunning(owner)) removeTree(path);
     } catch {
-      // Another run removed it first.
+      // No owner file, so not a root of ours, or another run removed it first.
     }
   }
 }
@@ -111,6 +127,16 @@ function makeWritable(dir) {
     }
   } catch {
     // Not ours to change; the second rm reports what is left.
+  }
+}
+
+function isRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: the pid exists but belongs to another user.
+    return error.code === "EPERM";
   }
 }
 
