@@ -124,8 +124,8 @@ export type MergePhase = "idle" | Run["phase"];
 
 const runs = new Map<string, Run>();
 const listeners = new Set<() => void>();
-/** How many mounted surfaces show each pull request. */
-const watchers = new Map<string, number>();
+/** Each mounted surface's read of each pull request: true once it is no longer open. */
+const readers = new Map<string, Map<symbol, boolean>>();
 
 function notify() {
   for (const listener of listeners) listener();
@@ -137,9 +137,25 @@ function setRun(key: string, run: Run | null) {
   notify();
 }
 
-/** A merged run has done its job once its pull request's read says so, or nothing shows it. */
-function forgetMerged(key: string) {
-  if (runs.get(key)?.phase === "merged") setRun(key, null);
+/**
+ * A merged run has done its job once every surface showing its pull request
+ * reads it merged, or none shows it. Until then a surface still holding an
+ * open read keeps Merged, so it cannot offer Merge again.
+ */
+function reconcile(key: string) {
+  if (runs.get(key)?.phase !== "merged") return;
+  const reads = readers.get(key);
+  if (!reads || [...reads.values()].every(Boolean)) setRun(key, null);
+}
+
+/** Records one surface's read of `key`, or its unmount with null. */
+function setReader(key: string, reader: symbol, settled: boolean | null) {
+  const reads = readers.get(key) ?? new Map<symbol, boolean>();
+  if (settled === null) reads.delete(reader);
+  else reads.set(reader, settled);
+  if (reads.size > 0) readers.set(key, reads);
+  else readers.delete(key);
+  reconcile(key);
 }
 
 /** A pull request as the run store names it: `owner/name` and its number. */
@@ -149,17 +165,9 @@ function runKey(target: PullRequestRef): string {
   return `${target.repo}#${target.number}`;
 }
 
-function watch(key: string | null, listener: () => void) {
+function subscribe(listener: () => void) {
   listeners.add(listener);
-  if (key) watchers.set(key, (watchers.get(key) ?? 0) + 1);
-  return () => {
-    listeners.delete(listener);
-    if (!key) return;
-    const left = (watchers.get(key) ?? 1) - 1;
-    if (left > 0) return void watchers.set(key, left);
-    watchers.delete(key);
-    forgetMerged(key);
-  };
+  return () => void listeners.delete(listener);
 }
 
 /**
@@ -169,21 +177,23 @@ function watch(key: string | null, listener: () => void) {
  */
 export function useMergePhase(pullRequest: PullRequestRef | null, settled = false): MergePhase {
   const key = pullRequest ? runKey(pullRequest) : null;
-  const subscribe = useCallback((listener: () => void) => watch(key, listener), [key]);
+  const [reader] = useState(() => Symbol("merge reader"));
   const phase = useSyncExternalStore(
     subscribe,
     () => (key ? runs.get(key)?.phase : null) ?? "idle",
   );
-  const done = settled && phase === "merged";
   useEffect(() => {
-    if (key && done) forgetMerged(key);
-  }, [key, done]);
+    if (!key) return;
+    setReader(key, reader, settled);
+    return () => setReader(key, reader, null);
+  }, [key, reader, settled]);
   return phase;
 }
 
 /** For tests: forget every merge this window ran. */
 export function resetMergeRuns() {
   runs.clear();
+  readers.clear();
   notify();
 }
 
@@ -264,6 +274,8 @@ export function startMerge(merge: MergeRun): boolean {
     clearTimeout(timer);
     if (refusal === null) {
       setRun(key, { phase: "merged" });
+      // Nothing showing it, or every surface already reads it merged: nothing to hold.
+      reconcile(key);
       toast.success(`Merged #${target.number}`, { id, description: target.title });
       return;
     }

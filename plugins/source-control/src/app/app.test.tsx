@@ -825,16 +825,36 @@ test("a finished merge is forgotten once no surface shows its pull request", asy
   expect((await again.slot.findByTestId("sc-merge")).textContent).toBe("Merge");
 });
 
-test("a finished merge is forgotten once a surface reads its pull request merged", async () => {
-  const { slot } = renderRow(readyToMerge());
+test("Merged holds while any surface still reads the pull request open, then is forgotten", async () => {
+  const { slot, of } = renderRow(readyToMerge());
   await confirmMerge(slot);
   await waitFor(() => expect(last()).toMatchObject({ kind: "success" }));
   const merged = readyToMerge();
   if (merged.state !== "checkout" || !merged.forge.read?.value) throw new Error("fixture");
   merged.forge.read.value = { ...merged.forge.read.value, state: "merged" };
-  renderStrip(merged, [{ key: "bb--git/changed-files", pluginId: "bb--git" }]);
-  // The tab's read is still open, so it offers Merge again rather than a stale Merged.
-  await waitFor(() => expect(slot.getByTestId("sc-merge").textContent).toBe("Merge"));
+  // The strip has the fresh merged read; the tab's read is still the stale open one.
+  const strip = renderStrip(merged, [{ key: "bb--git/changed-files", pluginId: "bb--git" }]);
+  await strip.summary.findByTestId("sc-strip");
+  const button = slot.getByTestId("sc-merge");
+  expect(button.textContent).toBe("Merged");
+  await act(async () => button.click());
+  expect(slot.queryByTestId("sc-merge-dialog")).toBeNull();
+  expect(of("changeForgeAction")).toHaveLength(1);
+  // Once no surface reads it open, the run is done.
+  slot.unmount();
+  const again = renderRow(readyToMerge());
+  expect((await again.slot.findByTestId("sc-merge")).textContent).toBe("Merge");
+});
+
+test("a merge that lands after every surface has gone leaves nothing behind", async () => {
+  const answer = deferred<Answer>();
+  const { slot } = renderRow(readyToMerge(), { changeForgeAction: () => answer.promise });
+  await confirmMerge(slot);
+  slot.unmount();
+  await act(async () => answer.resolve({ status: "done" }));
+  expect(last()).toMatchObject({ kind: "success", message: "Merged #482" });
+  const again = renderRow(readyToMerge());
+  expect((await again.slot.findByTestId("sc-merge")).textContent).toBe("Merge");
 });
 
 test("the composer strip shows a merge started from the tab, until it lands", async () => {
