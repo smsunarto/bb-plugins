@@ -225,11 +225,9 @@ function CardHeader({
  */
 function CardMergeProgress({ detail }: { detail: Ready }) {
   const { row } = detail;
-  const phase = useMergePhase(
-    row.number === null ? null : { repo: row.repo, number: row.number },
-    row.state !== "open",
-  );
-  if (phase === "idle" || row.number === null) return null;
+  const phase = useMergePhase(row.number === null ? null : { repo: row.repo, number: row.number });
+  // Once the card's own read says merged or closed, its chip says so.
+  if (phase === "idle" || row.number === null || row.state !== "open") return null;
   return (
     <output
       data-testid="sc-card-merge-progress"

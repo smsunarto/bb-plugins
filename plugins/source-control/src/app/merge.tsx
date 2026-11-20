@@ -12,7 +12,6 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import {
   useCallback,
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -114,48 +113,36 @@ export function repoOfKey(key: ChangeKey): string {
 
 /**
  * Merges in this window, by pull request (`owner/name#number`), whichever
- * surface started them. A merge stays `merging` until the server answers and
- * `merged` after, so Merge stays off until the pull request's read says so.
- * A merge outlives the surface that started it: the request is the server's
- * once sent, and the toast here follows it.
+ * surface started them. A merge stays `merging` until the server answers.
+ * Merged is kept for the window's life and outranks any stale open read of
+ * that pull request, so no surface offers Merge for it again; the oldest
+ * merged entries go past MERGED_KEPT. A refusal clears the entry. A merge
+ * outlives the surface that started it: the request is the server's once
+ * sent, and the toast here follows it.
  */
 type Run = { phase: "merging" | "merged" };
 export type MergePhase = "idle" | Run["phase"];
 
+/** Merged pull requests a window remembers; the oldest beyond this are forgotten. */
+export const MERGED_KEPT = 100;
+
+/** In insertion order, so the first merged entry is the oldest. */
 const runs = new Map<string, Run>();
 const listeners = new Set<() => void>();
-/** Each mounted surface's read of each pull request: true once it is no longer open. */
-const readers = new Map<string, Map<symbol, boolean>>();
-
-function notify() {
-  for (const listener of listeners) listener();
-}
 
 function setRun(key: string, run: Run | null) {
+  runs.delete(key);
   if (run) runs.set(key, run);
-  else runs.delete(key);
-  notify();
-}
-
-/**
- * A merged run has done its job once every surface showing its pull request
- * reads it merged, or none shows it. Until then a surface still holding an
- * open read keeps Merged, so it cannot offer Merge again.
- */
-function reconcile(key: string) {
-  if (runs.get(key)?.phase !== "merged") return;
-  const reads = readers.get(key);
-  if (!reads || [...reads.values()].every(Boolean)) setRun(key, null);
-}
-
-/** Records one surface's read of `key`, or its unmount with null. */
-function setReader(key: string, reader: symbol, settled: boolean | null) {
-  const reads = readers.get(key) ?? new Map<symbol, boolean>();
-  if (settled === null) reads.delete(reader);
-  else reads.set(reader, settled);
-  if (reads.size > 0) readers.set(key, reads);
-  else readers.delete(key);
-  reconcile(key);
+  if (run?.phase === "merged") {
+    let merged = [...runs.values()].filter((entry) => entry.phase === "merged").length;
+    for (const [old, entry] of runs) {
+      if (merged <= MERGED_KEPT) break;
+      if (entry.phase !== "merged") continue;
+      runs.delete(old);
+      merged -= 1;
+    }
+  }
+  for (const listener of listeners) listener();
 }
 
 /** A pull request as the run store names it: `owner/name` and its number. */
@@ -170,31 +157,16 @@ function subscribe(listener: () => void) {
   return () => void listeners.delete(listener);
 }
 
-/**
- * Where a merge of `pullRequest` stands in this window; idle for none.
- * `settled` says the surface's own read of it is no longer open, which
- * ends a finished run.
- */
-export function useMergePhase(pullRequest: PullRequestRef | null, settled = false): MergePhase {
+/** Where a merge of `pullRequest` stands in this window; idle for none. */
+export function useMergePhase(pullRequest: PullRequestRef | null): MergePhase {
   const key = pullRequest ? runKey(pullRequest) : null;
-  const [reader] = useState(() => Symbol("merge reader"));
-  const phase = useSyncExternalStore(
-    subscribe,
-    () => (key ? runs.get(key)?.phase : null) ?? "idle",
-  );
-  useEffect(() => {
-    if (!key) return;
-    setReader(key, reader, settled);
-    return () => setReader(key, reader, null);
-  }, [key, reader, settled]);
-  return phase;
+  return useSyncExternalStore(subscribe, () => (key ? runs.get(key)?.phase : null) ?? "idle");
 }
 
 /** For tests: forget every merge this window ran. */
 export function resetMergeRuns() {
   runs.clear();
-  readers.clear();
-  notify();
+  for (const listener of listeners) listener();
 }
 
 /**
@@ -274,8 +246,6 @@ export function startMerge(merge: MergeRun): boolean {
     clearTimeout(timer);
     if (refusal === null) {
       setRun(key, { phase: "merged" });
-      // Nothing showing it, or every surface already reads it merged: nothing to hold.
-      reconcile(key);
       toast.success(`Merged #${target.number}`, { id, description: target.title });
       return;
     }

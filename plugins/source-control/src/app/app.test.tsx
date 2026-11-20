@@ -10,7 +10,7 @@ import { reviewPath } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { offlineReason } from "./host-gate.ts";
 import { writeSnapshot } from "./snapshot.ts";
-import { MERGE_DEADLINE_MS, resetMergeRuns } from "./merge.tsx";
+import { MERGE_DEADLINE_MS, MERGED_KEPT, resetMergeRuns, startMerge } from "./merge.tsx";
 
 type Toast = {
   kind: "loading" | "success" | "error" | "warning";
@@ -815,38 +815,30 @@ test("Retry still merges after the surface that started it is gone", async () =>
   expect(of("changeForgeAction")).toHaveLength(2);
 });
 
-test("a finished merge is forgotten once no surface shows its pull request", async () => {
-  const { slot } = renderRow(readyToMerge());
-  await confirmMerge(slot);
-  await waitFor(() => expect(last()).toMatchObject({ kind: "success" }));
-  expect(slot.getByRole("button", { name: "Merged #482" })).toBeTruthy();
-  slot.unmount();
-  const again = renderRow(readyToMerge());
-  expect((await again.slot.findByTestId("sc-merge")).textContent).toBe("Merge");
-});
-
-test("Merged holds while any surface still reads the pull request open, then is forgotten", async () => {
+test("Merged outlives every surface and outranks a stale open read", async () => {
   const { slot, of } = renderRow(readyToMerge());
   await confirmMerge(slot);
   await waitFor(() => expect(last()).toMatchObject({ kind: "success" }));
   const merged = readyToMerge();
   if (merged.state !== "checkout" || !merged.forge.read?.value) throw new Error("fixture");
   merged.forge.read.value = { ...merged.forge.read.value, state: "merged" };
-  // The strip has the fresh merged read; the tab's read is still the stale open one.
+  // One surface has the fresh merged read; the tab's read is still the stale open one.
   const strip = renderStrip(merged, [{ key: "bb--git/changed-files", pluginId: "bb--git" }]);
   await strip.summary.findByTestId("sc-strip");
-  const button = slot.getByTestId("sc-merge");
+  expect(slot.getByTestId("sc-merge").textContent).toBe("Merged");
+  strip.summary.unmount();
+  strip.action.unmount();
+  slot.unmount();
+  // A surface mounted later, still reading it open, cannot merge it again.
+  const again = renderRow(readyToMerge());
+  const button = await again.slot.findByTestId("sc-merge");
   expect(button.textContent).toBe("Merged");
   await act(async () => button.click());
-  expect(slot.queryByTestId("sc-merge-dialog")).toBeNull();
-  expect(of("changeForgeAction")).toHaveLength(1);
-  // Once no surface reads it open, the run is done.
-  slot.unmount();
-  const again = renderRow(readyToMerge());
-  expect((await again.slot.findByTestId("sc-merge")).textContent).toBe("Merge");
+  expect(again.slot.queryByTestId("sc-merge-dialog")).toBeNull();
+  expect([...of("changeForgeAction"), ...again.of("changeForgeAction")]).toHaveLength(1);
 });
 
-test("a merge that lands after every surface has gone leaves nothing behind", async () => {
+test("a merge that lands after every surface has gone is still Merged", async () => {
   const answer = deferred<Answer>();
   const { slot } = renderRow(readyToMerge(), { changeForgeAction: () => answer.promise });
   await confirmMerge(slot);
@@ -854,7 +846,32 @@ test("a merge that lands after every surface has gone leaves nothing behind", as
   await act(async () => answer.resolve({ status: "done" }));
   expect(last()).toMatchObject({ kind: "success", message: "Merged #482" });
   const again = renderRow(readyToMerge());
-  expect((await again.slot.findByTestId("sc-merge")).textContent).toBe("Merge");
+  expect((await again.slot.findByTestId("sc-merge")).textContent).toBe("Merged");
+});
+
+test("a window remembers the last MERGED_KEPT merges, forgetting the oldest", async () => {
+  const { slot } = renderRow(readyToMerge());
+  await confirmMerge(slot);
+  await waitFor(() => expect(slot.getByTestId("sc-merge").textContent).toBe("Merged"));
+  const merged = (number: number) => ({
+    target: {
+      changeKey: changeKeySchema.parse(TAB_KEY),
+      repo: "smsunarto/other",
+      number,
+      title: `#${number}`,
+      head: "c0ffee",
+      base: "main",
+    },
+    submit: async () => ({ status: "done" as const }),
+    openUrl: () => undefined,
+  });
+  // MERGED_KEPT - 1 more keeps #482; one past the cap forgets it, the oldest.
+  await act(async () => {
+    for (let number = 1; number < MERGED_KEPT; number++) startMerge(merged(number));
+  });
+  expect(slot.getByTestId("sc-merge").textContent).toBe("Merged");
+  await act(async () => void startMerge(merged(MERGED_KEPT)));
+  expect(slot.getByTestId("sc-merge").textContent).toBe("Merge");
 });
 
 test("the composer strip shows a merge started from the tab, until it lands", async () => {
@@ -920,7 +937,13 @@ test("a merge the server never answers stops spinning at the deadline, and keeps
   }
 });
 
-/** A chat card for `key`, whose open pull request #482 is otherwise as `overrides` say. */
+/** Merge writes from chat cards that renderCard drew. */
+let reviewCardWrites = 0;
+
+/**
+ * A chat card for `key`, whose open pull request #482 is otherwise as
+ * `overrides` say; a later change to `overrides.ship` shows on the next read.
+ */
 function renderCard(
   component: ComponentType<never>,
   key: string,
@@ -973,7 +996,13 @@ function renderCard(
       pluginId: "source-control",
       rpc: {
         changeDetail: ({ keys }: { keys: string[] }) =>
-          Object.fromEntries(keys.map((k) => [k, detail])),
+          Object.fromEntries(
+            keys.map((k) => [k, { ...detail, ship: overrides.ship ?? detail.ship }]),
+          ),
+        changeForgeAction: () => {
+          reviewCardWrites++;
+          return { status: "done" };
+        },
         checksForChange: ({ keys }: { keys: string[] }) =>
           Object.fromEntries(keys.map((k) => [k, { read: null, problem: null }])),
         reviewForChange: () => ({}),
@@ -981,6 +1010,28 @@ function renderCard(
     },
   );
 }
+
+test("a chat card whose checks turn ready after a merge still offers no second merge", async () => {
+  const { ChangeDirective } = await import("./chat-card.tsx");
+  reviewCardWrites = 0;
+  const answer = deferred<Answer>();
+  const { slot } = renderRow(readyToMerge(), { changeForgeAction: () => answer.promise });
+  await confirmMerge(slot);
+  const data = { ship: [{ id: "checks", label: "Checks", state: "running", detail: [] }] };
+  const card = renderCard(ChangeDirective, TAB_KEY, data);
+  await card.findByTestId("sc-card-merge-progress");
+  slot.unmount();
+  await act(async () => answer.resolve({ status: "done" }));
+  expect(card.getByTestId("sc-card-merge-progress").textContent).toBe("Merged #482");
+  // Checks pass: the card swaps its progress line for Merge it.
+  data.ship = [];
+  await card.experimental_invalidateRpc(null, "source-control");
+  const button = await card.findByTestId("sc-card-merge");
+  await act(async () => button.click());
+  const confirm = card.queryByTestId("sc-merge-confirm");
+  if (confirm) await act(async () => confirm.click());
+  expect(reviewCardWrites).toBe(0);
+});
 
 test("Escape closes the merge dialog and returns focus to Merge, never leaving the page", async () => {
   const left: string[] = [];
