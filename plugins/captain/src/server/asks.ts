@@ -106,7 +106,7 @@ export function shipBlockers(taskKey: string, review: string | null): Blocker[] 
  * comment and sends one push; the push is retried on a rerun until it is sent.
  */
 export async function openAsk(
-  deps: CommandDeps,
+  deps: Pick<CommandDeps, "bb" | "store" | "now" | "tasks">,
   captain: Captain,
   draft: AskDraft,
 ): Promise<{ item: Item; notes: string[] }> {
@@ -174,7 +174,7 @@ export function askItem(ask: Ask, state: string): Item {
 
 /** A task comment that reads as the Captain's: an agent comment from its thread. */
 export async function captainComment(
-  deps: CommandDeps,
+  deps: Pick<CommandDeps, "tasks">,
   captain: Captain,
   taskId: string,
   body: string,
@@ -288,6 +288,11 @@ export async function resolveAsk(
   }
   const answered = deps.store.ask(id);
   if (answered === null || answered.answer === null) throw new Error(`${id} lost its answer`);
+  // An away-pause ask: Captain resumes or releases the routines it paused; the check retries a failure.
+  const away = await deps.routines
+    .applyAwayAnswer(id, answered.answer)
+    .catch((error: unknown) => `routines not resumed yet: ${(error as Error).message}`);
+  if (away !== null) notes.push(`warning: ${away}`);
   let state: Resolved["state"] = "answered";
   if (answered.answerDeliveredAt === null) {
     const warning = await deliverAnswer(deps, { ...answered, answer: answered.answer });

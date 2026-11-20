@@ -544,8 +544,46 @@ export function createRoutines(deps: RoutinesDeps) {
     changed(routine.captainId);
   }
 
+  /**
+   * Apply the answer to an away-pause ask: Resume resumes exactly the
+   * routines that pass paused; any other answer leaves them paused. Each
+   * routine's mark is cleared once handled, so a retry does only the rest.
+   * Returns a warning when some could not be resumed yet.
+   */
+  async function applyAwayAnswer(askId: string, answer: string): Promise<string | null> {
+    const marked = store.routinesAwayUnder(askId);
+    if (marked.length === 0) return null;
+    if (answer.trim().toLowerCase() !== "resume") {
+      store.setRoutinesAway(
+        marked.map((routine) => routine.id),
+        null,
+      );
+      return null;
+    }
+    const failed: string[] = [];
+    for (const routine of marked) {
+      await serial(`routine:${routine.id}`, async () => {
+        const found = target(store.routine(routine.id) ?? routine);
+        try {
+          if (found !== null) await automations.resume(found);
+        } catch (error) {
+          if (!isMissing(error)) {
+            failed.push(routine.id);
+            return;
+          }
+        }
+        store.setRoutinesAway([routine.id], null);
+      });
+    }
+    changed(marked[0]?.captainId as string);
+    return failed.length === 0
+      ? null
+      : `${failed.join(", ")} not resumed: bb Automations did not answer; the next check retries`;
+  }
+
   return {
     parseFields,
+    applyAwayAnswer,
     view,
     list: (captainId: string) => Promise.all(store.routinesOf(captainId).map(view)),
     create,

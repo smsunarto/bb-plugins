@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { sinceTag } from "../contract/rpc.ts";
-import { ANSWER_MAX_ATTEMPTS, deliverAnswer } from "./asks.ts";
+import { ANSWER_MAX_ATTEMPTS, deliverAnswer, openAsk } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { joinCrew, listChildren, steer, type ListedThread } from "./crew.ts";
 import { runFallbacks } from "./fallback.ts";
@@ -36,6 +36,10 @@ const CAPTAIN_DEADLINE_MS = 20_000;
 const CAPTAIN_CONCURRENCY = 4;
 /** One answer retry's send, so a hung send cannot hold the pass. */
 const SEND_DEADLINE_MS = 20_000;
+/** Unseen this long while routines ran, a Captain's routines are paused with one ask. */
+export const AWAY_PAUSE_AFTER_MS = 7 * 24 * 60 * 60_000;
+export const AWAY_ASK_TEXT = "Routines paused while you were away";
+export const AWAY_OPTIONS = ["Resume", "Keep paused"] as const;
 
 export type CheckDeps = Pick<
   CommandDeps,
@@ -90,6 +94,8 @@ export function createCheck(deps: CheckDeps) {
       }
     });
     await retryAnswers(deps);
+    for (const captain of captains) await pauseIfAway(deps, captain);
+    await retryAwayAnswers(deps);
     const busy =
       !reconciled ||
       skipped.length > 0 ||
@@ -338,6 +344,65 @@ async function pushUndeliverable(
       threadId: captain.threadId,
     });
     if (warning !== null) deps.bb.log.warn(warning);
+  }
+}
+
+/**
+ * The away pause: when no client has marked a Captain seen for
+ * `AWAY_PAUSE_AFTER_MS` and a routine reached it on its schedule since, pause
+ * its running routines and open one ask. Claimed in `notices` per absence, so
+ * a reload or a second pass does it once. Its own failure skips only itself.
+ */
+export async function pauseIfAway(deps: CheckDeps, captain: Captain): Promise<void> {
+  try {
+    const now = deps.now();
+    const row = deps.store.captain(captain.threadId);
+    const seen = deps.store.lastSeen(captain.threadId) ?? row?.createdAt ?? now;
+    if (now - seen <= AWAY_PAUSE_AFTER_MS) return;
+    const delivered = deps.store.lastScheduledDelivery(captain.threadId);
+    if (delivered === null || delivered <= seen) return;
+    const key = NOTICE.routinesAway(captain.threadId, seen);
+    if (!deps.store.claimNotice(key, now)) return;
+    const paused = await deps.routines.pauseCaptain(captain.threadId);
+    if (paused.length === 0) return;
+    try {
+      const names = paused.map((id) => {
+        const routine = deps.store.routine(id);
+        return routine === null ? id : `${id} ${JSON.stringify(routine.name)}`;
+      });
+      const { item } = await openAsk(deps, captain, {
+        kind: "decision",
+        task: null,
+        text: AWAY_ASK_TEXT,
+        detail: deps.files.read("routines-paused", {
+          captain: captain.name,
+          days: Math.floor((now - seen) / (24 * 60 * 60_000)),
+          routines: names.join(", "),
+        }),
+        options: [...AWAY_OPTIONS],
+      });
+      deps.store.setRoutinesAway(paused, item.id);
+    } catch (error) {
+      // No ask, so nothing would resume them: undo the pause and let the next pass try again.
+      deps.store.setRoutinesAway(paused, "pending");
+      await deps.routines.applyAwayAnswer("pending", "Resume");
+      deps.store.releaseNotice(key, now);
+      throw error;
+    }
+  } catch (error) {
+    deps.bb.log.warn(`away pause for ${captain.threadId} skipped: ${(error as Error).message}`);
+  }
+}
+
+/** Apply an answered away-pause ask whose resume failed when it was answered. */
+async function retryAwayAnswers(deps: CheckDeps): Promise<void> {
+  for (const askId of deps.store.awayAsks()) {
+    const ask = deps.store.ask(askId);
+    if (ask === null || ask.answer === null) continue;
+    const warning = await deps.routines
+      .applyAwayAnswer(askId, ask.answer)
+      .catch((error: unknown) => (error as Error).message);
+    if (warning !== null) deps.bb.log.warn(`away answer ${askId}: ${warning}`);
   }
 }
 
