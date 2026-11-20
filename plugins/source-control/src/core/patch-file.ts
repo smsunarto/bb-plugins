@@ -11,6 +11,7 @@
  * shows the file as text with that reason.
  */
 import type { FilePatch } from "./change.ts";
+import { checkDrawn, CLAIM, isMailTrailer, type DrawnFile, type Section } from "./patch-guard.ts";
 import { QUOTED_ESCAPES, quotedPath } from "./quoted-path.ts";
 import type { ChangeFile } from "./review.ts";
 
@@ -24,8 +25,8 @@ const MAX_HEADER_CHARS = 2000;
 export type PatchFileEntry = {
   /**
    * Unique within the file, and the same across re-reads while the file keeps
-   * its place among those of its path: the path, then `\0` and its occurrence
-   * for a path that appears again, in one commit or across them.
+   * its place among those of its path: `<occurrence>:<path>`, the occurrence
+   * counting from 1 across every commit.
    */
   key: string;
   file: ChangeFile;
@@ -72,9 +73,12 @@ function malformed(index: number, what: string): Malformed {
 
 export function readPatchFile(text: string): PatchRead {
   try {
-    const read = new Reader(splitLines(text)).read();
+    const reader = new Reader(splitLines(text));
+    const read = reader.read();
     if (read.files + read.omitted === 0) return { ok: false, reason: "This file holds no diff." };
-    return { ok: true, read };
+    // Whatever the reader concluded, the drawn copy must hold every hunk line of the file.
+    const lost = checkDrawn(reader.lines, reader.claims, reader.sections, reader.drawn);
+    return lost === null ? { ok: true, read } : { ok: false, reason: lost };
   } catch (error) {
     if (error instanceof Malformed) return { ok: false, reason: `${error.message}.` };
     // Any other failure still says why the file shows as text.
@@ -116,6 +120,8 @@ type Draft = {
   /** Whether a git file has any extended header line: a mode, an index, a rename. */
   described: boolean;
   hunks: number;
+  /** Source lines the hunks hold, headers aside: each line, `\` notes included. */
+  body: number;
   additions: number;
   deletions: number;
 };
@@ -139,13 +145,22 @@ function newDraft(start: number, git: boolean): Draft {
     binary: false,
     described: false,
     hunks: 0,
+    body: 0,
     additions: 0,
     deletions: 0,
   };
 }
 
 class Reader {
-  private readonly lines: string[];
+  readonly lines: string[];
+  /** What each source line is to the reader: see `CLAIM`. */
+  readonly claims: Uint8Array;
+  /** Where each commit starts, and the MIME boundary its mail declares. */
+  readonly sections: Section[] = [];
+  /** Every file read, with what goes to the renderer. */
+  readonly drawn: DrawnFile[] = [];
+  /** The current mail's declared MIME boundary, which may end its patch. */
+  private boundary: string | null = null;
   private readonly commits: PatchFileCommit[] = [];
   private commit: PatchFileCommit = emptyCommit();
   private draft: Draft | null = null;
@@ -163,6 +178,11 @@ class Reader {
 
   constructor(lines: string[]) {
     this.lines = lines;
+    this.claims = new Uint8Array(lines.length);
+  }
+
+  private claim(from: number, to: number, what: number): void {
+    this.claims.fill(what, from, Math.min(to, this.lines.length));
   }
 
   read(): PatchFile {
@@ -186,6 +206,8 @@ class Reader {
     this.pushCommit();
     const header = readHeader(this.lines, this.index);
     this.commit = { ...header.meta, files: [] };
+    this.boundary = header.boundary;
+    this.sections.push({ start: this.index, boundary: header.boundary });
     this.index = header.next;
     this.afterHunk = false;
     this.trailing = false;
@@ -208,6 +230,7 @@ class Reader {
     if (draft && inGitHeader(draft) && readGitHeader(line, draft)) {
       this.index = line === "GIT binary patch" ? skipBinary(this.lines, index + 1) : index + 1;
       draft.end = this.index;
+      this.claim(index, this.index, CLAIM.header);
       return;
     }
     const signature = this.checkPastHunk(index, line);
@@ -223,6 +246,7 @@ class Reader {
       const plain = newDraft(index, false);
       [plain.oldName, plain.newName] = binary;
       plain.binary = true;
+      this.claim(index, index + 1, CLAIM.header);
       this.keep(plain);
     }
     this.index = index + 1;
@@ -234,7 +258,7 @@ class Reader {
    * mail signature or MIME boundary.
    */
   private checkPastHunk(index: number, line: string): boolean {
-    if (isMailTrailer(line, this.lines[index + 1])) return true;
+    if (isMailTrailer(line, this.lines[index + 1], this.boundary)) return true;
     if (this.afterHunk && /^[+\- ]/.test(line))
       throw malformed(index, "continues a hunk past the lines its header counts");
     if (this.trailing && /^[+-]/.test(line))
@@ -254,6 +278,7 @@ class Reader {
     const draft = newDraft(index, true);
     if (sides) [draft.gitOld, draft.gitNew, draft.srcPrefix, draft.dstPrefix] = sides;
     this.draft = draft;
+    this.claim(index, index + 1, CLAIM.header);
     this.index = index + 1;
   }
 
@@ -267,6 +292,7 @@ class Reader {
     draft.newName = headerName(this.lines[index + 1]!.slice(4));
     draft.end = index + 2;
     this.draft = draft;
+    this.claim(index, index + 2, CLAIM.header);
     this.afterHunk = false;
     this.trailing = false;
     this.index = index + 2;
@@ -282,6 +308,8 @@ class Reader {
     const draft = this.draft;
     if (!draft || draft.oldName === null) throw malformed(index, "starts a hunk outside any file");
     this.index = readHunk(this.lines, index, header, draft);
+    this.claim(index, index + 1, CLAIM.header);
+    this.claim(index + 1, this.index, CLAIM.hunk);
     this.afterHunk = true;
   }
 
@@ -297,17 +325,21 @@ class Reader {
   }
 
   private keep(draft: Draft): void {
+    if (pathsOf(draft).some((path) => path?.includes("\0")))
+      throw malformed(draft.start, "names a file with a NUL character, which no file name holds");
     this.additions += draft.additions;
     this.deletions += draft.deletions;
     if (this.kept >= MAX_PATCH_FILES) {
       this.omitted++;
+      this.drawn.push({ start: draft.start, end: draft.end, body: draft.body, entry: null });
       return;
     }
     const entry = toEntry(draft, this.lines);
     const seen = (this.seen.get(entry.file.path) ?? 0) + 1;
     this.seen.set(entry.file.path, seen);
-    if (seen > 1) entry.key = `${entry.file.path}\0${seen}`;
+    entry.key = `${seen}:${entry.file.path}`;
     this.commit.files.push(entry);
+    this.drawn.push({ start: draft.start, end: draft.end, body: draft.body, entry });
     this.kept++;
   }
 }
@@ -321,16 +353,6 @@ function commitStarts(lines: string[], index: number): boolean {
   const match = COMMIT_START.exec(lines[index]!);
   if (!match) return false;
   return match[1] !== undefined || LOG_FIELD.test(lines[index + 1] ?? "");
-}
-
-/**
- * A mail line that ends a patch's text: the signature's `-- `, or `--` once
- * an editor trimmed its space, or a MIME boundary (`--------------2.43.0--`)
- * from `format-patch --attach` or `--inline`. The line after it is no hunk line.
- */
-function isMailTrailer(line: string, next: string | undefined): boolean {
-  if (line === "-- ") return true;
-  return /^--\S*$/.test(line) && !/^[+\- @\\]/.test(next ?? "");
 }
 
 /** Whether a git file is still in its extended header, before its `---`/`+++` pair. */
@@ -354,6 +376,7 @@ function readHunk(lines: string[], start: number, header: RegExpExecArray, draft
   }
   // "\ No newline at end of file" after the hunk's last line.
   while (lines[index]?.startsWith("\\")) index++;
+  draft.body += index - start - 1;
   draft.end = index;
   return index;
 }
@@ -433,16 +456,21 @@ function plainBinary(line: string): [string, string] | "unclear" | null {
     at = middle.indexOf(BINARY_JOIN, at + 1)
   )
     splits.push([shellName(middle.slice(0, at)), shellName(middle.slice(at + BINARY_JOIN.length))]);
-  if (splits.length === 1) return splits[0]!;
-  const aligned = splits.filter(([old, next]) => baseName(old) === baseName(next));
+  const named = splits.filter(([old, next]) => old !== "" && next !== "");
+  if (splits.length === 1) return named[0] ?? "unclear";
+  const aligned = named.filter(([old, next]) => baseName(old) === baseName(next));
   return aligned.length === 1 ? aligned[0]! : "unclear";
 }
 
 const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
-/** A name as a shell word, unquoted; the text itself when it is not a whole quoted word. */
+/**
+ * A name GNU diff shell-quoted, unquoted. GNU quotes a whole name, so only one
+ * that opens with a quote is read as a shell word; a bare name, such as a
+ * `--label`, is the text itself, backslashes and all.
+ */
 function shellName(text: string): string {
-  return /['"\\$]/.test(text) ? (shellWord(text) ?? text) : text;
+  return /^(?:['"]|\$')/.test(text) ? (shellWord(text) ?? text) : text;
 }
 
 const SHELL_ESCAPES: Readonly<Record<string, string>> = { ...QUOTED_ESCAPES, e: "\x1b", E: "\x1b" };
@@ -562,7 +590,7 @@ function toEntry(draft: Draft, lines: string[]): PatchFileEntry {
   const truncated = patch.length > MAX_FILE_PATCH_CHARS;
   if (truncated) patch = "";
   return {
-    key: path,
+    key: "",
     file: {
       path,
       kind,
@@ -660,19 +688,29 @@ function closingQuote(text: string): number {
 type Meta = Omit<PatchFileCommit, "files">;
 
 /** The mail or `git log` header at `start`; `next` is where its files may begin. */
-function readHeader(lines: string[], start: number): { meta: Meta; next: number } {
+function readHeader(
+  lines: string[],
+  start: number,
+): { meta: Meta; next: number; boundary: string | null } {
   const meta: Meta = emptyCommit();
   const first = COMMIT_START.exec(lines[start]!)!;
   meta.id = first[1] ?? first[2] ?? null;
-  const next = first[1]
-    ? skipMailBody(lines, readMailHeader(lines, start + 1, meta))
-    : readLogHeader(lines, start + 1, meta);
+  if (!first[1]) {
+    const next = readLogHeader(lines, start + 1, meta);
+    meta.authorName = nameOf(meta.author);
+    return { meta, next, boundary: null };
+  }
+  const mail = readMailHeader(lines, start + 1, meta);
   meta.authorName = nameOf(meta.author);
-  return { meta, next };
+  return { meta, next: skipMailBody(lines, mail.next), boundary: mail.boundary };
 }
 
 /** Mail headers, folded lines joined, up to the blank line before the message. */
-function readMailHeader(lines: string[], start: number, meta: Meta): number {
+function readMailHeader(
+  lines: string[],
+  start: number,
+  meta: Meta,
+): { next: number; boundary: string | null } {
   const fields = new Map<string, string>();
   let last: string | null = null;
   let index = start;
@@ -692,7 +730,10 @@ function readMailHeader(lines: string[], start: number, meta: Meta): number {
   meta.date = fields.get("Date") ?? null;
   meta.subject =
     subject === undefined ? null : decodeWords(subject).replace(/^\[[^\]]*\]\s*/, "") || null;
-  return index;
+  const multipart = /^multipart\/[^;]*;.*\bboundary="?([^";\s]+)"?/i.exec(
+    fields.get("Content-Type") ?? "",
+  );
+  return { next: index, boundary: multipart?.[1] ?? null };
 }
 
 /**

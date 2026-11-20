@@ -242,12 +242,12 @@ describe("readPatchFile", () => {
     const files = read.commits[0]!.files;
     expect(files.map((entry) => entry.file.path)).toEqual(["x.txt", "x.txt"]);
     // Keyed by path and occurrence, so a re-read with a file added above keeps each card's key.
-    expect(files.map((entry) => entry.key)).toEqual(["x.txt", "x.txt\u00002"]);
+    expect(files.map((entry) => entry.key)).toEqual(["1:x.txt", "2:x.txt"]);
     const again = parsed(`--- a/w.txt\n+++ b/w.txt\n@@ -1 +1 @@\n-a\n+b\n${file}${file}`);
     expect(again.commits[0]!.files.map((entry) => entry.key)).toEqual([
-      "w.txt",
-      "x.txt",
-      "x.txt\u00002",
+      "1:w.txt",
+      "1:x.txt",
+      "2:x.txt",
     ]);
   });
 
@@ -563,3 +563,50 @@ function files2(text: string) {
     c.files.map(({ file }) => [file.path, file.kind, file.previousPath]),
   );
 }
+
+describe("review round 3", () => {
+  const one = "--- a/f.txt\n+++ b/f.txt\n@@ -1 +1 @@\n-a\n+b\n";
+
+  test("a deletion line that looks like a MIME boundary is not one", () => {
+    expect(rejected(`${one}--flag\n`)).toBe(
+      "Line 6 continues a hunk past the lines its header counts.",
+    );
+    expect(rejected(`${one}\n--flag\n`)).toBe(
+      "Line 7 follows a finished hunk as one of its lines, past what its header counts.",
+    );
+  });
+
+  test("only the boundary the mail declares ends its patch", () => {
+    const text = fixture("review2/format-patch-attach.patch");
+    const boundary = /boundary="([^"]+)"/.exec(text)![1]!;
+    expect(parsed(text).files).toBe(3);
+    expect(rejected(text.replace(`--${boundary}--`, "--other-boundary--"))).toMatch(
+      /^Line \d+ (?:reads as a hunk line|follows a finished hunk)/,
+    );
+  });
+
+  test("a bare --label binary name keeps its backslash", () => {
+    const files = parsed("Binary files a/dir\\file and b/dir\\file differ\n").commits[0]!.files;
+    expect(files.map(({ file }) => file.path)).toEqual(["dir\\file"]);
+  });
+
+  test("a decoded path with a NUL reads as text", () => {
+    expect(rejected('--- "a/x\\000y"\n+++ "b/x\\000y"\n@@ -1 +1 @@\n-a\n+b\n')).toBe(
+      "Line 1 names a file with a NUL character, which no file name holds.",
+    );
+  });
+
+  test("keys stay unique whatever the paths hold", () => {
+    const text = ["2:x", "x", "x", "1:x"]
+      .map((name) => `--- a/${name}\n+++ b/${name}\n@@ -1 +1 @@\n-a\n+b\n`)
+      .join("");
+    const keys = parsed(text).commits[0]!.files.map((entry) => entry.key);
+    expect(new Set(keys).size).toBe(4);
+  });
+
+  test("empty binary names read as text", () => {
+    expect(rejected("Binary files  and  differ\n")).toBe(
+      "Line 1 names binary files in a way the diff view can't split.",
+    );
+  });
+});
