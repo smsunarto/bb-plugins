@@ -730,6 +730,42 @@
   background-color: var(--sidebar-border);
 }
 
+/* Info tab text: names and values in foreground, labels and icons muted, and
+ * the faint tier only for "where" text and the "N more" toggles. bb's
+ * thread-storage folder rows fade the name itself, so a folder read fainter
+ * than the files inside it. The name span sits inside the row's
+ * text-foreground primary button; only folders pass a faded span there. */
+.dark [data-info-section] .text-foreground > span.text-subtle-foreground {
+  color: inherit;
+}
+
+/* bb draws the tab's icons in the faint tier: 30% beside a muted label read
+ * as missing. File icons and folder carets carry the class on the icon, and
+ * detail-row label icons on the icon or its wrapper. Related-thread glyphs
+ * inherit it from a wrapper in the row's leading slot. Icon buttons (open
+ * file, search, new environment) carry it on the button and climb to
+ * foreground on hover as bb intends. The "N more" toggles are the
+ * expanded-state buttons and stay faint. The scope is the tab's root, named
+ * by its section-divider variant. */
+.dark .\[\&_\[data-info-section\]\]\:border-t [data-icon-root].text-subtle-foreground,
+.dark .\[\&_\[data-info-section\]\]\:border-t dt .text-subtle-foreground,
+.dark [data-info-section] .justify-center.size-3 > span.text-subtle-foreground,
+.dark .\[\&_\[data-info-section\]\]\:border-t button.text-subtle-foreground:not([aria-expanded]) {
+  color: var(--muted-foreground);
+}
+.dark
+  .\[\&_\[data-info-section\]\]\:border-t
+  button.text-subtle-foreground:not([aria-expanded]):focus-visible {
+  color: var(--foreground);
+}
+@media (hover: hover) {
+  .dark
+    .\[\&_\[data-info-section\]\]\:border-t
+    button.text-subtle-foreground:not([aria-expanded]):hover {
+    color: var(--foreground);
+  }
+}
+
 /* bb paints the active settings and plugins row with the same 8%
  * --sidebar-accent as hover, but keeps 74% text, so a hovered row would
  * outrank the selection. Selection takes the 14% layer and primary text. The
@@ -900,6 +936,23 @@
       border-left-width: 0;
     }
   }
+
+  /* The Info tab draws its rules through arbitrary variants on the wrapper:
+   * a border-t on each [data-info-section], and a border-b under the detail
+   * rows when no section follows. The second sits behind :has(), which this
+   * sheet cannot ship, so its width is a hairline whenever the class is
+   * present and its style is none at zero weight; bb's conditional style
+   * outranks that whenever its :has() matches. */
+  :where(.dark) .\[\&_\[data-info-section\]\]\:border-t [data-info-section]:not(z) {
+    border-top-width: var(--hairline-width);
+  }
+  :where(.dark)
+    .\[\:not\(\:has\(\[data-info-section\]\)\)\>\&\]\:border-b.\[\:not\(\:has\(\[data-info-section\]\)\)\>\&\]\:border-b:not(z) {
+    border-bottom-width: var(--hairline-width);
+  }
+  :where(.dark .\[\:not\(\:has\(\[data-info-section\]\)\)\>\&\]\:border-b) {
+    border-bottom-style: none;
+  }
 }
 
 /* Hairline rings. On a 3x screen WebKit cannot draw a one-device-pixel border
@@ -1015,6 +1068,163 @@
   overscroll-behavior-x: none;
 }
 
+/* Scroll areas fade at an edge with more content past it instead of cutting
+ * rows off. Each edge's fade is a length a scroll timeline drives: 0 at that
+ * edge, growing to 24px over the first 24px scrolled away from it. A box that
+ * does not overflow has no active timeline, so it gets no mask at all: the
+ * gate is a space toggle, guaranteed-invalid (so mask-image computes to none)
+ * until a timeline's keyframe empties it. The mask must sit in the rule
+ * rather than the keyframes: Chrome resolves var() in keyframes before other
+ * animations apply, so a keyframe mask never sees the animated lengths. The
+ * lengths do not inherit, so nested scroll areas fade on their own, and each
+ * scroll area resets the gate. Browsers without scroll timelines keep the
+ * hard edge. */
+@property --monokai-fade-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --monokai-fade-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --monokai-fade-left {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --monokai-fade-right {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+/* Rows that a sticky header covers start fading at its lower edge. */
+@property --monokai-fade-top-inset {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@supports (animation-timeline: scroll()) {
+  .dark .overflow-auto,
+  .dark .overflow-scroll,
+  .dark .overflow-y-auto,
+  .dark .overflow-y-scroll,
+  .dark .overflow-x-auto,
+  .dark .overflow-x-scroll,
+  .dark [data-radix-scroll-area-viewport] {
+    --monokai-fade-gate: initial;
+    mask-image:
+      var(--monokai-fade-gate)
+      linear-gradient(
+        to bottom,
+        black var(--monokai-fade-top-inset),
+        transparent var(--monokai-fade-top-inset),
+        black calc(var(--monokai-fade-top-inset) + var(--monokai-fade-top)),
+        black calc(100% - var(--monokai-fade-bottom)),
+        transparent
+      ),
+      linear-gradient(
+        to right,
+        transparent,
+        black var(--monokai-fade-left),
+        black calc(100% - var(--monokai-fade-right)),
+        transparent
+      );
+    mask-composite: intersect;
+    animation-name:
+      monokai-fade-gate, monokai-fade-gate, monokai-fade-top, monokai-fade-bottom, monokai-fade-left,
+      monokai-fade-right;
+    animation-duration: auto;
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+    animation-timeline:
+      scroll(self block), scroll(self inline), scroll(self block), scroll(self block), scroll(self inline),
+      scroll(self inline);
+    animation-range:
+      normal,
+      normal,
+      0 24px,
+      calc(100% - 24px) 100%,
+      0 24px,
+      calc(100% - 24px) 100%;
+  }
+
+  /* A Radix popover or dialog whose own box scrolls, such as the model
+   * picker's More models menu, keeps its open and close animations from
+   * Tailwind's layer, so it keeps a hard edge. */
+  .dark [data-side].overflow-auto,
+  .dark [data-side].overflow-y-auto,
+  .dark [data-side].overflow-scroll,
+  .dark [data-side].overflow-y-scroll,
+  .dark [role="dialog"].overflow-auto,
+  .dark [role="dialog"].overflow-y-auto,
+  .dark [role="dialog"].overflow-scroll,
+  .dark [role="dialog"].overflow-y-scroll {
+    animation: revert-layer;
+  }
+
+  /* gtd-sidebar's shelf header pins over the top 24px of its list. */
+  .dark [data-gtd-sidebar-thread-list] > .overflow-y-auto {
+    --monokai-fade-top-inset: 24px;
+  }
+
+  /* bb's composer is sticky at the bottom of the thread, so rows already
+   * pass under it there; a bottom fade would fade the composer. */
+  .dark .thread-scrollbar {
+    animation-name:
+      monokai-fade-gate, monokai-fade-gate, monokai-fade-top, none, monokai-fade-left, monokai-fade-right;
+  }
+
+  @keyframes monokai-fade-gate {
+    from,
+    to {
+      --monokai-fade-gate: ;
+    }
+  }
+
+  @keyframes monokai-fade-top {
+    from {
+      --monokai-fade-top: 0px;
+    }
+    to {
+      --monokai-fade-top: 24px;
+    }
+  }
+
+  @keyframes monokai-fade-bottom {
+    from {
+      --monokai-fade-bottom: 24px;
+    }
+    to {
+      --monokai-fade-bottom: 0px;
+    }
+  }
+
+  @keyframes monokai-fade-left {
+    from {
+      --monokai-fade-left: 0px;
+    }
+    to {
+      --monokai-fade-left: 24px;
+    }
+  }
+
+  @keyframes monokai-fade-right {
+    from {
+      --monokai-fade-right: 24px;
+    }
+    to {
+      --monokai-fade-right: 0px;
+    }
+  }
+}
+
 /* Rules drawn as 1px boxes, such as the sidebar's section rules, become a
  * hairline-wide box. --hairline-width keeps a box at one device pixel or more
  * at every density (1px at 1x, 0.5px at 2x, 2/3px at 3x), so it cannot round
@@ -1075,6 +1285,93 @@
   .dark [data-testid="app-layout-root"] {
     background-color: var(--sidebar);
   }
+
+  /* The drawer pads its bottom by the home indicator's safe area, so the
+   * Settings list, which has no footer below it, ended in a hard cut above the
+   * home indicator. Run the list to the screen's edge and keep the safe area
+   * as space at its end, where the last row scrolls clear. The thread list
+   * runs under it too, with its footer moved into the rail (below). */
+  .dark [data-sidebar="panel"] [data-testid="settings-sidebar-body"] > [data-sidebar="content"] {
+    margin-bottom: calc(-1 * env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* bb clips the drawer body to its box, 6px wider for the edge shadow; let
+   * the Settings list overhang the bottom. Nothing else reaches past it. */
+  .dark [data-sidebar="panel"] [data-testid="nav-rail-sidebar-body"] {
+    clip-path: inset(0 -6px calc(-1 * env(safe-area-inset-bottom)) 0);
+  }
+
+  /* Phone drawer, Rail navigation: the footer's icons stack in the rail above
+   * Settings, as a column, and the list beside them runs to the bottom. bb's
+   * sidebar grid is rail | body over Settings | footer; the footer takes a new
+   * row between the rail and Settings, and the body spans all three.
+   * bb sizes the footer to its row, showing floor((row + gap) / (More + gap)) - 1
+   * items and folding the rest into More. A column is one icon wide, so the
+   * inner row keeps a wide padded box that bb measures and taps pass through,
+   * while its icons stack in the rail. `contain` keeps that box from
+   * widening the rail. The Settings list has no footer and leaves row 2 empty. */
+  .dark [data-sidebar="panel"] [data-testid="nav-rail-sidebar-body"] {
+    grid-row: 1 / span 3;
+  }
+
+  /* With the footer gone from under it, the thread list's scroll area runs
+   * under the home indicator, as the Settings list does. It publishes the
+   * strip's height as --sidebar-list-bottom-inset, so a list (gtd-sidebar)
+   * can pad its end and lift floating controls clear of the indicator. */
+  .dark [data-sidebar="panel"] [data-testid="nav-rail-sidebar-body"] [data-testid="app-sidebar-body"] > [data-sidebar="content"] {
+    --sidebar-list-bottom-inset: env(safe-area-inset-bottom);
+    margin-bottom: calc(-1 * env(safe-area-inset-bottom));
+  }
+
+  .dark [data-sidebar="panel"] [data-testid="nav-rail-sidebar-body"] + div {
+    grid-row: 3;
+    grid-column: 1;
+  }
+
+  .dark [data-sidebar="panel"] [data-testid="sidebar-footer-body"] {
+    grid-row: 2;
+    grid-column: 1;
+    contain: inline-size;
+    background-color: var(--surface-recessed);
+  }
+
+  .dark [data-testid="sidebar-footer-body"] [data-sidebar="footer"] {
+    padding: 0 0 6px;
+  }
+
+  .dark [data-testid="sidebar-footer-body"] [data-sidebar="menu"] {
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .dark [data-testid="sidebar-footer-body"] [data-sidebar="menu-item"] {
+    flex: none;
+    min-width: 0;
+  }
+
+  .dark
+    [data-testid="sidebar-footer-body"]
+    [data-sidebar="footer"]
+    > [data-sidebar="menu"]
+    > [data-sidebar="menu-item"]:first-child {
+    align-self: stretch;
+    pointer-events: none;
+  }
+
+  .dark [data-testid="sidebar-footer-body"] [data-sidebar="menu-item"] > [data-sidebar="menu"] {
+    box-sizing: content-box;
+    padding-inline-end: 400px;
+  }
+
+  .dark
+    [data-testid="sidebar-footer-body"]
+    [data-sidebar="menu-item"]
+    > [data-sidebar="menu"]
+    > [data-sidebar="menu-item"] {
+    pointer-events: auto;
+  }
 }
 
 .dark [data-sidebar-mobile-backdrop] {
@@ -1088,6 +1385,70 @@
     transparent
   );
   box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+}
+
+/* Phone right panel depth, the left drawer's mirror. bb opens the right panel
+ * full screen and slides the page off it. Here the panel covers 90% of the
+ * screen from behind the page, which slides left by that width, keeps the
+ * display's corners, and washes out under the drawer's grey, hairline-edged
+ * scrim.
+ *
+ * The app's panel-depth script caps bb's full-width swipe at the panel's
+ * width, adds the scrim as [data-monokai-panel-wash], the page's last child,
+ * and sets its opacity from how far the page has slid. It marks the page and
+ * the document root data-monokai-panel-depth while the page is aside or
+ * sliding back, and closes the panel on a tap on the scrim. The root mark
+ * hides the left drawer, which bb keeps mounted behind the page's left edge,
+ * where the rounded corners would show it. */
+@media (max-width: 767px) {
+  .dark [data-testid="secondary-panel-shelf"] {
+    width: 90vw !important;
+    border-left-width: 0;
+    z-index: 0 !important;
+  }
+
+  .dark [data-sidebar="inset"][data-panel-shelf="full"] {
+    translate: -90vw;
+  }
+}
+
+/* bb pads the compact right panel's bottom by the home indicator's safe area,
+ * so every tab ended in a hard cut above it. Run tab content to the screen's
+ * bottom edge, under the indicator. */
+.dark [data-testid="secondary-panel-shelf"] {
+  padding-bottom: 0;
+}
+
+.dark [data-sidebar="inset"][data-monokai-panel-depth] {
+  overflow: clip;
+  border-radius: var(--monokai-display-radius);
+}
+
+.dark[data-monokai-panel-depth] [data-sidebar="panel"][data-vaul-drawer-direction="left"] {
+  visibility: hidden;
+}
+
+.dark [data-monokai-panel-wash] {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  border-radius: inherit;
+  background-color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--foreground) 12%, var(--background)) 50%,
+    transparent
+  );
+  box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+  pointer-events: none;
+  transition: opacity 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.dark [data-sidebar="inset"][data-panel-shelf="full"] > [data-monokai-panel-wash] {
+  pointer-events: auto;
+}
+
+.dark [data-sidebar="inset"][data-monokai-panel-depth="dragging"] > [data-monokai-panel-wash] {
+  transition: none;
 }
 
 @media (min-width: 768px) {
@@ -1314,7 +1675,9 @@
  * translucent header tint, so the dither starts below it. bb sets
  * --bb-window-frame-top to the title bar's height there and 0px elsewhere. */
 .dark #root-compose-main-panel::before,
-.dark #root-compose-main-panel::after {
+.dark #root-compose-main-panel::after,
+.dark[data-monokai-home] [data-app-content-shell]::before,
+.dark[data-monokai-home] [data-app-content-shell]::after {
   position: absolute;
   inset: var(--bb-window-frame-top, 0px) 0 0;
   z-index: -1;
@@ -1332,7 +1695,8 @@
   mask-size: 100cqw 100%;
 }
 
-.dark #root-compose-main-panel::before {
+.dark #root-compose-main-panel::before,
+.dark[data-monokai-home] [data-app-content-shell]::before {
   background-position:
     0 0,
     6px 6px;
@@ -1341,7 +1705,8 @@
     radial-gradient(120% 75% at 50% 0, black, transparent 80%);
 }
 
-.dark #root-compose-main-panel::after {
+.dark #root-compose-main-panel::after,
+.dark[data-monokai-home] [data-app-content-shell]::after {
   background-image:
     conic-gradient(from 270deg at 2px 2px, #566a9eb3 25%, transparent 0),
     conic-gradient(from 270deg at 2px 2px, #566a9eb3 25%, transparent 0);
@@ -1353,6 +1718,36 @@
     radial-gradient(60% 55% at 100% 0, black, transparent),
     radial-gradient(40% 45% at 0 0, black, transparent);
   mask-composite: intersect, add;
+}
+
+/* On phones bb pads the content shell by the status bar's safe area and clips
+ * the panel below it, so the panel's dither stopped short of the screen's top
+ * edge. Paint it from the shell instead, which spans the safe area; the shell
+ * draws no page outline at this width. Wider layouts keep it on the panel. */
+@media (max-width: 767px) {
+  .dark[data-monokai-home] [data-app-content-shell] {
+    isolation: isolate;
+  }
+
+  .dark[data-monokai-home] [data-app-content-shell]::after {
+    display: block;
+  }
+
+  .dark[data-monokai-home] [data-app-content-shell]::before,
+  .dark[data-monokai-home] [data-app-content-shell]::after {
+    mask-size: 100% 100%;
+  }
+
+  .dark #root-compose-main-panel::before,
+  .dark #root-compose-main-panel::after {
+    display: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .dark[data-monokai-home] [data-app-content-shell]::before {
+    display: none;
+  }
 }
 
 [data-testid="root-compose-compact-composer"] > .bg-background,
@@ -1813,16 +2208,17 @@
  * only while the window directly follows the header; a plugin header row
  * between them leaves bb's stacked layout alone. The bar fades from the page
  * ground, which also paints the safe-area strip above it, to clear across a
- * tail that ignores taps. The header's action group floats on a translucent
- * pill, and while a thread is open (app/thread-marker.ts) so does bb's
- * app-wide sidebar toggle; other pages keep bb's plain toggle. Only those two
- * small areas blur, so a streaming timeline does not repaint a full-width
- * backdrop each frame. Every button is a 44px touch target with a 22px glyph
+ * tail that ignores taps. The header's action group floats on a pill, and
+ * while a thread is open (app/thread-marker.ts) so does bb's app-wide sidebar
+ * toggle, drawn on the header (below); other pages keep bb's plain toggle.
+ * Both pills sit on the bar's opaque band, so they take the 72% popover tint
+ * pre-mixed over the ground instead of a backdrop blur: iOS Safari flickers a
+ * blurred layer inside the page bb slides with a transform. Every button is a 44px touch target with a 20px glyph
  * in the foreground color, so bb's toggles match gtd-sidebar's New thread and
- * Settle; the thread context button leaves the group. bb leaves the sidebar
- * toggle above its open phone drawer and drops `data-panel-shelf` from it
- * then, so the toggle hides while the drawer is open. Gated on bb's compact
- * width (`useIsCompactViewport`). */
+ * Settle; the thread context button leaves the group. bb keeps the sidebar
+ * toggle above its open phone drawer, where it stays as the drawer's close
+ * button, over the spacer bb leaves atop the drawer's rail for it. Gated on
+ * bb's compact width (`useIsCompactViewport`). */
 @media (max-width: 767px) {
   .dark [data-split-pane-id] > header {
     z-index: 20;
@@ -1864,33 +2260,49 @@
     margin-top: var(--bb-app-chrome-row-height);
   }
 
+  /* A title too long for the row fades out over its last 20px, as the
+   * sidebar's rows do, instead of ending in an ellipsis. The sidebar measures
+   * each row in script; here a scroll timeline stands in for the measurement:
+   * bb's title span clips its overflow, which makes it a scroll container,
+   * and its timeline is active, applying the fade, only while the text
+   * overflows. Browsers without scroll timelines keep bb's ellipsis. */
+  @supports (animation-timeline: scroll()) {
+    .dark [data-split-pane-id] > header .bb-thread-title > span {
+      text-overflow: clip;
+      animation: monokai-title-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
+
+  @keyframes monokai-title-fade {
+    from,
+    to {
+      -webkit-mask-image: linear-gradient(to right, black calc(100% - 20px), transparent);
+      mask-image: linear-gradient(to right, black calc(100% - 20px), transparent);
+    }
+  }
+
   /* The 44px toggle sits 12px in from the edge; the title starts 12px after it. */
   .dark[data-monokai-thread] [data-split-pane-id] > header [data-testid="app-page-header-content-row"] {
     padding-left: 52px;
   }
 
-  .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"],
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
     border-width: 0;
     border-radius: 9999px;
     box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
-    background-color: color-mix(in oklab, var(--popover) 72%, transparent);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
+    background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
   }
 
-  .dark [data-testid="app-sidebar-trigger-overlay"]:not([data-panel-shelf]) {
-    visibility: hidden;
+  /* History back and forward have the phone's own back gesture; the drawer's
+   * top row, in the app sidebar and in Settings, keeps only its first action. */
+  .dark [data-testid$="sidebar-top-reserve-row"] button[aria-label="Go back"],
+  .dark [data-testid$="sidebar-top-reserve-row"] button[aria-label="Go forward"] {
+    display: none;
   }
 
-  /* bb drops data-panel-shelf only once the drawer has opened. Hide the fixed
-   * toggle while the page is open or moving aside so it does not overlap
-   * the drawer's content. */
-  .dark [data-sidebar="inset"][data-sidebar-shelf="open"] ~ [data-testid="app-sidebar-trigger-overlay"],
-  .dark [data-sidebar="inset"][data-vaul-animate] ~ [data-testid="app-sidebar-trigger-overlay"] {
-    visibility: hidden;
-  }
-
+  /* No end padding: the first and last 44px buttons sit concentric with the
+   * pill's rounded ends, so a pressed fill keeps an even ring of pill. */
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
     gap: 0;
   }
@@ -1905,7 +2317,86 @@
     display: none;
   }
 
-  .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"],
+  /* The sidebar toggle is fixed to the screen, so it cannot slide aside with
+   * the thread when the drawer opens. On a thread the visible toggle is a
+   * copy drawn on the thread header, which the page carries, at bb's spot:
+   * 2px down in the 48px row and bb's rail padding in (12px under a coarse
+   * pointer, 2px less under a fine one). bb's own toggle stays on top of it,
+   * transparent, and takes the taps. Swapping the two as the drawer moved
+   * flickered on iOS, which can paint a frame with neither blurred layer, so
+   * neither ever hides. While the drawer is open or moving, bb's toggle stops
+   * taking taps so it cannot cover the rail; a tap on the pushed-aside page
+   * lands on bb's backdrop and closes the drawer. The glyph is bb's PanelLeft.
+   * Other pages draw the same copy on the page's content shell (below), so
+   * the toggle behaves the same everywhere. bb's wrapper is a 56px-wide fixed
+   * box over the rail's first icon, Home, so it passes taps through and only
+   * the button takes them. */
+  .dark [data-sidebar="inset"] {
+    --monokai-sidebar-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 12C2 8.31087 2 6.4663 2.81382 5.15877C3.1149 4.67502 3.48891 4.25427 3.91891 3.91554C5.08116 3 6.72077 3 10 3H14C17.2792 3 18.9188 3 20.0811 3.91554C20.5111 4.25427 20.8851 4.67502 21.1862 5.15877C22 6.4663 22 8.31087 22 12C22 15.6891 22 17.5337 21.1862 18.8412C20.8851 19.325 20.5111 19.7457 20.0811 20.0845C18.9188 21 17.2792 21 14 21H10C6.72077 21 5.08116 21 3.91891 20.0845C3.48891 19.7457 3.1149 19.325 2.81382 18.8412C2 17.5337 2 15.6891 2 12Z'/%3E%3Cpath d='M9.5 3L9.5 21' stroke-linejoin='round'/%3E%3Cpath d='M5 7H6M5 10H6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+
+  .dark [data-testid="app-sidebar-trigger-overlay"] {
+    pointer-events: none;
+  }
+
+  .dark [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"] {
+    opacity: 0;
+    pointer-events: auto;
+  }
+
+  .dark
+    [data-sidebar="inset"][data-sidebar-shelf="open"]
+    ~ [data-testid="app-sidebar-trigger-overlay"]
+    > [data-sidebar="trigger"],
+  .dark
+    [data-sidebar="inset"][data-vaul-animate]
+    ~ [data-testid="app-sidebar-trigger-overlay"]
+    > [data-sidebar="trigger"],
+  .dark
+    [data-testid="app-sidebar-trigger-overlay"]:not([data-panel-shelf])
+    > [data-sidebar="trigger"] {
+    pointer-events: none;
+  }
+
+  .dark[data-monokai-thread] [data-split-pane-id] > header::before {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: calc(var(--bb-sidebar-rail-padding) - 2px);
+    width: 44px;
+    height: 44px;
+    border-radius: 9999px;
+    box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+    background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
+    pointer-events: none;
+  }
+
+  .dark[data-monokai-thread] [data-split-pane-id] > header [data-testid="app-page-header-content-row"]::before {
+    content: "";
+    position: absolute;
+    top: 14px;
+    /* The glyph centers in the circle; the row starts 16px in. */
+    left: calc(var(--bb-sidebar-rail-padding) - 2px + 12px - 16px);
+    width: 20px;
+    height: 20px;
+    background-color: var(--foreground);
+    -webkit-mask: var(--monokai-sidebar-glyph) center / contain no-repeat;
+    mask: var(--monokai-sidebar-glyph) center / contain no-repeat;
+    pointer-events: none;
+  }
+  /* bb insets its toggle 2px more under a coarse pointer. */
+  @media (pointer: coarse) {
+    .dark[data-monokai-thread] [data-split-pane-id] > header::before {
+      left: var(--bb-sidebar-rail-padding);
+    }
+
+    .dark[data-monokai-thread] [data-split-pane-id] > header [data-testid="app-page-header-content-row"]::before {
+      left: calc(var(--bb-sidebar-rail-padding) + 12px - 16px);
+    }
+  }
+
+
+  .dark [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"],
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div button {
     width: 44px;
     height: 44px;
@@ -1913,7 +2404,7 @@
     color: var(--foreground);
   }
 
-  .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"] [data-icon-root],
+  .dark [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"] [data-icon-root],
   .dark
     [data-split-pane-id]
     > header
@@ -1922,8 +2413,213 @@
     + div
     button
     [data-icon-root] {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* Phone top bars off a thread take the thread header's pills: the New thread
+ * page's two floating toggles, a plugin page's header, and the right panel's
+ * tab bar. Away from a thread the sidebar toggle's copy rides on the page's
+ * content shell instead of a header. A plugin page header drops its seam, as the
+ * thread header does, and floats its action group on the same pill, without
+ * the Close pane button: a phone shows one pane, and the drawer leaves it. The
+ * right panel's tab pager, its pinned views included, floats on the action
+ * pill across the whole row: the panel's hide toggle goes, since a swipe or a
+ * tap on the page beside it closes the panel. bb measures the tab chip in
+ * script against the pager's free width, so the pager keeps bb's flex sizing
+ * and only the buttons around the chip change size. */
+@media (max-width: 767px) {
+  .dark[data-monokai-home] [data-testid="app-layout-content-shell"] button[aria-label*="right panel"] {
+    width: 44px;
+    height: 44px;
+    border-radius: 9999px;
+    color: var(--foreground);
+    box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+    background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
+    /* bb hides the toggle's wrapper while the right panel is open; like the
+     * thread header's toggle it stays on the page, which the panel pushes aside. */
+    visibility: visible;
+  }
+
+  /* bb's wrapper sits 6px down; the 44px circle shares the row's centre. */
+  .dark[data-monokai-home] [data-testid="app-layout-content-shell"] button[aria-label*="right panel"] {
+    margin-top: -4px;
+  }
+
+  /* The sidebar toggle's copy off a thread, at bb's toggle spot: the shell
+   * starts at the top of the screen, under the status bar. */
+  .dark:not([data-monokai-thread]) [data-sidebar="inset"] > [data-testid="app-layout-content-shell"]::before,
+  .dark:not([data-monokai-thread]) [data-sidebar="inset"] > [data-testid="app-layout-content-shell"]::after {
+    content: "";
+    position: absolute;
+    z-index: 30;
+    pointer-events: none;
+  }
+
+  .dark:not([data-monokai-thread]) [data-sidebar="inset"] > [data-testid="app-layout-content-shell"]::before {
+    top: calc(env(safe-area-inset-top) + 2px);
+    left: calc(env(safe-area-inset-left) + var(--bb-sidebar-rail-padding) - 2px);
+    width: 44px;
+    height: 44px;
+    border-radius: 9999px;
+    box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+    background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
+  }
+
+  .dark:not([data-monokai-thread]) [data-sidebar="inset"] > [data-testid="app-layout-content-shell"]::after {
+    top: calc(env(safe-area-inset-top) + 14px);
+    left: calc(env(safe-area-inset-left) + var(--bb-sidebar-rail-padding) - 2px + 12px);
+    width: 20px;
+    height: 20px;
+    background-color: var(--foreground);
+    -webkit-mask: var(--monokai-sidebar-glyph) center / contain no-repeat;
+    mask: var(--monokai-sidebar-glyph) center / contain no-repeat;
+  }
+
+  @media (pointer: coarse) {
+    .dark:not([data-monokai-thread]) [data-sidebar="inset"] > [data-testid="app-layout-content-shell"]::before {
+      left: calc(env(safe-area-inset-left) + var(--bb-sidebar-rail-padding));
+    }
+
+    .dark:not([data-monokai-thread]) [data-sidebar="inset"] > [data-testid="app-layout-content-shell"]::after {
+      left: calc(env(safe-area-inset-left) + var(--bb-sidebar-rail-padding) + 12px);
+    }
+  }
+
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] {
+    padding-left: 52px;
+  }
+
+  .dark :not([data-split-pane-id]) > header {
+    border-bottom-width: 0;
+  }
+
+  /* With Close pane gone the group is often the panel toggle alone, so the
+   * pill keeps no end padding and a lone button draws the thread's circle. */
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div {
+    gap: 0;
+    border-radius: 9999px;
+    box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+    background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
+  }
+
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div > div {
+    gap: 0;
+  }
+
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div button[aria-label="Close pane"] {
+    display: none;
+  }
+
+  /* While the right panel is open bb moves a plugin page's panel toggle into
+   * the panel and empties its header slot. A drawn copy of bb's PanelRight
+   * holds the slot, so the pill neither collapses nor pops back as the panel
+   * closes, as the thread header's toggle stays put. */
+  .dark :not([data-split-pane-id]) > header [data-plugin-right-panel-toggle-portal]:empty {
+    width: 44px;
+    height: 44px;
+    background-color: var(--foreground);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 12C2 8.3109 2 6.46633 2.81382 5.1588C3.1149 4.67505 3.48891 4.2543 3.91891 3.91557C5.08116 3.00003 6.72077 3.00003 10 3.00003H14C17.2792 3.00003 18.9188 3.00003 20.0811 3.91557C20.5111 4.2543 20.8851 4.67505 21.1862 5.1588C22 6.46633 22 8.3109 22 12C22 15.6892 22 17.5337 21.1862 18.8413C20.8851 19.325 20.5111 19.7458 20.0811 20.0845C18.9188 21 17.2792 21 14 21H10C6.72077 21 5.08116 21 3.91891 20.0845C3.48891 19.7458 3.1149 19.325 2.81382 18.8413C2 17.5337 2 15.6892 2 12Z'/%3E%3Cpath d='M14.5 3.00003L14.5 21' stroke-linejoin='round'/%3E%3Cpath d='M18 7.00006H19M18 10.0001H19' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 20px 20px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 12C2 8.3109 2 6.46633 2.81382 5.1588C3.1149 4.67505 3.48891 4.2543 3.91891 3.91557C5.08116 3.00003 6.72077 3.00003 10 3.00003H14C17.2792 3.00003 18.9188 3.00003 20.0811 3.91557C20.5111 4.2543 20.8851 4.67505 21.1862 5.1588C22 6.46633 22 8.3109 22 12C22 15.6892 22 17.5337 21.1862 18.8413C20.8851 19.325 20.5111 19.7458 20.0811 20.0845C18.9188 21 17.2792 21 14 21H10C6.72077 21 5.08116 21 3.91891 20.0845C3.48891 19.7458 3.1149 19.325 2.81382 18.8413C2 17.5337 2 15.6892 2 12Z'/%3E%3Cpath d='M14.5 3.00003L14.5 21' stroke-linejoin='round'/%3E%3Cpath d='M18 7.00006H19M18 10.0001H19' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 20px 20px no-repeat;
+  }
+
+  .dark [data-testid="mobile-panel-tab-pager"],
+  .dark [data-testid="mobile-panel-tab-pager"] > div {
+    gap: 0;
+  }
+
+  .dark [data-testid="mobile-panel-tab-pager"] {
+    border-radius: 9999px;
+    box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+    background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
+  }
+
+  /* With no pinned views the tab chip led the pill flush against its start;
+   * the empty pinned-view group holds the 4px the chip keeps above and below,
+   * and the new-tab button keeps at the end. */
+  .dark [data-testid="mobile-panel-tab-pager"] > div:first-child:empty {
+    width: 4px;
+  }
+
+  .dark [data-testid="thread-secondary-panel-top-chrome"] > div + div > button[aria-label^="Hide right panel"] {
+    display: none;
+  }
+
+  /* bb insets the bar 8px on the left and 16px on the right, plus a gap
+   * before the toggle's now-empty slot; the pill takes 16px at both ends. */
+  .dark [data-testid="thread-secondary-panel-top-chrome"] {
+    gap: 0;
+    padding-inline: 16px;
+    /* 10px between the pill and the tab's content, not bb's 2px. */
+    margin-bottom: 8px;
+  }
+
+  /* A swipe across the tab chip already steps through the tabs, so the
+   * arrows give their room to the chip, as the thread header's history
+   * arrows give theirs to the title. */
+  .dark [data-testid="mobile-panel-tab-pager"] > div > button[aria-label="Previous tab"],
+  .dark [data-testid="mobile-panel-tab-pager"] > div > button[aria-label="Next tab"] {
+    display: none;
+  }
+
+  .dark [data-testid="mobile-panel-tab-pager"] [data-tab-pill],
+  .dark [data-testid="mobile-panel-tab-pager"] [data-tab-pill] > button {
+    border-radius: 9999px;
+  }
+
+  /* A round chip's ends curve in, so bb's insets crowd them: the close glyph
+   * moves 4px in from the start, the label follows it, and the label keeps
+   * 14px before the end. The glyph takes the label's colour; bb's 70% muted
+   * grey faded into the active chip's fill. */
+  .dark [data-testid="mobile-panel-tab-viewport"] [data-tab-pill] > button[aria-pressed] {
+    padding-left: 40px;
+    padding-right: 14px;
+  }
+
+  .dark [data-testid="mobile-panel-tab-viewport"] [data-tab-pill] > [data-tab-pill-close] {
+    translate: 4px 0;
+    color: var(--foreground);
+  }
+
+  .dark [data-testid="mobile-panel-tab-pager"] > div:first-child > [data-tab-pill] {
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+  }
+
+  /* A pressed, active, or hovered control inside a pill fills a 36px circle
+   * centred in its 44px target, leaving an even 4px of pill on every side;
+   * a full-size fill met the pill's top and bottom but not its ends. A pinned
+   * view paints its fill on the tab pill around its button, so the pill
+   * takes the inset and the button reaches back out to keep the 44px target. */
+  .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div button,
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div button,
+  .dark [data-testid="mobile-panel-tab-pager"] > div > button,
+  .dark [data-testid="mobile-panel-tab-pager"] > div:first-child > [data-tab-pill] {
+    padding: 4px;
+    background-clip: content-box;
+  }
+
+  .dark [data-testid="mobile-panel-tab-pager"] > div:first-child > [data-tab-pill] > button {
+    margin: -4px;
+  }
+
+  .dark [data-testid="mobile-panel-tab-pager"] > div:first-child > [data-tab-pill] > button,
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div button,
+  .dark [data-testid="mobile-panel-tab-pager"] > div > button {
+    width: 44px;
+    height: 44px;
+    border-radius: 9999px;
+    color: var(--foreground);
+  }
+
+  .dark[data-monokai-home] [data-testid="app-layout-content-shell"] button[aria-label*="right panel"] [data-icon-root],
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div button [data-icon-root],
+  .dark [data-testid="mobile-panel-tab-pager"] > div > button [data-icon-root],
+  .dark [data-testid="mobile-panel-tab-pager"] > div:first-child > [data-tab-pill] > button [data-icon-root] {
+    width: 20px;
+    height: 20px;
   }
 }
 

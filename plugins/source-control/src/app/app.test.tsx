@@ -464,7 +464,7 @@ test("the tab is registered as Source Control", () => {
   expect((tab as unknown as { title: string }).title).toBe("Source Control");
 });
 
-test("stack cards draw each branch and its commits, and the base under them", async () => {
+test("stack cards draw each branch and its commits", async () => {
   const { slot } = renderRow(stacked());
   const branches = await slot.findAllByTestId("sc-branch");
   expect(branches.map((card) => card.getAttribute("aria-label"))).toEqual([
@@ -478,8 +478,7 @@ test("stack cards draw each branch and its commits, and the base under them", as
   expect(branches[1]!.textContent).toContain("Add the core schema");
   expect(branches[1]!.textContent).toContain("#481");
   expect(slot.getByTestId("sc-behind").textContent).toBe("main has 2 new commits");
-  expect(slot.getByTestId("sc-base").textContent).toContain("origin/main");
-  expect(slot.getByTestId("sc-base").textContent).toContain("a41c9e2");
+  expect(slot.queryByText(/Stack is based on/)).toBeNull();
 });
 
 test("the branch's pull request pill opens its review beside the thread, not GitHub", async () => {

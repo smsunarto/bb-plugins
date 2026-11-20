@@ -12,6 +12,9 @@ import "./app/secondary-panel-resize.css";
 // workaround:monokai/secondary-swipe-width-property end
 import "./app/home-marker.css";
 import { mountDiffHeader } from "./app/diff-header.ts";
+import { mountPanelDepth } from "./app/panel-depth.ts";
+import { mountPanelTabHaptics } from "./app/panel-tab-haptics.ts";
+import { mountPanelTabGlide } from "./app/panel-tab-glide.ts";
 // workaround:monokai/context-card-late-layout begin
 import { mountContextCardState } from "./app/context-card-state.ts";
 // workaround:monokai/context-card-late-layout end
@@ -34,6 +37,12 @@ export default definePluginApp((app) => {
   app.contentScripts.register({ id: "panel-new-tab", mount: mountPanelNewTab });
   app.contentScripts.register({ id: "diff-header", mount: mountDiffHeader });
   app.contentScripts.register({ id: "project-control", mount: mountProjectControl });
+  // The phone right panel mirrors the left drawer's depth; see app/panel-depth.ts.
+  app.contentScripts.register({ id: "panel-depth", mount: mountPanelDepth });
+  // A haptic tick as the right panel's active tab changes in bb's iOS app.
+  app.contentScripts.register({ id: "panel-tab-haptics", mount: mountPanelTabHaptics });
+  // The tab pager's highlight slides between same-size tabs; see app/panel-tab-glide.ts.
+  app.contentScripts.register({ id: "panel-tab-glide", mount: mountPanelTabGlide });
   // workaround:monokai/context-card-late-layout begin
   app.contentScripts.register({ id: "context-card-state", mount: mountContextCardState });
   // workaround:monokai/context-card-late-layout end

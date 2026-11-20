@@ -380,7 +380,15 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain("order: 1;\n  margin-top: auto;\n  margin-bottom: auto;");
     // The halftone starts below the macOS title bar, which bb tints translucent.
     expect(theme).toContain(
-      ".dark #root-compose-main-panel::after {\n  position: absolute;\n  inset: var(--bb-window-frame-top, 0px) 0 0;",
+      "[data-app-content-shell]::after {\n  position: absolute;\n  inset: var(--bb-window-frame-top, 0px) 0 0;",
+    );
+    // Phones paint it from the content shell, which spans the status bar's
+    // safe area; wider layouts keep it on the panel.
+    expect(theme).toContain(
+      "@media (max-width: 767px) {\n  .dark[data-monokai-home] [data-app-content-shell] {\n    isolation: isolate;",
+    );
+    expect(theme).toContain(
+      ".dark #root-compose-main-panel::before,\n  .dark #root-compose-main-panel::after {\n    display: none;",
     );
     // The halftone is a still image: no animation or transition rides on it.
     const halftone = theme.slice(theme.indexOf(".dark #root-compose-main-panel::before,"));

@@ -45,6 +45,10 @@ function fixture() {
   return { element, terminal, fit, fiber };
 }
 
+// bbPage() swaps these globals for fakes. Put back whatever was there before,
+// such as the jsdom another test file installed: deleting them made the next
+// file's installDom() build a second jsdom document beside the first one's
+// HTMLElement, so `instanceof HTMLElement` failed in every later DOM test.
 const DOM_GLOBALS = [
   "document",
   "getComputedStyle",
@@ -52,8 +56,14 @@ const DOM_GLOBALS = [
   "requestAnimationFrame",
   "cancelAnimationFrame",
 ];
+const savedGlobals = DOM_GLOBALS.map(
+  (name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const,
+);
 afterEach(() => {
-  for (const name of DOM_GLOBALS) Reflect.deleteProperty(globalThis, name);
+  for (const [name, descriptor] of savedGlobals) {
+    if (descriptor === undefined) Reflect.deleteProperty(globalThis, name);
+    else Object.defineProperty(globalThis, name, descriptor);
+  }
 });
 
 // A bb 0.45 page with one terminal in a 480px pane. Like ThreadTerminalView,
