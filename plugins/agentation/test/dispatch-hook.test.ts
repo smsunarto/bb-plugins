@@ -185,3 +185,17 @@ test("an interrupted turn re-stages its pill when bb will not resume it", async 
     assert.deepEqual(await staged(), ["ann_1"]);
   });
 });
+
+test("a pill the agent acknowledged stays assigned after its turn ends", async () => {
+  await withStagedAnnotation(async ({ harness, hook, staged }) => {
+    const thread = makeThreadResponse({ id: "thr_acked", status: "pending" });
+    await hook(dispatch(thread, "start-turn"));
+    await harness.callAgentTool("agentation_acknowledge", { annotationId: "ann_1" });
+
+    await harness.emitThreadEvent("thread.idle", {
+      thread: { ...thread, status: "idle" },
+      lastAssistantText: null,
+    });
+    assert.deepEqual(await staged(), []);
+  });
+});

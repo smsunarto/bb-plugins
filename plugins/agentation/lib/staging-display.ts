@@ -29,7 +29,7 @@ export function annotationSourceLabel(
   threadTitles: Readonly<Record<string, string>>,
 ): string {
   if (context.threadId) {
-    return `thread: ${threadTitles[context.threadId] ?? "unavailable"}`;
+    return `from ${threadTitles[context.threadId] ?? "unavailable thread"}`;
   }
 
   return context.routeLabel?.trim() || context.route;

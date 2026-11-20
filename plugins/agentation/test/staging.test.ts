@@ -352,6 +352,57 @@ test("an unresolved annotation reappears after its assigned turn", () => {
   );
 });
 
+function assignTogether(
+  db: Database.Database,
+  threadId: string,
+  phase: "awaiting-start" | "awaiting-finish",
+) {
+  seed(db, "ann_pending");
+  seed(db, "ann_acked");
+  const claim = claimStagedAnnotations(db, {
+    annotationIds: ["ann_pending", "ann_acked"],
+    threadId,
+  });
+  if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+  completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: phase });
+  setAnnotationStatus(db, { annotationId: "ann_acked", status: "acknowledged", by: "agent" });
+}
+
+function assertAcknowledgedStaysAssigned(db: Database.Database, threadId: string) {
+  assert.deepEqual(
+    listStagedAnnotations(db).map((annotation) => annotation.id),
+    ["ann_pending"],
+  );
+  const kept = getAnnotationRouting(db, "ann_acked");
+  assert.equal(kept?.state, "assigned");
+  assert.equal(kept?.state === "assigned" ? kept.threadId : null, threadId);
+  assert.deepEqual(turnAssignmentThreadIds(db), []);
+}
+
+test("after a turn only the annotations the agent never acknowledged reappear", () => {
+  const db = freshDb();
+  assignTogether(db, "thr_target", "awaiting-finish");
+
+  assert.equal(restageTurnAssignments(db, "thr_target"), 1);
+  assertAcknowledgedStaysAssigned(db, "thr_target");
+});
+
+test("a failed or deleted turn also keeps acknowledged annotations assigned", () => {
+  const db = freshDb();
+  assignTogether(db, "thr_target", "awaiting-start");
+
+  assert.equal(restageTurnAssignments(db, "thr_target", { includeAwaitingStart: true }), 1);
+  assertAcknowledgedStaysAssigned(db, "thr_target");
+});
+
+test("restart recovery keeps acknowledged annotations assigned", () => {
+  const db = freshDb();
+  assignTogether(db, "thr_target", "awaiting-finish");
+
+  assert.equal(recoverInterruptedTurnAssignments(db), 1);
+  assertAcknowledgedStaysAssigned(db, "thr_target");
+});
+
 test("a queued annotation waits for its own turn instead of the active turn", () => {
   const db = freshDb();
   seed(db);

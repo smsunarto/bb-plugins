@@ -270,6 +270,11 @@ export function advanceTurnAssignments(db: Database, threadId: string): number {
     .run(nowIso(), threadId).changes;
 }
 
+/**
+ * Return a thread's turn assignments to staging once its turn ends. Only
+ * annotations the agent never picked up (`pending`) reappear; an acknowledged
+ * one belongs to the agent working on it and stays assigned.
+ */
 export function restageTurnAssignments(
   db: Database,
   threadId: string,
@@ -288,7 +293,7 @@ export function restageTurnAssignments(
            FROM annotation_turn_assignments t
            JOIN annotations a ON a.id = t.annotation_id
            WHERE t.thread_id = ? ${phaseClause}
-             AND a.status IN ('pending', 'acknowledged')
+             AND a.status = 'pending'
          )
            AND state = 'assigned'`,
       )
@@ -314,8 +319,9 @@ export function turnAssignmentThreadIds(db: Database): string[] {
  * Re-stage turn assignments the server lost track of while it was stopped
  * (restart, reload, plugin safe mode). An assignment whose thread is still
  * mid-turn keeps its phase: the thread events that follow finish it as if the
- * server had never stopped. Every other assignment returns to staging, since
- * the turn it waited on may have ended unseen.
+ * server had never stopped. Every other pending assignment returns to staging,
+ * since the turn it waited on may have ended unseen; acknowledged ones stay
+ * with the agent that picked them up.
  */
 export function recoverInterruptedTurnAssignments(
   db: Database,
@@ -336,7 +342,7 @@ export function recoverInterruptedTurnAssignments(
                SELECT t.annotation_id
                FROM annotation_turn_assignments t
                JOIN annotations a ON a.id = t.annotation_id
-               WHERE t.thread_id = ? AND a.status IN ('pending', 'acknowledged')
+               WHERE t.thread_id = ? AND a.status = 'pending'
              )`,
         )
         .run(timestamp, threadId).changes;
