@@ -394,6 +394,32 @@ describe("wake senders", () => {
     await harness.dispose();
   });
 
+  it("does not resend without the sender once the attempt has expired", async () => {
+    const { bb, harness, store, task } = setup({
+      send: async (args) => {
+        if (args.senderThreadId === undefined) return;
+        // The sender-carrying send outlives the attempt's deadline, then bb refuses it.
+        await new Promise((resolve) => setTimeout(resolve, 31_000));
+        throw Object.assign(new Error("Sender thread is invalid"), {
+          code: "parent_thread_invalid",
+        });
+      },
+    });
+    const id = pending(store, task.id, "thr_crew", "thr_captain");
+
+    const delivery = deliverParentNotification(bb, store.tasks, id);
+    await vi.advanceTimersByTimeAsync(31_000);
+    await delivery;
+
+    expect(store.tasks.getParentNotification(id)).toMatchObject({
+      state: "pending",
+      attempts: 1,
+      lastError: "wake attempt 1 timed out after 30s",
+    });
+    expect(sentArgs(harness)).toHaveLength(1);
+    await harness.dispose();
+  });
+
   it("does not resend without the sender after an unrelated send failure", async () => {
     const { bb, harness, store, task } = setup({ send: failingSend });
     const id = pending(store, task.id, "thr_crew", "thr_captain");

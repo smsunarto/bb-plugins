@@ -110,13 +110,16 @@ async function wakeSender(
 /**
  * Send the wake line as `sender`. bb rejects a sender deleted since the read
  * before it sends anything, so resending without one cannot deliver twice.
+ * False when the attempt lost its claim before that resend, which then waits
+ * for the retry that owns it.
  */
 async function sendWake(
   bb: BbPluginApi,
   target: string,
   text: string,
   sender: string | null,
-): Promise<void> {
+  stillOwned: () => boolean,
+): Promise<boolean> {
   const args = {
     threadId: target,
     input: [{ type: "text" as const, text, mentions: [] }],
@@ -124,14 +127,16 @@ async function sendWake(
   };
   if (sender === null) {
     await bb.sdk.threads.send(args);
-    return;
+    return true;
   }
   try {
     await bb.sdk.threads.send({ ...args, senderThreadId: sender });
   } catch (error) {
     if (sdkErrorCode(error) !== "parent_thread_invalid") throw error;
+    if (!stillOwned()) return false;
     await bb.sdk.threads.send(args);
   }
+  return true;
 }
 
 const SUPERSEDED: AttemptOutcome = { kind: "failed", error: "attempt expired before sending" };
@@ -179,8 +184,10 @@ async function attemptDelivery(
     const sender = await wakeSender(bb, commenter, target, commenterThread);
     // A read can outlive the deadline; a retry may have claimed or delivered since.
     if (!ownsAttempt(store, commentId, attempt, signal)) return SUPERSEDED;
-    await sendWake(bb, target, text, sender);
-    return { kind: "delivered", targetThreadId: target };
+    const sent = await sendWake(bb, target, text, sender, () =>
+      ownsAttempt(store, commentId, attempt, signal),
+    );
+    return sent ? { kind: "delivered", targetThreadId: target } : SUPERSEDED;
   } catch (error) {
     if (sdkErrorCode(error) === "thread_not_found") {
       return { kind: "undeliverable", reason: `thread ${target ?? commenter} was not found` };
