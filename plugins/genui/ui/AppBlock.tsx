@@ -5,6 +5,7 @@
 // variables. While the fence streams, a second frame draws the markup written
 // so far without running any of it. The documents and their bootstrap are in
 // appDocument.ts; what a frame may post back is checked in appBridge.ts.
+import { requestPullRequestReview } from "@bb-plugins/review-request";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
 import { experimental_saveFile, useBbNavigate } from "@get-bb/plugin-sdk/app";
@@ -340,6 +341,8 @@ function AppFrame({
         void answers.stage(QUESTION, message.text === null ? null : { text: message.text, selection: true });
         return;
       case "openLink":
+        // A plain click on a pull request's link opens its Review beside the thread, when Source Control takes it.
+        if (message.plain && target.kind === "thread" && requestPullRequestReview({ url: message.url, threadId: target.threadId, navigating: false })) return;
         if (!navigate.openUrl(message.url)) toast.error(`Couldn't open ${message.url}`);
         return;
       case "escape":

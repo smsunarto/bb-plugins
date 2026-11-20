@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  REVIEW_REQUEST_ATTRIBUTE,
+  isPlainClick,
+  requestPullRequestReview,
+} from "@bb-plugins/review-request";
+import {
   UrlLink,
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcMutation as useRpcMutation,
@@ -40,7 +45,14 @@ const CHECK_TONE: Record<ThreadPullRequestInfo["checks"][number]["id"], string> 
   passed: "text-success",
 };
 
-function ThreadPullRequestPill({ status }: { status: ThreadPullRequest }) {
+function ThreadPullRequestPill({
+  threadId,
+  status,
+}: {
+  threadId: string;
+  status: ThreadPullRequest;
+}) {
+  const navigate = useBbNavigate();
   if (status.kind === "pullRequest") {
     const { pullRequest } = status;
     const meta = PR_STATE_META[pullRequest.state];
@@ -53,6 +65,16 @@ function ThreadPullRequestPill({ status }: { status: ThreadPullRequest }) {
             href={pullRequest.url}
             target="_blank"
             rel="noopener noreferrer"
+            // A plain click opens the PR's Review beside its thread when Source Control takes the
+            // ask; otherwise, and on a modified or middle click, the link goes to GitHub.
+            {...{ [REVIEW_REQUEST_ATTRIBUTE]: "" }}
+            onClick={(event) => {
+              if (!isPlainClick(event)) return;
+              if (!requestPullRequestReview({ url: pullRequest.url, threadId, navigating: true }))
+                return;
+              event.preventDefault();
+              navigate.toThread(threadId);
+            }}
             aria-label={`Pull request #${pullRequest.number}: ${summary}`}
             className={cn(
               badgeVariants({ variant: "outline" }),
@@ -165,7 +187,7 @@ function ThreadCard({
           {thread.presetName} · attached {formatRelativeTime(thread.attachedAt)}
         </div>
       </div>
-      <ThreadPullRequestPill status={pullRequest} />
+      <ThreadPullRequestPill threadId={thread.threadId} status={pullRequest} />
       <Button
         variant="link"
         size="sm"

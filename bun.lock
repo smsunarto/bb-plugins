@@ -122,6 +122,14 @@
       "name": "@bb-plugins/markdown-prose",
       "version": "0.1.0",
     },
+    "packages/review-request": {
+      "name": "@bb-plugins/review-request",
+      "version": "0.1.0",
+      "devDependencies": {
+        "bun-types": "^1.4.0",
+        "typescript": "^6.0.0",
+      },
+    },
     "packages/sentry": {
       "name": "@bb-plugins/sentry",
       "version": "0.2.0",
@@ -426,6 +434,7 @@
         "zod": "^4.6.5",
       },
       "devDependencies": {
+        "@bb-plugins/review-request": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
         "@get-bb/plugin-sdk": "0.6.132",
         "@pierre/diffs": "^1.2.9",
@@ -636,6 +645,7 @@
         "zustand": "^5.0.16",
       },
       "devDependencies": {
+        "@bb-plugins/review-request": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
         "@get-bb/plugin-sdk": "0.6.132",
         "@radix-ui/react-context-menu": "^2.3.3",
@@ -736,6 +746,7 @@
         "zod": "^4.4.3",
       },
       "devDependencies": {
+        "@bb-plugins/review-request": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
         "@get-bb/plugin-sdk": "0.6.132",
         "@pierre/diffs": "^1.2.9",
@@ -944,6 +955,8 @@
     "@bb-plugins/markdown-editor": ["@bb-plugins/markdown-editor@workspace:packages/markdown-editor"],
 
     "@bb-plugins/markdown-prose": ["@bb-plugins/markdown-prose@workspace:packages/markdown-prose"],
+
+    "@bb-plugins/review-request": ["@bb-plugins/review-request@workspace:packages/review-request"],
 
     "@bb-plugins/sentry": ["@bb-plugins/sentry@workspace:packages/sentry"],
 

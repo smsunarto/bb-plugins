@@ -17,7 +17,8 @@ export type AppMessage =
   | { readonly type: "storage"; readonly items: AppStorageItems }
   | { readonly type: "blocked"; readonly call: BlockedCall }
   | { readonly type: "answer"; readonly text: string | null }
-  | { readonly type: "openLink"; readonly url: string }
+  /** `plain`: false when a link was clicked with a modifier, which keeps it on the web. */
+  | { readonly type: "openLink"; readonly url: string; readonly plain: boolean }
   | { readonly type: "escape" };
 
 /** An app's localStorage size as the frame counts it: every key and value, in UTF-16 units. */
@@ -46,7 +47,8 @@ export function parseAppMessage(data: unknown): AppMessage | null {
   if (record.source !== "genui-app") return null;
   const keys = Object.keys(record).length;
   if (record.type === "escape") return keys === 2 ? { type: "escape" } : null;
-  if (keys !== 3) return null;
+  // openLink's `plain` is optional: an app's own genui.openLink call sends none.
+  if (keys !== (record.type === "openLink" && "plain" in record ? 4 : 3)) return null;
   switch (record.type) {
     case "height": {
       const { height } = record;
@@ -72,15 +74,15 @@ export function parseAppMessage(data: unknown): AppMessage | null {
       return { type: "answer", text: answer === "" ? null : answer };
     }
     case "openLink": {
-      const { url } = record;
-      if (typeof url !== "string" || url.length > MAX_URL_LENGTH) return null;
+      const { url, plain = true } = record;
+      if (typeof url !== "string" || url.length > MAX_URL_LENGTH || typeof plain !== "boolean") return null;
       let link: URL;
       try {
         link = new URL(url);
       } catch {
         return null;
       }
-      return link.protocol === "https:" ? { type: "openLink", url: link.href } : null;
+      return link.protocol === "https:" ? { type: "openLink", url: link.href, plain } : null;
     }
     default:
       return null;

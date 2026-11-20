@@ -33,6 +33,8 @@ test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect a
       // shadcn components in src/app/components/ui: Radix primitives and their class helpers.
       /^@radix-ui\/react-(avatar|checkbox|collapsible|dialog|dropdown-menu|label|popover|select|slot|tabs|toggle|toggle-group|tooltip)$/,
       // The shared Button, Badge, Input, Textarea, surface edges and cn, re-exported from components/ui.
+      // Other plugins' asks to open a pull request's Review (pr-links.ts).
+      /^@bb-plugins\/review-request$/,
       /^@bb-plugins\/ui\/(badge|button|input|motion|surface|textarea|utils)$/,
       /^class-variance-authority$/,
       /^clsx$/,

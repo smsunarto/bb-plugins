@@ -5,7 +5,9 @@ import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 import { changeKeySchema } from "../core/ids.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
+import { REVIEW_REQUEST_ATTRIBUTE, requestPullRequestReview } from "@bb-plugins/review-request";
 import { rememberChange, rememberMiss, resetKnownPullRequests } from "./open-pull-request.tsx";
+import { PENDING_MS, resetPullRequestLinks, takeReviewRequest } from "./pr-links.ts";
 
 // The app's own registrations: the script that takes the click, and the segment that lends it a panel.
 const app = await loadPluginApp(() => import("./app.tsx"));
@@ -34,6 +36,7 @@ afterEach(() => {
   cleanup();
   document.body.replaceChildren();
   resetKnownPullRequests();
+  resetPullRequestLinks();
 });
 
 function Pane({ threadId }: { threadId: string }) {
@@ -147,6 +150,81 @@ test("once the script stops, every click reaches bb", () => {
   stop.abort();
   fireEvent.click(markdownLink(PR));
   expect(reachedBb).toEqual([PR]);
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+// ── Other plugins' asks (Tasks' PR pill, GenUI's buttons) ─────────────
+
+const OPENS_PR_TAB = [{ method: "openTab", options: { params: { pr: "acme/api#12" } } }];
+
+test("an ask for the thread in view opens its Review at once", () => {
+  const slot = pane();
+  expect(requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: false })).toBe(true);
+  expect(slot.inspection.experimental_panelCalls).toMatchObject(OPENS_PR_TAB);
+});
+
+test("an ask from a caller that opens the thread is taken, and opens once the thread is in view", () => {
+  expect(requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: true })).toBe(true);
+  const slot = pane();
+  expect(slot.inspection.experimental_panelCalls).toMatchObject(OPENS_PR_TAB);
+});
+
+test("a waiting ask opens once: the thread's next visit opens nothing", () => {
+  requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: true });
+  pane().unmount();
+  const again = pane();
+  expect(again.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("a waiting ask its thread took too long to show is dropped", () => {
+  expect(
+    takeReviewRequest(
+      { url: PR, threadId: "thr_a", navigating: true },
+      Date.now() - PENDING_MS - 1,
+    ),
+  ).toBe(true);
+  const slot = pane();
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("an ask for a thread not in view, from a caller that will not open it, goes to GitHub", () => {
+  const slot = pane();
+  expect(requestPullRequestReview({ url: PR, threadId: "thr_b", navigating: false })).toBe(false);
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("an ask for another thread the caller opens waits for that thread, not the one in view", () => {
+  const slot = pane();
+  expect(requestPullRequestReview({ url: PR, threadId: "thr_b", navigating: true })).toBe(true);
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("asks Source Control cannot take go to GitHub: no pull request, a recent miss, no side panel", () => {
+  expect(
+    requestPullRequestReview({ url: `${PR}/files`, threadId: "thr_a", navigating: true }),
+  ).toBe(false);
+  rememberMiss("pr:acme/api#12", "No access.");
+  expect(requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: true })).toBe(false);
+  resetKnownPullRequests();
+  pane("thr_a", () => false);
+  expect(requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: true })).toBe(false);
+});
+
+test("a link that asks for its own review is left to its owner", () => {
+  const slot = pane();
+  const owner = document.createElement("span");
+  owner.setAttribute(REVIEW_REQUEST_ATTRIBUTE, "");
+  document.body.append(owner);
+  fireEvent.click(markdownLink(PR, owner));
+  expect(reachedBb).toEqual([PR]);
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("once the script stops, no ask is taken and a waiting one is dropped", () => {
+  requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: true });
+  stop.abort();
+  expect(requestPullRequestReview({ url: PR, threadId: "thr_a", navigating: true })).toBe(false);
+  const slot = pane();
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
 });
 

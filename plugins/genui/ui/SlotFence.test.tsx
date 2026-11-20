@@ -5,6 +5,7 @@ import type { Root } from "react-dom/client";
 import type * as PluginSdkApp from "@get-bb/plugin-sdk/app";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExperimentalCodeFenceRendererProps, PluginSettingsState } from "@get-bb/plugin-sdk/app";
+import { takePullRequestReviews, type PullRequestReviewRequest } from "@bb-plugins/review-request";
 import { SlotFence } from "./SlotFence";
 
 /** The plugin's settings as BB serves them: a store its subscribers re-render from, like BB's query. */
@@ -26,13 +27,14 @@ const settings = vi.hoisted(() => {
 
 /** Source Control's rows as `statusForThread` serves them to a keyed read, by thread id. */
 const sourceControl = vi.hoisted(() => ({ rows: {} as Record<string, unknown> }));
+const openUrl = vi.hoisted(() => vi.fn((_url: string) => true));
 
 // Only BB's runtime is replaced; compilation, Fence, AppBlock and diagnostics are real.
 vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => ({
   ...(await importOriginal<typeof PluginSdkApp>()),
   useComposers: () => [],
   useSdk: () => ({}),
-  useBbNavigate: () => ({}),
+  useBbNavigate: () => ({ openUrl }),
   useRpc: () => ({ call: vi.fn() }),
   useSettings: () => useSyncExternalStore(settings.subscribe, settings.get),
   Markdown: ({ content }: { content: string }) => <p>{content}</p>,
@@ -201,5 +203,54 @@ describe("the Animations setting", () => {
     expect(container.querySelector('[data-genui-motion="off"]')).not.toBeNull();
     act(() => settings.set({ animations: true }));
     expect(container.querySelector("[data-genui-motion]")).toBeNull();
+  });
+});
+
+describe("a button opening a pull request", () => {
+  const PR = "https://github.com/acme/api/pull/12";
+  const code = `Button("Review it", OpenUrl("${PR}"))`;
+  let asks: PullRequestReviewRequest[];
+  let stop: AbortController;
+  /** Source Control's content script, answering `taken` to every ask. */
+  function sourceControl(taken: boolean) {
+    stop = new AbortController();
+    takePullRequestReviews((ask) => (asks.push(ask), taken), stop.signal);
+  }
+  beforeEach(() => {
+    asks = [];
+    openUrl.mockClear();
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  });
+  afterEach(() => stop?.abort());
+  const click = (init?: MouseEventInit) =>
+    act(() => {
+      container.querySelector("button")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...init }));
+    });
+
+  it("asks Source Control for its Review beside the block's thread, and opens nothing when it takes it", async () => {
+    sourceControl(true);
+    render("ui", "closed", code, "pr-taken:assistant:1");
+    click();
+    await act(async () => undefined);
+    expect(asks).toEqual([{ url: PR, threadId: "orbit", navigating: false }]);
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("opens GitHub when Source Control doesn't take it", async () => {
+    sourceControl(false);
+    render("ui", "closed", code, "pr-declined:assistant:1");
+    click();
+    await act(async () => undefined);
+    expect(asks).toHaveLength(1);
+    expect(openUrl).toHaveBeenCalledWith(PR);
+  });
+
+  it("opens GitHub on a modified click without asking", async () => {
+    sourceControl(true);
+    render("ui", "closed", code, "pr-modified:assistant:1");
+    click({ metaKey: true });
+    await act(async () => undefined);
+    expect(asks).toEqual([]);
+    expect(openUrl).toHaveBeenCalledWith(PR);
   });
 });

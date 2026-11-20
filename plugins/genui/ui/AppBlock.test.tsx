@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type * as PluginSdkApp from "@get-bb/plugin-sdk/app";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { takePullRequestReviews, type PullRequestReviewRequest } from "@bb-plugins/review-request";
 import { AppBlock } from "./AppBlock";
 import { APPS_STORAGE_BUDGET, parseAppMessage, parseStorageItems, readAppStorage, saveAppStorage } from "./appBridge";
 import { APP_STORAGE_CAP, appFileName, buildSrcdoc, resolveTheme, themeCss } from "./appDocument";
@@ -110,6 +111,12 @@ describe("parseAppMessage", () => {
     expect(parseAppMessage({ source: "genui-app", type: "openLink", url: "https://example.com/a b" })).toEqual({
       type: "openLink",
       url: "https://example.com/a%20b",
+      plain: true,
+    });
+    expect(parseAppMessage({ source: "genui-app", type: "openLink", url: "https://example.com/", plain: false })).toEqual({
+      type: "openLink",
+      url: "https://example.com/",
+      plain: false,
     });
     expect(parseAppMessage({ source: "genui-app", type: "escape" })).toEqual({ type: "escape" });
   });
@@ -242,6 +249,31 @@ describe("an app on screen", () => {
     expect(container.textContent).toContain("alert()");
     post({ type: "openLink", url: "https://example.com/docs" });
     expect(openUrl).toHaveBeenCalledWith("https://example.com/docs");
+  });
+
+  it("asks Source Control to open a pull request link's Review beside the thread, and opens GitHub when it can't", () => {
+    const PR = "https://github.com/acme/api/pull/12";
+    const asks: PullRequestReviewRequest[] = [];
+    let taken = true;
+    const stop = new AbortController();
+    takePullRequestReviews((ask) => (asks.push(ask), taken), stop.signal);
+    try {
+      openUrl.mockClear();
+      const post = mount({ kind: "thread", threadId: "thr_pr", messageId: "m", fence: 0, reply: 0, send: vi.fn() });
+      post({ type: "openLink", url: PR });
+      expect(asks).toEqual([{ url: PR, threadId: "thr_pr", navigating: false }]);
+      expect(openUrl).not.toHaveBeenCalled();
+      // A modified click inside the app keeps the link on GitHub.
+      post({ type: "openLink", url: PR, plain: false });
+      expect(asks).toHaveLength(1);
+      expect(openUrl).toHaveBeenLastCalledWith(PR);
+      taken = false;
+      post({ type: "openLink", url: PR });
+      expect(asks).toHaveLength(2);
+      expect(openUrl).toHaveBeenCalledTimes(2);
+    } finally {
+      stop.abort();
+    }
   });
 
   it("keeps a reopened fence's new document under the preview until that document loads", () => {

@@ -78,6 +78,7 @@
     "tailwind-merge": "^3.4.0",
     "typescript-7": "npm:typescript@^7.0.2",
     "vitest": "^4.1.1",
+    "@bb-plugins/review-request": "workspace:*",
     "@bb-plugins/ui": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.19",
     "@radix-ui/react-dropdown-menu": "^2.1.20",

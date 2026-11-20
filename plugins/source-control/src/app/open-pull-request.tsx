@@ -24,7 +24,8 @@ import {
   type PluginRpcClient,
   type UrlLinkProps,
 } from "@get-bb/plugin-sdk/app";
-import { useLayoutEffect, useMemo, useRef, type MouseEvent } from "react";
+import { isPlainClick } from "@bb-plugins/review-request";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import { parsePrLink, parsePrReference, prKey, prLookup, type PrRef } from "../core/watch.ts";
 import type { sourceControlContract } from "../contract/rpc.ts";
@@ -35,22 +36,8 @@ export const RESOLVE_MS = 8_000;
 /** How long a pull request Source Control could not show goes straight to GitHub. */
 export const MISS_MS = 60_000;
 
-type Click = Pick<
-  MouseEvent,
-  "button" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "defaultPrevented"
->;
-
 /** A primary click with no modifier: the one a link may take over. */
-export function isPlainClick(event: Click): boolean {
-  return (
-    !event.defaultPrevented &&
-    event.button === 0 &&
-    !event.metaKey &&
-    !event.ctrlKey &&
-    !event.shiftKey &&
-    !event.altKey
-  );
-}
+export { isPlainClick };
 
 // ── What this window knows about each pull request ─────────────────────
 
