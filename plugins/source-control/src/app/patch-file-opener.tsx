@@ -30,7 +30,7 @@ import {
   type PatchFileEntry,
 } from "../core/patch-file.ts";
 import { Button } from "./components/ui/button.tsx";
-import { FileRowsSkeleton } from "./file-cards.tsx";
+import { FileRowsSkeleton, parsePatch } from "./file-cards.tsx";
 import { plural, shortId } from "./format.ts";
 import { PHONE, useWidth } from "./page/hooks.ts";
 import {
@@ -183,9 +183,45 @@ function afterFailure(
 function shownFor(text: string | null): Loaded {
   if (text === null) return { state: "text", reason: TOO_LARGE };
   const read = readPatchFile(text);
-  return read.ok
+  if (!read.ok) return { state: "text", reason: read.reason };
+  const undrawable = undrawableFile(read.read);
+  return undrawable === null
     ? { state: "diff", read: read.read, failed: null }
-    : { state: "text", reason: read.reason };
+    : { state: "text", reason: `The diff view can't draw ${undrawable} as its patch reads.` };
+}
+
+const HUNK_COUNTS = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/gm;
+
+/**
+ * The first card Pierre can't draw line for line, or null: each card's patch
+ * goes through Pierre's own parser before the diff view accepts the file,
+ * and the lines it would draw must be the ones the hunk headers count.
+ */
+/** Old and new line counts a patch's hunk headers state. */
+function hunkCounts(patch: string) {
+  let old = 0;
+  let next = 0;
+  for (const [, oldCount, nextCount] of patch.matchAll(HUNK_COUNTS)) {
+    old += oldCount === undefined ? 1 : Number(oldCount);
+    next += nextCount === undefined ? 1 : Number(nextCount);
+  }
+  return { old, next };
+}
+
+export function undrawableFile(read: PatchFile): string | null {
+  for (const commit of read.commits)
+    for (const { file, patch } of commit.files) {
+      if (patch.patch === "") continue;
+      const drawn = parsePatch(patch.patch);
+      const { old, next } = hunkCounts(patch.patch);
+      if (
+        drawn === null ||
+        drawn.deletionLines.length !== old ||
+        drawn.additionLines.length !== next
+      )
+        return file.path;
+    }
+  return null;
 }
 
 /**

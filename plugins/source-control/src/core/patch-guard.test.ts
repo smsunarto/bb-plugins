@@ -15,8 +15,9 @@ function entry(patch: string, additions = 1, deletions = 1): PatchFileEntry {
   };
 }
 
+const facts = { commit: -1, kind: "text" as const, path: "f.txt", additions: 1, deletions: 1 };
 const whole = (patch = `${lines.join("\n")}\n`): DrawnFile[] => [
-  { start: 0, end: 5, body: 2, entry: entry(patch) },
+  { ...facts, start: 0, end: 5, body: 2, entry: entry(patch) },
 ];
 
 test("a faithful read passes", () => {
@@ -34,7 +35,7 @@ test("a hunk-looking line nobody claimed fails the read, a boundary lookalike in
       ["From x", ...more],
       Uint8Array.of(0, H, H, H, B, B, 0),
       [{ start: 0, boundary: "flag" }],
-      [{ start: 1, end: 6, body: 2, entry: entry(`${lines.join("\n")}\n`) }],
+      [{ ...facts, start: 1, end: 6, body: 2, entry: entry(`${lines.join("\n")}\n`) }],
     ),
   ).toBeNull();
 });

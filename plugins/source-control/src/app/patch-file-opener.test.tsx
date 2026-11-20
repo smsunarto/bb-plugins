@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { PluginFileOpenerSource } from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { MAX_PATCH_BYTES, patchFileUrl, readCapped } from "./patch-file-opener.tsx";
+import { readPatchFile } from "../core/patch-file.ts";
+import { MAX_PATCH_BYTES, patchFileUrl, readCapped, undrawableFile } from "./patch-file-opener.tsx";
 
 // Pierre's diff element adopts a constructed stylesheet; jsdom has no `replaceSync`.
 const sheet = CSSStyleSheet.prototype as unknown as { replaceSync?: (text: string) => void };
@@ -469,5 +470,30 @@ describe("review round 3", () => {
       .getAllByTestId("sc-file-card")
       .map((card) => card.querySelector("[aria-expanded]")?.getAttribute("aria-expanded"));
     expect(toggles).toEqual(["true", "true"]);
+  });
+});
+
+describe("a file Pierre can't draw as it reads", () => {
+  const text = "--- a/one.txt\n+++ b/one.txt\n@@ -1 +1 @@\n-a\n+b\n";
+
+  test("a file Pierre parses is drawn", () => {
+    const read = readPatchFile(text);
+    expect(read.ok && undrawableFile(read.read)).toBeNull();
+  });
+
+  test("an empty label Pierre rejects names the file", () => {
+    const read = readPatchFile(text);
+    if (!read.ok) throw new Error(read.reason);
+    const { patch } = read.read.commits[0]!.files[0]!;
+    patch.patch = patch.patch.replace(/^\+\+\+ .*$/m, "+++ ");
+    expect(undrawableFile(read.read)).toBe("one.txt");
+  });
+
+  test("a hunk Pierre counts short of its header names the file", () => {
+    const read = readPatchFile(text);
+    if (!read.ok) throw new Error(read.reason);
+    const { patch } = read.read.commits[0]!.files[0]!;
+    patch.patch = patch.patch.replace("@@ -1 +1 @@", "@@ -1,2 +1 @@");
+    expect(undrawableFile(read.read)).toBe("one.txt");
   });
 });

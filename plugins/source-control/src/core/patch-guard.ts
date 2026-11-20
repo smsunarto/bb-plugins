@@ -23,7 +23,18 @@ export const CLAIM = { none: 0, header: 1, hunk: 2 } as const;
 export type Section = { start: number; boundary: string | null };
 
 /** A file read from `start` to `end`, its hunk lines, and its card, null when left out. */
-export type DrawnFile = { start: number; end: number; body: number; entry: PatchFileEntry | null };
+export type DrawnFile = {
+  start: number;
+  end: number;
+  body: number;
+  /** Line where the file's commit starts, or -1 before any commit. */
+  commit: number;
+  kind: "text" | "binary" | "meta";
+  path: string;
+  additions: number;
+  deletions: number;
+  entry: PatchFileEntry | null;
+};
 
 const HUNK = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/;
 

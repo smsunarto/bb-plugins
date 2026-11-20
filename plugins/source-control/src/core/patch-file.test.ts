@@ -418,7 +418,6 @@ describe("review fixtures", () => {
         commit.files.map(({ file }) => `${file.path} +${file.additions} -${file.deletions}`),
       );
     expect(counts("blankctx.patch")).toEqual(["f.txt +1 -1"]);
-    expect(counts("omitted.patch")).toEqual(["f.txt +4 -1"]);
     expect(counts("samepath.patch")).toEqual(["f.txt +1 -1", "f.txt +1 -1"]);
     expect(counts("sqlish.patch")).toEqual(["q.sql +1 -1"]);
     expect(counts("sqlish-plain.diff")).toEqual(["q.sql +1 -1"]);
@@ -452,8 +451,20 @@ describe("review fixtures", () => {
   });
 
   test("diff -r's one-line binary pair is a binary card", () => {
-    const files = parsed(fixture("review/plain-ru-nul.diff")).commits[0]!.files;
-    expect(files.map(({ file }) => [file.path, file.binary])).toContainEqual(["nul.dat", true]);
+    const files = parsed("Binary files a/nul.dat and b/nul.dat differ\n").commits[0]!.files;
+    expect(files.map(({ file }) => [file.path, file.binary])).toEqual([["nul.dat", true]]);
+  });
+
+  test("diff -r's Only in records read as text, never dropped", () => {
+    expect(rejected(fixture("review/plain-ru-nul.diff"))).toBe(
+      "Line 22 names a file only one side has (Only in), which the diff view can't show.",
+    );
+  });
+
+  test("a hunk that runs back before the one above it reads as text", () => {
+    expect(rejected(fixture("review/omitted.patch"))).toBe(
+      "Line 7 starts a hunk inside the range of the hunk before it, so the diff view can't be sure of it.",
+    );
   });
 });
 
@@ -553,8 +564,8 @@ describe("review round 2 fixtures", () => {
         ["first commit", 2],
       ]);
     }
-    // --oneline has no commit lines: one section, every file still drawn.
-    expect(files("log-oneline-stat.patch")).toHaveLength(5);
+    // --oneline has no commit lines: its subjects fall between files, which the strict reading refuses.
+    expect(read("log-oneline-stat.patch")).toMatchObject({ ok: false });
   });
 });
 
@@ -632,5 +643,53 @@ describe("review round 3 corpus", () => {
     ["log-custom-format.patch", "Line 14 reads as a hunk line, but no file's hunk holds it."],
   ])("%s reads as text: %s", (name, reason) => {
     expect(read(name)).toEqual({ ok: false, reason });
+  });
+});
+
+describe("review round 4: a strict second reading", () => {
+  const read = (name: string) => readPatchFile(fixture(`review4/${name}`));
+  const summary4 = (name: string) => {
+    const result = read(name);
+    if (!result.ok) return result.reason;
+    return result.read.commits.map((c) => [
+      c.subject,
+      c.files.map(({ file }) => `${file.path} +${file.additions} -${file.deletions}`),
+    ]);
+  };
+
+  test("a log whose commit has no blank before its diff keeps every commit and file", () => {
+    const result = read("custom-log.patch");
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.read.commits).toHaveLength(2);
+    expect(result.read.files).toBe(10);
+    expect([result.read.additions, result.read.deletions]).toEqual([212, 11]);
+    expect(result.read.commits[1]!.files.map(({ file }) => file.path)).toEqual([
+      "plugins/source-control/src/app/page/guided-view.tsx",
+    ]);
+  });
+
+  test("a mail whose Subject runs straight into its diff keeps its files", () => {
+    expect(summary4("mail-separator-removed.patch")).toEqual([
+      ["mainline", ["code.py +1 -0"]],
+      ["odd names", ['quo"te.txt +1 -0', "tab\there.txt +1 -0", "ünï/fïle.txt +1 -0"]],
+    ]);
+  });
+
+  test.each([
+    [
+      "only-in.diff",
+      "Line 1 names a file only one side has (Only in), which the diff view can't show.",
+    ],
+    ["empty-label.diff", "Line 2 names no file, so the diff view can't be sure of it."],
+    [
+      "two-files-bad-counts.diff",
+      "Line 8 starts a hunk inside the range of the hunk before it, so the diff view can't be sure of it.",
+    ],
+  ])("%s reads as text: %s", (name, reason) => {
+    expect(read(name)).toEqual({ ok: false, reason });
+  });
+
+  test("the control draws both files", () => {
+    expect(summary4("two-files.diff")).toEqual([[null, ["first +1 -1", "second +1 -1"]]]);
   });
 });

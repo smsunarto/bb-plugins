@@ -12,6 +12,7 @@
  */
 import type { FilePatch } from "./change.ts";
 import { checkDrawn, CLAIM, isMailTrailer, type DrawnFile, type Section } from "./patch-guard.ts";
+import { readStrict, type StrictCommit, type StrictFile, type StrictRead } from "./patch-strict.ts";
 import { QUOTED_ESCAPES, quotedPath } from "./quoted-path.ts";
 import type { ChangeFile } from "./review.ts";
 
@@ -62,6 +63,8 @@ export type PatchRead = { ok: true; read: PatchFile } | { ok: false; reason: str
  */
 const COMMIT_START =
   /^(?:From ([0-9a-f]{40}|[0-9a-f]{64}) Mon Sep 17 00:00:00 2001$|commit ([0-9a-f]{7,64})\b|From \S+ (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d \d{4}$)/;
+/** A header field: `Name: value`. */
+const HEADER_FIELD = /^[A-Za-z][A-Za-z0-9-]*:/;
 /** A mail header line, after an mbox `From ` line such as b4's and lore's `From git@z …`. */
 const MAIL_FIELD = /^[A-Za-z-]+:/;
 /** What follows `git log`'s commit line, so a message line reading "commit 1a2b…" is not one. */
@@ -84,12 +87,76 @@ export function readPatchFile(text: string): PatchRead {
     if (read.files + read.omitted === 0) return { ok: false, reason: "This file holds no diff." };
     // Whatever the reader concluded, the drawn copy must hold every hunk line of the file.
     const lost = checkDrawn(reader.lines, reader.claims, reader.sections, reader.drawn);
-    return lost === null ? { ok: true, read } : { ok: false, reason: lost };
+    if (lost !== null) return { ok: false, reason: lost };
+    // A second, strict reading must find the same files, in the same commits, with the same counts.
+    const disagreement = strictDisagreement(readStrict(text), reader.heads, reader.drawn);
+    return disagreement === null ? { ok: true, read } : { ok: false, reason: disagreement };
   } catch (error) {
     if (error instanceof Malformed) return { ok: false, reason: `${error.message}.` };
     // Any other failure still says why the file shows as text.
     return { ok: false, reason: "The diff view couldn't read this file." };
   }
+}
+
+/** Why the strict reading disagrees with the reader's commits and files, or null when they match one for one. */
+function strictDisagreement(
+  strict: StrictRead,
+  heads: readonly Head[],
+  files: readonly DrawnFile[],
+): string | null {
+  if (!strict.strict)
+    return `Line ${strict.line + 1} ${strict.why}, so the diff view can't be sure of it.`;
+  if (strict.commits.length !== heads.length)
+    return `A strict reading finds ${strict.commits.length} commits where the diff view finds ${heads.length}.`;
+  for (const [index, head] of heads.entries())
+    if (!sameCommit(head, strict.commits[index]!))
+      return `Line ${head.start + 1} starts a commit that reads differently to a strict reading, so the diff view can't be sure of it.`;
+  if (strict.files.length !== files.length)
+    return `A strict reading finds ${strict.files.length} files where the diff view finds ${files.length}.`;
+  for (const [index, file] of files.entries()) {
+    const other = strict.files[index]!;
+    if (!sameFile(file, other))
+      return `Line ${other.start + 1} reads differently to a strict reading, so the diff view can't be sure of it.`;
+  }
+  return null;
+}
+
+/** A commit's start line and the header and message fields its card shows. */
+type Head = { start: number } & Pick<Meta, "id" | "subject" | "author" | "date">;
+
+function sameCommit(head: Head, strict: StrictCommit): boolean {
+  return (
+    head.start === strict.start &&
+    sameField(head.id, strict.id) &&
+    sameField(head.subject, strict.subject) &&
+    sameField(head.author, strict.author) &&
+    sameField(head.date, strict.date)
+  );
+}
+
+/** Equal past surrounding whitespace; a value capped at MAX_HEADER_CHARS matches what it starts. */
+function sameField(field: string | null, strict: string | null): boolean {
+  if (field === null || strict === null) return field === strict;
+  const [mine, theirs] = [field.trim(), strict.trim()];
+  if (mine === theirs) return true;
+  return (
+    mine.endsWith("…") && theirs.length > MAX_HEADER_CHARS && theirs.startsWith(mine.slice(0, -1))
+  );
+}
+
+function sameFile(file: DrawnFile, strict: StrictFile): boolean {
+  return (
+    file.start === strict.start &&
+    file.commit === strict.commit &&
+    file.kind === strict.kind &&
+    file.additions === strict.additions &&
+    file.deletions === strict.deletions &&
+    file.path !== "" &&
+    // The path is one of the record's names, or one past its a/ or b/ style first directory.
+    strict.names.some(
+      (name) => name === file.path || name.slice(name.indexOf("/") + 1) === file.path,
+    )
+  );
 }
 
 /**
@@ -165,6 +232,8 @@ class Reader {
   readonly sections: Section[] = [];
   /** Every file read, with what goes to the renderer. */
   readonly drawn: DrawnFile[] = [];
+  /** Every commit header read, files or none, for the strict comparison. */
+  readonly heads: Head[] = [];
   /** The current mail's declared MIME boundary, which may end its patch. */
   private boundary: string | null = null;
   private readonly commits: PatchFileCommit[] = [];
@@ -214,6 +283,8 @@ class Reader {
     this.commit = { ...header.meta, files: [] };
     this.boundary = header.boundary;
     this.sections.push({ start: this.index, boundary: header.boundary });
+    const { id, subject, author, date } = header.meta;
+    this.heads.push({ start: this.index, id, subject, author, date });
     this.index = header.next;
     this.afterHunk = false;
     this.trailing = false;
@@ -244,6 +315,11 @@ class Reader {
     this.finishFile();
     this.trailing = (this.afterHunk || this.trailing) && (line === "" || signature);
     this.afterHunk = false;
+    if (line.startsWith("Only in "))
+      throw malformed(
+        index,
+        "names a file only one side has (Only in), which the diff view can't show",
+      );
     const binary = plainBinary(line);
     if (binary === "unclear")
       throw malformed(index, "names binary files in a way the diff view can't split");
@@ -330,6 +406,21 @@ class Reader {
     this.keep(draft);
   }
 
+  /** What the guard and the strict comparison read of a file. */
+  private facts(draft: Draft): Omit<DrawnFile, "entry"> {
+    const [oldPath, newPath] = pathsOf(draft);
+    return {
+      start: draft.start,
+      end: draft.end,
+      body: draft.body,
+      commit: this.sections.at(-1)?.start ?? -1,
+      kind: draft.binary ? "binary" : draft.hunks > 0 ? "text" : "meta",
+      path: (newPath === "/dev/null" ? oldPath : newPath) ?? oldPath ?? "",
+      additions: draft.additions,
+      deletions: draft.deletions,
+    };
+  }
+
   private keep(draft: Draft): void {
     if (pathsOf(draft).some((path) => path?.includes("\0")))
       throw malformed(draft.start, "names a file with a NUL character, which no file name holds");
@@ -337,7 +428,7 @@ class Reader {
     this.deletions += draft.deletions;
     if (this.kept >= MAX_PATCH_FILES) {
       this.omitted++;
-      this.drawn.push({ start: draft.start, end: draft.end, body: draft.body, entry: null });
+      this.drawn.push({ ...this.facts(draft), entry: null });
       return;
     }
     const entry = toEntry(draft, this.lines);
@@ -345,7 +436,7 @@ class Reader {
     this.seen.set(entry.file.path, seen);
     entry.key = `${seen}:${entry.file.path}`;
     this.commit.files.push(entry);
-    this.drawn.push({ start: draft.start, end: draft.end, body: draft.body, entry });
+    this.drawn.push({ ...this.facts(draft), entry });
     this.kept++;
   }
 }
@@ -723,6 +814,8 @@ function readMailHeader(
   let index = start;
   for (; index < lines.length && lines[index] !== ""; index++) {
     const line = lines[index]!;
+    // A line that is no field and no fold ends the header, as a diff with no blank before it does.
+    if (!HEADER_FIELD.test(line) && !/^[ \t]/.test(line)) break;
     if (/^[ \t]/.test(line) && last !== null) {
       fields.set(last, cap(`${fields.get(last)} ${line.trim()}`));
       continue;
@@ -759,7 +852,8 @@ function skipMailBody(lines: string[], start: number): number {
 /** `git log`/`git show`: Author and Date, then the message indented four spaces. */
 function readLogHeader(lines: string[], start: number, meta: Meta): number {
   let index = start;
-  for (; index < lines.length && lines[index] !== ""; index++) {
+  // Fields up to a blank line, or to the first line that is no field, such as a diff with no blank before it.
+  for (; index < lines.length && HEADER_FIELD.test(lines[index]!); index++) {
     const field = /^(Author|Date|AuthorDate):\s*(.*)$/.exec(cap(lines[index]!));
     if (field?.[1] === "Author") meta.author = field[2]!;
     else if (field) meta.date = field[2]!;

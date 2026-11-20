@@ -1,0 +1,47 @@
+From c496d934a6d4cabb228b322dc0014df23df8d2c4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?T=C3=A9st=20=C3=9Cser?= <t@e.x>
+Date: Thu, 19 Nov 2026 17:57:34 -0800
+Subject: [PATCH 1/2] mainline
+
+
+diff --git a/code.py b/code.py
+index dd1c27d..74f2ad0 100644
+--- a/code.py
++++ b/code.py
+@@ -15,3 +15,4 @@ def d():
+     return 4
+ 
+ # end
++main
+-- 
+2.56.0
+
+
+From 4d29460ecd075e2c62b20539e77081291c335d11 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?T=C3=A9st=20=C3=9Cser?= <t@e.x>
+Date: Thu, 19 Nov 2026 17:57:34 -0800
+Subject: [PATCH 2/2] odd names
+diff --git "a/quo\"te.txt" "b/quo\"te.txt"
+new file mode 100644
+index 0000000..bca70f3
+--- /dev/null
++++ "b/quo\"te.txt"
+@@ -0,0 +1 @@
++q
+diff --git "a/tab\there.txt" "b/tab\there.txt"
+new file mode 100644
+index 0000000..718f4d2
+--- /dev/null
++++ "b/tab\there.txt"
+@@ -0,0 +1 @@
++t
+diff --git "a/\303\274n\303\257/f\303\257le.txt" "b/\303\274n\303\257/f\303\257le.txt"
+new file mode 100644
+index 0000000..4ae8ef0
+--- /dev/null
++++ "b/\303\274n\303\257/f\303\257le.txt"
+@@ -0,0 +1 @@
++u
+-- 
+2.56.0
+
