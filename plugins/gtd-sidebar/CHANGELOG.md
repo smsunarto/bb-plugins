@@ -61,11 +61,12 @@
 
 ### Minor Changes
 
-- GTD Sidebar now draws bb's navigation as a list above the thread list:
-  28px rows of an icon and a label, in the order bb gives them, with hidden
-  items under More. Search is always one of the rows and has no checkbox in
-  Customize navigation. On phones the rows are 44px and the list scrolls
-  within about 40% of the drawer, leaving the rest to the threads.
+- GTD Sidebar now draws bb's navigation, Search included, as a list above the
+  thread list: 28px rows of an icon and a label, in the order bb gives them,
+  with hidden items under More and Customize navigation choosing which rows
+  show. On phones the rows are 44px and scroll within about 40% of the drawer
+  while More stays pinned below them, leaving the rest to the threads. The
+  drawer opens with the current row in view.
 
 - Add a Bots shelf above Next Action while the separate Bots plugin is enabled:
   each bot is a group of its conversations drawn as GTD cards. Thread menus gain

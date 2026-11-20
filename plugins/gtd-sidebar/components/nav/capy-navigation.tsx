@@ -1,7 +1,7 @@
 // Sidebar navigation in Capy's list style: 28px rows of a 14px icon and a
 // 13px medium label above the thread list, 44px on phones. bb owns the items,
-// their order, and what each one does. This file draws them, with one rule of
-// its own: Search is always a row.
+// their order, their visibility, and what each one does; this file only draws
+// them.
 import { memo, useRef, type MouseEvent } from "react";
 import {
   experimental_ShortcutHint as ShortcutHint,
@@ -30,25 +30,20 @@ import {
 } from "../ui/dropdown-menu";
 import { Icon } from "../ui/icon";
 import { MenuSurface } from "../inbox/menu-surface";
+import { markScrolled, revealFocusedRow, useNavScroll } from "./nav-scroll";
 
 /**
- * Search always gets a row, even when the user's navigation settings hide it:
- * this navigation has no other Search control.
+ * On phones the 44px rows could push the thread list off screen, so the rows
+ * scroll inside about 40% of the drawer while More stays pinned below them.
+ * The cap ends half way through a row, which shows there is more to scroll:
+ * 74px is the nav's 8px padding, More's 44px row, and half a row; 22px adds
+ * the half row back. Once scrolled, the top edge fades.
  */
-const SEARCH_ID = "__bb__/search-threads";
-
-const isRow = (item: NavigationItem) => item.isVisible || item.id === SEARCH_ID;
-
-/**
- * On phones the 44px rows could push the thread list off screen, so the list
- * scrolls inside about 40% of the drawer. The cap ends half way through a row,
- * which shows there is more to scroll: 26px is the 4px top padding plus half
- * a row.
- */
-const NAV_CLASS = cn(
-  "flex shrink-0 flex-col px-2 py-1",
-  "max-md:pointer-coarse:max-h-[calc(round(down,40dvh_-_26px,44px)_+_26px)]",
+const SCROLL_CLASS = cn(
+  "relative flex min-h-0 flex-col",
+  "max-md:pointer-coarse:max-h-[calc(round(down,40dvh_-_74px,44px)_+_22px)]",
   "max-md:pointer-coarse:overflow-y-auto max-md:pointer-coarse:overscroll-contain",
+  "data-[gtd-nav-scrolled]:[mask-image:linear-gradient(to_bottom,transparent,currentColor_24px)]",
 );
 
 const ROW_CLASS = cn(
@@ -68,26 +63,34 @@ function activationTarget(event: MouseEvent): "current" | "tab" {
   return event.metaKey || event.ctrlKey || event.button === 1 ? "tab" : "current";
 }
 
-export function CapyNavigation(_props: ExperimentalSidebarNavigationProps) {
+export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigationProps) {
   const navigation = useSidebarNavigation();
   const { items, activeItemId, isShortcutModifierHeld, actions } = navigation;
-  const hidden = items.filter((item) => !isRow(item));
+  const hidden = items.filter((item) => !item.isVisible);
+  const scroller = useNavScroll(activeItemId, isCompactViewport);
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <nav aria-label="Navigation" className={NAV_CLASS}>
-          {items.map((item) =>
-            isRow(item) ? (
-              <NavigationRow
-                key={item.id}
-                item={item}
-                isActive={item.id === activeItemId}
-                showShortcut={isShortcutModifierHeld}
-                actions={actions}
-              />
-            ) : null,
-          )}
+        <nav aria-label="Navigation" className="flex shrink-0 flex-col px-2 py-1">
+          <div
+            ref={scroller}
+            className={SCROLL_CLASS}
+            onScroll={markScrolled}
+            onFocus={revealFocusedRow}
+          >
+            {items.map((item) =>
+              item.isVisible ? (
+                <NavigationRow
+                  key={item.id}
+                  item={item}
+                  isActive={item.id === activeItemId}
+                  showShortcut={isShortcutModifierHeld}
+                  actions={actions}
+                />
+              ) : null,
+            )}
+          </div>
           {hidden.length > 0 ? <MoreRow hidden={hidden} actions={actions} /> : null}
         </nav>
       </ContextMenuTrigger>
@@ -153,7 +156,7 @@ const NavigationRow = memo(function NavigationRow({
   );
 });
 
-/** Items the user hid, other than Search, stay reachable here, with the editor that unhides them. */
+/** Items the user hid stay reachable here, with the editor that unhides them. */
 function MoreRow({ hidden, actions }: { hidden: NavigationItem[]; actions: NavigationActions }) {
   // A pick runs on select, the one event every input and the phone sheet
   // fire; the click before it, when there is one, says whether a modifier
