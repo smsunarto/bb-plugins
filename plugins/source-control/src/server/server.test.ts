@@ -665,7 +665,7 @@ function fakeSdk(world: World) {
 async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
   const { bb, harness } = createFakePluginHost({
     pluginId: PLUGIN,
-    agentSkillIds: ["request-review", "babysit-pr"],
+    agentSkillIds: ["babysit-pr"],
     sdk: fakeSdk(world),
     experimental_callHostRpc: async ({ method, hostId, input }) => {
       const host = world.hosts[hostId]!;
@@ -2381,8 +2381,6 @@ describe("review items and drafts", () => {
     await vi.waitFor(() => expect(old.inspection.registrations.cli?.name).toBe("source-control"));
     const after = (await start(twoHosts())).harness;
     await vi.waitFor(() => expect(after.inspection.registrations.cli?.name).toBe("review"));
-    const prompt = await after.behavior.runCli(["prompt", "--request", "Intent: test"]);
-    expect(prompt.exitCode).toBe(0);
   });
 
   test("only review threads get the findings tool, and a thread that is not one cannot report", async () => {

@@ -1,7 +1,7 @@
 /**
  * What moved from code-review at the cutover: pull request watches, landed
- * work, the `bb review` command, the babysit and review skills, and the
- * reviewer's standing instructions; plus the import that carries the old
+ * work, the `bb review` command, the babysit skill, and the reviewer's
+ * standing instructions; plus the import that carries the old
  * plugins' data across and the lookups that draw their old cards.
  *
  * While code-review still runs, the watch and landed services idle and their
@@ -39,7 +39,7 @@ import { createLanded, SHARE_LANDED } from "./landed.ts";
 import { createLegacy, LEGACY_PLUGIN } from "./legacy.ts";
 import { createPrWatcher, WATCH_PR } from "./pr-watch.ts";
 import { rowsOf } from "./review-sources.ts";
-import { playbook, prompt } from "./review-cli.ts";
+import { playbook } from "./review-cli.ts";
 import type { Store } from "./store.ts";
 
 const files = instructionFiles(import.meta.url);
@@ -353,8 +353,8 @@ export function createMoved(deps: {
                 })
               : defineCli({
                   name: "review",
-                  summary: "Review playbooks and the shared reviewer prompt.",
-                  commands: { playbook: playbook(bb), prompt: prompt() },
+                  summary: "Review playbooks.",
+                  commands: { playbook: playbook(bb) },
                 }),
           );
         } catch (error) {
@@ -368,7 +368,7 @@ export function createMoved(deps: {
       const own = !legacy.running() && ownsPullRequests(session);
       return {
         tools: own ? [WATCH_PR, SHARE_LANDED] : [],
-        skills: own ? ["request-review", "babysit-pr"] : [],
+        skills: own ? ["babysit-pr"] : [],
       };
     },
     threadSettled(threadId: string) {

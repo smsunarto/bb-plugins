@@ -219,22 +219,6 @@ test("workflows open their source on the picked machine and stay out of Files", 
   files.unmount();
 });
 
-test("review editing remains reachable when the dotfiles machine is offline", async () => {
-  const captured = await loadPluginApp(() => import("./app.tsx"));
-  const slot = renderSection(
-    captured,
-    "Workflows",
-    { subPath: "" },
-    { rpc: server("host_mac", false) },
-  );
-  await slot.findByText("Local Mac is not connected.");
-  assert.equal(
-    slot.getByRole("link", { name: /Review workflow/ }).getAttribute("href"),
-    "/plugins/agent-instructions/instructions/prompts/source-control/file/skills/request-review/SKILL.md",
-  );
-  slot.unmount();
-});
-
 test("the refresh action targets the machine selected in Dotfiles", async () => {
   const captured = await loadPluginApp(() => import("./app.tsx"));
   const slot = renderSection(

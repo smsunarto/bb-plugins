@@ -124,7 +124,6 @@ python3 <slopcop-skill-directory>/scripts/start_review.py \
 
 - [review_profile.md](references/review_profile.md) and [appendix.md](references/appendix.md) hold user preferences, separate from operational roles. Change them only at the user's request.
 - The helper inserts the profile immediately followed by the appendix verbatim into each lens prompt. Lens definitions come from the profile, one subagent per definition, without grouping.
-- Slopcop lenses do not use `bb review prompt`. The independent local `request-review` workflow is unchanged.
 - Role files are prompt templates: `{checkout_instructions}` inserts the shared checkout contract, `{review_profile}` the profile, and `{appendix}` the appendix immediately after it. The helper fills tags once; braces inside inserted assets remain literal.
 
 ### Provenance and verification

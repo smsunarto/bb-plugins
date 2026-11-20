@@ -1,6 +1,5 @@
 /**
- * `bb review`: the reviewer's shared prompt and the review playbooks, global
- * and per project. Moved from the code-review plugin at the cutover; Source
+ * `bb review`: the review playbooks, global and per project. Moved from the code-review plugin at the cutover; Source
  * Control registers it only once code-review no longer does.
  * Ported from `plugins/code-review/src/server/{command,lib/playbooks}.ts`.
  */
@@ -268,29 +267,6 @@ export function playbook(bb: BbPluginApi) {
         offset: options.offset,
         limit: options.limit,
       });
-    },
-  });
-}
-
-export function prompt() {
-  return cliCommand({
-    summary: files.read("commands/prompt"),
-    options: {
-      request: {
-        type: "string",
-        required: true,
-        description: files.read("commands/prompt-request"),
-      },
-    },
-    run({ options }) {
-      if (!options.request.trim())
-        throw new PluginCliError("The review request must not be empty.");
-      const stdout = `${files.read("reviewer")}\n\n## Review request\n\n${options.request}\n`;
-      if (Buffer.byteLength(stdout) > PLUGIN_CLI_OUTPUT_MAX_BYTES)
-        throw new PluginCliError(
-          "The review prompt exceeds the CLI byte limit. Shorten the request.",
-        );
-      return { exitCode: 0, stdout };
     },
   });
 }

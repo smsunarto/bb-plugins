@@ -113,20 +113,6 @@ export function FilesSection(props: PluginNavPanelProps & { workflows: boolean }
           onRemove={setPendingRemoval}
         />
       )}
-      {props.workflows && (
-        <div className="shrink-0 border-t border-border p-2">
-          <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Review
-          </div>
-          <UrlLink
-            className="block w-full rounded-md px-2 py-1 text-left text-sm text-foreground hover:bg-accent/50"
-            href="/plugins/agent-instructions/instructions/prompts/source-control/file/skills/request-review/SKILL.md"
-          >
-            Review workflow
-            <span className="block text-xs text-muted-foreground">Edit in Agent Instructions</span>
-          </UrlLink>
-        </div>
-      )}
       {pendingRemoval !== null && (
         <Dialog
           open
