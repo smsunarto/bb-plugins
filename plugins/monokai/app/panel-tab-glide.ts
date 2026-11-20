@@ -3,9 +3,9 @@ import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 /**
  * Slides the active highlight from the old tab to the new one when the user
  * taps, clicks, or swipes to a tab of the same size in the right panel's tab
- * pager: pinned circles beside a one-chip viewport. bb shows the pager in
- * place of the toolbar whenever the window is 767px wide or narrower, with a
- * mouse or a finger.
+ * pager: pinned circles beside a viewport of the chips that fit. bb shows the
+ * pager in place of the toolbar whenever the window is 767px wide or narrower,
+ * with a mouse or a finger.
  *
  * - **One size:** the highlight never changes width or shape in flight. It
  *   glides between tabs of one size, such as two pinned circles or two chips
@@ -148,7 +148,7 @@ const sameSize = (a: Box, b: Box) =>
 const glideAnimation = (element: Element) =>
   element.getAnimations?.().find((animation) => animation.id === GLIDE);
 
-/** The pager's row and viewport, now and before bb last stepped them. */
+/** The pager's viewport, and its row now and before bb last stepped it. */
 interface PagerStep {
   viewport: HTMLElement;
   viewportRect: DOMRect;
@@ -199,8 +199,8 @@ function boxOf(pill: Element, fill: Box, step: PagerStep | null, at: "start" | "
 }
 
 /**
- * Slides the pager's row from where it was. The chips are one size, so the
- * viewport keeps its width.
+ * Slides the pager's row from where it was. A flight joins chips of one
+ * size, so the viewport's width is left to bb.
  */
 function animatePager(step: PagerStep, from: Element, timing: KeyframeAnimationOptions) {
   const { row, rowStart, rowEnd } = step;
@@ -221,11 +221,9 @@ function animatePager(step: PagerStep, from: Element, timing: KeyframeAnimationO
   return animations;
 }
 
-const pagerOf = (element: HTMLElement) => {
-  if (element.dataset.testid === VIEWPORT_ID) return element.parentElement?.closest(PAGER) ?? null;
-  if (element.parentElement?.dataset.testid === VIEWPORT_ID) return element.closest(PAGER);
-  return null;
-};
+/** The pager whose chip row this is, or null. bb's other inline styles never move a flight. */
+const pagerOfRow = (element: HTMLElement) =>
+  element.parentElement?.dataset.testid === VIEWPORT_ID ? element.closest(PAGER) : null;
 
 export function mountPanelTabGlide({
   signal,
@@ -265,7 +263,7 @@ export function mountPanelTabGlide({
   let switches: { from: Element; to: Element }[] = [];
   /** Pagers bb stepped this frame. */
   const stepped = new Set<Element>();
-  /** The first old inline style this frame of each pager viewport and row. */
+  /** The first old inline style this frame of each pager's row. */
   const oldStyles = new Map<Element, string | null>();
   let frame: number | undefined;
 
@@ -351,7 +349,7 @@ export function mountPanelTabGlide({
       stepped.delete(to.closest(PAGER) ?? to);
       glide(from, to);
     }
-    // bb re-measures the pager a frame after a switch; a flight follows that step.
+    // bb can step the row a frame after a switch; a flight follows that step.
     for (const pager of stepped) {
       const flight = flights.get(pager);
       if (flight !== undefined) glide(flight.from, flight.target, true);
@@ -360,9 +358,9 @@ export function mountPanelTabGlide({
     oldStyles.clear();
   };
 
-  /** Records a pager step's old inline style; the first this frame wins. */
+  /** Records a row step's old inline style; the first this frame wins. */
   function readStep(target: HTMLElement, oldValue: string | null) {
-    const pager = pagerOf(target);
+    const pager = pagerOfRow(target);
     if (pager === null || oldValue === target.getAttribute("style")) return;
     if (!oldStyles.has(target)) oldStyles.set(target, oldValue);
     stepped.add(pager);

@@ -429,6 +429,19 @@ test("a pager step a frame after the switch joins the flight", async () => {
   dispose();
 });
 
+test("a viewport resize mid-flight leaves the flight alone", async () => {
+  const { root, viewport, pins } = pager([112], -1);
+  const { dispose } = mount();
+  select(pins[0]!, pins[1]!);
+  await frame();
+  viewport.setAttribute("style", "width: 140px;");
+  await frame();
+  expect(root.querySelectorAll(GLIDE)).toHaveLength(1);
+  expect(animations).toHaveLength(1);
+  expect(animations[0]!.cancelled).toBe(false);
+  dispose();
+});
+
 test("a pager step without a switch is forgotten by the next switch", async () => {
   const { row, pins } = pager([112], -1);
   const { dispose } = mount();
