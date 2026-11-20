@@ -98,11 +98,12 @@ export class TasksError extends Error {
   }
 }
 
-/** bb's answer when a plugin's RPC schema refuses the input, before its handler runs. */
-const INPUT_REFUSED = /rpc input validation failed/u;
-
+/** The code bb answers with when a plugin's RPC schema refuses the input, before its handler runs. */
 function isInputRefusal(error: unknown): boolean {
-  return error instanceof TasksError && !error.timedOut && INPUT_REFUSED.test(error.message);
+  const cause = error instanceof TasksError ? error.cause : undefined;
+  return (
+    typeof cause === "object" && cause !== null && "code" in cause && cause.code === "invalid_input"
+  );
 }
 
 export type TasksClient = ReturnType<typeof createTasksClient>;
