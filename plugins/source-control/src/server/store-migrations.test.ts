@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { ChangeKey } from "../core/ids.ts";
 import type { ChangeRow, SourceRows } from "../core/review.ts";
@@ -33,7 +33,9 @@ const row = (number: number, pinned: boolean): ChangeRow & { pinned?: true } => 
 
 /** A database as the build before this one left it, with `pins` pins and an inbox that marks them. */
 function oldDatabase(pins: number) {
-  const { bb } = createFakePluginHost({ pluginId: "source-control" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "source-control" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   const db = bb.storage.database();
   bb.storage.migrate(db, BEFORE_PINS_LEFT);
   for (let n = 1; n <= pins; n++)
@@ -82,7 +84,9 @@ test.each([
 });
 
 test("a fresh database ends without a pin table", () => {
-  const { bb } = createFakePluginHost({ pluginId: "source-control" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "source-control" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   const store = openStore(bb);
   expect(hasPinTable(bb.storage.database())).toBe(false);
   expect(store.inbox("scott")).toEqual({ read: null, problem: null });

@@ -137,8 +137,9 @@ afterAll(async () => {
 
 export async function captainHost(options: FakeOptions = {}) {
   const root = mkdtempSync(join(tmpdir(), "captain-test-"));
-  // Async, so a host that failed before `current` exists still has its root removed.
-  built.push({ root, dispose: async () => current.harness.lifecycle.dispose() });
+  // Registered before anything can throw; `dispose` is bound once the fake host exists.
+  const entry: (typeof built)[number] = { root, dispose: async () => undefined };
+  built.push(entry);
   const storageRoot = join(root, "thread-storage");
   const captainsDir = join(root, "Captains");
   const bbProjects = options.bbProjects ?? [
@@ -613,6 +614,10 @@ export async function captainHost(options: FakeOptions = {}) {
       },
     },
   });
+  /** The host a reload made current, whose `bb.log` the reloaded plugin writes to. */
+  let current = host;
+  // Bound before startup, so a start that throws still has its fake host disposed.
+  entry.dispose = () => current.harness.lifecycle.dispose();
   const startOptions = {
     captainsDir,
     now: () => clock,
@@ -636,8 +641,6 @@ export async function captainHost(options: FakeOptions = {}) {
       await server.audienceReady;
     });
   }
-  /** The host a reload made current, whose `bb.log` the reloaded plugin writes to. */
-  let current = host;
   /** Every `bb.log` line of the current plugin instance. */
   const logs = () => current.harness.inspection.logEntries;
 

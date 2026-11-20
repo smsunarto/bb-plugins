@@ -6,9 +6,11 @@
  * so this changes nothing outside the file that calls it.
  */
 import { accessSync, constants } from "node:fs";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
+import { afterAll, beforeAll } from "vitest";
 
 export type Isolated = {
   root: string;
@@ -37,9 +39,15 @@ function findBut(): string | null {
   return null;
 }
 
+/**
+ * Points the environment at a root that exists only while the file's tests
+ * run: a `beforeAll` creates it and an `afterAll` removes it. A file whose
+ * tests are all skipped runs neither hook, so it creates nothing.
+ */
 export async function isolate(prefix: string): Promise<Isolated> {
   const but = findBut();
-  const root = await realpath(await mkdtemp(join(tmpdir(), `${prefix}-`)));
+  const root = join(await realpath(tmpdir()), `${prefix}-${randomBytes(6).toString("hex")}`);
+  const cleanup = () => rm(root, { recursive: true, force: true });
   const home = join(root, "home");
   const directories = {
     HOME: home,
@@ -48,25 +56,30 @@ export async function isolate(prefix: string): Promise<Isolated> {
     XDG_CACHE_HOME: join(root, "xdg-cache"),
     XDG_STATE_HOME: join(root, "xdg-state"),
   };
-  await Promise.all(Object.values(directories).map((path) => mkdir(path, { recursive: true })));
   const gitconfig = join(home, ".gitconfig");
-  await writeFile(
-    gitconfig,
-    [
-      "[user]",
-      "  name = Test Person",
-      "  email = test@example.com",
-      "[commit]",
-      "  gpgsign = false",
-      "[tag]",
-      "  gpgsign = false",
-      "[init]",
-      "  defaultBranch = main",
-      "[advice]",
-      "  detachedHead = false",
-      "",
-    ].join("\n"),
-  );
+  // Registered first, so it runs before the file's own `beforeAll` and its `afterAll` runs last.
+  beforeAll(async () => {
+    await mkdir(root);
+    await Promise.all(Object.values(directories).map((path) => mkdir(path, { recursive: true })));
+    await writeFile(
+      gitconfig,
+      [
+        "[user]",
+        "  name = Test Person",
+        "  email = test@example.com",
+        "[commit]",
+        "  gpgsign = false",
+        "[tag]",
+        "  gpgsign = false",
+        "[init]",
+        "  defaultBranch = main",
+        "[advice]",
+        "  detachedHead = false",
+        "",
+      ].join("\n"),
+    );
+  });
+  afterAll(cleanup);
   Object.assign(process.env, directories, {
     GIT_CONFIG_GLOBAL: gitconfig,
     GIT_CONFIG_NOSYSTEM: "1",
@@ -80,7 +93,7 @@ export async function isolate(prefix: string): Promise<Isolated> {
   return {
     root,
     but,
-    cleanup: () => rm(root, { recursive: true, force: true }),
+    cleanup,
   };
 }
 

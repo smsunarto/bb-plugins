@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { handWrittenLanded, type Landed } from "../core/watch.ts";
 import { createLanded } from "./landed.ts";
@@ -24,7 +24,7 @@ const landedAs = (state: "merged" | "open"): Landed => ({
 function setup(reply: string | null, state: "merged" | "open" = "merged") {
   const titles: string[] = [];
   const reads: (string | null)[] = [];
-  const { bb } = createFakePluginHost({
+  const { bb, harness } = createFakePluginHost({
     pluginId: "source-control",
     sdk: {
       threads: {
@@ -35,6 +35,8 @@ function setup(reply: string | null, state: "merged" | "open" = "merged") {
       },
     },
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   const store = openStore(bb);
   const watcher = createPrWatcher({
     bb,

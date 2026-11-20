@@ -1,8 +1,7 @@
 /** A Change's range on a real repository: files with sizes, a rename and a binary, patches and commits. */
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { beforeAll, expect, test } from "vitest";
 import { isolate } from "../../test/isolate.ts";
 import { git } from "../../test/repos.ts";
 import { parseRawBlobs, rangeCommits, rangeFiles, rangePatches, resolveBase } from "./range.ts";
@@ -14,7 +13,8 @@ let repo = "",
   head = "";
 
 beforeAll(async () => {
-  repo = await mkdtemp(join(tmpdir(), "sc-range-"));
+  repo = join(env.root, "repo");
+  await mkdir(repo);
   git(repo, "init", "--quiet", "-b", "main");
   await writeFile(
     join(repo, "old.ts"),
@@ -30,10 +30,6 @@ beforeAll(async () => {
   git(repo, "add", ".");
   git(repo, "commit", "--quiet", "-m", "Rename and grow");
   head = git(repo, "rev-parse", "HEAD").trim();
-});
-afterAll(async () => {
-  await rm(repo, { recursive: true, force: true });
-  await env.cleanup();
 });
 
 test("files say their kind, old path, size and head blob; a binary counts nothing", async () => {
@@ -93,7 +89,8 @@ test("one commit's own files, read against its first parent", async () => {
 });
 
 test("a base named by branch is that branch on the remote, else the remote's default", async () => {
-  const remote = await mkdtemp(join(tmpdir(), "sc-range-remote-"));
+  // Under the suite root, so the root's removal takes it even if teardown below fails.
+  const remote = await mkdtemp(join(env.root, "remote-"));
   try {
     git(remote, "init", "--quiet", "--bare", "-b", "main");
     git(repo, "remote", "add", "origin", remote);
@@ -105,8 +102,9 @@ test("a base named by branch is that branch on the remote, else the remote's def
     expect(await resolveBase(repo, "branch:gone", signal)).toBe(base);
     expect(await resolveBase(repo, base, signal)).toBe(base);
   } finally {
-    git(repo, "remote", "remove", "origin");
     await rm(remote, { recursive: true, force: true });
+    // Absent when the setup above failed; that failure is the one to report.
+    if (git(repo, "remote").split("\n").includes("origin")) git(repo, "remote", "remove", "origin");
   }
 });
 

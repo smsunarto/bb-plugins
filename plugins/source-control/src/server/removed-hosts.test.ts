@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { Effect } from "effect";
 import { hostTag, PAGE_SOURCES_TAG, threadTag } from "../core/ids.ts";
@@ -14,7 +14,9 @@ const placement = (hostId: string, path: string) => ({
 
 /** Two machines with a checkout, a read and a setting each; bb answers `known`. */
 function world(known: () => Promise<string[]>) {
-  const { bb } = createFakePluginHost({ pluginId: "source-control" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "source-control" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   const store = openStore(bb);
   const db = bb.storage.database();
   for (const [threadId, hostId] of [
