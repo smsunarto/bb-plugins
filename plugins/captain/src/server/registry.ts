@@ -24,8 +24,11 @@ export function createRegistry(store: Store) {
   /** Captain id → task key → role. */
   const pending = new Map<string, Map<string, Role>>();
   let storageRoot: string | null = null;
-  /** Each Captain's Drive signature as its last `drive` read served it. */
-  const servedDrives = new Map<string, string>();
+  /**
+   * Each scanned Drive's signature as of its last refresh to every watcher:
+   * the scan's own or a CLI write's. Present only while a scan runs.
+   */
+  const driveBaselines = new Map<string, string>();
 
   return {
     get(threadId: string | null): Captain | null {
@@ -58,10 +61,11 @@ export function createRegistry(store: Store) {
       return join(storageRoot, captainId);
     },
     storageRoot: () => storageRoot,
-    /** The Drive signature the last `drive` read served, which a scan compares against. */
-    servedDrive: (captainId: string) => servedDrives.get(captainId),
-    setServedDrive(captainId: string, signature: string): void {
-      servedDrives.set(captainId, signature);
+    /** What a running Drive scan compares against; undefined when none runs. */
+    driveBaseline: (captainId: string) => driveBaselines.get(captainId),
+    setDriveBaseline(captainId: string, signature: string | null): void {
+      if (signature === null) driveBaselines.delete(captainId);
+      else driveBaselines.set(captainId, signature);
     },
     setStorageRoot(root: string | null): void {
       storageRoot = root;

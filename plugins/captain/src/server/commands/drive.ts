@@ -4,6 +4,7 @@ import { callerCaptain, readCallerFile } from "../caller.ts";
 import { DRIVE_FILE_MAX_BYTES, DrivePathError, resolveDrivePath } from "../drive.ts";
 import { driveTag } from "../../contract/rpc.ts";
 import { guard, Refusal, render } from "../output.ts";
+import { driveSignature } from "../overview.ts";
 import { CAPTAIN_OPTION, ensureStorageRoot, JSON_OPTION, type CommandDeps } from "./deps.ts";
 
 const PATH = {
@@ -117,8 +118,12 @@ export function driveWriteCommand(deps: CommandDeps) {
           ]);
         }
         deps.drive.write(target, content);
-        // The Overview's Drive cards, at once; the refreshed read is what the
-        // next scan compares against, so the write is not refreshed twice.
+        // The Overview's Drive cards, at once, for every watcher; a running
+        // scan takes the Drive as now for its baseline, so it does not refresh
+        // the same write again.
+        if (deps.registry.driveBaseline(captainId) !== undefined) {
+          deps.registry.setDriveBaseline(captainId, await driveSignature(deps, captainId));
+        }
         deps.bb.rpc.experimental_invalidate([driveTag(captainId)]);
         const bytes = Buffer.byteLength(content);
         return render(

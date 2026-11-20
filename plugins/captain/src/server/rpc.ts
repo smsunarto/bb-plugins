@@ -175,7 +175,8 @@ function registerDriveScan(
     if (captainId === null) return Promise.resolve();
     return watchDrive({
       scan: () => driveSignature(deps, captainId),
-      served: () => deps.registry.servedDrive(captainId),
+      baseline: () => deps.registry.driveBaseline(captainId),
+      setBaseline: (signature) => deps.registry.setDriveBaseline(captainId, signature),
       signal,
       onChange: () => bb.rpc.experimental_invalidate([driveTag(captainId)]),
       ...(driveScanMs === undefined ? {} : { scanMs: driveScanMs }),

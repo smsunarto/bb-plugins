@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { captainContract, crewTag, DRIVE_EXCERPT_BYTES, driveTag } from "../contract/rpc.ts";
 import { readInside } from "./drive.ts";
 import { DRIVE_WALK_MAX, listDrive, watchDrive } from "./overview.ts";
@@ -61,6 +61,16 @@ async function dispatch(
 
 const settle = (ms = 80) => new Promise((resolve) => setTimeout(resolve, ms));
 const SCAN_MS = 40;
+/** A scan's baseline, kept as the registry keeps it. */
+const scanBaseline = () => {
+  let base: string | undefined;
+  return {
+    baseline: () => base,
+    setBaseline: (signature: string | null) => {
+      base = signature ?? undefined;
+    },
+  };
+};
 
 describe("crewThreads", () => {
   test("lists the unarchived crew, active first, with model name, task and role", async () => {
@@ -322,18 +332,16 @@ describe("Drive bounds", () => {
 });
 
 describe("Drive scan", () => {
-  /** A scan of one folder, with a client that reads again on each change. */
+  /** A scan of one folder. */
   const scanned = (dir: string) => {
-    let served = listDrive(dir).signature;
     let changes = 0;
     const abort = new AbortController();
     const done = watchDrive({
+      ...scanBaseline(),
       scan: async () => listDrive(dir).signature,
-      served: () => served,
       signal: abort.signal,
       onChange: () => {
         changes += 1;
-        served = listDrive(dir).signature;
       },
       scanMs: SCAN_MS,
     });
@@ -396,7 +404,7 @@ describe("Drive scan", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test("a CLI write refreshes at once, and the scan after the refreshed read pushes nothing", async () => {
+  test("a CLI write refreshes at once, and the next scans push nothing for it", async () => {
     const { host, as, captainId, drive, invalidations } = await overviewHost();
     const writes = () => invalidations().filter((tag) => tag === driveTag(captainId)).length;
     const stop = host.harness.behavior.experimental_watchRpc("drive", { input: { captainId } });
@@ -405,11 +413,52 @@ describe("Drive scan", () => {
     const before = writes();
     await as(["drive", "write", "briefs/B.md", "--content", "# B"]);
     expect(writes() - before).toBe(1);
-    // The client reads again, as bb does on a refresh.
-    await drive();
     await settle(200);
     expect(writes() - before).toBe(1);
     stop();
+  });
+
+  test("another client's own read does not hide an edit from the watching Overview", async () => {
+    const { host, captainId, driveDir, drive, invalidations } = await overviewHost();
+    const stop = host.harness.behavior.experimental_watchRpc("drive", { input: { captainId } });
+    await drive();
+    await settle(100);
+    const before = invalidations().length;
+    writeFileSync(join(driveDir, "NOTES.md"), "# Notes\n\nEdited by hand");
+    // A second client reads the Drive on its own before the next scan.
+    await drive();
+    await settle(200);
+    expect(invalidations().slice(before)).toContain(driveTag(captainId));
+    stop();
+  });
+
+  test("a scan that finishes after the watch ends publishes nothing", async () => {
+    let finish: (signature: string) => void = () => undefined;
+    let scans = 0;
+    let changes = 0;
+    const abort = new AbortController();
+    const done = watchDrive({
+      ...scanBaseline(),
+      scan: () => {
+        scans += 1;
+        return scans === 1
+          ? Promise.resolve("before")
+          : new Promise<string>((resolve) => {
+              finish = resolve;
+            });
+      },
+      signal: abort.signal,
+      onChange: () => {
+        changes += 1;
+      },
+      scanMs: SCAN_MS,
+    });
+    // Abort while a scan that will find a change is in flight.
+    await vi.waitFor(() => expect(scans).toBe(2));
+    abort.abort();
+    finish("after");
+    await done;
+    expect(changes).toBe(0);
   });
 
   test("while watched, a direct edit refreshes the Drive read; unwatched, nothing does", async () => {

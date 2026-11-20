@@ -136,12 +136,8 @@ export async function driveFiles(
 ): Promise<DriveListing> {
   const dir = await validDriveDir(deps, captainId);
   const real = dir === null ? null : realDriveDir(dir);
-  if (dir === null || real === null) {
-    deps.registry.setServedDrive(captainId, NO_DRIVE);
-    return { total: 0, truncated: false, files: [], folder: null };
-  }
-  const { files: listed, truncated, signature } = listDrive(real);
-  deps.registry.setServedDrive(captainId, signature);
+  if (dir === null || real === null) return { total: 0, truncated: false, files: [], folder: null };
+  const { files: listed, truncated } = listDrive(real);
   const pinned = DRIVE_FILES.flatMap((name) => listed.filter((file) => file.path === name));
   const rest = listed
     .filter((file) => !pinned.includes(file))
@@ -320,29 +316,40 @@ export async function driveSignature(deps: CommandDeps, captainId: string): Prom
 const DRIVE_SCAN_MS = 5_000;
 
 /**
- * Refresh a watched Drive read when what it shows has changed: every
- * `scanMs`, compare the Drive's signature with the one the last read served,
- * and refresh when they differ. Nothing is pushed before a read has served
- * one. A CLI write refreshes at once by itself; the read it causes records
- * the new signature, so the next scan finds nothing to push. Resolves once
+ * Refresh a watched Drive read when what it shows has changed. A scan at the
+ * start sets the baseline; then every `scanMs` the Drive's signature is
+ * compared with it, and a difference becomes the new baseline and a refresh
+ * to every watcher. Only such a refresh moves the baseline: one client's own
+ * read never does, or an edit it saw would be hidden from the rest. A CLI
+ * write refreshes at once and sets the baseline itself (see `drive write`).
+ * A scan that settles after `signal` aborts publishes nothing. Resolves once
  * `signal` aborts, which is when the last subscriber leaves.
  */
 export async function watchDrive(options: {
   scan: () => Promise<string>;
-  served: () => string | undefined;
+  baseline: () => string | undefined;
+  setBaseline: (signature: string | null) => void;
   signal: AbortSignal;
   onChange: () => void;
   /** Tests scan sooner. */
   scanMs?: number;
 }): Promise<void> {
-  const { scan, served, signal, onChange } = options;
+  const { scan, baseline, setBaseline, signal, onChange } = options;
   const scanMs = options.scanMs ?? DRIVE_SCAN_MS;
-  while (!signal.aborted) {
-    await sleep(scanMs, signal);
-    if (signal.aborted) return;
-    const now = await scan().catch(() => null);
-    const last = served();
-    if (now !== null && last !== undefined && now !== last) onChange();
+  const first = await scan().catch(() => null);
+  if (signal.aborted) return;
+  if (first !== null) setBaseline(first);
+  try {
+    while (!signal.aborted) {
+      await sleep(scanMs, signal);
+      if (signal.aborted) return;
+      const now = await scan().catch(() => null);
+      if (signal.aborted || now === null || now === baseline()) continue;
+      setBaseline(now);
+      onChange();
+    }
+  } finally {
+    setBaseline(null);
   }
 }
 
