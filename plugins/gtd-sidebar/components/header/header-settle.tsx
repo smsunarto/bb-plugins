@@ -9,6 +9,7 @@ import {
 import { Button } from "../ui/button";
 import { ARCHIVE_ACTION_KEY, toThreadActionTarget } from "../../lib/thread-action-target";
 import { hasSidebarActions, settleThread } from "../../lib/sidebar-actions-bridge";
+import { isLongLivedThread } from "../../lib/long-lived";
 import { useComposerHostId } from "../../hooks/use-machine-visibility";
 
 /** The attribute `header-settle-style.ts` keys the "…" hide on. */
@@ -83,7 +84,8 @@ function CompactHeaderSettle({ threadId }: { threadId: string }) {
   const { threads } = useSidebarThreads();
   const row = threads.find((thread) => thread.id === threadId);
   // A settled or unlisted thread keeps bb's menu, where Unarchive lives.
-  if (row === undefined || row.isArchived) return null;
+  // A Captain stays open (lib/long-lived), so it offers no Settle at all.
+  if (row === undefined || row.isArchived || isLongLivedThread(row)) return null;
   return <SettleButton thread={row} />;
 }
 

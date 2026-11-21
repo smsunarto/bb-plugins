@@ -7,7 +7,7 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import { ThreadInbox } from "./components/inbox/thread-inbox";
 import { CapyNavigation } from "./components/nav/capy-navigation";
-import { archiveThread, hasSidebarActions } from "./lib/sidebar-actions-bridge";
+import { archiveThread, canSettleThread } from "./lib/sidebar-actions-bridge";
 import {
   HeaderSettle,
   type LegacyThreadHeaderActionSlots,
@@ -57,7 +57,8 @@ export default definePluginApp((app) => {
   app.slots.commandPaletteAction({
     id: "settle-thread",
     title: "GTD Sidebar: settle thread",
-    isAvailable: ({ threadId }) => threadId !== null && hasSidebarActions(),
+    // Hidden on a thread that stays open, such as a Captain (lib/long-lived).
+    isAvailable: ({ threadId }) => threadId !== null && canSettleThread(threadId),
     run: ({ threadId }) => {
       if (threadId !== null) archiveThread(threadId);
     },

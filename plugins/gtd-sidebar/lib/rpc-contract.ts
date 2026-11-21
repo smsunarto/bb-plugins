@@ -36,7 +36,12 @@ const lifecycleRowsSchema = z.array(
     snoozedAt: z.number(),
   }),
 );
-const lifecycleWriteSchema = z.object({ ok: z.boolean(), rows: lifecycleRowsSchema });
+const lifecycleWriteSchema = z.object({
+  ok: z.boolean(),
+  /** Why a write was refused; set only with `ok: false`. */
+  reason: z.string().optional(),
+  rows: lifecycleRowsSchema,
+});
 
 export const gtdSidebarRpcContract = defineRpcContract({
   // Saving the hidden machines rather than the shown ones lets a machine bb

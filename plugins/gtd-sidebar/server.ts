@@ -12,6 +12,7 @@ import { gtdSidebarHostContract } from "./lib/host-contract.ts";
 import type { ThreadLifecycleRow } from "./lib/lifecycle.ts";
 import { createMachineVisibilityStore } from "./lib/machine-visibility-store.ts";
 import { threadFamilyIds } from "./lib/thread-family.ts";
+import { stayOpenReason } from "./lib/long-lived.ts";
 import { registerThreadNaming } from "./thread-naming-server.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
 import { RETIRED_PROJECT_MIGRATIONS } from "./lib/retired-project-migrations.ts";
@@ -241,6 +242,12 @@ export default async function plugin(bb: BbPluginApi) {
       // Each write refreshes every window's lifecycle read.
       snooze: ({ threadId, snoozedUntil }) =>
         serializeLifecycle(async () => {
+          const refusal = await snoozeRefusal(bb, threadId);
+          if (refusal !== null) {
+            // Nothing is written. The refresh drops the window's prediction.
+            bb.rpc.experimental_invalidate([GTD_TAGS.lifecycle]);
+            return { ok: false, reason: refusal, rows: readAll() };
+          }
           const ids = await familyIds(threadId);
           const snoozedAt = Date.now();
           db.transaction(() => {
@@ -299,4 +306,19 @@ export default async function plugin(bb: BbPluginApi) {
       },
     }),
   );
+}
+
+/**
+ * Why `threadId` may not be snoozed, or null when it may. A thread that stays
+ * open (lib/long-lived) is refused, and so is one whose origin can't be read:
+ * the check fails closed. The app never offers either snooze; this refuses
+ * one from the CLI or an older window too. Only the root is checked, since a
+ * Captain is never nested under another thread.
+ */
+async function snoozeRefusal(bb: BbPluginApi, threadId: string): Promise<string | null> {
+  try {
+    return stayOpenReason(await bb.sdk.threads.get({ threadId }));
+  } catch {
+    return "Couldn’t check whether this thread stays open, so it wasn’t snoozed";
+  }
 }

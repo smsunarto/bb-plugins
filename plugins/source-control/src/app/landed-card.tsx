@@ -18,7 +18,7 @@ import {
   type PluginSidebarThread,
   type PluginThreadActionTarget,
 } from "@get-bb/plugin-sdk/app";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { PullRequestLink } from "./open-pull-request.tsx";
 import {
   canStillLand,
@@ -39,6 +39,13 @@ import { Button } from "./components/ui/button.tsx";
 
 /** bb's own Archive, which the sidebar calls Settle. */
 const ARCHIVE_KEYS = ["bb--core/archive"];
+
+/**
+ * Origin plugins whose threads stay open, as gtd-sidebar's lib/long-lived
+ * lists them: the card offers no Settle there.
+ */
+const LONG_LIVED_ORIGIN_PLUGIN_IDS: ReadonlySet<string> = new Set(["captain"]);
+const LONG_LIVED_REASON = "Captain threads stay open";
 const PR_ICONS = { merged: "GitMerge", open: "GitPullRequest", closed: "GitPullRequestClosed" };
 const POLL_MS = 60_000;
 
@@ -278,6 +285,14 @@ function SettleButton({ threadId }: { threadId: string }) {
     () => (row ? rowTarget(row) : stored ? storedTarget(stored) : null),
     [row, stored],
   );
+  const origin = row?.originPluginId ?? stored?.originPluginId ?? null;
+  if (
+    target &&
+    target.archivedAt === null &&
+    origin !== null &&
+    LONG_LIVED_ORIGIN_PLUGIN_IDS.has(origin)
+  )
+    return <StaysOpenButton />;
   if (target && target.archivedAt === null)
     return <ArchiveButton target={target} onDone={() => setAsked((n) => n + 1)} />;
   const settled = target !== null;
@@ -291,6 +306,28 @@ function SettleButton({ threadId }: { threadId: string }) {
       {settled ? "Settled" : "Settle thread"}
       {settled ? <Icon name="Check" className="size-3" aria-hidden /> : null}
     </Button>
+  );
+}
+
+/** A Captain thread stays open: Settle shows, disabled, with the reason under it. */
+function StaysOpenButton() {
+  const reasonId = useId();
+  return (
+    <div className="flex flex-col gap-1">
+      <Button
+        size="sm"
+        variant="outline"
+        data-testid="sc-landed-settle"
+        aria-describedby={reasonId}
+        className="h-7 w-full gap-1 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
+        disabled
+      >
+        Settle thread
+      </Button>
+      <p id={reasonId} className="text-center text-[11px] text-muted-foreground">
+        {LONG_LIVED_REASON}
+      </p>
+    </div>
   );
 }
 

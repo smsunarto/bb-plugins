@@ -61,6 +61,8 @@ interface ThreadCardProps {
   isNaming?: boolean;
   /** False while the thread is working or blocked on the user. */
   canPark: boolean;
+  /** Why the family may not be settled or snoozed (lib/long-lived), or null. */
+  stayOpenReason: string | null;
   isCompactViewport: boolean;
   command: DispatchRowCommand;
   /** Sidebar drag state; absent on compact viewports, where there is no drag. */
@@ -138,6 +140,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
   isActive,
   isNaming = false,
   canPark,
+  stayOpenReason,
   isCompactViewport,
   command,
   drag,
@@ -281,7 +284,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
             thread={statusThread}
             isUnread={isUnread}
             shortcut={shortcut}
-            plan={rowActionPlan("active", thread.id, canPark, command)}
+            plan={rowActionPlan("active", thread.id, canPark, command, stayOpenReason)}
             showActions={showActions}
             canPark={canPark}
             activity={thread.activity}
@@ -678,6 +681,7 @@ function DesktopThreadSummary({
 }) {
   const snoozeAction = findThreadAction(plan, "snooze-tomorrow");
   const settleAction = findThreadAction(plan, "settle");
+  const snoozeHint = snoozeAction?.disabledReason ?? IDLE_SNOOZE_HINT;
   return (
     <>
       {title}
@@ -693,13 +697,16 @@ function DesktopThreadSummary({
           <ParkButton
             label={SNOOZE_TOMORROW_LABEL}
             icon="Clock"
-            disabled={!canPark}
+            disabled={!canPark || snoozeAction?.disabledReason !== undefined}
+            disabledHint={snoozeHint}
             onActivate={() => snoozeAction?.execute()}
           />
           {settleAction ? (
             <ParkButton
               label={settleAction.label}
               icon={settleAction.icon}
+              disabled={settleAction.disabledReason !== undefined}
+              disabledHint={settleAction.disabledReason}
               onActivate={settleAction.execute}
             />
           ) : null}
@@ -709,16 +716,21 @@ function DesktopThreadSummary({
   );
 }
 
+const IDLE_SNOOZE_HINT = "Snooze is available when this thread is idle";
+
 function ParkButton({
   label,
   icon,
   onActivate,
   disabled = false,
+  disabledHint,
 }: {
   label: string;
   icon: IconName;
   onActivate: () => void;
   disabled?: boolean;
+  /** The tooltip while disabled: why the move is unavailable. */
+  disabledHint?: string;
 }) {
   // aria-disabled, not `disabled`: a disabled button takes no pointer or
   // focus, so its hint could never say why it is unavailable.
@@ -746,7 +758,7 @@ function ParkButton({
         </button>
       </TooltipTrigger>
       <TooltipContent>
-        {disabled ? "Snooze is available when this thread is idle" : label}
+        {disabled && disabledHint !== undefined ? disabledHint : label}
       </TooltipContent>
     </Tooltip>
   );
