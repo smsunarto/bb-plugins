@@ -862,5 +862,50 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
         ],
       );
     });
+
+    // A refused snooze (a Captain stays open) writes nothing: the toast says
+    // why, with no Undo, and the thread stays on the active shelf.
+    it("rolls back a refused snooze and shows the reason", async () => {
+      const until = snoozeUntilTomorrow(new Date());
+      function RefusedProbe() {
+        const lifecycle = useLifecycle([thread("t")]);
+        return createElement(
+          Fragment,
+          null,
+          createElement("span", { role: "status" }, lifecycle.shelfFor(thread("t"))),
+          createElement(
+            "button",
+            {
+              type: "button",
+              onClick: () => lifecycle.snooze("t", until),
+            },
+            "Snooze",
+          ),
+          createElement(Toaster),
+        );
+      }
+      const slot = renderSlot(
+        { component: RefusedProbe },
+        {},
+        {
+          rpc: {
+            listLifecycle: () => ({ rows: [] }),
+            snooze: () => ({ ok: false, reason: "Captain threads stay open", rows: [] }),
+            unsnooze: () => ({ ok: true, rows: [] }),
+          } as never,
+        },
+      );
+      await flush();
+      fireEvent.click(slot.getByRole("button", { name: "Snooze" }));
+      await settle();
+      await flush();
+      assert.deepEqual(toastTitles(), ["Captain threads stay open"]);
+      assert.equal(screen.queryByRole("button", { name: "Undo" }), null);
+      // The backend invalidates the read with its refusal, which releases the
+      // prediction.
+      await slot.behavior.experimental_invalidateRpc(["lifecycle"]);
+      await flush();
+      assert.equal(slot.getByRole("status").textContent, "active");
+    });
   });
 }

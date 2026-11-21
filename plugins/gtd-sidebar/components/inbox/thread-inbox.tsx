@@ -72,7 +72,7 @@ import {
 } from "../../lib/project-groups";
 import { ProjectGroup, SortableProjectGroup } from "./project-group";
 import { isShelvedThread } from "../../lib/settled-threads";
-import { rosterStayOpenReason, stayOpenReason } from "../../lib/long-lived";
+import { isLongLivedThread, stayOpenReason } from "../../lib/long-lived";
 import { useStableThreads } from "../../hooks/use-stable-threads";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
 import { useRetained } from "../../hooks/use-retained";
@@ -384,7 +384,7 @@ function InboxList({
         branchName={branchName}
         isActive={thread.id === activeThreadId}
         canPark={canParkFamily(row.node, lifecycle)}
-        stayOpenReason={familyStayOpenReason(row.node)}
+        stayOpenReason={stayOpenReason(thread)}
         isCompactViewport={isCompactViewport}
         command={command}
         drag={drag}
@@ -490,7 +490,7 @@ function InboxList({
           threadId,
           !parked && canParkFamily(row.node, lifecycle),
           command,
-          parked ? null : familyStayOpenReason(row.node),
+          parked ? null : stayOpenReason(row.node.thread),
         ),
       };
     }
@@ -816,18 +816,6 @@ function threadDropAllowed(
   return source?.kind === "thread" && nestDropAllowed(tree, source.threadId, threadId);
 }
 
-/** Why the drawn family may not be settled or snoozed (lib/long-lived), or null. */
-function familyStayOpenReason(node: InboxThreadNode): string | null {
-  const members: PluginSidebarThread[] = [];
-  const pending = [node];
-  while (pending.length > 0) {
-    const current = pending.shift()!;
-    members.push(current.thread);
-    pending.push(...current.children);
-  }
-  return stayOpenReason(members);
-}
-
 /** A family can park only when every member can park. */
 function canParkFamily(node: InboxThreadNode, lifecycle: LifecycleApi): boolean {
   const pending = [node];
@@ -941,11 +929,18 @@ function useRowCommands({
     openThread(pending.nextThreadId);
   }, [activeThreadId, threads, openThread]);
 
-  // A long-lived thread, or a family holding one, is never settled or
-  // snoozed: every caller (menus, row buttons, the palette, the phone
-  // header) lands here, so this one check covers them all.
-  const staysOpen = useCommittedEvent(
-    (threadId: string) => rosterStayOpenReason(threads, threadId) !== null,
+  // A long-lived thread is never settled or snoozed: every caller (menus,
+  // row buttons, the palette, the phone header) lands here, so this one
+  // check covers them all.
+  const staysOpen = useCommittedEvent((threadId: string) =>
+    threads.some((entry) => entry.id === threadId && isLongLivedThread(entry)),
+  );
+  // The palette offers Settle only for a thread the list knows, that is
+  // still active, and that does not stay open.
+  const canSettle = useCommittedEvent((threadId: string) =>
+    threads.some(
+      (entry) => entry.id === threadId && !entry.isArchived && !isLongLivedThread(entry),
+    ),
   );
 
   const settle = useCommittedEvent((threadId: string) => {
@@ -984,10 +979,10 @@ function useRowCommands({
   // The palette's settle row runs this same dispatcher, and a mounted list
   // is the only place it exists.
   useEffect(() => {
-    const published = { settle, canSettle: (threadId: string) => !staysOpen(threadId) };
+    const published = { settle, canSettle };
     publishSidebarActions(published);
     return () => forgetSidebarActions(published);
-  }, [settle, staysOpen]);
+  }, [settle, canSettle]);
 
   const command = useCommittedEvent((command: RowCommand) => {
     switch (command.kind) {

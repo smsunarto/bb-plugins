@@ -7,13 +7,7 @@ import {
   type RowCommand,
   type RowLifecycleState,
 } from "../components/inbox/thread-actions.ts";
-import {
-  LONG_LIVED_FAMILY_REASON,
-  LONG_LIVED_REASON,
-  isLongLivedThread,
-  rosterStayOpenReason,
-  stayOpenReason,
-} from "../lib/long-lived.ts";
+import { LONG_LIVED_REASON, isLongLivedThread, stayOpenReason } from "../lib/long-lived.ts";
 
 const noop = () => {};
 
@@ -116,25 +110,8 @@ describe("threads that stay open", () => {
     assert.equal(isLongLivedThread({}), false);
   });
 
-  const row = (id: string, parentThreadId: string | null, originPluginId: string | null) => ({
-    id,
-    parentThreadId,
-    originPluginId,
-    originKind: null,
-    isArchived: false,
-  });
-  const roster = [
-    row("lead", null, null),
-    row("captain", "lead", "captain"),
-    row("crew", "captain", "scott-tasks"),
-    row("plain", null, null),
-  ];
-
-  test("blocks the Captain, and any family that holds one, but not its crew", () => {
-    assert.equal(rosterStayOpenReason(roster, "captain"), LONG_LIVED_REASON);
-    assert.equal(rosterStayOpenReason(roster, "lead"), LONG_LIVED_FAMILY_REASON);
-    assert.equal(rosterStayOpenReason(roster, "crew"), null);
-    assert.equal(rosterStayOpenReason(roster, "plain"), null);
-    assert.equal(stayOpenReason([]), null);
+  test("gives the reason for a Captain only", () => {
+    assert.equal(stayOpenReason({ originPluginId: "captain" }), LONG_LIVED_REASON);
+    assert.equal(stayOpenReason({ originPluginId: "scott-tasks" }), null);
   });
 });

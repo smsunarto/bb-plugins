@@ -1,29 +1,12 @@
 /** The root and its non-archived descendants, following bb's parent links. */
 export async function threadFamilyIds(
   rootId: string,
-  listChildren: (parentThreadId: string, offset: number) => Promise<readonly FamilyChild[]>,
+  listChildren: (
+    parentThreadId: string,
+    offset: number,
+  ) => Promise<readonly { id: string; originKind: string | null }[]>,
   pageSize: number,
 ): Promise<string[]> {
-  return (await threadFamily(rootId, listChildren, pageSize)).map((member) => member.id);
-}
-
-/** A child as bb's thread list reports it. */
-export interface FamilyChild {
-  id: string;
-  originKind: string | null;
-  originPluginId?: string | null;
-}
-
-/**
- * `threadFamilyIds` with each descendant as listed, so a caller can check
- * what started it. The root comes first, with only its id.
- */
-export async function threadFamily(
-  rootId: string,
-  listChildren: (parentThreadId: string, offset: number) => Promise<readonly FamilyChild[]>,
-  pageSize: number,
-): Promise<{ id: string; originPluginId?: string | null }[]> {
-  const members: { id: string; originPluginId?: string | null }[] = [{ id: rootId }];
   const ids = [rootId];
   const seen = new Set(ids);
   for (let index = 0; index < ids.length; index++) {
@@ -35,12 +18,11 @@ export async function threadFamily(
         if (child.originKind === "fork" || seen.has(child.id)) continue;
         seen.add(child.id);
         ids.push(child.id);
-        members.push(child);
       }
       if (children.length < pageSize) break;
     }
   }
-  return members;
+  return ids;
 }
 
 /**

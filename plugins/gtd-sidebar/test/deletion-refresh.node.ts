@@ -23,7 +23,10 @@ describe("deletion refresh routing", () => {
       const thread = makeThreadResponse({ id: "removed", archivedAt });
       const { bb, harness } = createFakePluginHost({
         pluginId: "gtd-sidebar",
-        sdk: { subscribe: () => () => {}, threads: { list: async () => [] } },
+        sdk: {
+          subscribe: () => () => {},
+          threads: { get: async () => thread, list: async () => [] },
+        },
       });
       await plugin(bb);
       try {
