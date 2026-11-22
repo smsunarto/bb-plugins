@@ -17,6 +17,7 @@ describe("family snooze RPC", () => {
       sdk: {
         subscribe: () => () => {},
         threads: {
+          get: async ({ threadId }) => threads.find((thread) => thread.id === threadId)!,
           list: async (args) =>
             threads
               .filter((thread) => thread.parentThreadId === args?.parentThreadId)
@@ -68,6 +69,7 @@ describe("family snooze RPC", () => {
       sdk: {
         subscribe: () => () => {},
         threads: {
+          get: async ({ threadId }) => makeThreadResponse({ id: threadId }),
           list: async () => {
             if (++reads === 1) await snoozeRead;
             return [];
@@ -108,6 +110,80 @@ describe("family snooze RPC", () => {
       insert.run("no-start", Date.now() + 86_400_000, null);
       insert.run("no-wake", null, Date.now());
       assert.deepEqual(await harness.behavior.callRpc("listLifecycle", {}), { rows: [] });
+    } finally {
+      await harness.lifecycle.dispose();
+    }
+  });
+
+  // A Captain thread stays open: the RPC refuses to snooze it, even from the
+  // CLI, and refuses when it can't read the origin. A Captain snoozed before
+  // this rule still wakes, its crew with it.
+  it("refuses to snooze a Captain, fails closed, and still wakes one", async () => {
+    const threads = [
+      makeThreadResponse({ id: "captain", parentThreadId: null, originPluginId: "captain" }),
+      makeThreadResponse({ id: "crew", parentThreadId: "captain", originPluginId: "scott-tasks" }),
+      makeThreadResponse({ id: "plain", parentThreadId: null }),
+    ];
+    let originReadable = true;
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "gtd-sidebar",
+      sdk: {
+        subscribe: () => () => {},
+        threads: {
+          get: async ({ threadId }) => {
+            if (!originReadable) throw new Error("bb is unreachable");
+            return threads.find((thread) => thread.id === threadId)!;
+          },
+          list: async (args) =>
+            threads
+              .filter((thread) => thread.parentThreadId === args?.parentThreadId)
+              .slice(args?.offset ?? 0, (args?.offset ?? 0) + (args?.limit ?? 200)),
+        },
+      },
+    });
+    await plugin(bb);
+    try {
+      const snoozedUntil = Date.now() + 86_400_000;
+      assert.deepEqual(
+        await harness.behavior.callRpc("snooze", { threadId: "captain", snoozedUntil }),
+        { ok: false, reason: "Captain threads stay open", rows: [] },
+      );
+      // A refusal still refreshes the read, which drops the window's prediction.
+      assert.deepEqual(harness.inspection.experimental_rpcInvalidations, [["lifecycle"]]);
+      // An unreadable origin refuses too, and writes nothing.
+      originReadable = false;
+      const unreadable = (await harness.behavior.callRpc("snooze", {
+        threadId: "plain",
+        snoozedUntil,
+      })) as { ok: boolean; rows: ThreadLifecycleRow[] };
+      assert.equal(unreadable.ok, false);
+      assert.deepEqual(unreadable.rows, []);
+      originReadable = true;
+      // Crew is not a Captain thread and snoozes as before.
+      const crew = (await harness.behavior.callRpc("snooze", {
+        threadId: "crew",
+        snoozedUntil,
+      })) as { ok: boolean; rows: ThreadLifecycleRow[] };
+      assert.equal(crew.ok, true);
+      assert.deepEqual(
+        crew.rows.map((row) => row.threadId),
+        ["crew"],
+      );
+      // The Captain's own row, as a build before this rule stored it.
+      bb.storage
+        .database()
+        .prepare(
+          `INSERT INTO thread_lifecycle (thread_id, snoozed_until, snoozed_at) VALUES (?, ?, ?)`,
+        )
+        .run("captain", snoozedUntil, Date.now());
+      const before = (await harness.behavior.callRpc("listLifecycle", {})) as {
+        rows: ThreadLifecycleRow[];
+      };
+      assert.deepEqual(before.rows.map((row) => row.threadId).sort(), ["captain", "crew"]);
+      assert.deepEqual(await harness.behavior.callRpc("unsnooze", { threadId: "captain" }), {
+        ok: true,
+        rows: [],
+      });
     } finally {
       await harness.lifecycle.dispose();
     }

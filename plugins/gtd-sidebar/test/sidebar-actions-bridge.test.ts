@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import {
   archiveThread,
+  canSettleThread,
   forgetSidebarActions,
   hasSidebarActions,
   publishSidebarActions,
@@ -9,8 +10,11 @@ import {
   type PublishedSidebarActions,
 } from "../lib/sidebar-actions-bridge.ts";
 
-function fakeEntry(settled: string[]): PublishedSidebarActions {
-  return { settle: (threadId) => settled.push(threadId) };
+function fakeEntry(settled: string[], stayOpen: readonly string[] = []): PublishedSidebarActions {
+  return {
+    settle: (threadId) => settled.push(threadId),
+    canSettle: (threadId) => !stayOpen.includes(threadId),
+  };
 }
 
 describe("sidebar actions bridge", () => {
@@ -64,5 +68,15 @@ describe("sidebar actions bridge", () => {
     settleThread("thr_2");
     assert.deepEqual(settled, ["thr_2"]);
     forgetSidebarActions(newer);
+  });
+
+  // The palette's settle row asks first, so a Captain never offers it.
+  it("answers canSettle from the mounted list, and false with none", () => {
+    assert.equal(canSettleThread("thr_1"), false);
+    const captain = fakeEntry(settled, ["thr_captain"]);
+    publishSidebarActions(captain);
+    assert.equal(canSettleThread("thr_1"), true);
+    assert.equal(canSettleThread("thr_captain"), false);
+    forgetSidebarActions(captain);
   });
 });

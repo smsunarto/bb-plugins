@@ -64,6 +64,7 @@ import {
 } from "../../lib/project-groups";
 import { ProjectGroup, SortableProjectGroup } from "./project-group";
 import { isShelvedThread } from "../../lib/settled-threads";
+import { isLongLivedThread, stayOpenReason } from "../../lib/long-lived";
 import { useStableThreads } from "../../hooks/use-stable-threads";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
 import { useRetained } from "../../hooks/use-retained";
@@ -398,6 +399,7 @@ function InboxList({
         branchName={branchName}
         isActive={thread.id === activeThreadId}
         canPark={canParkFamily(row.node, lifecycle)}
+        stayOpenReason={stayOpenReason(thread)}
         isCompactViewport={isCompactViewport}
         command={command}
         drag={drag}
@@ -503,6 +505,7 @@ function InboxList({
           threadId,
           !parked && canParkFamily(row.node, lifecycle),
           command,
+          parked ? null : stayOpenReason(row.node.thread),
         ),
       };
     }
@@ -941,7 +944,22 @@ function useRowCommands({
     openThread(pending.nextThreadId);
   }, [activeThreadId, threads, openThread]);
 
+  // A long-lived thread is never settled or snoozed: every caller (menus,
+  // row buttons, the palette, the phone header) lands here, so this one
+  // check covers them all.
+  const staysOpen = useCommittedEvent((threadId: string) =>
+    threads.some((entry) => entry.id === threadId && isLongLivedThread(entry)),
+  );
+  // The palette offers Settle only for a thread the list knows, that is
+  // still active, and that does not stay open.
+  const canSettle = useCommittedEvent((threadId: string) =>
+    threads.some(
+      (entry) => entry.id === threadId && !entry.isArchived && !isLongLivedThread(entry),
+    ),
+  );
+
   const settle = useCommittedEvent((threadId: string) => {
+    if (staysOpen(threadId)) return;
     const settled = visibleActiveRows.find((entry) => entry.row.node.thread.id === threadId);
     if (settled !== undefined) {
       // The advance stays inside the settled row's own shelf, and skips its
@@ -976,10 +994,10 @@ function useRowCommands({
   // The palette's settle row runs this same dispatcher, and a mounted list
   // is the only place it exists.
   useEffect(() => {
-    const published = { settle };
+    const published = { settle, canSettle };
     publishSidebarActions(published);
     return () => forgetSidebarActions(published);
-  }, [settle]);
+  }, [settle, canSettle]);
 
   const command = useCommittedEvent((command: RowCommand) => {
     switch (command.kind) {
@@ -991,6 +1009,7 @@ function useRowCommands({
         settle(command.threadId);
         return;
       case "snooze":
+        if (staysOpen(command.threadId)) return;
         lifecycle.snooze(command.threadId, command.until);
         return;
       case "restore":
