@@ -159,10 +159,9 @@
 
 [data-gtd-thread-scroll="compact"] {
   --gtd-thread-bottom-inset: var(--sidebar-list-bottom-inset, 0px);
+  /* Leave room to scroll the last row above the floating New pill. */
   --gtd-thread-end-padding: calc(5rem + var(--gtd-thread-bottom-inset));
-  /* The 48px pill is lifted 8px above the inset. */
-  --gtd-thread-pill-edge: calc(3.5rem + var(--gtd-thread-bottom-inset));
-  --gtd-thread-fade-length: calc(var(--gtd-thread-end-padding) - var(--gtd-thread-pill-edge));
+  --gtd-thread-fade-length: 1.5rem;
   overflow-y: auto;
 }
 
@@ -173,11 +172,11 @@
   pointer-events: none;
 }
 
-/* Measure the clipped part of the strip ending at the last row plus the
-   space covered by the pill. The strip takes no space from the rows or clearance. */
+/* Measure the clipped part of a strip ending at the last row plus the
+   footer inset. The strip takes no space from the rows or clearance. */
 [data-gtd-thread-scroll-end] {
   position: absolute;
-  bottom: calc(100% - var(--gtd-thread-pill-edge));
+  bottom: calc(100% - var(--gtd-thread-bottom-inset));
   width: 1px;
   height: var(--gtd-thread-fade-length);
 }
@@ -185,8 +184,8 @@
 [data-gtd-thread-more-below] {
   mask-image: linear-gradient(
     to bottom,
-    black calc(100% - var(--gtd-thread-pill-edge) - var(--gtd-thread-fade-depth)),
-    transparent calc(100% - var(--gtd-thread-pill-edge))
+    black calc(100% - var(--gtd-thread-bottom-inset) - var(--gtd-thread-fade-depth)),
+    transparent calc(100% - var(--gtd-thread-bottom-inset))
   );
 }
 
