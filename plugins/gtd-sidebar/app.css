@@ -672,8 +672,6 @@
 
 [data-gtd-phone-nav] [data-gtd-nav-scrolled] {
   --gtd-nav-fade-top: 10px;
-  background: radial-gradient(ellipse 50% 100% at 50% 0%, var(--sidebar-accent), transparent) top /
-    100% 18px no-repeat;
 }
 
 [data-gtd-phone-nav] [data-gtd-nav-more-below] {
