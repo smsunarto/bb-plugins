@@ -67,6 +67,7 @@ async function mountComposer(surface: ExperimentalComposerInput["surface"] = "ne
   const run = vi.fn();
   const input: ExperimentalComposerInput = {
     surface,
+    autoFocus: false,
     executionControls: null,
     mentionTriggers: ["@"],
     commandTriggers: ["/"],
@@ -131,12 +132,14 @@ async function mountComposer(surface: ExperimentalComposerInput["surface"] = "ne
   // Tiptap keeps its editor on the view's DOM node.
   const editor = (element as HTMLElement & { editor: Editor }).editor;
   const type = (text: string) => act(() => void editor.commands.insertContent(text));
+  const moveCaret = (offset: number) =>
+    act(() => void editor.commands.setTextSelection(offset + 1));
   const deleteBack = () =>
     act(() => {
       const { from } = editor.state.selection;
       editor.commands.deleteRange({ from: from - 1, to: from });
     });
-  return { slot, run, type, deleteBack, element, replaceDraft };
+  return { slot, run, type, moveCaret, deleteBack, element, replaceDraft };
 }
 
 afterEach(() => {
@@ -258,21 +261,55 @@ describe("/ command menu", () => {
     }
   });
 
-  it("preserves the original whitespace of an indented handoff follow-up", async () => {
+  it("submits a plain leading /handoff and its follow-up with the menu closed", async () => {
+    search.mention = searchState([]);
+    search.command = searchState([]);
+    const { slot, run, type } = await mountComposer("thread");
+    const text = "/handoff Keep this follow-up";
+    run.mockImplementation(() => slot.composer.draft);
+    try {
+      type(text);
+      expect(slot.composer.draft).toMatchObject({ text, mentions: [] });
+      expect(slot.queryByTitle("handoff")).toBeNull();
+      fireEvent.click(slot.getByRole("button", { name: "Submit (Enter)" }));
+      expect(run).toHaveBeenCalledOnce();
+      expect(run).toHaveReturnedWith(
+        expect.objectContaining({
+          text,
+          mentions: [
+            expect.objectContaining({
+              kind: "command",
+              trigger: "/",
+              origin: "builtin",
+              source: "command",
+              name: "handoff",
+              from: 0,
+              to: 8,
+            }),
+          ],
+        }),
+      );
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it.each([0, 2, 4, 13])("keeps handoff indentation at offset %i", async (offset) => {
     search.mention = searchState([]);
     search.command = searchState([
       { key: "commands", label: "Commands", suggestions: [command("handoff", "builtin")] },
     ]);
-    const { slot, run, type, replaceDraft } = await mountComposer("thread");
+    const { slot, run, type, moveCaret, replaceDraft } = await mountComposer("thread");
     const followUp = "    print(1) ";
     const prefix = "Continue from @thread:t1";
     if (!replaceDraft) throw new Error("Composer draft handle was not mounted");
     run.mockImplementation(() => {
       const { text, mentions } = slot.composer.draft;
-      expect(mentions[0]).toMatchObject({ kind: "command", origin: "builtin", from: 0, to: 8 });
-      // BB 0.50.1 strips the command and trimStarts the rest before seeding the handoff.
+      const [picked] = mentions;
+      if (picked?.kind !== "command" || text.slice(0, picked.from).trim() !== "") return;
+      // BB 0.50.1 trims the text after the command before seeding the handoff.
       replaceDraft({
-        text: prefix + "\n\n" + text.slice(8).trimStart(),
+        text: prefix + "\n\n" + text.slice(picked.to).trimStart(),
         mentions: [
           {
             kind: "thread",
@@ -285,9 +322,11 @@ describe("/ command menu", () => {
       });
     });
     try {
-      type(followUp + "/hand");
+      type(followUp);
+      moveCaret(offset);
+      type("/hand");
       fireEvent.mouseDown(await waitFor(() => slot.getByTitle("handoff")));
-      expect(run).toHaveBeenCalledOnce();
+      await waitFor(() => expect(run).toHaveBeenCalledOnce());
       expect(slot.composer.draft.text).toBe(prefix + "\n\n" + followUp);
     } finally {
       slot.lifecycle.unmount();

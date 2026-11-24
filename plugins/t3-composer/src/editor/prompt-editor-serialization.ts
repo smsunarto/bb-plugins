@@ -5,6 +5,7 @@ import { Fragment, Slice, type Node as ProseMirrorNode, type Schema } from "@tip
 import type { Selection } from "@tiptap/pm/state";
 import {
   compareMentions,
+  isBuiltinHandoff,
   mentionInRange,
   mentionTarget,
   mentionTargetSchema,
@@ -356,17 +357,20 @@ function serializePromptEditorNode(
     if (node.type.name === "mention") {
       const attrs = parsePromptEditorMentionAttrs(node.attrs);
       if (attrs) {
-        if (needsMentionSeparator(previousInline, node)) {
+        // Submit removes this command pill. Padding it would change the follow-up.
+        const { mention } = attrs;
+        const isHandoff = mention.kind === "command" && isBuiltinHandoff(mention, mention.trigger);
+        if (!isHandoff && needsMentionSeparator(previousInline, node)) {
           text += " ";
         }
-        previousInline = node;
+        previousInline = isHandoff ? null : node;
         const span = appendInlineText(
           attrs.serializedText,
           nodePosition,
           nodePosition + node.nodeSize,
           "mention",
         );
-        mentions.push(mentionInRange(attrs.mention, span.start, span.end));
+        mentions.push(mentionInRange(mention, span.start, span.end));
       }
       return;
     }

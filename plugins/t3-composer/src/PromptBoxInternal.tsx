@@ -81,6 +81,7 @@ import { areDraftsEqual, isDraftEmpty } from "./composer-draft";
 import {
   commandMentionTarget,
   compareMentions,
+  isBuiltinHandoff,
   mentionInRange,
   sameMention,
   shiftMention,
@@ -188,12 +189,6 @@ function hasWhitespaceAfterPosition(doc: ProseMirrorNode, position: number): boo
 
 function mentionPillTrailingText(doc: ProseMirrorNode, position: number): string {
   return hasWhitespaceAfterPosition(doc, position) ? "" : " ";
-}
-
-function isBuiltinHandoff(
-  command: Pick<ExperimentalComposerCommandSuggestion, "name" | "origin" | "source">,
-) {
-  return command.name === "handoff" && command.origin === "builtin" && command.source === "command";
 }
 
 const COLLAPSING_GRID_CLASS =
@@ -2340,10 +2335,9 @@ export function PromptBoxInternal({
       if (!currentEditor || activeTrigger === null) return;
       if (activeTrigger.kind !== "command") return;
 
-      const trailingText =
-        activeTrigger.char === "/" && isBuiltinHandoff(item)
-          ? ""
-          : mentionPillTrailingText(currentEditor.state.doc, activeTrigger.to);
+      const trailingText = isBuiltinHandoff(item, activeTrigger.char)
+        ? ""
+        : mentionPillTrailingText(currentEditor.state.doc, activeTrigger.to);
       // An inline prompt's text must not read as a command: a leading `/name` would still make
       // Claude load the skill, sending the prompt twice.
       const inlinePrompt = inlinePromptMentionTarget(item, inlinePromptNames);
@@ -2729,8 +2723,7 @@ export function PromptBoxInternal({
     if (composer.key.startsWith("sent-message:")) return;
     const { text, mentions } = composer.draft;
     const picked = mentions.find(
-      (mention) =>
-        mention.kind === "command" && mention.trigger === "/" && isBuiltinHandoff(mention),
+      (mention) => mention.kind === "command" && isBuiltinHandoff(mention, mention.trigger),
     );
     if (!picked) {
       // A typed command is special only when it leads the draft.
@@ -2750,7 +2743,6 @@ export function PromptBoxInternal({
     }
 
     const { from, to } = picked;
-    if (text.slice(0, from).trim() === "") return;
     const followUp = text.slice(0, from) + text.slice(to);
     const prefix = `${text.slice(from, to)} `;
     const nextMentions: ComposerMention[] = [shiftMention(picked, -from)];
