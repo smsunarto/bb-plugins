@@ -60,10 +60,10 @@ export const PUBLIC_SURFACE_BY_SLOT_KIND = {
  */
 export const WRAPPER_SLOT_KINDS: ReadonlySet<string> = new Set(["navPanelPageTitle"]);
 
-export interface PluginUiSurfacePromptContext {
-  registration: string;
-  role: string;
-}
+export type PluginUiSurfacePromptContext = { registration: string } & (
+  | { role: string }
+  | { roleFile: string }
+);
 
 const PROMPT_CONTEXT_BY_SURFACE = {
   experimental_appOverlay: {
@@ -140,7 +140,7 @@ const PROMPT_CONTEXT_BY_SURFACE = {
   },
   experimental_messageMetadata: {
     registration: "app.slots.experimental_messageMetadata",
-    role: "a plugin component rendered in a timeline message's metadata row",
+    roleFile: "plugin-ui/message-metadata",
   },
   navPanel: {
     registration: "app.slots.navPanel",
@@ -168,7 +168,7 @@ const PROMPT_CONTEXT_BY_SURFACE = {
   },
   internal_DO_NOT_USE_setupGuideSection: {
     registration: "app.slots.internal_DO_NOT_USE_setupGuideSection",
-    role: "a plugin section in bb's setup guide, registered through an internal API",
+    roleFile: "plugin-ui/setup-guide-section",
   },
   settingsSection: {
     registration: "app.slots.settingsSection",
@@ -204,11 +204,11 @@ const PROMPT_CONTEXT_BY_SURFACE = {
   },
   experimental_threadContextCardRow: {
     registration: "app.slots.experimental_threadContextCardRow",
-    role: "a plugin row in the thread context card",
+    roleFile: "plugin-ui/thread-context-card-row",
   },
   experimental_threadContextCardSection: {
     registration: "app.slots.experimental_threadContextCardSection",
-    role: "a plugin section in the thread context card",
+    roleFile: "plugin-ui/thread-context-card-section",
   },
   "experimental_threadContextSegment.summary": {
     registration: "app.slots.experimental_threadContextSegment({ summary })",
@@ -228,11 +228,11 @@ const PROMPT_CONTEXT_BY_SURFACE = {
   },
   experimental_threadHeaderRow: {
     registration: "app.slots.experimental_threadHeaderRow",
-    role: "a plugin row beneath the thread header",
+    roleFile: "plugin-ui/thread-header-row",
   },
   experimental_threadHeaderTitle: {
     registration: "app.slots.experimental_threadHeaderTitle",
-    role: "a plugin component replacing the thread title",
+    roleFile: "plugin-ui/thread-header-title",
   },
   experimental_threadInfoRow: {
     registration: "app.slots.experimental_threadInfoRow",
@@ -248,11 +248,11 @@ const PROMPT_CONTEXT_BY_SURFACE = {
   },
   threadPanelAction: {
     registration: "app.slots.threadPanelAction",
-    role: "a legacy plugin action in the thread side panel",
+    roleFile: "plugin-ui/thread-panel-action",
   },
   experimental_threadRowMetadata: {
     registration: "app.slots.experimental_threadRowMetadata",
-    role: "a plugin component rendering metadata on a thread list row",
+    roleFile: "plugin-ui/thread-row-metadata",
   },
   experimental_timelineRenderer: {
     registration: "app.slots.experimental_timelineRenderer",

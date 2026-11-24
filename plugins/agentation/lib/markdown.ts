@@ -30,8 +30,9 @@ function pluginUiOf(annotation: StoredAnnotation): string | null {
   if (!pluginId || !surface) return null;
 
   const context = pluginUiSurfacePromptContext(surface);
+  const role = "roleFile" in context ? files.read(context.roleFile) : context.role;
   const registrationId = surfaceId ? ` · registration \`${surfaceId}\`` : "";
-  return `\`${context.registration}\`${registrationId} — ${context.role}. Start at this registration in plugin \`${pluginId}\`'s \`app.tsx\`, then follow its component or run handler.`;
+  return `\`${context.registration}\`${registrationId} — ${role}. Start at this registration in plugin \`${pluginId}\`'s \`app.tsx\`, then follow its component or run handler.`;
 }
 
 function pluginSourceOf(annotation: StoredAnnotation): string | null {
