@@ -14,6 +14,7 @@ import { mountPanelTabHaptics } from "./app/panel-tab-haptics.ts";
 import { mountPanelTabGlide } from "./app/panel-tab-glide.ts";
 
 import { mountTerminalAppearance } from "./app/terminal-appearance.ts";
+import { mountThreadHeaderRows } from "./app/thread-header-rows.ts";
 import { mountMonacoSyntaxTokens } from "./app/monaco-syntax-tokens.ts";
 import { UiFontBridge } from "./app/ui-font-bridge.ts";
 import { HomeMarker } from "./app/home-marker.ts";
@@ -22,6 +23,7 @@ import { ThreadMarker } from "./app/thread-marker.ts";
 export default definePluginApp((app) => {
   app.contentScripts.register({ id: "archive-toast", mount: mountArchiveToast });
   app.contentScripts.register({ id: "bb-dom-styles", mount: mountBbDomStyles });
+  app.contentScripts.register({ id: "thread-header-rows", mount: mountThreadHeaderRows });
   // Marks presses of the right panel's toggle and presses bb's new-tab button
   // when the thread marker's hook asks.
   app.contentScripts.register({ id: "panel-new-tab", mount: mountPanelNewTab });

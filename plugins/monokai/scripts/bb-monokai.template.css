@@ -2167,9 +2167,9 @@
 
 /* Phone thread header: the agent stream runs under a floating bar. bb keeps
  * the header in flow above the thread window, so the window rises by the row
- * height and its scroll content drops by the same amount. `header +` matches
- * only while the window directly follows the header; a plugin header row
- * between them leaves bb's stacked layout alone. The bar fades from the page
+ * height and its scroll content drops by the same amount. The same spacing
+ * applies when bb inserts an empty slot container after the header. A container
+ * with visible plugin rows keeps bb's stacked layout. The bar fades from the page
  * ground, which also paints the safe-area strip above it, to clear across a
  * tail that ignores taps. The header's action group floats on a pill, and
  * while a thread is open (app/thread-marker.ts) so does bb's app-wide sidebar
@@ -2207,11 +2207,11 @@
     pointer-events: none;
   }
 
-  .dark [data-split-pane-id] > header + [data-thread-window] {
+  .dark [data-split-pane-id] > :is(header, header + [data-thread-header-rows][data-monokai-empty-thread-header-rows]) + [data-thread-window] {
     margin-top: calc(-1 * var(--bb-app-chrome-row-height));
   }
 
-  .dark [data-split-pane-id] > header + [data-thread-window] .thread-scrollbar {
+  .dark [data-split-pane-id] > :is(header, header + [data-thread-header-rows][data-monokai-empty-thread-header-rows]) + [data-thread-window] .thread-scrollbar {
     scroll-padding-top: calc(var(--bb-app-chrome-row-height) + 1rem);
   }
 
@@ -2219,7 +2219,7 @@
    * the floor's container: bb sizes the floor to that container's full height,
    * so padding there pushed the floor past the end, added a row of scroll
    * below the stream, and lifted the sticky composer at the very bottom. */
-  .dark [data-split-pane-id] > header + [data-thread-window] .thread-scrollbar > div > [aria-hidden="true"] + div {
+  .dark [data-split-pane-id] > :is(header, header + [data-thread-header-rows][data-monokai-empty-thread-header-rows]) + [data-thread-window] .thread-scrollbar > div > [aria-hidden="true"] + div {
     margin-top: var(--bb-app-chrome-row-height);
   }
 
