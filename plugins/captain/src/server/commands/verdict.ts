@@ -33,7 +33,7 @@ export function verdictCommand(deps: CommandDeps) {
         type: "string",
         placeholder: "sha",
         description:
-          "The commit the verdict judged, from the report; shipping compares the PR head with it",
+          "The commit the verdict judged, from the report; shipping compares the PR or branch head with it",
       },
       ship: {
         type: "boolean",
@@ -130,7 +130,7 @@ export function verdictCommand(deps: CommandDeps) {
             detail: [
               `Review ${value}${head === null ? "" : ` at ${head}`}.`,
               reason,
-              "Merge lets the Captain merge this PR at that head; Hold keeps it open.",
+              "Merge lets the Captain ship it at that head: merge its PR, or fast-forward the target branch for a direct-ship repo. Hold keeps it open.",
             ]
               .filter((part) => part !== null)
               .join(" "),

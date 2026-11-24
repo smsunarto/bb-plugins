@@ -11,7 +11,7 @@ A brief is the task's description. Every role dispatched on the task reads the s
 
 1. Copy the template below into `briefs/<slug>.md` in your Drive, the path your Captain rules name.
    - **If you need the target branch or the checkout:** `bb tasks project show <KEY>` names the repo's bb project, and `bb project show <id>` its checkout path. Without a branch from the user, the target is the repo's default branch.
-2. Fill every section, including the `Target branch:` and `Remote:` lines. Each done-means item must be something you can check yourself from the commits, tests, PR or a run.
+2. Fill every section, including the `Target branch:` and `Remote:` lines. Use `direct ship` for a repo on the direct-ship list in `captain-ship`. Each done-means item must be something you can check yourself from the commits, tests, PR, pushed branch or a run.
 3. Create the task: `bb tasks create --project <KEY> --title "<title>" --description-file <Drive>/briefs/<slug>.md`. It prints the new key.
 4. Dispatch it: `bb captain dispatch <key> --role Implement`. Implement plans its own work before it builds.
    - **If the task is research or design only:** still dispatch Implement, and say "no code" in the brief. Implement then attaches its result to its `Final:` report, with no commit, push or PR. Write done-means you can check from that attachment. When the report arrives, check the attachment, set the task `done` with `bb tasks update <key> --status done`, and archive the crew thread with `bb thread archive <id>`. Record no review verdict and open no ship ask.
@@ -31,7 +31,7 @@ You are a crew thread for the <name> Captain.
 
 ## What you can rely on
 Target branch: <branch, such as main>. Review diffs against it.
-Remote: <yes: push the branch and open a draft PR | none: commit on your branch only>.
+Remote: <yes: push the branch and open a draft PR | direct ship: push the branch; no PR | none: commit on your branch only>.
 <The test instance, and what other threads are touching.>
 
 ## Rules

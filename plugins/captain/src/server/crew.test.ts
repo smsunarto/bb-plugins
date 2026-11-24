@@ -621,6 +621,29 @@ describe("bb captain verdict", () => {
       },
     ]);
   });
+
+  test("a direct-ship task with no PR gets its ship ask, whose detail names both ways to ship", async () => {
+    const { host, as } = await crewHost();
+
+    const ship = await as([
+      "verdict",
+      "BBPLUGINS-1",
+      "review",
+      "passed",
+      "--head",
+      "abc",
+      "--ship",
+      "--json",
+    ]);
+
+    expect(ship.exitCode).toBe(0);
+    expect(json(ship.stdout).results[1]).toMatchObject({ kind: "ship", state: "open" });
+    // Nothing in the call read or required a pull request.
+    expect(host.tasks.calls.some((call) => /pull/iu.test(call.method))).toBe(false);
+    expect(host.tasks.comments[0]?.body).toContain(
+      "Review passed at abc. Merge lets the Captain ship it at that head: merge its PR, or fast-forward the target branch for a direct-ship repo. Hold keeps it open.",
+    );
+  });
 });
 
 describe("bb captain ask", () => {
