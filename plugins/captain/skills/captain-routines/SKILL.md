@@ -33,7 +33,7 @@ Done when the routine is listed in `bb captain routine list`, the user has its s
 
 Weekdays at 09:00, `--cron "0 9 * * 1-5"`, named **Stalled crew sweep**:
 
-> In a background subagent, run `bb captain status --all`. Nudge each crew thread stalled over two hours with `bb captain tell --stalled`. For a thread blocked on an interaction for over an hour, check that it is in Needs you. Open the ship ask for any task whose review passed and has none. Reply with one line; if nothing needed doing, say only that.
+> In a background subagent, run `bb captain status --all`. Nudge each crew thread stalled over two hours with `bb captain tell --stalled`. For a thread blocked on an interaction for over an hour, check that it is in Needs you. For any task whose review passed at a full recorded head and has no open ship ask, open one with `bb captain verdict <task> review passed --head <recorded sha> --ship`. Reply with one line; if nothing needed doing, say only that.
 
 Mondays at 10:00, `--cron "0 10 * * 1"`, named **Stale PR check**:
 

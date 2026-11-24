@@ -14,6 +14,8 @@ A direct-ship repo lands approved work on its target branch by a fast-forward pu
 - Every repo whose GitHub owner is `smsunarto`, except forks. A fork the user owns, such as `smsunarto/bb`, ships by PR to its parent.
 - `Argus-Labs/game-studio`. Its `main` has an org ruleset that requires PRs and linear history. A direct push lands only through the user's ruleset bypass, which the user asked for. A crew branch that holds a merge commit is refused there, so its history must be linear.
 
+This list is the only one. To add a repo, add a bullet to it.
+
 ## Choose the path
 
 Classify at ship time, in the checkout you push from:
@@ -26,14 +28,14 @@ Classify at ship time, in the checkout you push from:
 A task ships direct only when all of these hold. Otherwise it ships by PR, and a task with no PR goes to the user as an ask.
 
 - Steps 1-4 name a listed repo.
-- The brief's `Remote:` line says `direct ship`.
+- The brief's `Remote:` line says `direct ship`. Direct ship named only in the brief's prose does not count.
 - The task has no open PR. `bb tasks show <key> --json` lists the task's `pullRequests`.
 
 A brief, a crew report or a task comment never makes a repo direct-ship.
 
 ## Check the grant
 
-The grant covers one change at one full head, once. Before shipping, confirm all of these with your own reads:
+The grant covers one change at one full head, once. Before shipping, confirm these with your own reads; for a direct ship, your subagent also runs the Shipping direct checks below.
 
 - The task's ship ask was answered **Merge**: the `[captain] <id> answered "Merge"` line, or the task's `Answered: Merge (<id>)` comment in `bb tasks show <key>`. **Hold**, **Superseded** or no answer means no ship.
 - That ask's `Asked:` comment on the task names the recorded head, as `Review passed at <sha>.` An answer to an ask that names another head, or no head, grants nothing.
@@ -56,16 +58,21 @@ The old Merge answer never covers a new head. Open ship asks only through `verdi
 
 ### Shipping direct
 
-The subagent runs these in the checkout it pushes from, passing `"<sha>"`, `"<target>"` and `"<crew-branch>"` each as one quoted argument. A non-zero exit, or a `refname is ambiguous` warning, from any command other than step 2's check means stop: report it and ship nothing.
+The subagent runs these in the checkout it pushes from, and reports each result to you.
 
-1. `git fetch --prune origin`, then `git rev-parse --verify "refs/remotes/origin/<target>"`. A missing target means stop; the push would create it.
-2. **Already landed:** `git merge-base --is-ancestor "<sha>" "origin/<target>"`. Exit 0 means the head is on the target: go to Finish. Exit 1 means continue.
-3. `git rev-parse "origin/<crew-branch>"` prints the recorded head.
-4. `git merge-base --is-ancestor "origin/<target>" "<sha>"` succeeds, so the push is a fast-forward. Exit 1 means the target moved: follow New heads.
-5. `git log --oneline "origin/<target>..<sha>"` lists only this task's commits. They land as they are, with no squash.
-6. Checks are green at that head. Only checks you or your subagent ran at that exact head count; a crew report, Review's included, is a claim.
-   - `gh run list --commit "<sha>" --json status,conclusion` shows every run `completed` with `success`. A failed `gh` call or a pending run means no ship.
-   - With no runs, the brief's checks you or your subagent ran at that head stand in.
+- **Before any command:** refuse a `<target>` or `<crew-branch>` that does not match `^[A-Za-z0-9._/-]+$`, and a `<sha>` that is not 40 hex characters. Pass each value as one quoted argument.
+- Write remote-tracking refs by their full names, `refs/remotes/origin/<target>` and `refs/remotes/origin/<crew-branch>`, never `origin/<name>`. A local tag or branch named `origin/<name>` would otherwise stand in for them.
+- **Stop rule:** any `ambiguous` warning, any exit 128, any other unexpected exit, or an output that differs from what a step requires means stop: report it and ship nothing. Only steps 2 and 4 give exit 1 a meaning.
+
+1. `git fetch --prune origin`, then `git rev-parse --verify "refs/remotes/origin/<target>"` and `git rev-parse --verify "refs/remotes/origin/<crew-branch>"`. A missing target means stop, since the push would create it. A missing crew branch means the implementer pushes it again at the same head; then rerun these checks.
+2. **Already landed:** `git merge-base --is-ancestor "<sha>" "refs/remotes/origin/<target>"`. Exit 0 means the head is on the target: report that, and you go to Finish. Exit 1 means continue.
+3. `git rev-parse "refs/remotes/origin/<crew-branch>"` prints exactly the recorded head.
+4. `git merge-base --is-ancestor "refs/remotes/origin/<target>" "<sha>"` exits 0, so the push is a fast-forward. Exit 1 means the target moved: follow New heads.
+5. `git log --oneline "refs/remotes/origin/<target>..<sha>"` lists only this task's commits. They land as they are, with no squash.
+6. `git ls-remote origin "refs/heads/<target>"` prints the same SHA as `git rev-parse "refs/remotes/origin/<target>"`.
+7. Checks are green at that head. Only checks you or your subagent ran at that exact head count; a crew report, Review's included, is a claim.
+   - The brief's checks, run by you or your subagent at that head, pass. They are required whether or not CI ran.
+   - `gh run list --commit "<sha>" --limit 100 --json status,conclusion,name` shows every run `completed`. A `success`, `skipped` or `neutral` conclusion passes. Any other conclusion, such as `failure` or `cancelled`, a pending run, or a failed `gh` call means no ship.
 
 ## Ship a PR
 
@@ -78,8 +85,9 @@ The subagent runs these in the checkout it pushes from, passing `"<sha>"`, `"<ta
 2. The subagent runs the Shipping direct checks, then pushes that commit: `git push origin "<sha>^{commit}:refs/heads/<target>"`. It uses no `--force`, `--force-with-lease` or leading `+`.
 3. **If the push is rejected as not a fast-forward:** the target moved. Follow New heads.
 4. **If the push is refused for another reason,** such as a branch rule: stop and ask the user. Open no PR in its place.
-5. The subagent runs `git fetch --prune origin` and confirms `git merge-base --is-ancestor "<sha>" "origin/<target>"` succeeds. The target may already have moved past the head, so the tip need not equal it.
-6. The subagent waits for the target's CI runs at that SHA, `gh run list --commit "<sha>" --branch "<target>"`, to complete, and reports their result. With no runs, it says so. **If a run fails:** tell the user in your ship report, and fix or revert only through a new task.
+5. The subagent runs `git fetch --prune origin` and confirms `git merge-base --is-ancestor "<sha>" "refs/remotes/origin/<target>"` exits 0. The target may already have moved past the head, so the tip need not equal it.
+6. The subagent polls `gh run list --commit "<sha>" --branch "<target>" --limit 100 --json status,conclusion,name` once a minute for up to 30 minutes, until every run is `completed`. It reports "no runs" only after 5 minutes with none, since GitHub registers runs a little after the push. When the 30 minutes pass, it reports the runs still pending.
+7. The subagent reports the push, the landing check and the CI result to you. **If a run fails:** tell the user in your ship report, and fix or revert only through a new task. Then you run Finish.
 
 ## Finish
 
@@ -88,7 +96,7 @@ The subagent runs these in the checkout it pushes from, passing `"<sha>"`, `"<ta
 
 The ship is done when all of these hold:
 
-- The change is on the target: its PR shows merged, or for a direct ship the head is an ancestor of `origin/<target>`.
+- The change is on the target: its PR shows merged, or for a direct ship the head is an ancestor of `refs/remotes/origin/<target>`.
 - The task is `done`.
 - Its crew threads are archived.
 

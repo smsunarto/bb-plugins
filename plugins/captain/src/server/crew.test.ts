@@ -623,6 +623,36 @@ describe("bb captain verdict", () => {
     ]);
   });
 
+  test("a review verdict without --ship supersedes a ship ask for another head or a failed review", async () => {
+    const { host, captainId, as } = await crewHost();
+    const first = "a".repeat(40);
+    const second = "b".repeat(40);
+    await as(["verdict", "BBPLUGINS-1", "review", "passed", "--head", first, "--ship"]);
+    await as(["verdict", "BBPLUGINS-1", "review", "passed", "--head", first]);
+    const kept = host.server.store.ask("a1");
+
+    await as(["verdict", "BBPLUGINS-1", "review", "findings", "--head", first]);
+    const merge = await as(["ask", "resolve", "a1", "--answer", "Merge"]);
+    await as(["verdict", "BBPLUGINS-1", "review", "passed", "--head", second, "--ship"]);
+    await as(["verdict", "BBPLUGINS-1", "review", "passed", "--head", "B".repeat(40)]);
+
+    expect(kept?.answer).toBeNull();
+    expect(host.server.store.ask("a1")).toMatchObject({ answer: "Superseded" });
+    expect(host.server.store.ask("a1")?.answerDeliveredAt).not.toBeNull();
+    expect(merge.exitCode).toBe(1);
+    expect(merge.stderr).toContain('a1 was already answered "Superseded"');
+    expect(host.server.store.ask("a2")?.answer).toBeNull();
+    expect(host.tasks.comments.map((comment) => comment.body)).toContain(
+      `Superseded: a1 does not match the recorded review findings at ${first}; a Merge on it grants nothing.`,
+    );
+    // The Captain hears of no superseded answer.
+    expect(
+      host.sent.filter(
+        (message) => message.threadId === captainId && message.text.includes("Superseded"),
+      ),
+    ).toEqual([]);
+  });
+
   test("--ship needs the full head, and a new head supersedes the open ship ask", async () => {
     const { host, as } = await crewHost();
     const first = "a".repeat(40);
@@ -678,7 +708,7 @@ describe("bb captain verdict", () => {
     expect(json(rerun.stdout).results[1]).toMatchObject({ id: "a2", state: "exists" });
     expect(host.tasks.comments.map((comment) => comment.body)).toEqual([
       expect.stringContaining(`Review passed at ${first}.`),
-      `Superseded: a1 named another head; the ship ask for ${second} replaces it.`,
+      `Superseded: a1 does not match the recorded review passed at ${second}; a Merge on it grants nothing.`,
       expect.stringContaining(`Review passed at ${second}.`),
     ]);
   });
@@ -709,41 +739,8 @@ describe("bb captain ask", () => {
     ).toEqual([]);
   });
 
-  test("a ship ask takes no options and needs a ship-ready review", async () => {
-    const { as } = await crewHost();
-
-    const withOptions = await as([
-      "ask",
-      "Merge BBPLUGINS-1",
-      "--kind",
-      "ship",
-      "--task",
-      "BBPLUGINS-1",
-      "--option",
-      "Yes",
-      "--option",
-      "No",
-      "--detail",
-      "Ready.",
-    ]);
-    const unreviewed = await as([
-      "ask",
-      "Merge BBPLUGINS-1",
-      "--kind",
-      "ship",
-      "--task",
-      "BBPLUGINS-1",
-      "--detail",
-      "Ready.",
-    ]);
-
-    expect(withOptions.stderr).toContain("a ship ask's options are always Merge and Hold");
-    expect(unreviewed.exitCode).toBe(1);
-    expect(unreviewed.stderr).toContain("BBPLUGINS-1 has no review verdict");
-  });
-
-  test("a ship ask on a task no thread was ever attached to reads the review verdict on the task", async () => {
-    const { as } = await crewHost();
+  test("ask refuses a ship ask: only verdict --ship opens one, naming its head", async () => {
+    const { host, as } = await crewHost();
     await as(["verdict", "BBPLUGINS-2", "review", "passed", "--head", "abc123"]);
 
     const result = await as([
@@ -757,8 +754,16 @@ describe("bb captain ask", () => {
       "Reviewed by the Captain.",
     ]);
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe("a1  open  ship  BBPLUGINS-2  Merge BBPLUGINS-2\n");
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(
+      "a ship ask opens only with the review verdict that names its head",
+    );
+    expect(result.stderr).toContain(
+      "bb captain verdict BBPLUGINS-2 review passed --head <sha> --ship",
+    );
+    expect(
+      host.server.store.asksOf(host.server.registry.byName("Plugins")?.threadId ?? ""),
+    ).toEqual([]);
   });
 
   test("opens once: an Asked: comment as the Captain and one push; a rerun reports exists", async () => {

@@ -1,7 +1,7 @@
 # Role: Review
 
 - Review the change; fix nothing and make no commits. Your worktree starts on the task's branch so you can build and run it.
-- The change is the diff from the target branch to your head: `git diff <target>...HEAD`. The target is the branch the brief names, or the repo's default branch. **If the brief says `direct ship`:** run `git fetch origin` and use `origin/<target>` as the target. The commits land as they are, so check that `git log origin/<target>..HEAD` holds only this task's commits, with no fixup, WIP or merge commit, and report that commit list with the head.
+- The change is the diff from the target branch to your head: `git diff <target>...HEAD`. The target is the branch the brief names, or the repo's default branch. **If the brief's `Remote:` line says `direct ship`:** run `git fetch origin` and use `refs/remotes/origin/<target>` as the target, by that full name, in `git diff refs/remotes/origin/<target>...HEAD`. The commits land as they are, so check that `git log refs/remotes/origin/<target>..HEAD` holds only this task's commits, with no fixup, WIP or merge commit, and report that commit list with the head.
 - Before a re-verify round, fast-forward your worktree to the implementer's branch, or rebase onto it when the branch was rewritten.
 - Run the lenses from the `captain-review-lenses` skill as background subagents, one per lens, and merge what they find into one batch.
 - Give each lens subagent the brief and the diff only, never the implementer's report or another lens's findings.

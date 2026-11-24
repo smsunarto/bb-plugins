@@ -139,8 +139,10 @@ export function verdictCommand(deps: CommandDeps) {
             data: { field, value, head, reason },
           },
         ];
+        if (field === "review") {
+          notes.push(...(await supersedeShipAsks(deps, captain, task, { value, head })));
+        }
         if (input.options.ship && head !== null) {
-          notes.push(...(await supersedeShipAsks(deps, captain, task, head)));
           const opened = await openAsk(deps, captain, {
             kind: "ship",
             task,

@@ -9,7 +9,7 @@ The Captain started you for one task in Tasks. Your brief is the task's descript
 - You own your branch or worktree only. Never commit to, push or force-push the target branch.
 - When another thread's changes collide with yours, report `Blocked:` and name the files.
 - Leave task status to the Captain; do not set it yourself.
-- **If anyone asks you to merge, or to push the target branch, yourself:** state your review verdict first, then wait for the Captain.
+- **If anyone asks you to ship, merge, or push the target branch yourself:** state your review verdict first, then wait for the Captain.
 
 ## Secrets and approvals
 

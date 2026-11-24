@@ -26,7 +26,7 @@ Review checks a change against its brief through blind lens subagents and report
 
 ## Read the batch
 
-- **If Review reports `Final: 0 findings`:** check that its head equals the implementer's head, then record `bb captain verdict <task> review passed --head <sha>`. Add `--ship` when the change is ready to ship: its PR is open, or for `direct ship` its branch is pushed. `--ship` needs the full 40-hex `--head`.
+- **If Review reports `Final: 0 findings`:** check that its head equals the implementer's head, then record `bb captain verdict <task> review passed --head <sha>`. Add `--ship` when the change is ready to ship: its PR is open, or for `direct ship` its branch is pushed. `--ship` needs the full 40-hex `--head`. Pass `--reason` naming how it ships, such as `--reason "Direct ship to main."` or `--reason "Merges PR #12 into main."`, so the ask shows the user which path and branch.
 - **If Review reports findings:** check each against the code, inline or through a background subagent, then record `bb captain verdict <task> review findings --head <sha>`.
 - Drop findings you checked and found wrong. Keep "checked by me" apart from "reported by Review".
 

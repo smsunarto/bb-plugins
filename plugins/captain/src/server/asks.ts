@@ -172,22 +172,25 @@ function shipAskHead(detail: string): string | null {
 }
 
 /**
- * Close the task's open ship asks that name another head, so a new `--ship`
- * opens an ask for this head instead of reusing one whose Merge would cover
- * different commits. Each is answered `Superseded` without a send, and the
- * task gets a comment naming it.
+ * Close the task's open ship asks that no longer match its review verdict:
+ * every one when the verdict is not ship-ready, else each that names another
+ * head. A Merge on such an ask would cover commits no review approved. Each
+ * is answered `Superseded` without a send, and the task gets a comment.
  */
 export async function supersedeShipAsks(
   deps: CommandDeps,
   captain: Captain,
   task: TasksTask,
-  head: string,
+  verdict: { value: string; head: string | null },
 ): Promise<string[]> {
   const notes: string[] = [];
+  const head = verdict.head?.toLowerCase() ?? null;
+  const keep = SHIP_READY_REVIEWS.has(verdict.value) ? head : null;
+  const recorded = `review ${verdict.value}${head === null ? "" : ` at ${head}`}`;
   const stale = deps.store
     .asksOf(captain.threadId, { open: true })
     .filter((ask) => ask.kind === "ship" && ask.taskKey === task.key)
-    .filter((ask) => shipAskHead(ask.detail) !== head);
+    .filter((ask) => keep === null || shipAskHead(ask.detail) !== keep);
   for (const ask of stale) {
     const at = deps.now();
     deps.store.answerAsk(ask.id, SUPERSEDED, at);
@@ -196,9 +199,9 @@ export async function supersedeShipAsks(
       deps,
       captain,
       task.id,
-      `${SUPERSEDED}: ${ask.id} named another head; the ship ask for ${head} replaces it.`,
+      `${SUPERSEDED}: ${ask.id} does not match the recorded ${recorded}; a Merge on it grants nothing.`,
     );
-    notes.push(`${ask.id} superseded: it named another head`);
+    notes.push(`${ask.id} superseded: it does not match the recorded ${recorded}`);
     if (warning !== null) notes.push(`warning: ${warning}`);
   }
   if (stale.length > 0) deps.bb.rpc.experimental_invalidate([asksTag(captain.threadId)]);
@@ -390,7 +393,10 @@ export async function resolveAsk(
   if (ask.answer !== null && ask.answer !== answer) {
     blockers.push({
       reason: `${id} was already answered ${JSON.stringify(ask.answer)}`,
-      fix: "open a new ask with bb captain ask",
+      fix:
+        ask.kind === "ship"
+          ? `bb captain verdict ${ask.taskKey ?? "<task>"} review passed --head <sha> --ship`
+          : "open a new ask with bb captain ask",
     });
   }
   if (blockers.length > 0 || captain === null) throw new Refusal(blockers);
