@@ -2713,23 +2713,49 @@ export function PromptBoxInternal({
     onSubmit?.();
   }, [onSubmit]);
 
-  // Submitting a typed /handoff after dismissing the menu should still reach BB's
-  // command handler. BB recognizes a leading built-in mention in the submitted draft.
-  const markTypedHandoff = useCallback(() => {
+  // BB only handles /handoff when its built-in mention comes before the follow-up.
+  const prepareHandoff = useCallback(() => {
     if (surface !== "thread" || handoff != null || composer.scope.kind !== "thread") return;
     if (composer.key.startsWith("sent-message:")) return;
     const { text, mentions } = composer.draft;
-    const match = /^\s*\/handoff(?=\s|$)/i.exec(text);
-    if (!match) return;
-    const to = match[0].length;
-    if (mentions.some((mention) => mention.from < to)) return;
-    const command = commandMentionTarget(
-      { name: "handoff", source: "command", origin: "builtin", argumentHint: null },
-      "/",
+    const picked = mentions.find(
+      (mention) =>
+        mention.kind === "command" &&
+        mention.trigger === "/" &&
+        mention.origin === "builtin" &&
+        mention.source === "command" &&
+        mention.name === "handoff",
     );
+    if (picked && text.slice(0, picked.from).trim() === "") return;
+
+    // Allow an exact typed command at either end if the menu was dismissed. Interior
+    // text can mention /handoff literally, so moving it requires a command pill.
+    const typed = picked ? null : /^\s*\/handoff(?=\s|$)|(?<!\S)\/handoff(?=\s*$)/i.exec(text);
+    const range =
+      picked ??
+      (typed && {
+        from: typed.index + typed[0].search(/\S/),
+        to: typed.index + typed[0].length,
+      });
+    if (!range) return;
+    const { from, to } = range;
+    const command =
+      picked ??
+      commandMentionTarget(
+        { name: "handoff", source: "command", origin: "builtin", argumentHint: null },
+        "/",
+      );
+    const prefix = `${text.slice(from, to)} `;
+    const nextMentions: ComposerMention[] = [{ ...command, from: 0, to: to - from }];
+    for (const mention of mentions) {
+      if (mention === picked) continue;
+      if (mention.from < to && mention.to > from) return;
+      const offset = prefix.length - (mention.from >= to ? to - from : 0);
+      nextMentions.push({ ...mention, from: mention.from + offset, to: mention.to + offset });
+    }
     composer.replace({
-      text,
-      mentions: [{ ...command, from: to - "/handoff".length, to }, ...mentions],
+      text: prefix + text.slice(0, from) + text.slice(to),
+      mentions: nextMentions,
     });
   }, [composer, handoff, surface]);
 
@@ -2737,12 +2763,12 @@ export function PromptBoxInternal({
     const shouldBlurAfterSubmit = blurAfterPointerSubmitRef.current;
     blurAfterPointerSubmitRef.current = false;
     if (!canPrimarySubmit) return;
-    markTypedHandoff();
+    prepareHandoff();
     dispatchSubmit();
     if (shouldBlurAfterSubmit) {
       blurPromptEditor(editorRef.current);
     }
-  }, [canPrimarySubmit, dispatchSubmit, markTypedHandoff]);
+  }, [canPrimarySubmit, dispatchSubmit, prepareHandoff]);
 
   useLayoutEffect(() => {
     const baseline = voiceSubmitBaselineRef.current;
@@ -2806,10 +2832,10 @@ export function PromptBoxInternal({
 
   const submitModifierPrompt = useCallback(() => {
     if (!canModifierSubmit || !onModifierSubmit) return;
-    markTypedHandoff();
+    prepareHandoff();
     if (editorRef.current) cancelPromptThreadLinkPaste(editorRef.current);
     onModifierSubmit();
-  }, [canModifierSubmit, markTypedHandoff, onModifierSubmit]);
+  }, [canModifierSubmit, onModifierSubmit, prepareHandoff]);
 
   const applyHistoryDraft = useCallback(
     (draft: ComposerDraftSnapshot) => {

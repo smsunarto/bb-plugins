@@ -5,6 +5,7 @@ import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type {
+  ComposerDraftSnapshot,
   ExperimentalComposerCommandSuggestion,
   ExperimentalComposerInput,
   ExperimentalComposerMentionSuggestion,
@@ -59,10 +60,10 @@ function command(
   };
 }
 
-async function mountComposer() {
+async function mountComposer(surface: ExperimentalComposerInput["surface"] = "new-thread") {
   const run = vi.fn();
   const input: ExperimentalComposerInput = {
-    surface: "new-thread",
+    surface,
     executionControls: null,
     mentionTriggers: ["@"],
     commandTriggers: ["/"],
@@ -100,7 +101,13 @@ async function mountComposer() {
     composer,
     {},
     {
-      composer: { scope: { kind: "new-thread", projectId: "p1" }, text: "" },
+      composer: {
+        scope:
+          surface === "thread"
+            ? { kind: "thread", threadId: "t1" }
+            : { kind: "new-thread", projectId: "p1" },
+        text: "",
+      },
       composerRenderer: renderer,
       rpc: { starredModels: () => ({ models: [] }), changeStarredModels: () => ({ models: [] }) },
     },
@@ -118,7 +125,7 @@ async function mountComposer() {
       const { from } = editor.state.selection;
       editor.commands.deleteRange({ from: from - 1, to: from });
     });
-  return { slot, run, type, deleteBack };
+  return { slot, run, type, deleteBack, element };
 }
 
 afterEach(() => {
@@ -177,6 +184,50 @@ describe("@ mention menu", () => {
 });
 
 describe("/ command menu", () => {
+  it.each(["click", "Enter", "Escape then Enter"])(
+    "submits mid-draft handoff as a leading built-in command via %s",
+    async (action) => {
+      search.mention = searchState([]);
+      search.command = searchState([
+        { key: "commands", label: "Commands", suggestions: [command("handoff", "builtin")] },
+      ]);
+      const { slot, run, type, element } = await mountComposer("thread");
+      const submitted: ComposerDraftSnapshot[] = [];
+      run.mockImplementation(() => {
+        submitted.push(slot.composer.draft);
+      });
+      try {
+        type(action === "click" ? "Review fixture /hand" : "Review fixture /handoff");
+        const row = await waitFor(() => slot.getByTitle("handoff"));
+        if (action === "click") {
+          fireEvent.mouseDown(row);
+        } else {
+          if (action === "Escape then Enter") fireEvent.keyDown(element, { key: "Escape" });
+          fireEvent.keyDown(element, { key: "Enter" });
+        }
+        await waitFor(() => expect(run).toHaveBeenCalledOnce());
+        expect(submitted).toMatchObject([
+          {
+            text: expect.stringMatching(/^\/handoff Review fixture\s*$/),
+            mentions: [
+              {
+                kind: "command",
+                trigger: "/",
+                origin: "builtin",
+                source: "command",
+                name: "handoff",
+                from: 0,
+                to: 8,
+              },
+            ],
+          },
+        ]);
+      } finally {
+        slot.lifecycle.unmount();
+      }
+    },
+  );
+
   it.each([
     { origin: "builtin" as const, name: "compact", sends: true },
     { origin: "user" as const, name: "review", sends: false },
