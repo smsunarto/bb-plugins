@@ -70,7 +70,7 @@
   "devDependencies": {
     "@bb-plugins/testing": "workspace:*",
     "@bb-plugins/ui": "workspace:*",
-    "@get-bb/plugin-sdk": "0.6.132",
+    "@get-bb/plugin-sdk": "0.6.157",
     "@radix-ui/react-dialog": "^1.1.19",
     "@radix-ui/react-dropdown-menu": "^2.1.20",
     "@testing-library/react": "16.3.2",

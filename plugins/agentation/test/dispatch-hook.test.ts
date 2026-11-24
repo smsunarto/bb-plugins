@@ -157,8 +157,8 @@ test("a turn bb interrupts to restart keeps its pill until the resumed turn ends
     };
     harness.sdk.stub("threads.events.list", () => [latest]);
     harness.sdk.stub("system.config", () => ({
-      generalSettings: { steerActiveThreadOnEnter: true },
-      experiments: { resumeThreadsAfterRestart: true },
+      generalSettings: { steerActiveThreadOnEnter: true, resumeThreadsAfterRestart: true },
+      experiments: {},
     }));
     const thread = makeThreadResponse({ id: "thr_restart", status: "pending" });
     await hook(dispatch(thread, "start-turn"));
@@ -181,8 +181,8 @@ test("an interrupted turn re-stages its pill when bb will not resume it", async 
       { type: "system/thread/interrupted", data: { reason: "host-daemon-restarted" } },
     ]);
     harness.sdk.stub("system.config", () => ({
-      generalSettings: { steerActiveThreadOnEnter: true },
-      experiments: { resumeThreadsAfterRestart: false },
+      generalSettings: { steerActiveThreadOnEnter: true, resumeThreadsAfterRestart: false },
+      experiments: {},
     }));
     const thread = makeThreadResponse({ id: "thr_no_resume", status: "pending" });
     await hook(dispatch(thread, "start-turn"));

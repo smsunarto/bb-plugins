@@ -55,7 +55,7 @@
     "@bb-plugins/instructions": "workspace:*"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.132",
+    "@get-bb/plugin-sdk": "0.6.157",
     "@types/node": "^22.0.0",
     "bun-types": "^1.4.0",
     "typescript": "^6.0.0"
