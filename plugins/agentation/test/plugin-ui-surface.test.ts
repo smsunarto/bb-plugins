@@ -131,6 +131,22 @@ test("every bb plugin component boundary maps to its public SDK surface", () => 
   }
 });
 
+test("newly mapped slots name their exact SDK registration in annotation prompts", () => {
+  const surfaces = [
+    "experimental_messageMetadata",
+    "internal_DO_NOT_USE_setupGuideSection",
+    "experimental_threadContextCardRow",
+    "experimental_threadContextCardSection",
+    "experimental_threadHeaderRow",
+    "experimental_threadHeaderTitle",
+    "threadPanelAction",
+    "experimental_threadRowMetadata",
+  ];
+  for (const surface of surfaces) {
+    assert.equal(pluginUiSurfacePromptContext(surface).registration, `app.slots.${surface}`);
+  }
+});
+
 test("a sidebar navigation row names both the drawing plugin and the entry", () => {
   const navigationBoundary: Fiber = {
     memoizedProps: { pluginId: "navigation", slotId: "navigation", slotKind: "sidebarNavigation" },

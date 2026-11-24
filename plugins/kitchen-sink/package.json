@@ -24,7 +24,7 @@
   "private": true,
   "engines": {
     "bb": ">=0.50.0 <1.0.0",
-    "bbPluginSdk": ">=0.6.104"
+    "bbPluginSdk": ">=0.6.157"
   },
   "bb": {
     "name": "Kitchen Sink",
