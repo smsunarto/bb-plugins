@@ -1,8 +1,8 @@
 /**
- * bb 0.44 rebuilds every sidebar thread object whenever any thread's title
- * changes, because its cache is keyed on the shared title-mention resources.
- * Reusing the previous object for each thread whose data did not change lets
- * the memoized rows skip, so a rename re-renders one row instead of the list.
+ * bb 0.50 caches sidebar thread objects per entry. useHiddenWorkerActivity
+ * still creates a new object for each thread with a running hidden worker
+ * whenever the sidebar list changes. Reusing the previous object when its
+ * data is equal lets memoized rows skip renders for unrelated renames.
  * Returns `previous` itself when nothing changed.
  */
 export function retainUnchangedThreads<T extends { id: string }>(
