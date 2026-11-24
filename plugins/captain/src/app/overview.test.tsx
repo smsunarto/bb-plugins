@@ -83,6 +83,8 @@ type State = {
   truncated?: boolean;
   /** Reads that fail while set. */
   failing?: Set<string>;
+  /** Reads that never answer, to hold their placeholders. */
+  pending?: Set<string>;
   routines?: RoutineView[];
 };
 
@@ -114,6 +116,7 @@ function render(
         tasks: () => {
           calls.push("tasks");
           fails("tasks");
+          if (state.pending?.has("tasks")) return new Promise(() => {});
           return {
             tasks: state.tasks,
             total: state.tasksTotal ?? state.tasks.length,
@@ -206,9 +209,17 @@ test("Needs you, Tasks and Drive list their items with counts and sublines", asy
   const tasks = await section(slot, "Tasks");
   await within(tasks).findByText("Fix the sidebar");
   expect(tasks.textContent).toContain("Tasks3");
-  expect(tasks.textContent).toContain("Ready to ship · Review working");
-  expect(tasks.textContent).toContain("In progress · Implement idle");
-  expect(tasks.textContent).toContain("BBP-43 Cache the buildsTodo");
+  // One line a task: the status and crew state are in the row's tooltip, not under it.
+  const rowTitle = (key: string) =>
+    within(tasks)
+      .getByRole("link", { name: new RegExp(`^${key} `, "u") })
+      .getAttribute("title");
+  expect(rowTitle("BBP-44")).toBe("BBP-44 Fix the sidebar\nReady to ship · Review working");
+  expect(rowTitle("GAME-5")).toBe("GAME-5 Verify Unity builds\nIn progress · Implement idle");
+  expect(rowTitle("BBP-43")).toBe("BBP-43 Cache the builds\nTodo");
+  expect(tasks.textContent).not.toContain("Ready to ship");
+  expect(tasks.textContent).not.toContain("In progress");
+  expect(tasks.textContent).toContain("BBP-43 Cache the builds");
 
   const drive = await section(slot, "Drive");
   await within(drive).findByRole("button", { name: "Open briefs/BBP-43.md" });
@@ -226,7 +237,9 @@ test("a task opens in Tasks, and its crew thread from the row's link", async () 
 
 test("rows and cards open their targets", async () => {
   const { slot } = render(seeded);
-  fireEvent.click(await slot.findByRole("button", { name: "Open BBP-44's Review thread" }));
+  fireEvent.click(
+    await slot.findByRole("button", { name: "Open BBP-44's Review thread, working" }),
+  );
   fireEvent.click(await slot.findByRole("button", { name: "Open briefs/BBP-43.md" }));
   fireEvent.click(await slot.findByRole("button", { name: "Open the Drive folder" }));
   expect(slot.inspection.navigateCalls).toEqual([
@@ -347,7 +360,67 @@ test("a crew change refreshes the tasks: their order and their crew's state", as
   ];
   await slot.behavior.experimental_invalidateRpc([crewTag(CAPTAIN)]);
   await waitFor(() => expect(rowNames()).toEqual(["GAME-5", "BBP-43"]));
-  expect(tasks.textContent).toContain("Ready to ship · Implement working");
+  expect(
+    within(tasks)
+      .getByRole("link", { name: /^GAME-5 /u })
+      .getAttribute("title"),
+  ).toBe("GAME-5 Verify Unity builds\nReady to ship · Implement working");
+});
+
+test("a crew that errored or needs input shows its own glyph and names its state", async () => {
+  const { slot } = render({
+    ...seeded,
+    tasks: [
+      task({ key: "BBP-50", crew: { threadId: "thr_err", role: "Review", state: "errored" } }),
+      task({
+        key: "BBP-51",
+        crew: { threadId: "thr_ask", role: "Implement", state: "needs-input" },
+      }),
+      task({ key: "BBP-52" }),
+    ],
+  });
+  const errored = await slot.findByRole("button", { name: "Open BBP-50's Review thread, errored" });
+  const asking = slot.getByRole("button", { name: "Open BBP-51's Implement thread, needs input" });
+  const idle = slot.getByRole("button", { name: "Open BBP-52's Implement thread, idle" });
+  expect(errored.className).toContain("text-destructive");
+  expect(asking.className).toContain("text-warning-text");
+  expect(idle.className).toContain("text-muted-foreground");
+  const glyph = (button: HTMLElement) =>
+    button.querySelector("[data-icon]")?.getAttribute("data-icon");
+  expect(glyph(errored)).toBe("AlertTriangle");
+  expect(glyph(asking)).toBe("MessageQuestion");
+  expect(glyph(idle)).toBe("MessageSquare");
+});
+
+test("a task's status is the link's description and the crew button's tooltip, not the row's name", async () => {
+  const { slot } = render({
+    ...seeded,
+    tasks: [
+      task({ key: "BBP-50", crew: { threadId: "thr_err", role: "Review", state: "errored" } }),
+    ],
+  });
+  const tooltip = "BBP-50 Verify Unity builds\nIn progress · Review errored";
+  const link = await slot.findByRole("link", { name: "BBP-50 Verify Unity builds" });
+  expect(link.getAttribute("title")).toBe(tooltip);
+  const button = slot.getByRole("button", { name: "Open BBP-50's Review thread, errored" });
+  // Button takes no title; hovering it shows the nearest ancestor's.
+  expect(button.closest("[title]")?.getAttribute("title")).toBe(tooltip);
+  const row = link.closest("li")!;
+  expect(row.hasAttribute("title")).toBe(false);
+  expect(row.contains(button.closest("[title]"))).toBe(true);
+});
+
+test("Tasks holds one-line rows while it loads; Needs you keeps two-line ones", async () => {
+  const { slot } = render({ ...seeded, pending: new Set(["tasks"]) });
+  const tasks = await section(slot, "Tasks");
+  const needs = await section(slot, "Needs you");
+  await within(needs).findByText("Pick the cache backend");
+  const rows = [...tasks.querySelectorAll("[aria-busy] > div")];
+  expect(rows).toHaveLength(3);
+  for (const row of rows) {
+    expect(row.className).toContain("items-center");
+    expect(row.querySelectorAll(".animate-pulse")).toHaveLength(2);
+  }
 });
 
 test("a crew read that failed leaves the tasks listed, labelled", async () => {
