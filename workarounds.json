@@ -101,7 +101,7 @@
     {
       "id": "source-control/shadow-code-sidebar-swipe",
       "defect": "bb's mobile swipe-to-open-sidebar skips a touch that starts in a horizontally scrollable element by walking parentElement from the event target, which is retargeted to a shadow host. Code scrolling inside a diff's shadow root (@pierre/diffs) is invisible to it, so the gesture takes the swipe: the code cannot scroll sideways and a right swipe opens the sidebar.",
-      "verifiedOn": "0.50.1",
+      "verifiedOn": "0.49.0",
       "files": [
         "plugins/source-control/src/app/code-swipe.ts",
         "plugins/source-control/src/app/code-swipe.test.ts"
