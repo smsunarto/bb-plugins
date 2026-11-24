@@ -149,31 +149,41 @@ test("a pill queued behind a running turn waits for its own turn", async () => {
   });
 });
 
-test("a turn bb interrupts to restart keeps its pill until the resumed turn ends", async () => {
-  await withStagedAnnotation(async ({ harness, hook, staged }) => {
-    let latest: { type: string; data: Record<string, unknown> } = {
-      type: "system/thread/interrupted",
-      data: { reason: "host-daemon-restarted" },
-    };
-    harness.sdk.stub("threads.events.list", () => [latest]);
-    harness.sdk.stub("system.config", () => ({
-      generalSettings: { steerActiveThreadOnEnter: true, resumeThreadsAfterRestart: true },
-      experiments: {},
-    }));
-    const thread = makeThreadResponse({ id: "thr_restart", status: "pending" });
-    await hook(dispatch(thread, "start-turn"));
-    const idle = { thread: { ...thread, status: "idle" as const }, lastAssistantText: null };
+const restartConfigs = {
+  generalSettings: {
+    generalSettings: { steerActiveThreadOnEnter: true, resumeThreadsAfterRestart: true },
+    experiments: {},
+  },
+  experiments: {
+    generalSettings: { steerActiveThreadOnEnter: true },
+    experiments: { resumeThreadsAfterRestart: true },
+  },
+};
 
-    await harness.emitThreadEvent("thread.idle", idle);
-    await harness.emitThreadEvent("thread.failed", { thread: idle.thread, error: null });
-    assert.deepEqual(await staged(), []);
+for (const [setting, config] of Object.entries(restartConfigs)) {
+  test(`a turn resumed via ${setting} keeps its pill until it ends`, async () => {
+    await withStagedAnnotation(async ({ harness, hook, staged }) => {
+      let latest: { type: string; data: Record<string, unknown> } = {
+        type: "system/thread/interrupted",
+        data: { reason: "host-daemon-restarted" },
+      };
+      harness.sdk.stub("threads.events.list", () => [latest]);
+      harness.sdk.stub("system.config", () => config);
+      const thread = makeThreadResponse({ id: "thr_restart", status: "pending" });
+      await hook(dispatch(thread, "start-turn"));
+      const idle = { thread: { ...thread, status: "idle" as const }, lastAssistantText: null };
 
-    latest = { type: "turn/completed", data: { status: "completed" } };
-    await harness.emitThreadEvent("thread.active", { thread });
-    await harness.emitThreadEvent("thread.idle", idle);
-    assert.deepEqual(await staged(), ["ann_1"]);
+      await harness.emitThreadEvent("thread.idle", idle);
+      await harness.emitThreadEvent("thread.failed", { thread: idle.thread, error: null });
+      assert.deepEqual(await staged(), []);
+
+      latest = { type: "turn/completed", data: { status: "completed" } };
+      await harness.emitThreadEvent("thread.active", { thread });
+      await harness.emitThreadEvent("thread.idle", idle);
+      assert.deepEqual(await staged(), ["ann_1"]);
+    });
   });
-});
+}
 
 test("an interrupted turn re-stages its pill when bb will not resume it", async () => {
   await withStagedAnnotation(async ({ harness, hook, staged }) => {
