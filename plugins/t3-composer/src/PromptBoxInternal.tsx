@@ -1,13 +1,6 @@
 import { SaveDraftAction } from "./SaveDraftAction";
 import { ComposerPermissionControl } from "./ComposerPermissionControl";
-import { ComposerModelControls, hasEditablePickers } from "./model-picker/ComposerModelControls";
-import {
-  handoffGroupFor,
-  hasHandoffBlock,
-  isHandoffCommand,
-  withoutHandoffRemnant,
-  withoutLeadingHandoff,
-} from "./handoff-command";
+import { ComposerModelControls } from "./model-picker/ComposerModelControls";
 import {
   experimental_ComposerRoot as ComposerRoot,
   experimental_FailedVoiceRecordings as FailedVoiceRecordings,
@@ -230,15 +223,6 @@ function withUniqueAttachmentNames(
   });
 }
 type VoiceActionTransition = "entering" | "active" | "exiting";
-
-// workaround:t3-composer/empty-voice-transcript begin
-/** bb fails a recording whose transcript is empty; nothing was said, so it is dropped instead. */
-const EMPTY_VOICE_TRANSCRIPT_ERROR = "Voice transcription returned an empty result.";
-
-function isEmptyVoiceTranscript(recording: { errorMessage: string | null }): boolean {
-  return recording.errorMessage === EMPTY_VOICE_TRANSCRIPT_ERROR;
-}
-// workaround:t3-composer/empty-voice-transcript end
 
 function shouldFinishVoiceCompletionTransitionImmediately(): boolean {
   return (
@@ -1004,31 +988,9 @@ export function PromptBoxInternal({
   const composerDraft = composer.draft;
   const value = composerDraft.text;
   const mentionRanges = composerDraft.mentions;
-  // Deleting BB's "Continue from @thread" pill by hand cancels the handoff, as its banner's X
-  // does. Only the user's own edits reach here: BB's send, restore and history recall set the
-  // draft directly, so clearing it to send never cancels.
-  const handoffSourceId =
-    handoff != null && composer.scope.kind === "thread" ? composer.scope.threadId : null;
-  const handoffBannerRef = useRef<HTMLDivElement>(null);
   const onChange = useCallback(
-    (text: string, mentions: readonly ComposerMention[]) => {
-      const cancelsHandoff =
-        handoffSourceId !== null &&
-        hasHandoffBlock(composer.draft.mentions, handoffSourceId) &&
-        !hasHandoffBlock(mentions, handoffSourceId);
-      if (!cancelsHandoff) {
-        composer.replace({ text, mentions });
-        return;
-      }
-      composer.replace(withoutHandoffRemnant({ text, mentions }) ?? { text, mentions });
-      // BB's banner offers no SDK exit; its X button is the one way out.
-      queueMicrotask(() =>
-        handoffBannerRef.current
-          ?.querySelector<HTMLButtonElement>('button[aria-label="Exit handoff"]')
-          ?.click(),
-      );
-    },
-    [composer, handoffSourceId],
+    (text: string, mentions: readonly ComposerMention[]) => composer.replace({ text, mentions }),
+    [composer],
   );
   const focusComposerShortcut = renderer.focusComposerShortcut;
   const {
@@ -1172,51 +1134,14 @@ export function PromptBoxInternal({
   const mentionLoading = mentionSearch.status === "loading";
   const mentionRefreshing = mentionSearch.refreshing;
   const mentionError = mentionSearch.status === "error";
-  // `/handoff` starts BB's handoff, offered where BB's picker would: a thread's own composer
-  // with editable pickers, while no handoff is active yet.
-  const canHandoff =
-    surface === "thread" &&
-    handoff == null &&
-    executionControls != null &&
-    hasEditablePickers(composer);
-  const handoffGroup =
-    canHandoff && activeTrigger?.kind === "command"
-      ? handoffGroupFor({ char: activeTrigger.char, text: activeTrigger.query })
-      : null;
-  const providerCommandGroups = commandSearch.groups;
-  const commandGroups = useMemo(
-    () => (handoffGroup ? [handoffGroup, ...providerCommandGroups] : providerCommandGroups),
-    [handoffGroup, providerCommandGroups],
-  );
-  const handoffRef = useRef<(() => Promise<boolean>) | null>(null);
-  const startHandoff = useCallback(() => {
-    const start = handoffRef.current;
-    if (!start) return;
-    void start().then((started) => {
-      if (started) composer.focus();
-      return started;
-    });
-  }, [composer]);
+  const commandGroups = commandSearch.groups;
   const commandLoading = commandSearch.status === "loading";
   const commandRefreshing = commandSearch.refreshing;
   const commandError = commandSearch.status === "error";
   const [selectedSuggestionKey, setSelectedSuggestionKey] = useState<string | null>(null);
   const [expandedImageIndex, setExpandedImageIndex] = useState<number | null>(null);
   const [historySession, setHistorySession] = useState<HistorySession | null>(null);
-  // workaround:t3-composer/empty-voice-transcript begin
-  const allFailedVoiceRecordings = voice?.failedRecordings;
-  const discardVoiceRecording = voice?.discard;
-  const failedVoiceRecordings = useMemo(
-    () => allFailedVoiceRecordings?.filter((recording) => !isEmptyVoiceTranscript(recording)) ?? [],
-    [allFailedVoiceRecordings],
-  );
-  useEffect(() => {
-    if (!allFailedVoiceRecordings || !discardVoiceRecording) return;
-    for (const recording of allFailedVoiceRecordings) {
-      if (isEmptyVoiceTranscript(recording)) discardVoiceRecording(recording);
-    }
-  }, [allFailedVoiceRecordings, discardVoiceRecording]);
-  // workaround:t3-composer/empty-voice-transcript end
+  const failedVoiceRecordings = voice?.failedRecordings ?? [];
   const isVoiceRecording = voice?.state === "recording";
   const isVoiceProcessing = voice?.state === "transcribing";
   const showVoiceActionGroup = isVoiceRecording || isVoiceProcessing;
@@ -2212,22 +2137,18 @@ export function PromptBoxInternal({
                 refreshing: mentionRefreshing,
               };
 
-  const commandMenuState: CommandMenuState =
-    handoffGroup && (commandLoading || commandError)
-      ? { kind: "results", groups: [handoffGroup], refreshing: commandLoading }
-      : commandLoading
-        ? { kind: "loading" }
-        : commandError
-          ? { kind: "error" }
-          : {
-              kind: "results",
-              groups: commandGroups,
-              refreshing: commandRefreshing,
-            };
+  const commandMenuState: CommandMenuState = commandLoading
+    ? { kind: "loading" }
+    : commandError
+      ? { kind: "error" }
+      : {
+          kind: "results",
+          groups: commandGroups,
+          refreshing: commandRefreshing,
+        };
 
   const isCommandTriggerLiteral =
     activeTriggerKind === "command" &&
-    handoffGroup === null &&
     !commandLoading &&
     !commandError &&
     orderedCommandSuggestions.length === 0;
@@ -2413,21 +2334,6 @@ export function PromptBoxInternal({
       if (!currentEditor || activeTrigger === null) return;
       if (activeTrigger.kind !== "command") return;
 
-      if (isHandoffCommand(item)) {
-        // The command is only the request: take its text out, then let BB prepend its block.
-        triggerKeyRef.current = "";
-        dismissedTriggerRef.current = null;
-        setComposerMenu(null);
-        setSelectedSuggestionKey(null);
-        currentEditor
-          .chain()
-          .focus()
-          .deleteRange({ from: activeTrigger.from, to: activeTrigger.to })
-          .run();
-        startHandoff();
-        return;
-      }
-
       const trailingText = mentionPillTrailingText(currentEditor.state.doc, activeTrigger.to);
       // An inline prompt's text must not read as a command: a leading `/name` would still make
       // Claude load the skill, sending the prompt twice.
@@ -2455,7 +2361,7 @@ export function PromptBoxInternal({
         },
       });
     },
-    [activeTrigger, inlinePromptNames, insertPromptMentionPill, setComposerMenu, startHandoff],
+    [activeTrigger, inlinePromptNames, insertPromptMentionPill],
   );
 
   const applyTrigger = useCallback(
@@ -2807,26 +2713,36 @@ export function PromptBoxInternal({
     onSubmit?.();
   }, [onSubmit]);
 
-  /** A typed `/handoff`, sent without picking it from the menu, starts the handoff instead. */
-  const startTypedHandoff = useCallback(() => {
-    if (!canHandoff) return false;
-    const rest = withoutLeadingHandoff(composerDraft);
-    if (!rest) return false;
-    composer.replace(rest);
-    startHandoff();
-    return true;
-  }, [canHandoff, composer, composerDraft, startHandoff]);
+  // Submitting a typed /handoff after dismissing the menu should still reach BB's
+  // command handler. BB recognizes a leading built-in mention in the submitted draft.
+  const markTypedHandoff = useCallback(() => {
+    if (surface !== "thread" || handoff != null || composer.scope.kind !== "thread") return;
+    if (composer.key.startsWith("sent-message:")) return;
+    const { text, mentions } = composer.draft;
+    const match = /^\s*\/handoff(?=\s|$)/i.exec(text);
+    if (!match) return;
+    const to = match[0].length;
+    if (mentions.some((mention) => mention.from < to)) return;
+    const command = commandMentionTarget(
+      { name: "handoff", source: "command", origin: "builtin", argumentHint: null },
+      "/",
+    );
+    composer.replace({
+      text,
+      mentions: [{ ...command, from: to - "/handoff".length, to }, ...mentions],
+    });
+  }, [composer, handoff, surface]);
 
   const submitPrompt = useCallback(() => {
     const shouldBlurAfterSubmit = blurAfterPointerSubmitRef.current;
     blurAfterPointerSubmitRef.current = false;
-    if (startTypedHandoff()) return;
     if (!canPrimarySubmit) return;
+    markTypedHandoff();
     dispatchSubmit();
     if (shouldBlurAfterSubmit) {
       blurPromptEditor(editorRef.current);
     }
-  }, [canPrimarySubmit, dispatchSubmit, startTypedHandoff]);
+  }, [canPrimarySubmit, dispatchSubmit, markTypedHandoff]);
 
   useLayoutEffect(() => {
     const baseline = voiceSubmitBaselineRef.current;
@@ -2877,12 +2793,11 @@ export function PromptBoxInternal({
     submitPrompt();
   }, [pendingCommandSubmit, submitPrompt]);
 
-  // Choosing a built-in command, by Enter or by a click on its row, also sends it, as BB's
-  // composer does. `/handoff` is the plugin's own: applying it starts BB's handoff instead.
+  // BB handles built-in commands when the chosen suggestion is submitted.
   const chooseSuggestion = useCallback(
     (item: TypeaheadSuggestion) => {
       applyTrigger(item);
-      if (item.kind === "command" && item.origin === "builtin" && !isHandoffCommand(item)) {
+      if (item.kind === "command" && item.origin === "builtin") {
         setPendingCommandSubmit(true);
       }
     },
@@ -2890,11 +2805,11 @@ export function PromptBoxInternal({
   );
 
   const submitModifierPrompt = useCallback(() => {
-    if (startTypedHandoff()) return;
     if (!canModifierSubmit || !onModifierSubmit) return;
+    markTypedHandoff();
     if (editorRef.current) cancelPromptThreadLinkPaste(editorRef.current);
     onModifierSubmit();
-  }, [canModifierSubmit, onModifierSubmit, startTypedHandoff]);
+  }, [canModifierSubmit, markTypedHandoff, onModifierSubmit]);
 
   const applyHistoryDraft = useCallback(
     (draft: ComposerDraftSnapshot) => {
@@ -3173,7 +3088,6 @@ export function PromptBoxInternal({
       {handoff ? (
         // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- keeps focus on BB's buttons inside; adds no interaction of its own.
         <div
-          ref={handoffBannerRef}
           inert={showVoiceActionGroup ? true : undefined}
           className="px-3 pt-1"
           onMouseDown={keepEditorFocusOnButtonPress}
@@ -3382,7 +3296,7 @@ export function PromptBoxInternal({
                     onAction={applyPromptAction}
                   />
                   <div data-t3-composer-controls="" aria-live="polite">
-                    <ComposerModelControls fallback={executionControls} handoffRef={handoffRef} />
+                    <ComposerModelControls fallback={executionControls} />
                   </div>
                   <ComposerPermissionControl />
                   {surface === "new-thread" ? <NewThreadMachineSheet anchor={formRef} /> : null}

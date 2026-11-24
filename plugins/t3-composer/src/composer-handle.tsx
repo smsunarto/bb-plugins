@@ -14,10 +14,8 @@ const PickerRevisionContext = createContext<HandleRevision | null>(null);
  * Reads bb's composer once for the whole composer and shares the handle with everything
  * inside.
  *
- * bb re-renders each `useComposer()` caller twice per keystroke, whatever that caller reads:
- * when the host renders the composer, and again when the host republishes its editor. With
- * one caller here, the components inside render only when a value they show has changed, so
- * typing renders the draft's readers once and the pickers not at all.
+ * BB renders the composer host once per keystroke to publish the latest draft. Sharing the
+ * handle here lets draft readers update while pickers skip draft-only changes.
  */
 export function ComposerHandleProvider({ children }: { children: ReactNode }) {
   const composer = useComposer();
