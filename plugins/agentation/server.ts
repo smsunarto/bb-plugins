@@ -548,8 +548,12 @@ export default async function plugin(bb: BbPluginApi) {
         }),
         bb.sdk.system.config(),
       ]);
+      const resumes =
+        config.generalSettings.resumeThreadsAfterRestart ??
+        ("resumeThreadsAfterRestart" in config.experiments &&
+          config.experiments.resumeThreadsAfterRestart === true);
       return (
-        config.experiments.resumeThreadsAfterRestart === true &&
+        resumes &&
         latest?.type === "system/thread/interrupted" &&
         latest.data.reason === "host-daemon-restarted"
       );

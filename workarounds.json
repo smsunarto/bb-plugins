@@ -49,7 +49,7 @@
     {
       "id": "genui/source-view-remount",
       "defect": "bb's source viewer (@pierre/diffs VirtualizedFile before 1.3.0) keeps a blank placeholder after being hidden with display:none and shown again.",
-      "verifiedOn": "0.49.0",
+      "verifiedOn": "0.50.1",
       "manual": "Replace each SourceView with bb's HostSourceCode in plugins/genui/ui/components/code.tsx and FrameFooter.tsx, then delete SourceView, useTimesHidden, and their tests.",
       "probe": {
         "needed": null,
@@ -73,7 +73,7 @@
     {
       "id": "vimium/palette-search-shortcuts",
       "defect": "bb's command palette (Quick palette and Search threads) handles keydown in its dialog with getShortcutCommand and runs any palette or plugin command whose shortcut matches, skipping the editable-focus context and the command's isAvailable. A bare-key binding such as vimium's `h` (Home) fires while typing into the palette's search field and closes it.",
-      "verifiedOn": "0.49.0",
+      "verifiedOn": "0.50.1",
       "upstream": "https://github.com/get-bb/bb/issues/7622",
       "probe": {
         "needed": "getShortcutCommand\\(\\w+\\.nativeEvent,\\[`palette\\.open`",
@@ -85,7 +85,7 @@
     {
       "id": "agent-instructions/sidebar-fill",
       "defect": "bb mounts a navPanel's experimental_sidebar in an auto-height block inside the scrolling [data-sidebar=\"content\"] column and offers no fill layout, so a sidebar whose content sizes itself with flex-1 min-h-0 (the Agent instructions project file tree) renders 0px tall.",
-      "verifiedOn": "0.49.0",
+      "verifiedOn": "0.50.1",
       "files": ["packages/ui/src/sidebar-fill.ts", "packages/ui/test/sidebar-fill.test.ts"],
       "probe": {
         "needed": null,
@@ -116,7 +116,7 @@
     {
       "id": "t3-composer/thread-permission-reset",
       "defect": "bb keeps a thread composer's permission mode in component-local state reset to the thread's last sent mode whenever the thread opens again (useThreadCreationOptions with resetKey: thread.id), and threads.update has no permissionMode, so a mode chosen on a thread but not yet sent is lost on a thread switch.",
-      "verifiedOn": "0.49.0",
+      "verifiedOn": "0.50.1",
       "files": [
         "plugins/t3-composer/src/thread-permission-picks.ts",
         "plugins/t3-composer/src/thread-permission-picks.test.tsx"

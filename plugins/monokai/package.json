@@ -98,6 +98,6 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@get-bb/plugin-sdk": "0.6.132"
+    "@get-bb/plugin-sdk": "0.6.157"
   }
 }
