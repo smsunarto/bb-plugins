@@ -589,7 +589,7 @@ describe("bb captain verdict", () => {
       "review",
       "passed",
       "--head",
-      "abc",
+      "a".repeat(40),
       "--ship",
       "--json",
     ]);
@@ -610,6 +610,7 @@ describe("bb captain verdict", () => {
     expect(host.tasks.comments[0]?.body).toMatch(
       /^Asked: Merge BBPLUGINS-1: Render PR images \(a1\)/u,
     );
+    expect(host.tasks.comments[0]?.body).toContain("fast-forward the target branch");
     expect(host.pushes).toEqual([
       {
         method: "notifications.send",
@@ -622,27 +623,64 @@ describe("bb captain verdict", () => {
     ]);
   });
 
-  test("a direct-ship task with no PR gets its ship ask, whose detail names both ways to ship", async () => {
+  test("--ship needs the full head, and a new head supersedes the open ship ask", async () => {
     const { host, as } = await crewHost();
+    const first = "a".repeat(40);
+    const second = "b".repeat(40);
 
-    const ship = await as([
+    const bare = await as(["verdict", "BBPLUGINS-1", "review", "passed", "--ship"]);
+    const short = await as([
       "verdict",
       "BBPLUGINS-1",
       "review",
       "passed",
       "--head",
-      "abc",
+      "abc1234",
+      "--ship",
+    ]);
+    const atFirst = await as([
+      "verdict",
+      "BBPLUGINS-1",
+      "review",
+      "passed",
+      "--head",
+      first,
+      "--ship",
+      "--json",
+    ]);
+    const atSecond = await as([
+      "verdict",
+      "BBPLUGINS-1",
+      "review",
+      "passed",
+      "--head",
+      second,
+      "--ship",
+      "--json",
+    ]);
+    const rerun = await as([
+      "verdict",
+      "BBPLUGINS-1",
+      "review",
+      "passed",
+      "--head",
+      second,
       "--ship",
       "--json",
     ]);
 
-    expect(ship.exitCode).toBe(0);
-    expect(json(ship.stdout).results[1]).toMatchObject({ kind: "ship", state: "open" });
-    // Nothing in the call read or required a pull request.
-    expect(host.tasks.calls.some((call) => /pull/iu.test(call.method))).toBe(false);
-    expect(host.tasks.comments[0]?.body).toContain(
-      "Review passed at abc. Merge lets the Captain ship it at that head: merge its PR, or fast-forward the target branch for a direct-ship repo. Hold keeps it open.",
-    );
+    expect(bare.exitCode).toBe(1);
+    expect(bare.stderr).toContain("--ship needs the head the review judged");
+    expect(short.exitCode).toBe(1);
+    expect(short.stderr).toContain("--ship needs the full 40-character head");
+    expect(json(atFirst.stdout).results[1]).toMatchObject({ id: "a1", state: "open" });
+    expect(json(atSecond.stdout).results[1]).toMatchObject({ id: "a2", state: "open" });
+    expect(json(rerun.stdout).results[1]).toMatchObject({ id: "a2", state: "exists" });
+    expect(host.tasks.comments.map((comment) => comment.body)).toEqual([
+      expect.stringContaining(`Review passed at ${first}.`),
+      `Superseded: a1 named another head; the ship ask for ${second} replaces it.`,
+      expect.stringContaining(`Review passed at ${second}.`),
+    ]);
   });
 });
 

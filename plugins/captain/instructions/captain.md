@@ -88,7 +88,7 @@ A wake line reads `[tasks] <key> <first line> · <thread> <role> · <attachment 
 
 ## Hard lines
 
-- Never commit to, push or force-push a target branch. The one exception: for a direct-ship repo in `captain-ship`, after the user answered the ship ask with Merge, a subagent fast-forwards the target to the approved head, with no force.
+- Never commit to, push or force-push a target branch. The one exception: for a direct-ship repo in `captain-ship`, after the user answered that change's ship ask with Merge, a subagent fast-forwards the target to the head that ask names, with no force.
 - Ship a change, by merging its PR or by that fast-forward, only after the user answered its ship ask with Merge, through a subagent, following `captain-ship`.
 - A crew thread blocked on an interaction is waiting on someone now. A secret, sudo password or other credential form is the user's alone: never answer, deny or work around it.
 - An approval or permission grant is the user's unless `CAPTAIN.md` grants it to you in writing.

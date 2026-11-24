@@ -160,6 +160,51 @@ export function shipBlockers(taskKey: string, review: string | null): Blocker[] 
   ];
 }
 
+/** A full commit id, the only head a ship ask may name. */
+export const FULL_SHA = /^[0-9a-f]{40}$/u;
+
+/** The answer that closes a ship ask a newer head replaced; it is never delivered. */
+export const SUPERSEDED = "Superseded";
+
+/** The head a ship ask's detail names, from its leading `Review <verdict> at <sha>.`. */
+function shipAskHead(detail: string): string | null {
+  return /^Review \S+ at ([0-9a-f]{40})\./u.exec(detail)?.[1] ?? null;
+}
+
+/**
+ * Close the task's open ship asks that name another head, so a new `--ship`
+ * opens an ask for this head instead of reusing one whose Merge would cover
+ * different commits. Each is answered `Superseded` without a send, and the
+ * task gets a comment naming it.
+ */
+export async function supersedeShipAsks(
+  deps: CommandDeps,
+  captain: Captain,
+  task: TasksTask,
+  head: string,
+): Promise<string[]> {
+  const notes: string[] = [];
+  const stale = deps.store
+    .asksOf(captain.threadId, { open: true })
+    .filter((ask) => ask.kind === "ship" && ask.taskKey === task.key)
+    .filter((ask) => shipAskHead(ask.detail) !== head);
+  for (const ask of stale) {
+    const at = deps.now();
+    deps.store.answerAsk(ask.id, SUPERSEDED, at);
+    deps.store.markAnswerDelivered(ask.id, at);
+    const warning = await captainComment(
+      deps,
+      captain,
+      task.id,
+      `${SUPERSEDED}: ${ask.id} named another head; the ship ask for ${head} replaces it.`,
+    );
+    notes.push(`${ask.id} superseded: it named another head`);
+    if (warning !== null) notes.push(`warning: ${warning}`);
+  }
+  if (stale.length > 0) deps.bb.rpc.experimental_invalidate([asksTag(captain.threadId)]);
+  return notes;
+}
+
 /**
  * Open an ask, or return the open one with the same kind, task and text, so a
  * rerun opens nothing twice. A new ask is posted on its task as an `Asked:`
