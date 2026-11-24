@@ -83,6 +83,8 @@ type State = {
   truncated?: boolean;
   /** Reads that fail while set. */
   failing?: Set<string>;
+  /** Reads that never answer, to hold their placeholders. */
+  pending?: Set<string>;
   routines?: RoutineView[];
 };
 
@@ -114,6 +116,7 @@ function render(
         tasks: () => {
           calls.push("tasks");
           fails("tasks");
+          if (state.pending?.has("tasks")) return new Promise(() => {});
           return {
             tasks: state.tasks,
             total: state.tasksTotal ?? state.tasks.length,
@@ -234,7 +237,9 @@ test("a task opens in Tasks, and its crew thread from the row's link", async () 
 
 test("rows and cards open their targets", async () => {
   const { slot } = render(seeded);
-  fireEvent.click(await slot.findByRole("button", { name: "Open BBP-44's Review thread" }));
+  fireEvent.click(
+    await slot.findByRole("button", { name: "Open BBP-44's Review thread, working" }),
+  );
   fireEvent.click(await slot.findByRole("button", { name: "Open briefs/BBP-43.md" }));
   fireEvent.click(await slot.findByRole("button", { name: "Open the Drive folder" }));
   expect(slot.inspection.navigateCalls).toEqual([
@@ -362,26 +367,60 @@ test("a crew change refreshes the tasks: their order and their crew's state", as
   ).toBe("GAME-5 Verify Unity builds\nReady to ship · Implement working");
 });
 
-test("an errored crew tints its thread button and says so in its name", async () => {
+test("a crew that errored or needs input shows its own glyph and names its state", async () => {
   const { slot } = render({
     ...seeded,
     tasks: [
       task({ key: "BBP-50", crew: { threadId: "thr_err", role: "Review", state: "errored" } }),
-      task({ key: "BBP-51" }),
+      task({
+        key: "BBP-51",
+        crew: { threadId: "thr_ask", role: "Implement", state: "needs-input" },
+      }),
+      task({ key: "BBP-52" }),
     ],
   });
   const errored = await slot.findByRole("button", { name: "Open BBP-50's Review thread, errored" });
+  const asking = slot.getByRole("button", { name: "Open BBP-51's Implement thread, needs input" });
+  const idle = slot.getByRole("button", { name: "Open BBP-52's Implement thread, idle" });
   expect(errored.className).toContain("text-destructive");
-  expect(errored.className).not.toContain("text-muted-foreground");
-  const row = slot.getByRole("link", { name: /^BBP-50 /u });
-  expect(row.getAttribute("title")).toBe(
-    "BBP-50 Verify Unity builds\nIn progress · Review errored",
-  );
-  // The whole row, crew button included, shows it on hover.
-  expect(row.closest("li")?.getAttribute("title")).toBe(row.getAttribute("title"));
-  const idle = slot.getByRole("button", { name: "Open BBP-51's Implement thread" });
+  expect(asking.className).toContain("text-warning-text");
   expect(idle.className).toContain("text-muted-foreground");
-  expect(idle.className).not.toContain("text-destructive");
+  const glyph = (button: HTMLElement) =>
+    button.querySelector("[data-icon]")?.getAttribute("data-icon");
+  expect(glyph(errored)).toBe("AlertTriangle");
+  expect(glyph(asking)).toBe("MessageQuestion");
+  expect(glyph(idle)).toBe("MessageSquare");
+});
+
+test("a task's status is the link's description and the crew button's tooltip, not the row's name", async () => {
+  const { slot } = render({
+    ...seeded,
+    tasks: [
+      task({ key: "BBP-50", crew: { threadId: "thr_err", role: "Review", state: "errored" } }),
+    ],
+  });
+  const tooltip = "BBP-50 Verify Unity builds\nIn progress · Review errored";
+  const link = await slot.findByRole("link", { name: "BBP-50 Verify Unity builds" });
+  expect(link.getAttribute("title")).toBe(tooltip);
+  const button = slot.getByRole("button", { name: "Open BBP-50's Review thread, errored" });
+  // Button takes no title; hovering it shows the nearest ancestor's.
+  expect(button.closest("[title]")?.getAttribute("title")).toBe(tooltip);
+  const row = link.closest("li")!;
+  expect(row.hasAttribute("title")).toBe(false);
+  expect(row.contains(button.closest("[title]"))).toBe(true);
+});
+
+test("Tasks holds one-line rows while it loads; Needs you keeps two-line ones", async () => {
+  const { slot } = render({ ...seeded, pending: new Set(["tasks"]) });
+  const tasks = await section(slot, "Tasks");
+  const needs = await section(slot, "Needs you");
+  await within(needs).findByText("Pick the cache backend");
+  const rows = [...tasks.querySelectorAll("[aria-busy] > div")];
+  expect(rows).toHaveLength(3);
+  for (const row of rows) {
+    expect(row.className).toContain("items-center");
+    expect(row.querySelectorAll(".animate-pulse")).toHaveLength(2);
+  }
 });
 
 test("a crew read that failed leaves the tasks listed, labelled", async () => {

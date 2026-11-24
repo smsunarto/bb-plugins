@@ -116,7 +116,7 @@ export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
           collapsed={collapsed.tasks}
           onToggle={toggle}
         >
-          <ReadState read={tasks} rows={3}>
+          <ReadState read={tasks} rows={3} line>
             {listed === undefined ? null : <TasksBody listing={listed} />}
           </ReadState>
         </Section>
@@ -214,11 +214,14 @@ type Read = {
 function ReadState({
   read,
   rows,
+  line = false,
   cards = false,
   children,
 }: {
   read: Read;
   rows: number;
+  /** Rows of one line, as Tasks has; the others have a subline. */
+  line?: boolean;
   cards?: boolean;
   children: ReactNode;
 }) {
@@ -258,7 +261,11 @@ function ReadState({
           </Button>
         </output>
       )}
-      {loaded ? children : problem === null ? <Placeholder rows={rows} cards={cards} /> : null}
+      {loaded ? (
+        children
+      ) : problem === null ? (
+        <Placeholder rows={rows} line={line} cards={cards} />
+      ) : null}
     </>
   );
 }
@@ -649,7 +656,7 @@ const CREW_LABEL: Record<NonNullable<CaptainTaskItem["crew"]>["state"], string> 
 /**
  * One task on one line; it opens in Tasks, and its title (the tooltip) gives
  * the status and the crew's state. Its crew thread, when it has one, opens
- * from the trailing button, tinted destructive when the crew errored.
+ * from the trailing button, whose glyph shows a crew that errored or needs input.
  */
 function TaskRow({ task }: { task: CaptainTaskItem }) {
   const navigate = useBbNavigate();
@@ -658,10 +665,9 @@ function TaskRow({ task }: { task: CaptainTaskItem }) {
   const role = crew?.role ?? "Crew";
   const crewText = crew === null ? null : `${role} ${CREW_LABEL[crew.state]}`;
   const sub = crewText === null ? status : `${status} · ${crewText}`;
-  // On the row too, so hovering the crew button (Button takes no title) shows it.
   const tooltip = `${task.key} ${task.title}\n${sub}`;
   return (
-    <li className="flex min-w-0 items-center" title={tooltip}>
+    <li className="flex min-w-0 items-center">
       <a
         href={`/plugins/scott-tasks/tasks/task/${encodeURIComponent(task.key)}`}
         title={tooltip}
@@ -677,24 +683,34 @@ function TaskRow({ task }: { task: CaptainTaskItem }) {
         </span>
       </a>
       {crew === null ? null : (
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          aria-label={`Open ${task.key}'s ${role} thread${crew.state === "errored" ? ", errored" : ""}`}
-          className={cn(
-            TAP,
-            "me-1 size-8 shrink-0",
-            crew.state === "errored" ? "text-destructive" : "text-muted-foreground",
-          )}
-          onClick={() => navigate.toThread(crew.threadId)}
-        >
-          <Icon name="MessageSquare" aria-hidden className="size-4" />
-        </Button>
+        // Button takes no title, so this wrapper gives the button the row's tooltip.
+        <span title={tooltip} className="me-1 flex shrink-0">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label={`Open ${task.key}'s ${role} thread, ${CREW_LABEL[crew.state]}`}
+            className={cn(TAP, "size-8", CREW_GLYPH[crew.state].tone)}
+            onClick={() => navigate.toThread(crew.threadId)}
+          >
+            <Icon name={CREW_GLYPH[crew.state].icon} aria-hidden className="size-4" />
+          </Button>
+        </span>
       )}
     </li>
   );
 }
+
+/** The crew button's glyph: a warning for a crew that errored or needs input, else a thread. */
+const CREW_GLYPH: Record<
+  NonNullable<CaptainTaskItem["crew"]>["state"],
+  { icon: string; tone: string }
+> = {
+  errored: { icon: "AlertTriangle", tone: "text-destructive" },
+  "needs-input": { icon: "MessageQuestion", tone: "text-warning-text" },
+  working: { icon: "MessageSquare", tone: "text-muted-foreground" },
+  idle: { icon: "MessageSquare", tone: "text-muted-foreground" },
+};
 
 /**
  * A task's status in Tasks' own glyphs: a dashed ring for backlog, a ring for
@@ -868,20 +884,41 @@ function Empty({ children }: { children: ReactNode }) {
   return <p className="m-0 px-2 py-2 text-xs leading-4 text-muted-foreground">{children}</p>;
 }
 
-/** Space for rows or cards while they first load, each the loaded one's height. */
-function Placeholder({ rows, cards = false }: { rows: number; cards?: boolean }) {
+/**
+ * Space for rows or cards while they first load, each the loaded one's height:
+ * two-line rows by default, one-line rows with `line`.
+ */
+function Placeholder({
+  rows,
+  line = false,
+  cards = false,
+}: {
+  rows: number;
+  line?: boolean;
+  cards?: boolean;
+}) {
   return (
     <div aria-busy className="flex flex-col">
-      {Array.from({ length: rows }, (_, index) => (
-        // A loaded row: 8 + a 20px title + a 16px subline + 8.
-        <div key={index} className="flex items-start gap-2 px-2 py-2">
-          <span className="mt-0.5 size-4 shrink-0 animate-pulse rounded bg-muted" />
-          <span className="flex flex-1 flex-col gap-2">
-            <span className="h-4 w-3/4 animate-pulse rounded bg-muted" />
-            <span className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-          </span>
-        </div>
-      ))}
+      {Array.from({ length: rows }, (_, index) =>
+        line ? (
+          // A loaded one-line row: 8 + a 20px line + 8, and 44px on a coarse pointer.
+          <div key={index} className={cn(TAP, "flex items-center gap-2 px-2 py-2")}>
+            <span className="size-4 shrink-0 animate-pulse rounded bg-muted" />
+            <span className="flex h-5 flex-1 items-center">
+              <span className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+            </span>
+          </div>
+        ) : (
+          // A loaded two-line row: 8 + a 20px title + a 16px subline + 8.
+          <div key={index} className="flex items-start gap-2 px-2 py-2">
+            <span className="mt-0.5 size-4 shrink-0 animate-pulse rounded bg-muted" />
+            <span className="flex flex-1 flex-col gap-2">
+              <span className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+              <span className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+            </span>
+          </div>
+        ),
+      )}
       {cards ? (
         <div className={cn("px-2 py-1", CARD_GRID)}>
           {[0, 1, 2, 3, 4, 5].map((index) => (
