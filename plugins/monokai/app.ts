@@ -1,4 +1,5 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import { mountNewThreadLayout } from "./app/new-thread-layout.ts";
 
 import "./app/monaco-syntax-tokens.css";
 import "./app/diff-header.css";
@@ -56,4 +57,5 @@ export default definePluginApp((app) => {
     id: "monaco-syntax-tokens",
     mount: mountMonacoSyntaxTokens,
   });
+  app.contentScripts.register({ id: "new-thread-layout", mount: mountNewThreadLayout });
 });

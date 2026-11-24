@@ -1589,20 +1589,22 @@
   }
 }
 
-/* BB switches to its compact home at max-width: 767px. The desktop page
- * container has an auto height, so size its column against the panel. */
+/* BB switches to its compact home at max-width: 767px. The marked desktop
+ * wrapper fills BB's scroll viewport inside either a standalone or split pane. */
 @media (width > 767px) {
-  #root-compose-main-panel {
-    container-type: size;
+  [data-monokai-compose-viewport] {
+    display: flex;
+    flex-direction: column;
+    min-block-size: 100%;
   }
 
-  #root-compose-main-panel [data-testid="root-compose-compact-home"] {
-    min-height: calc(100cqh - var(--bb-window-frame-top, 0px));
+  [data-testid="root-compose-compact-home"] {
+    flex: 1 0 auto;
     padding-block: 3.5rem;
     justify-content: safe center;
   }
 
-  #root-compose-main-panel [data-testid="root-compose-compact-composer"] {
+  [data-testid="root-compose-compact-home"] > [data-testid="root-compose-compact-composer"] {
     order: 1;
   }
 }
@@ -1611,26 +1613,28 @@
  * Flatten the layout wrappers so both can have their own grid rows. Keep the
  * sections with the composer, and let recents scroll below the group. */
 @media (max-width: 767px) {
-  #root-compose-main-panel [data-testid="root-compose-compact-home"] {
+  [data-testid="root-compose-compact-home"] {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(0, max-content) auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, max-content) auto minmax(auto, 1fr);
     padding-top: 3.5rem;
+    /* A tall composer can push the recent row below the fold. */
+    overflow-y: auto;
   }
 
-  #root-compose-main-panel [data-testid="root-compose-compact-composer"] {
+  [data-testid="root-compose-compact-home"] > [data-testid="root-compose-compact-composer"] {
     position: relative;
     grid-row: 3;
   }
 
-  #root-compose-main-panel [data-testid="root-compose-compact-scroll-viewport"],
-  #root-compose-main-panel [data-testid="root-compose-compact-scroll-content"],
-  #root-compose-main-panel [data-testid="root-compose-compact-leading-spacer"] + div {
+  [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-scroll-viewport"],
+  [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-scroll-content"],
+  [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-leading-spacer"] + div {
     display: contents;
   }
 
-  #root-compose-main-panel [data-testid="plugin-homepage-sections"],
-  #root-compose-main-panel [data-root-compose-mobile-recents] {
+  [data-testid="root-compose-compact-home"] [data-testid="plugin-homepage-sections"],
+  [data-testid="root-compose-compact-home"] [data-root-compose-mobile-recents] {
     inline-size: 100%;
     min-block-size: 0;
     max-inline-size: var(--md-content-w, 760px);
@@ -1640,17 +1644,19 @@
     overscroll-behavior: contain;
   }
 
-  #root-compose-main-panel [data-testid="plugin-homepage-sections"] {
+  [data-testid="root-compose-compact-home"] [data-testid="plugin-homepage-sections"] {
     grid-row: 2;
   }
 
-  #root-compose-main-panel [data-root-compose-mobile-recents] {
+  [data-testid="root-compose-compact-home"] [data-root-compose-mobile-recents] {
     grid-row: 4;
+    /* Keep the heading and one recent item reachable beside a long hint. */
+    min-block-size: 5.25rem;
   }
 
-  #root-compose-main-panel [data-testid="root-compose-compact-leading-spacer"],
-  #root-compose-main-panel [data-testid="root-compose-compact-bottom-spacer"],
-  #root-compose-main-panel [data-testid="root-compose-compact-fade"] {
+  [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-leading-spacer"],
+  [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-bottom-spacer"],
+  [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-fade"] {
     display: none;
   }
 }
@@ -1674,11 +1680,11 @@
 
 /* Keep the empty homepage marker from reserving space. Each visible section
  * has clearance below it before the next section or the composer. */
-#root-compose-main-panel [data-testid="plugin-homepage-sections"] {
+[data-testid="root-compose-compact-home"] [data-testid="plugin-homepage-sections"] {
   margin-top: 0;
 }
 
-#root-compose-main-panel [data-testid="plugin-homepage-sections"] > section {
+[data-testid="root-compose-compact-home"] [data-testid="plugin-homepage-sections"] > section {
   padding-block-end: 1rem;
 }
 

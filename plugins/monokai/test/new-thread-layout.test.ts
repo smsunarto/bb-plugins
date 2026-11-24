@@ -13,11 +13,15 @@ afterAll(async () => {
   await browser?.close();
 });
 
-function homeMarkup(compact: boolean, withHeading: boolean) {
+function homeMarkup(
+  compact: boolean,
+  withHeading: boolean,
+  { split = false, hint = "Choose what to work on." } = {},
+) {
   const sections = `
     <div data-testid="plugin-homepage-sections">
       <section hidden>Monokai marker</section>
-      ${withHeading ? "<section><h2>Start a thread</h2><p>Choose what to work on.</p></section>" : ""}
+      ${withHeading ? `<section><h2>Start a thread</h2><p>${hint}</p></section>` : ""}
     </div>
   `;
   const composer = `
@@ -28,7 +32,7 @@ function homeMarkup(compact: boolean, withHeading: boolean) {
     <style>
       * { box-sizing: border-box; }
       body { margin: 0; }
-      #root-compose-main-panel { height: 100vh; display: flex; flex-direction: column; }
+      [data-test-pane] { height: 100vh; display: flex; flex-direction: column; }
       .column { display: flex; flex-direction: column; }
       .page { container: page / inline-size; }
       .desktop-viewport { overflow-y: auto; flex: 1; }
@@ -40,7 +44,7 @@ function homeMarkup(compact: boolean, withHeading: boolean) {
       h2, p { margin: 0; }
       li { height: 60px; }
     </style>
-    <div id="root-compose-main-panel">
+    <div data-test-pane ${split ? 'data-split-pane-id="left" style="width: 50%"' : 'id="root-compose-main-panel"'}>
       ${compact ? compactHome(composer, sections) : desktopHome(composer, sections)}
     </div>
   `;
@@ -50,7 +54,7 @@ function homeMarkup(compact: boolean, withHeading: boolean) {
 function desktopHome(composer: string, sections: string) {
   return `
     <div class="desktop-viewport">
-      <div class="page">
+      <div class="page" data-monokai-compose-viewport>
         <div class="column desktop-home" data-testid="root-compose-compact-home">
           ${composer}
           ${sections}
@@ -95,7 +99,7 @@ for (const { width, height, compact } of scenarios) {
         await page.setContent(homeMarkup(compact, withHeading));
         await page.addStyleTag({ content: theme });
 
-        const viewport = await page.locator("#root-compose-main-panel").boundingBox();
+        const viewport = await page.locator("[data-test-pane]").boundingBox();
         const sections = await page.getByTestId("plugin-homepage-sections").boundingBox();
         const composer = await page.getByTestId("root-compose-compact-composer").boundingBox();
         if (!viewport || !composer || !sections) throw new Error("Missing new-thread layout");
@@ -128,3 +132,34 @@ for (const { width, height, compact } of scenarios) {
     });
   }
 }
+
+test("centers the composer in a hosted pane without the root panel ID", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await page.setContent(homeMarkup(false, true, { split: true }));
+    await page.addStyleTag({ content: theme });
+    const heading = await page.getByRole("heading", { name: "Start a thread" }).boundingBox();
+    const composer = await page.getByTestId("root-compose-compact-composer").boundingBox();
+    if (!heading || !composer) throw new Error("Missing split-pane composer group");
+    expect((heading.y + composer.y + composer.height) / 2).toBeCloseTo(450, 0);
+  } finally {
+    await page.close();
+  }
+});
+
+test("keeps recent items reachable below a tall compact heading", async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await page.setContent(homeMarkup(true, true, { hint: "Long project hint. ".repeat(95) }));
+    await page.addStyleTag({ content: theme + ".composer { height: 240px; }" });
+    const recents = page.locator("[data-root-compose-mobile-recents]");
+    const bounds = await recents.boundingBox();
+    if (!bounds) throw new Error("Missing compact recents");
+    expect(bounds.height).toBeGreaterThanOrEqual(84);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
+    await recents.locator("li").last().scrollIntoViewIfNeeded();
+    expect(await recents.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  } finally {
+    await page.close();
+  }
+});
