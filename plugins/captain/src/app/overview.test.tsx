@@ -206,9 +206,17 @@ test("Needs you, Tasks and Drive list their items with counts and sublines", asy
   const tasks = await section(slot, "Tasks");
   await within(tasks).findByText("Fix the sidebar");
   expect(tasks.textContent).toContain("Tasks3");
-  expect(tasks.textContent).toContain("Ready to ship · Review working");
-  expect(tasks.textContent).toContain("In progress · Implement idle");
-  expect(tasks.textContent).toContain("BBP-43 Cache the buildsTodo");
+  // One line a task: the status and crew state are in the row's tooltip, not under it.
+  const rowTitle = (key: string) =>
+    within(tasks)
+      .getByRole("link", { name: new RegExp(`^${key} `, "u") })
+      .getAttribute("title");
+  expect(rowTitle("BBP-44")).toBe("BBP-44 Fix the sidebar\nReady to ship · Review working");
+  expect(rowTitle("GAME-5")).toBe("GAME-5 Verify Unity builds\nIn progress · Implement idle");
+  expect(rowTitle("BBP-43")).toBe("BBP-43 Cache the builds\nTodo");
+  expect(tasks.textContent).not.toContain("Ready to ship");
+  expect(tasks.textContent).not.toContain("In progress");
+  expect(tasks.textContent).toContain("BBP-43 Cache the builds");
 
   const drive = await section(slot, "Drive");
   await within(drive).findByRole("button", { name: "Open briefs/BBP-43.md" });
@@ -347,7 +355,33 @@ test("a crew change refreshes the tasks: their order and their crew's state", as
   ];
   await slot.behavior.experimental_invalidateRpc([crewTag(CAPTAIN)]);
   await waitFor(() => expect(rowNames()).toEqual(["GAME-5", "BBP-43"]));
-  expect(tasks.textContent).toContain("Ready to ship · Implement working");
+  expect(
+    within(tasks)
+      .getByRole("link", { name: /^GAME-5 /u })
+      .getAttribute("title"),
+  ).toBe("GAME-5 Verify Unity builds\nReady to ship · Implement working");
+});
+
+test("an errored crew tints its thread button and says so in its name", async () => {
+  const { slot } = render({
+    ...seeded,
+    tasks: [
+      task({ key: "BBP-50", crew: { threadId: "thr_err", role: "Review", state: "errored" } }),
+      task({ key: "BBP-51" }),
+    ],
+  });
+  const errored = await slot.findByRole("button", { name: "Open BBP-50's Review thread, errored" });
+  expect(errored.className).toContain("text-destructive");
+  expect(errored.className).not.toContain("text-muted-foreground");
+  const row = slot.getByRole("link", { name: /^BBP-50 /u });
+  expect(row.getAttribute("title")).toBe(
+    "BBP-50 Verify Unity builds\nIn progress · Review errored",
+  );
+  // The whole row, crew button included, shows it on hover.
+  expect(row.closest("li")?.getAttribute("title")).toBe(row.getAttribute("title"));
+  const idle = slot.getByRole("button", { name: "Open BBP-51's Implement thread" });
+  expect(idle.className).toContain("text-muted-foreground");
+  expect(idle.className).not.toContain("text-destructive");
 });
 
 test("a crew read that failed leaves the tasks listed, labelled", async () => {

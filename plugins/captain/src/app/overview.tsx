@@ -646,7 +646,11 @@ const CREW_LABEL: Record<NonNullable<CaptainTaskItem["crew"]>["state"], string> 
   idle: "idle",
 };
 
-/** One task; it opens in Tasks. Its crew thread, when it has one, opens from the trailing link. */
+/**
+ * One task on one line; it opens in Tasks, and its title (the tooltip) gives
+ * the status and the crew's state. Its crew thread, when it has one, opens
+ * from the trailing button, tinted destructive when the crew errored.
+ */
 function TaskRow({ task }: { task: CaptainTaskItem }) {
   const navigate = useBbNavigate();
   const status = task.ready ? "Ready to ship" : (STATUS_LABEL[task.status] ?? task.status);
@@ -654,32 +658,22 @@ function TaskRow({ task }: { task: CaptainTaskItem }) {
   const role = crew?.role ?? "Crew";
   const crewText = crew === null ? null : `${role} ${CREW_LABEL[crew.state]}`;
   const sub = crewText === null ? status : `${status} · ${crewText}`;
+  // On the row too, so hovering the crew button (Button takes no title) shows it.
+  const tooltip = `${task.key} ${task.title}\n${sub}`;
   return (
-    <li className="flex min-w-0 items-start">
+    <li className="flex min-w-0 items-center" title={tooltip}>
       <a
         href={`/plugins/scott-tasks/tasks/task/${encodeURIComponent(task.key)}`}
+        title={tooltip}
         className={cn(
           TAP,
-          "flex min-w-0 flex-1 items-start gap-2 rounded-lg px-2 py-2 text-start no-underline outline-none hover:bg-muted/40 focus-visible:outline-1",
+          "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-start no-underline outline-none hover:bg-muted/40 focus-visible:outline-1",
         )}
       >
         <TaskStatusGlyph status={task.status} ready={task.ready} />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate leading-5 text-foreground" title={`${task.key} ${task.title}`}>
-            <span className="text-muted-foreground tabular-nums">{task.key}</span>{" "}
-            <span className="[unicode-bidi:plaintext]">{task.title}</span>
-          </span>
-          <span className="truncate text-xs leading-4 text-muted-foreground" title={sub}>
-            {status}
-            {crewText === null ? null : (
-              <>
-                {" · "}
-                <span className={crew?.state === "errored" ? "text-destructive" : undefined}>
-                  {crewText}
-                </span>
-              </>
-            )}
-          </span>
+        <span className="min-w-0 flex-1 truncate leading-5 text-foreground">
+          <span className="text-muted-foreground tabular-nums">{task.key}</span>{" "}
+          <span className="[unicode-bidi:plaintext]">{task.title}</span>
         </span>
       </a>
       {crew === null ? null : (
@@ -687,8 +681,12 @@ function TaskRow({ task }: { task: CaptainTaskItem }) {
           type="button"
           size="icon"
           variant="ghost"
-          aria-label={`Open ${task.key}'s ${role} thread`}
-          className={cn(TAP, "me-1 size-8 shrink-0 self-center text-muted-foreground")}
+          aria-label={`Open ${task.key}'s ${role} thread${crew.state === "errored" ? ", errored" : ""}`}
+          className={cn(
+            TAP,
+            "me-1 size-8 shrink-0",
+            crew.state === "errored" ? "text-destructive" : "text-muted-foreground",
+          )}
           onClick={() => navigate.toThread(crew.threadId)}
         >
           <Icon name="MessageSquare" aria-hidden className="size-4" />
@@ -704,10 +702,10 @@ function TaskRow({ task }: { task: CaptainTaskItem }) {
  * shows the merge mark the ship ask uses.
  */
 function TaskStatusGlyph({ status, ready }: { status: string; ready: boolean }) {
-  const box = "mt-0.5 flex size-4 shrink-0 items-center justify-center";
+  const box = "flex size-4 shrink-0 items-center justify-center";
   if (ready) {
     return (
-      <span className={box} title="Ready to ship">
+      <span className={box}>
         <Icon name="GitMerge" aria-hidden className="size-4 text-success" />
       </span>
     );
@@ -730,7 +728,7 @@ function TaskStatusGlyph({ status, ready }: { status: string; ready: boolean }) 
         ? "text-timeline-accent"
         : "text-muted-foreground";
   return (
-    <span className={box} title={STATUS_LABEL[status] ?? status}>
+    <span className={box}>
       <svg viewBox="0 0 16 16" aria-hidden className={cn("size-4", tone)}>
         {ring(status === "backlog")}
         {status === "in_progress" ? (
