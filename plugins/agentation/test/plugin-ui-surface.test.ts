@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { pluginUiSurfaceFor } from "../lib/plugin-ui-surface.ts";
-import { PUBLIC_SURFACE_BY_SLOT_KIND } from "../lib/plugin-ui-surface-map.ts";
+import {
+  pluginUiSurfacePromptContext,
+  PUBLIC_SURFACE_BY_SLOT_KIND,
+} from "../lib/plugin-ui-surface-map.ts";
 
 type Fiber = {
   memoizedProps?: unknown;
@@ -65,7 +68,7 @@ function withFiber(element: FakeElement, fiber: Fiber): FakeElement {
   return element;
 }
 
-// Every component boundary bb 0.47 (Plugin SDK 0.6.75) mounts around plugin DOM.
+// Component boundaries through bb 0.50, including legacy mounts.
 const expectedBoundarySurfaces = {
   appOverlay: "experimental_appOverlay",
   browserToolbarAction: "experimental_browserToolbarAction",
@@ -83,22 +86,30 @@ const expectedBoundarySurfaces = {
   homepageSection: "homepageSection",
   machineProviderInputs: "experimental_machineProviderInputs",
   messageDirective: "messageDirective",
+  messageMetadata: "experimental_messageMetadata",
   navPanel: "navPanel",
   navPanelSidebar: "navPanel.experimental_sidebar",
   newThreadPanelAction: "experimental_newThreadPanelAction.component",
   pendingInteraction: "pendingInteraction",
   settingsSection: "settingsSection",
+  setupGuideSection: "internal_DO_NOT_USE_setupGuideSection",
   sidebarHeader: "experimental_sidebarNavigation.headerComponent",
   sidebarNavigation: "experimental_sidebarNavigation",
   sourceCodeRenderer: "experimental_sourceCodeRenderer",
   tab: "experimental_tab",
+  threadContextCardRow: "experimental_threadContextCardRow",
+  threadContextCardSection: "experimental_threadContextCardSection",
   "threadContextSegment/action": "experimental_threadContextSegment.action",
   "threadContextSegment/details": "experimental_threadContextSegment.details",
   "threadContextSegment/summary": "experimental_threadContextSegment.summary",
   threadHeaderAction: "experimental_threadHeaderAction",
+  threadHeaderRow: "experimental_threadHeaderRow",
+  threadHeaderTitle: "experimental_threadHeaderTitle",
   threadInfoRow: "experimental_threadInfoRow",
   threadInfoSection: "experimental_threadInfoSection",
   threadList: "experimental_threadList",
+  threadPanelAction: "threadPanelAction",
+  threadRowMetadata: "experimental_threadRowMetadata",
   timelineRenderer: "experimental_timelineRenderer",
 };
 
@@ -106,6 +117,7 @@ test("every bb plugin component boundary maps to its public SDK surface", () => 
   assert.deepEqual(PUBLIC_SURFACE_BY_SLOT_KIND, expectedBoundarySurfaces);
 
   for (const [slotKind, surface] of Object.entries(expectedBoundarySurfaces)) {
+    assert.notEqual(pluginUiSurfacePromptContext(surface).registration, surface);
     const target = withFiber(new FakeElement(), {
       return: {
         memoizedProps: { pluginId: "example-plugin", slotId: "example", slotKind },

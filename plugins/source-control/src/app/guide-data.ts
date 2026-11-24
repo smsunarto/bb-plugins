@@ -14,7 +14,14 @@ import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcMutation as useRpcMutation,
 } from "@get-bb/plugin-sdk/app";
-import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import type { GuideView, Viewed } from "../core/guide.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
@@ -94,11 +101,8 @@ export function useGuide(key: ChangeKey | null, enabled = true): GuideRead {
       if (shown.has(id) === mark.viewed) clearPending(key, mark, mark.viewed);
   }, [key, read, pending]);
   const view = useMemo(() => withPending(read, pending), [read, pending]);
-  const refetch = useRef(query.refetch);
-  useLayoutEffect(() => {
-    refetch.current = query.refetch;
-  });
-  const retry = useMemo(() => () => void refetch.current(), []);
+  const { refetch } = query;
+  const retry = useCallback(() => void refetch(), [refetch]);
   return {
     view,
     error: view === undefined && query.error ? query.error.message : null,
