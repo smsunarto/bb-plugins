@@ -212,6 +212,7 @@
   --control-background: {{layer.subtle}};
   --control-primary: {{layer.selected}};
   --control-primary-hover: {{layer.active}};
+  --control-primary-foreground: var(--foreground);
 
   --surface-recessed: {{layer.subtle}};
   --surface-recessed-solid: {{solid.recessed}};
@@ -1529,6 +1530,8 @@
   }
 }
 
+.dark button.border-input:not([role="checkbox"])[data-state="on"],
+.dark button[data-bb-control="outline"][data-state="on"],
 .dark button.border-input:not([role="checkbox"]):active:not(:disabled),
 .dark button.border.bg-card:active:not(:disabled),
 .dark button.border-input:not([role="checkbox"])[data-state="open"],

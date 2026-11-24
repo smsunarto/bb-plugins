@@ -43,18 +43,13 @@ function createMediaQueryRef(query: string): MediaQueryRef | null {
   return ref;
 }
 
-export function subscribeMediaQuery(
-  query: string,
-  notify: () => void,
-): () => void {
+export function subscribeMediaQuery(query: string, notify: () => void): () => void {
   return createMediaQueryRef(query)?.subscribe(notify) ?? (() => {});
 }
 
 export function getMediaQuerySnapshot(query: string): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return false;
-  return (
-    mediaQueryCache.get(query)?.mql.matches ?? window.matchMedia(query).matches
-  );
+  return mediaQueryCache.get(query)?.mql.matches ?? window.matchMedia(query).matches;
 }
 
 export function useMediaQuery(query: string): boolean {

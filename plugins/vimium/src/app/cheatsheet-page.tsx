@@ -82,14 +82,14 @@ function Section({
   resolve: (entry: CheatsheetEntry) => ResolvedEntry;
 }): ReactElement {
   return (
-    <Card className="mb-4 break-inside-avoid last:mb-0">
-      <CardHeader className="gap-1 p-4 pb-0">
+    <Card className="mb-4 break-inside-avoid gap-3 [--card-spacing:1rem] last:mb-0">
+      <CardHeader className="gap-1">
         <CardTitle className="text-sm">
           <h2>{section.title}</h2>
         </CardTitle>
         {section.note && <CardDescription className="text-xs">{section.note}</CardDescription>}
       </CardHeader>
-      <CardContent className="px-4 pt-3 pb-4">
+      <CardContent>
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2">
           {section.entries.map((entry) => (
             <Fragment key={entry.action}>

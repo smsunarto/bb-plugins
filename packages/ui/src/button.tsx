@@ -18,9 +18,13 @@ const buttonVariants = cva(styles["button"] + " " + styles["motion"], {
     },
     size: {
       default: styles["size-default"],
+      xs: styles["size-xs"],
       sm: styles["size-sm"],
       lg: styles["size-lg"],
       icon: styles["size-icon"],
+      "icon-xs": styles["size-icon-xs"],
+      "icon-sm": styles["size-icon-sm"],
+      "icon-lg": styles["size-icon-lg"],
     },
   },
   defaultVariants: { variant: "default", size: "default" },

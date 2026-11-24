@@ -59,11 +59,11 @@ export const NEW_TAB_LAUNCHER_CSS = `
   border-radius: inherit;
 }
 /* A 24px button inside the row's 6px padding: the Button's 36px; 44px on a
- * phone. The button's own inline padding brings the row's to the Button's 1rem. */
+ * phone. The button's own inline padding brings the row's to the Button's 0.625rem. */
 [data-testid="new-tab-actions"] button[data-panel-new-tab-item] {
   min-height: 1.5rem;
   gap: 0.5rem;
-  padding-inline: 0.5rem;
+  padding-inline: 0.25rem;
 }
 @media (width < 48rem) and (pointer: coarse) {
   [data-testid="new-tab-actions"] button[data-panel-new-tab-item] {

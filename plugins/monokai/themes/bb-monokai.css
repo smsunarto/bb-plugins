@@ -214,6 +214,7 @@
   --control-background: #ebebec0a;
   --control-primary: #ebebec24;
   --control-primary-hover: #ebebec33;
+  --control-primary-foreground: var(--foreground);
 
   --surface-recessed: #ebebec0a;
   --surface-recessed-solid: #1b1b1c;
@@ -1531,6 +1532,8 @@
   }
 }
 
+.dark button.border-input:not([role="checkbox"])[data-state="on"],
+.dark button[data-bb-control="outline"][data-state="on"],
 .dark button.border-input:not([role="checkbox"]):active:not(:disabled),
 .dark button.border.bg-card:active:not(:disabled),
 .dark button.border-input:not([role="checkbox"])[data-state="open"],

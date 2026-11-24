@@ -2,7 +2,9 @@
  * bb's search fields drawn as the shadcn Input from @bb-plugins/ui
  * (packages/ui/src/controls.css): 36px, a hairline --input edge, --radius-md
  * corners, the theme's --control-background fill (shadcn's dark bg-input/30),
- * --text-sm, and a 1px --ring on keyboard focus.
+ * --text-sm, 10px inline padding, and Vega's keyboard focus: a 3px band of --ring
+ * at half strength inside the --input edge, drawn inset like every Monokai focus
+ * ring so an overflow-hidden ancestor cannot clip it.
  * Phones get 44px, the repo's touch minimum, and 16px text so iOS does not
  * zoom. Applies under every palette, from the `bb-dom-styles` content script.
  *
@@ -50,14 +52,14 @@ ${list([
   `${PALETTE_FIELD}:focus-within`,
 ])} {
   outline: none;
-  box-shadow: 0 0 0 1px var(--ring);
+  box-shadow: inset 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
 }
 ${CMDK_FIELD} {
   margin: 0.5rem 0.5rem 0.25rem;
-  padding-inline: 0.75rem;
+  padding-inline: 0.625rem;
 }
 ${list([LABEL_FIELD, PALETTE_FIELD])} {
-  padding-inline: 0.75rem;
+  padding-inline: 0.625rem;
 }
 [data-palette-input-band] {
   border-bottom-color: transparent;
