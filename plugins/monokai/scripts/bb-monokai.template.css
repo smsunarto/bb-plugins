@@ -637,41 +637,6 @@
     transition: none;
   }
 
-  /* workaround:monokai/context-card-late-layout begin */
-  /* bb floats the thread context card only while its scroll overlay is at
-   * least 1072px wide (12px padding each side, so 1048px of content), and
-   * reads that width through a ResizeObserver, a frame late. When the right
-   * panel snaps open, the stale card would flash at the narrowed chat's edge
-   * before bb swaps it for the banner, so hide it on the same frame. */
-  @container scroll-overlay (width < 1048px) {
-    .dark [data-scroll-overlay] [data-thread-context-card] {
-      visibility: hidden;
-    }
-  }
-
-  /* The same late layout leaves the chat column's 312px shift wrong for a
-   * frame: bb shifts the column only while the card is open and its pane is
-   * 1072px to 1383px wide. Outside that band, cancel a stale inline shift;
-   * inside it, app/context-card-state.ts marks whether the card is open, or
-   * was open before a narrow chat collapsed it, for the frame a widening
-   * chat spends in the band before bb remounts the card. */
-  @container thread-pane (width < 1072px) or (width >= 1384px) {
-    .dark [data-thread-window] .thread-scrollbar > div[style*="padding-inline-end"] {
-      padding-inline-end: 0 !important;
-    }
-  }
-
-  @container thread-pane (1072px <= width < 1384px) {
-    .dark [data-thread-window][data-monokai-context-card="shown"] .thread-scrollbar > div,
-    .dark [data-thread-window][data-monokai-context-card="was-shown"] .thread-scrollbar > div {
-      padding-inline-end: 312px !important;
-    }
-
-    .dark [data-thread-window][data-monokai-context-card="hidden"] .thread-scrollbar > div {
-      padding-inline-end: 0 !important;
-    }
-  }
-  /* workaround:monokai/context-card-late-layout end */
 }
 
 /* Reduced motion keeps only the left sidebar's content fade, at 110ms, as

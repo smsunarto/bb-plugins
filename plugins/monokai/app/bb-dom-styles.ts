@@ -2,7 +2,6 @@ import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 
 import { NEW_TAB_LAUNCHER_CSS } from "./new-tab-launcher.ts";
 import { SEARCH_FIELDS_CSS } from "./search-fields.ts";
-import { THREAD_MARKER_CSS } from "./thread-marker.ts";
 
 /** Marks the one `<style>` this script appends, so a pass can find it. */
 const STYLE_ATTRIBUTE = "data-monokai-bb-dom-styles";
@@ -20,7 +19,7 @@ export function mountBbDomStyles({
   if (signal.aborted) return () => {};
   const style = doc.createElement("style");
   style.setAttribute(STYLE_ATTRIBUTE, "");
-  style.textContent = [SEARCH_FIELDS_CSS, NEW_TAB_LAUNCHER_CSS, THREAD_MARKER_CSS].join("");
+  style.textContent = SEARCH_FIELDS_CSS + NEW_TAB_LAUNCHER_CSS;
   doc.head.append(style);
   return () => style.remove();
 }

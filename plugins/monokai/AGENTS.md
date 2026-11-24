@@ -34,16 +34,6 @@
 - A DOM fallback colors `.monaco-editor .view-line` spans with the `!important` classes in `app/monaco-syntax-tokens.css`. It mounts whenever the theme is active. If BB renames or moves the bundle, the adapter attaches nothing, reports nothing, and only the fallback colors editors.
 - `semanticHighlighting.enabled` lives in the configuration service that every standalone editor shares. Record the first value the theme replaces. Restore it on theme deselection, plugin reload, and disposal, even after every editor has closed.
 
-<!-- workaround:monokai/context-card-late-layout begin -->
-
-## Context card adapter
-
-- `app/context-card-state.ts` marks each `[data-thread-window]` with `data-monokai-context-card`: `shown` or `hidden` while the floating context card is mounted, `was-shown` while bb's banner layout has unmounted a card last seen shown, and no mark otherwise. The theme's `thread-pane` container queries read it to apply bb's 312px chat shift on the same frame as a width change, in both directions.
-- Private contracts: the `[data-thread-window]` pane (the `thread-pane` container), `[data-scroll-overlay]` (the `scroll-overlay` container), the card's `hidden` attribute, the hidden probe `span` ThreadContextCard keeps in the overlay in every layout, the single `.thread-scrollbar > div` that bb pads with an inline `padding-inline-end`, and bb's layout bands (card floats from 1072px, shift below 1384px). Recheck them after bb upgrades.
-- `test/context-card-state.test.ts` covers mount, late mount, re-render, the banner layout, unmount, and disposal. Verify a change with the open/close width sweep in a browser: nothing may move after the first frame at 1440–3440px.
-
-<!-- workaround:monokai/context-card-late-layout end -->
-
 ## Panel tab glide
 
 - `app/panel-tab-glide.ts` slides the right panel's active highlight after a tap, click, or swipe in bb's tab pager, under any palette. bb shows the pager instead of the toolbar whenever the window is 767px wide or narrower, mouse or touch, so do not treat it as phone-only. Keyboard switches, new tabs, closed tabs, and reduced motion stay instant.
@@ -57,10 +47,4 @@
 
 - `app/ui-font-bridge.ts` writes `--bb-monokai-ui-font` on `<html>`. Only the theme's `--font-sans` reads it, so the UI font setting does nothing under another palette.
 - `app/panel-new-tab.ts`, run from the thread marker, makes a toggle-open of a thread's right panel land on a new tab, as bb's New thread screen does. Its `panel-new-tab` content script records clicks on bb's `button[aria-label^="Show right panel"]` and presses of the shortcut in its `aria-keyshortcuts`; only an open right after one is redirected, so controls that open a specific tab keep it. The hook selects an open new tab through the SDK, or asks the content script to press bb's `button[data-panel-new-tab]` inside `[id^="thread-detail-secondary-panel"]` (desktop) or `[data-testid="secondary-panel-shelf"]` (under 768px). These selectors are private contracts. `test/panel-new-tab.test.ts` covers the transitions, the shortcut matcher, and the press.
-- The `bb-dom-styles` content script appends one `<style>` that restyles bb's DOM under every palette: `app/search-fields.ts` draws bb's search fields as the shadcn Input (t3-composer's model search opts out by its `data-t3-model-search` marker), `app/new-tab-launcher.ts` centres the new tab's Actions as hairline cards and hides its Actions header, reorder handles, and Recent list, and `app/thread-marker.ts` hides the marker's header group. Each module's header comment maps the private bb DOM it selects; recheck them in a browser after bb upgrades.
-
-<!-- workaround:monokai/secondary-swipe-width-property begin -->
-
-- `app/secondary-panel-resize.css` registers `@property --secondary-swipe-width` whenever the plugin is enabled, under any palette. It is a BB performance fix, not theme styling: each write to the inheriting property restyles the whole panel on open, close, and around a divider drag. Delete it once the minimum BB version registers the property itself.
-
-<!-- workaround:monokai/secondary-swipe-width-property end -->
+- The `bb-dom-styles` content script appends one `<style>` that restyles bb's DOM under every palette: `app/search-fields.ts` draws bb's search fields as the shadcn Input (t3-composer's model search opts out by its `data-t3-model-search` marker), `app/new-tab-launcher.ts` centres the new tab's Actions as hairline cards and hides its Actions header, reorder handles, and Recent list. Each module's header comment maps the private bb DOM it selects; recheck them in a browser after bb upgrades.
