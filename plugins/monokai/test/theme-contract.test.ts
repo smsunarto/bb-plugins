@@ -91,6 +91,33 @@ describe("bb Monokai surface palette", () => {
   });
 });
 
+test("centers the new-thread composer and keeps compact recents below it", () => {
+  const rules = styleRules(theme);
+  const home = '#root-compose-main-panel [data-testid="root-compose-compact-home"]';
+  const composer = '#root-compose-main-panel [data-testid="root-compose-compact-composer"]';
+  const recents = '#root-compose-main-panel [data-testid="root-compose-compact-scroll-viewport"]';
+  const desktop = "@media (min-width: 768px)";
+  const compact = "@media (max-width: 767px)";
+
+  const desktopHome = rules.find(
+    (rule) => rule.selector === home && rule.atRules.includes(desktop),
+  );
+  expect(desktopHome?.body).toContain("min-height: calc(100cqh - var(--bb-window-frame-top, 0px))");
+  expect(desktopHome?.body).toContain("padding-block: 3.5rem");
+  expect(
+    rules.find((rule) => rule.selector === composer && rule.atRules.includes(desktop))?.body,
+  ).toContain("margin-block: auto");
+  expect(
+    rules.find((rule) => rule.selector === home && rule.atRules.includes(compact))?.body,
+  ).toContain("grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr)");
+  expect(
+    rules.find((rule) => rule.selector === composer && rule.atRules.includes(compact))?.body,
+  ).toContain("grid-row: 2");
+  expect(
+    rules.find((rule) => rule.selector === recents && rule.atRules.includes(compact))?.body,
+  ).toContain("grid-row: 3");
+});
+
 describe("bb Monokai contract audit", () => {
   test("keeps code bodies dark and gives headers and separators the requested surface", () => {
     expect(theme).toContain("--diffs-header-font-family: var(--font-sans)");
@@ -360,7 +387,7 @@ describe("bb Monokai contract audit", () => {
     );
   });
 
-  test("insets the unframed desktop page and centers the new-thread composer, as Capy does", () => {
+  test("insets the unframed desktop page and draws the new-thread backdrop", () => {
     const inset = styleRules(theme).filter(({ selector }) =>
       selector.includes('[data-testid="app-layout-root"]:not([data-framed])'),
     );
@@ -377,7 +404,6 @@ describe("bb Monokai contract audit", () => {
     );
     // The New thread screen drops that overlay.
     expect(theme).toContain(".dark[data-monokai-home] [data-app-content-shell]::after,");
-    expect(theme).toContain("order: 1;\n  margin-top: auto;\n  margin-bottom: auto;");
     // The halftone starts below the macOS title bar, which bb tints translucent.
     expect(theme).toContain(
       "[data-app-content-shell]::after {\n  position: absolute;\n  inset: var(--bb-window-frame-top, 0px) 0 0;",

@@ -1589,25 +1589,53 @@
   }
 }
 
-/* Center the new-thread composer in the page, as Capy's home does, with the
- * column's bottom padding lifting it a tenth of the viewport above center.
- * Current home wraps it in root-compose-compact-composer; older layouts put
- * the prompt shell directly inside the column's child. Move that outer
- * wrapper so additional composer wrappers do not break the alignment.
- * Homepage sections stay above it. */
-#root-compose-main-panel .\@container\/page > .mx-auto.flex-col {
-  min-height: 100%;
-  padding-bottom: calc(0.5rem + 10dvh);
+/* The desktop page container sits inside a scroll viewport and has an auto
+ * height. Size the composer column against the panel and balance its padding. */
+@media (min-width: 768px) {
+  #root-compose-main-panel {
+    container-type: size;
+  }
+
+  #root-compose-main-panel [data-testid="root-compose-compact-home"] {
+    min-height: calc(100cqh - var(--bb-window-frame-top, 0px));
+    padding-block: 3.5rem;
+  }
+
+  #root-compose-main-panel [data-testid="root-compose-compact-composer"] {
+    order: 1;
+    margin-block: auto;
+  }
 }
 
-#root-compose-main-panel [data-testid="root-compose-compact-composer"],
-#root-compose-main-panel
-  .\@container\/page
-  > div
-  > [data-promptbox-shell] {
-  order: 1;
-  margin-top: auto;
-  margin-bottom: auto;
+/* BB pins the compact composer above an independently scrolling recents list.
+ * Give the composer its own row and let recents scroll in the space below.
+ * The parent already fits BB's keyboard-aware shell and safe areas. */
+@media (max-width: 767px) {
+  #root-compose-main-panel [data-testid="root-compose-compact-home"] {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+    padding-top: 3.5rem;
+  }
+
+  #root-compose-main-panel [data-testid="root-compose-compact-composer"] {
+    position: relative;
+    grid-row: 2;
+  }
+
+  #root-compose-main-panel [data-testid="root-compose-compact-scroll-viewport"] {
+    position: static;
+    grid-row: 3;
+  }
+
+  #root-compose-main-panel [data-testid="root-compose-compact-scroll-content"] {
+    justify-content: flex-start;
+  }
+
+  #root-compose-main-panel [data-testid="root-compose-compact-leading-spacer"],
+  #root-compose-main-panel [data-testid="root-compose-compact-bottom-spacer"],
+  #root-compose-main-panel [data-testid="root-compose-compact-fade"] {
+    display: none;
+  }
 }
 
 /* Capy's halftone backdrop, held still: a 6px lattice of 2px squares in
