@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "card",
+  "type": "registry:ui",
+  "description": "Card, re-exported from @bb-plugins/ui.",
+  "files": [
+    {
+      "path": "registry/components/ui/card.tsx",
+      "content": "export {\n  Card,\n  CardContent,\n  CardDescription,\n  CardFooter,\n  CardHeader,\n  CardTitle,\n} from \"@bb-plugins/ui/card\";\n",
+      "type": "registry:ui"
+    }
+  ]
+}

@@ -8,7 +8,8 @@
  * packages/ui/registry holds the canonical copy of each shadcn kit file that
  * plugins vendor under components/ui (Tailwind scans only the plugin's own
  * tree, so these cannot be imported from the package). A plugin copy must
- * match it byte for byte; `--sync <plugin>` copies it in.
+ * match it byte for byte; `--sync <plugin>` copies it in. The same files are
+ * published as the @bb-plugins shadcn registry (scripts/shadcn-registry.ts).
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";

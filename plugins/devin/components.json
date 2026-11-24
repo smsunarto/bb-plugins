@@ -16,6 +16,7 @@
     "hooks": "@/app/hooks"
   },
   "registries": {
-    "@bb": "https://raw.githubusercontent.com/get-bb/bb/desktop-v0.49.0/packages/plugin-registry/r/{name}.json"
+    "@bb": "https://raw.githubusercontent.com/get-bb/bb/desktop-v0.49.0/packages/plugin-registry/r/{name}.json",
+    "@bb-plugins": "https://raw.githubusercontent.com/smsunarto/bb-plugins/main/packages/ui/r/{name}.json"
   }
 }

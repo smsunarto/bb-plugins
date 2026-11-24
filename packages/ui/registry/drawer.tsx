@@ -1,5 +1,5 @@
-/* shadcn/ui-derived */
 import * as React from "react";
+/* shadcn/ui-derived: the shadcn CLI strips a leading comment, so this notice follows the first import. */
 import { Drawer as DrawerPrimitive } from "vaul";
 
 import { cn } from "../../lib/utils";

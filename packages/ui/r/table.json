@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "table",
+  "type": "registry:ui",
+  "description": "Table, re-exported from @bb-plugins/ui.",
+  "files": [
+    {
+      "path": "registry/components/ui/table.tsx",
+      "content": "export {\n  Table,\n  TableBody,\n  TableCaption,\n  TableCell,\n  TableFooter,\n  TableHead,\n  TableHeader,\n  TableRow,\n} from \"@bb-plugins/ui/table\";\n",
+      "type": "registry:ui"
+    }
+  ]
+}

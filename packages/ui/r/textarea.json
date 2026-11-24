@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "textarea",
+  "type": "registry:ui",
+  "description": "Textarea, re-exported from @bb-plugins/ui.",
+  "files": [
+    {
+      "path": "registry/components/ui/textarea.tsx",
+      "content": "export { Textarea } from \"@bb-plugins/ui/textarea\";\n",
+      "type": "registry:ui"
+    }
+  ]
+}

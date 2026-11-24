@@ -1,0 +1,83 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "bb-vega",
+  "type": "registry:base",
+  "title": "bb Vega",
+  "description": "The shadcn preset b5JNZnXf8 (Vega, neutral, small radius, Inter, Lucide, sky charts) that this kit is based on, for projects outside bb such as a preview app: `bunx shadcn@latest init @bb-plugins/bb-vega`.",
+  "config": {
+    "style": "radix-vega",
+    "iconLibrary": "lucide",
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "tailwind": {
+      "baseColor": "neutral"
+    }
+  },
+  "cssVars": {
+    "theme": {
+      "font-sans": "'Inter Variable', sans-serif",
+      "font-heading": "var(--font-sans)"
+    },
+    "light": {
+      "radius": "0.45rem",
+      "background": "oklch(1 0 0)",
+      "foreground": "oklch(0.145 0 0)",
+      "card": "oklch(1 0 0)",
+      "card-foreground": "oklch(0.145 0 0)",
+      "popover": "oklch(1 0 0)",
+      "popover-foreground": "oklch(0.145 0 0)",
+      "primary": "oklch(0.205 0 0)",
+      "primary-foreground": "oklch(0.985 0 0)",
+      "secondary": "oklch(0.97 0 0)",
+      "secondary-foreground": "oklch(0.205 0 0)",
+      "muted": "oklch(0.97 0 0)",
+      "muted-foreground": "oklch(0.556 0 0)",
+      "accent": "oklch(0.97 0 0)",
+      "accent-foreground": "oklch(0.205 0 0)",
+      "destructive": "oklch(0.577 0.245 27.325)",
+      "border": "oklch(0.922 0 0)",
+      "input": "oklch(0.922 0 0)",
+      "ring": "oklch(0.708 0 0)",
+      "chart-1": "oklch(0.828 0.111 230.318)",
+      "chart-2": "oklch(0.685 0.169 237.323)",
+      "chart-3": "oklch(0.588 0.158 241.966)",
+      "chart-4": "oklch(0.5 0.134 242.749)",
+      "chart-5": "oklch(0.443 0.11 240.79)"
+    },
+    "dark": {
+      "background": "oklch(0.145 0 0)",
+      "foreground": "oklch(0.985 0 0)",
+      "card": "oklch(0.205 0 0)",
+      "card-foreground": "oklch(0.985 0 0)",
+      "popover": "oklch(0.205 0 0)",
+      "popover-foreground": "oklch(0.985 0 0)",
+      "primary": "oklch(0.922 0 0)",
+      "primary-foreground": "oklch(0.205 0 0)",
+      "secondary": "oklch(0.269 0 0)",
+      "secondary-foreground": "oklch(0.985 0 0)",
+      "muted": "oklch(0.269 0 0)",
+      "muted-foreground": "oklch(0.708 0 0)",
+      "accent": "oklch(0.269 0 0)",
+      "accent-foreground": "oklch(0.985 0 0)",
+      "destructive": "oklch(0.704 0.191 22.216)",
+      "border": "oklch(1 0 0 / 10%)",
+      "input": "oklch(1 0 0 / 15%)",
+      "ring": "oklch(0.556 0 0)",
+      "chart-1": "oklch(0.828 0.111 230.318)",
+      "chart-2": "oklch(0.685 0.169 237.323)",
+      "chart-3": "oklch(0.588 0.158 241.966)",
+      "chart-4": "oklch(0.5 0.134 242.749)",
+      "chart-5": "oklch(0.443 0.11 240.79)"
+    }
+  },
+  "meta": {
+    "preset": "b5JNZnXf8",
+    "font": "inter",
+    "fontHeading": "inherit",
+    "chartColor": "sky",
+    "radius": "small",
+    "menuAccent": "subtle",
+    "menuColor": "default-translucent"
+  },
+  "docs": "Not for a bb plugin: the host theme (plugins/monokai) owns these tokens, a plugin's components.json has no CSS file for them, and the radix-vega style would make bare `shadcn add` names fetch official Vega components."
+}

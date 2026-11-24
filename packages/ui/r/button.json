@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "button",
+  "type": "registry:ui",
+  "description": "Button and CompactButton, re-exported from @bb-plugins/ui.",
+  "files": [
+    {
+      "path": "registry/components/ui/button.tsx",
+      "content": "export {\n  Button,\n  buttonVariants,\n  CompactButton,\n  type ButtonProps,\n  type CompactButtonProps,\n} from \"@bb-plugins/ui/button\";\n",
+      "type": "registry:ui"
+    }
+  ]
+}

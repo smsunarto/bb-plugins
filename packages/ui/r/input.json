@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "input",
+  "type": "registry:ui",
+  "description": "Input, re-exported from @bb-plugins/ui.",
+  "files": [
+    {
+      "path": "registry/components/ui/input.tsx",
+      "content": "export { Input } from \"@bb-plugins/ui/input\";\n",
+      "type": "registry:ui"
+    }
+  ]
+}

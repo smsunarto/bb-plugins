@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "utils",
+  "type": "registry:lib",
+  "description": "cn(), re-exported from @bb-plugins/ui so every plugin shares one copy.",
+  "files": [
+    {
+      "path": "registry/lib/utils.ts",
+      "content": "export { cn } from \"@bb-plugins/ui/utils\";\n",
+      "type": "registry:lib"
+    }
+  ]
+}

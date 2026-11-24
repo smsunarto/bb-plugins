@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "motion",
+  "type": "registry:ui",
+  "description": "Shared hover transitions, re-exported from @bb-plugins/ui.",
+  "files": [
+    {
+      "path": "registry/components/ui/motion.ts",
+      "content": "export { CONTROL_HOVER_TRANSITION, LIST_HOVER_TRANSITION } from \"@bb-plugins/ui/motion\";\n",
+      "type": "registry:ui"
+    }
+  ]
+}
