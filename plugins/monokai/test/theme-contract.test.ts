@@ -129,7 +129,7 @@ describe("bb Monokai contract audit", () => {
     );
     expect(theme).not.toContain("font-synthesis:");
     expect(theme).toContain(
-      ".dark [data-markdown-preview] :is(p, li),\n.dark .bb-markdown-prose :is(p, li) {\n  text-wrap: pretty;",
+      ".dark [data-markdown-preview] :is(p, li),\n.dark .bb-markdown-prose :is(p, li) {\n  text-wrap-style: pretty;",
     );
   });
 

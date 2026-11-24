@@ -2122,7 +2122,7 @@
  * and h6 labels open up so capitals do not crowd. */
 .dark [data-markdown-preview] :is(p, li),
 .dark .bb-markdown-prose :is(p, li) {
-  text-wrap: pretty;
+  text-wrap-style: pretty;
 }
 
 .dark [data-markdown-preview] :is(h1, h2, h3, h4, h5, h6),
@@ -3294,7 +3294,7 @@ diffs-container {
   border-bottom: var(--hairline-width) solid var(--border-hairline);
   padding: calc(var(--agent-md-rem) * 0.45) calc(var(--agent-md-rem) * 0.75);
   text-align: start;
-  text-wrap: pretty;
+  text-wrap-style: pretty;
   vertical-align: top;
 }
 
