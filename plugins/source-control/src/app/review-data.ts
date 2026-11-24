@@ -9,7 +9,14 @@ import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcMutation as useRpcMutation,
 } from "@get-bb/plugin-sdk/app";
-import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import type {
   BatchInput,
@@ -205,11 +212,8 @@ export function useChangeReview(key: ChangeKey | null, enabled = true): ReviewRe
   );
   const [interner] = useState(() => new ReviewInterner());
   const stable = useMemo(() => interner.stable(review), [interner, review]);
-  const refetch = useRef(query.refetch);
-  useLayoutEffect(() => {
-    refetch.current = query.refetch;
-  });
-  const retry = useMemo(() => () => void refetch.current(), []);
+  const { refetch } = query;
+  const retry = useCallback(() => void refetch(), [refetch]);
   return {
     review,
     stable,

@@ -3,7 +3,7 @@
 
 /**
  * Translate bb's internal component-boundary names to the public SDK API.
- * Covers every boundary bb 0.47 (Plugin SDK 0.6.75) mounts around plugin DOM;
+ * Covers component boundaries through bb 0.50, including legacy mounts;
  * boundaries that render nothing of their own (`composerCommand`,
  * `navPanelBadge`, `threadContextSegment/visibility`) cannot contain a
  * selected element and are left out.
@@ -25,22 +25,30 @@ export const PUBLIC_SURFACE_BY_SLOT_KIND = {
   homepageSection: "homepageSection",
   machineProviderInputs: "experimental_machineProviderInputs",
   messageDirective: "messageDirective",
+  messageMetadata: "experimental_messageMetadata",
   navPanel: "navPanel",
   navPanelSidebar: "navPanel.experimental_sidebar",
   newThreadPanelAction: "experimental_newThreadPanelAction.component",
   pendingInteraction: "pendingInteraction",
   settingsSection: "settingsSection",
+  setupGuideSection: "internal_DO_NOT_USE_setupGuideSection",
   sidebarHeader: "experimental_sidebarNavigation.headerComponent",
   sidebarNavigation: "experimental_sidebarNavigation",
   sourceCodeRenderer: "experimental_sourceCodeRenderer",
   tab: "experimental_tab",
+  threadContextCardRow: "experimental_threadContextCardRow",
+  threadContextCardSection: "experimental_threadContextCardSection",
   "threadContextSegment/action": "experimental_threadContextSegment.action",
   "threadContextSegment/details": "experimental_threadContextSegment.details",
   "threadContextSegment/summary": "experimental_threadContextSegment.summary",
   threadHeaderAction: "experimental_threadHeaderAction",
+  threadHeaderRow: "experimental_threadHeaderRow",
+  threadHeaderTitle: "experimental_threadHeaderTitle",
   threadInfoRow: "experimental_threadInfoRow",
   threadInfoSection: "experimental_threadInfoSection",
   threadList: "experimental_threadList",
+  threadPanelAction: "threadPanelAction",
+  threadRowMetadata: "experimental_threadRowMetadata",
   timelineRenderer: "experimental_timelineRenderer",
 } as const satisfies Readonly<Record<string, string>>;
 
@@ -52,10 +60,10 @@ export const PUBLIC_SURFACE_BY_SLOT_KIND = {
  */
 export const WRAPPER_SLOT_KINDS: ReadonlySet<string> = new Set(["navPanelPageTitle"]);
 
-export interface PluginUiSurfacePromptContext {
-  registration: string;
-  role: string;
-}
+export type PluginUiSurfacePromptContext = { registration: string } & (
+  | { role: string }
+  | { roleFile: string }
+);
 
 const PROMPT_CONTEXT_BY_SURFACE = {
   experimental_appOverlay: {
@@ -130,6 +138,10 @@ const PROMPT_CONTEXT_BY_SURFACE = {
     registration: "app.slots.messageDirective",
     role: "a plugin component rendering an assistant message directive",
   },
+  experimental_messageMetadata: {
+    registration: "app.slots.experimental_messageMetadata",
+    roleFile: "plugin-ui/message-metadata",
+  },
   navPanel: {
     registration: "app.slots.navPanel",
     role: "the plugin-owned route panel",
@@ -153,6 +165,10 @@ const PROMPT_CONTEXT_BY_SURFACE = {
   pendingInteraction: {
     registration: "app.slots.pendingInteraction",
     role: "a plugin component handling a pending thread interaction",
+  },
+  internal_DO_NOT_USE_setupGuideSection: {
+    registration: "app.slots.internal_DO_NOT_USE_setupGuideSection",
+    roleFile: "plugin-ui/setup-guide-section",
   },
   settingsSection: {
     registration: "app.slots.settingsSection",
@@ -186,6 +202,14 @@ const PROMPT_CONTEXT_BY_SURFACE = {
     registration: "app.slots.experimental_threadAction",
     role: "a host-rendered thread action in a thread menu or a sidebar row button, built by its item()",
   },
+  experimental_threadContextCardRow: {
+    registration: "app.slots.experimental_threadContextCardRow",
+    roleFile: "plugin-ui/thread-context-card-row",
+  },
+  experimental_threadContextCardSection: {
+    registration: "app.slots.experimental_threadContextCardSection",
+    roleFile: "plugin-ui/thread-context-card-section",
+  },
   "experimental_threadContextSegment.summary": {
     registration: "app.slots.experimental_threadContextSegment({ summary })",
     role: "the plugin component summarizing thread context beside the composer",
@@ -202,6 +226,14 @@ const PROMPT_CONTEXT_BY_SURFACE = {
     registration: "app.slots.experimental_threadHeaderAction",
     role: "a plugin component rendered in the active thread header",
   },
+  experimental_threadHeaderRow: {
+    registration: "app.slots.experimental_threadHeaderRow",
+    roleFile: "plugin-ui/thread-header-row",
+  },
+  experimental_threadHeaderTitle: {
+    registration: "app.slots.experimental_threadHeaderTitle",
+    roleFile: "plugin-ui/thread-header-title",
+  },
   experimental_threadInfoRow: {
     registration: "app.slots.experimental_threadInfoRow",
     role: "a plugin row in the thread Info tab's details block",
@@ -213,6 +245,14 @@ const PROMPT_CONTEXT_BY_SURFACE = {
   experimental_threadList: {
     registration: "app.slots.experimental_threadList",
     role: "the plugin component replacing bb's sidebar thread list",
+  },
+  threadPanelAction: {
+    registration: "app.slots.threadPanelAction",
+    roleFile: "plugin-ui/thread-panel-action",
+  },
+  experimental_threadRowMetadata: {
+    registration: "app.slots.experimental_threadRowMetadata",
+    roleFile: "plugin-ui/thread-row-metadata",
   },
   experimental_timelineRenderer: {
     registration: "app.slots.experimental_timelineRenderer",

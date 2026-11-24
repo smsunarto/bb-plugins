@@ -5,18 +5,13 @@ import { TodoBanner } from "./rpiv-todo/banner.tsx";
 import { ScriptEditorOverlay, WorkspaceRows } from "./thread-details/thread-details.tsx";
 import "./rpiv-todo/style.css";
 import "./timeline-motion/timeline-motion.css";
-import {
-  PROBE_GROUP_TITLE,
-  type LegacyThreadHeaderActionSlots,
-  ThreadActivityProbe,
-} from "./timeline-motion/thread-activity-probe.tsx";
+import { ThreadActivityProbe } from "./timeline-motion/thread-activity-probe.tsx";
 import { JUMP_TO_LATEST_COMMAND, jumpToLatestEvent } from "./timeline-motion/jump-to-latest.ts";
 
 export default definePluginApp((app) => {
   app.slots.experimental_appOverlay({ id: "completion-sound", component: CompletionSound });
-  (app.slots as unknown as LegacyThreadHeaderActionSlots).experimental_threadHeaderAction({
+  app.slots.experimental_threadHeaderRow({
     id: "thread-activity-probe",
-    title: PROBE_GROUP_TITLE,
     component: ThreadActivityProbe,
   });
   // Thread details live in bb's thread context card, beside bb's own rows.

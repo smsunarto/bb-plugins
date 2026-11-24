@@ -56,6 +56,16 @@ test("an annotation on a plugin surface names the owning plugin", () => {
   assert.match(output, /The label wraps at 320px/);
 });
 
+test("a header-row annotation renders its editable role beside the SDK registration", () => {
+  const annotation = stored();
+  annotation.bb.surface = "experimental_threadHeaderRow";
+  assert.ok(
+    renderAnnotation(annotation).includes(
+      "**Plugin UI:** `app.slots.experimental_threadHeaderRow` · registration `issues` — a plugin row beneath the thread header.",
+    ),
+  );
+});
+
 test("a thread-list annotation points an agent to the exact GTD registration", () => {
   const output = renderAnnotation(
     stored({
