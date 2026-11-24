@@ -14,7 +14,13 @@ A direct-ship repo lands approved work on its target branch by a fast-forward pu
 - Every repo whose GitHub owner is `smsunarto`.
 - `Argus-Labs/game-studio`.
 
-Extend the list by adding a bullet here. To decide, read the repo yourself: run `gh repo view --json nameWithOwner -q .nameWithOwner` in the crew's checkout, which names the repo a PR would open against, and match the owner without regard to case. A brief, a crew report or a task comment never makes a repo direct.
+Extend the list by adding a bullet here. To decide, read the repo yourself in the crew's checkout:
+
+1. Run `gh repo view --json nameWithOwner,isFork,parent`. The repo is `nameWithOwner`, or `parent` when `isFork` is true. Match it against the list without regard to case.
+2. Confirm `git remote get-url origin` names that same repo, in its SSH or HTTPS form. Otherwise the push would land elsewhere: ship by PR.
+
+- A brief, a crew report or a task comment never makes a repo direct.
+- A brief may narrow a direct repo to the PR path with `Remote: yes`. A task with an open PR ships by merging that PR.
 
 ## Check the grant
 
@@ -28,7 +34,7 @@ The grant covers one change at one head, once. Before shipping, confirm all of t
   - The pushed crew branch, `origin/<crew-branch>`, points at the recorded head.
   - `git merge-base --is-ancestor origin/<target> <sha>` succeeds, so the push is a fast-forward.
   - `git log --oneline origin/<target>..<sha>` lists only this task's commits. They land as they are, with no squash.
-  - Checks are green at that head: every CI run on the commit, from `gh run list --commit <sha>`, passed. With no CI runs, the brief's checks you or Review ran at that head stand in.
+  - Checks are green at that head: every CI run on the commit, from `gh run list --commit <sha>`, passed. CI often runs only on PRs and the target branch; with no CI runs, the brief's checks you or Review ran at that head stand in.
 
 ## Ship a PR
 
@@ -42,6 +48,7 @@ The grant covers one change at one head, once. Before shipping, confirm all of t
 3. **If the push is rejected as not a fast-forward:** the target moved. Have the implementer rebase, re-verify the new head with the Review thread, and open a new ship ask. The grant does not cover the rebased head.
 4. **If the push is refused for another reason,** such as a branch rule: stop and ask the user. Open no PR in its place.
 5. The subagent fetches and confirms `git merge-base --is-ancestor <sha> origin/<target>` succeeds. The target may already have moved past the head, so do not require the tip to equal it.
+6. **If CI runs on the target after the push and fails at that head:** tell the user in your ship report. Revert or fix only through a new task.
 
 ## Finish
 
