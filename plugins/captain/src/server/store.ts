@@ -182,6 +182,7 @@ export const MIGRATIONS: readonly string[] = [
   // `captain` (its Captain thread, or the plugin superseding a ship ask). Rows
   // answered before this column stay null and prove no answer's source.
   "ALTER TABLE asks ADD COLUMN answered_by TEXT CHECK (answered_by IN ('user', 'captain'))",
+  "ALTER TABLE routine_runs ADD COLUMN automation_run_id TEXT",
 ];
 
 /**
@@ -396,6 +397,7 @@ type RoutineRunRecord = {
   id: number;
   routine_id: string;
   trigger: RoutineRun["trigger"];
+  automation_run_id: string | null;
   status: RoutineRun["status"];
   reason: string | null;
   at: number;
@@ -516,6 +518,7 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     id: row.id,
     routineId: row.routine_id,
     trigger: row.trigger,
+    ...(row.automation_run_id === null ? {} : { automationRunId: row.automation_run_id }),
     status: row.status,
     reason: row.reason,
     at: row.at,
@@ -1185,14 +1188,22 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
       })();
     },
     /** Record one delivery, keeping the newest `ROUTINE_RUNS_KEPT` per routine. */
-    recordRoutineRun(run: Omit<RoutineRun, "id">): RoutineRun {
+    recordRoutineRun(run: Omit<RoutineRun, "id">, trackSchedule = true): RoutineRun {
       return db.transaction(() => {
         const { lastInsertRowid } = db
           .prepare(
-            "INSERT INTO routine_runs (routine_id, trigger, status, reason, at) VALUES (?, ?, ?, ?, ?)",
+            `INSERT INTO routine_runs (routine_id, trigger, status, reason, at, automation_run_id)
+             VALUES (?, ?, ?, ?, ?, ?)`,
           )
-          .run(run.routineId, run.trigger, run.status, run.reason, run.at);
-        if (run.trigger === "schedule") {
+          .run(
+            run.routineId,
+            run.trigger,
+            run.status,
+            run.reason,
+            run.at,
+            run.automationRunId ?? null,
+          );
+        if (run.trigger === "schedule" && trackSchedule) {
           const delivered = run.status === "sent" || run.status === "queued";
           db.prepare(
             `UPDATE routines SET fired_at = MAX(COALESCE(fired_at, 0), ?),

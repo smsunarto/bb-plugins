@@ -23,6 +23,7 @@ import { listChildren } from "./crew.ts";
 import { DEFAULT_LADDERS, roleLadder } from "./ladder.ts";
 import { ROLE_SPECS } from "./roles.ts";
 import { Refusal } from "./output.ts";
+import { StaleRoutine } from "./routines.ts";
 import { startCaptain } from "./commands/new.ts";
 import { captainIcons, setCaptainIcon } from "./icon.ts";
 import {
@@ -423,14 +424,31 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
     if (map === undefined) schedules.set(captainId, (map = new Map()));
     return map;
   };
-  /** Store a routine's live schedule; publish the list when it changed, as a reader may hold the old one. */
-  const remember = (view: RoutineView): boolean => {
+  const publish = (captainId: string) =>
+    deps.bb.rpc.experimental_invalidate([routinesTag(captainId)]);
+  const notifications = new Map<string, ReturnType<typeof setImmediate>>();
+  const publishSoon = (captainId: string) => {
+    if (notifications.has(captainId)) return;
+    notifications.set(
+      captainId,
+      setImmediate(() => {
+        notifications.delete(captainId);
+        publish(captainId);
+      }),
+    );
+  };
+  deps.bb.onDispose(() => {
+    for (const pending of notifications.values()) clearImmediate(pending);
+    notifications.clear();
+  });
+
+  /** Always install a fresh snapshot after a write, superseding earlier reads. */
+  const rememberWrite = (view: RoutineView) => {
     const map = known(view.captainId);
     const next = liveOf(view);
-    if (JSON.stringify(next) === JSON.stringify(map.get(view.id))) return false;
+    const changed = JSON.stringify(map.get(view.id)) !== JSON.stringify(next);
     map.set(view.id, next);
-    deps.bb.rpc.experimental_invalidate([routinesTag(view.captainId)]);
-    return true;
+    if (changed) publish(view.captainId);
   };
   const owned = (captainId: string, routineId: string): Routine => {
     live(captainId);
@@ -468,7 +486,17 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
         if (!routines.some((routine) => routine.id === id)) map.delete(id);
       }
       await Promise.all(
-        routines.map((routine) => deps.routines.view(routine).then(remember, () => false)),
+        routines.map(async (routine) => {
+          const previous = map.get(routine.id);
+          const view = await deps.routines.view(routine).catch(() => null);
+          if (view === null || map.get(routine.id) !== previous) return;
+          const latest = deps.store.routine(routine.id);
+          if (latest === null || latest.updatedAt !== routine.updatedAt) return;
+          const next = liveOf(view);
+          if (JSON.stringify(previous) === JSON.stringify(next)) return;
+          map.set(routine.id, next);
+          publishSoon(captainId);
+        }),
       );
     };
     void (async () => {
@@ -485,7 +513,8 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
     );
   };
   const refused = (error: unknown): SaveRoutineResult => {
-    if (error instanceof Refusal) return { ok: false, blockers: error.blockers, stale: false };
+    if (error instanceof Refusal)
+      return { ok: false, blockers: error.blockers, stale: error instanceof StaleRoutine };
     throw error;
   };
   return {
@@ -521,7 +550,7 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
       try {
         const result = await deps.routines.act(routine, action);
         if (result.view === null) schedules.get(captainId)?.delete(routineId);
-        else remember(result.view);
+        else rememberWrite(result.view);
         return { runId: result.runId, requestedAt };
       } catch (error) {
         if (error instanceof Refusal) throw new Error(error.message, { cause: error });
@@ -550,24 +579,12 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
             homeProjectId: captain.homeProjectId,
           };
           const created = await deps.routines.create(owner, draft);
-          remember(created);
+          rememberWrite(created);
           return { ok: true, routine: created };
         }
         const before = owned(captainId, routineId);
-        if (updatedAt !== undefined && updatedAt !== before.updatedAt) {
-          return {
-            ok: false,
-            stale: true,
-            blockers: [
-              {
-                reason: "this routine changed elsewhere since the form opened",
-                fix: "reload the form and make the edit again",
-              },
-            ],
-          };
-        }
-        const updated = await deps.routines.update(before, changes(before, draft));
-        remember(updated);
+        const updated = await deps.routines.update(before, changes(before, draft), updatedAt);
+        rememberWrite(updated);
         return { ok: true, routine: updated };
       } catch (error) {
         return refused(error);

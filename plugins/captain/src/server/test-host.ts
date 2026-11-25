@@ -285,6 +285,14 @@ afterAll(async () => {
   }
 });
 
+export function deferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 export async function captainHost(options: FakeOptions = {}) {
   const root = mkdtempSync(join(tmpdir(), "captain-test-"));
   // Registered before anything can throw; `dispose` is bound once the fake host exists.
@@ -671,6 +679,7 @@ export async function captainHost(options: FakeOptions = {}) {
 
   const host = createFakePluginHost({
     pluginId: "captain",
+    dataDir: root,
     agentSkillIds: manifestSkillIds(),
     sdk: {
       system: { config: async () => ({ primaryHostId: SERVER_HOST }) as never },

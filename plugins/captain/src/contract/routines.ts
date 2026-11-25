@@ -166,6 +166,7 @@ export const routineRunSchema = z
     id: z.number().int(),
     routineId: z.string(),
     trigger: z.enum(ROUTINE_RUN_TRIGGERS),
+    automationRunId: z.string().optional(),
     status: z.enum(ROUTINE_RUN_STATUSES),
     reason: z.string().nullable(),
     at: z.number(),

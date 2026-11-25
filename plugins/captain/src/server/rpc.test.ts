@@ -1,11 +1,18 @@
 import { describe, expect, test, vi } from "vitest";
 import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
-import { asksTag, CAPTAINS_TAG, captainContract, crewTag, sinceTag } from "../contract/rpc.ts";
+import {
+  asksTag,
+  CAPTAINS_TAG,
+  captainContract,
+  crewTag,
+  sinceTag,
+  type RoutineRow,
+} from "../contract/rpc.ts";
 import { routinesTag } from "../contract/routines.ts";
 import { ROUTINE_ENV } from "./automations-client.ts";
 import { ANSWER_MAX_ATTEMPTS } from "./asks.ts";
 import { NOTICE } from "./store.ts";
-import { captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
+import { deferred, captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
 
 type Items = { items: Record<string, unknown>[] };
 
@@ -372,13 +379,7 @@ describe("the Overview's routines", () => {
     const list = async () =>
       (
         (await rpc("routines", { captainId })) as {
-          routines: {
-            id: string;
-            name: string;
-            when: string;
-            automation: unknown;
-            scheduleLoading: boolean;
-          }[];
+          routines: RoutineRow[];
           serverTimezone: string;
         }
       ).routines;
@@ -387,7 +388,11 @@ describe("the Overview's routines", () => {
         captainId,
         routine,
         ...(routineId === undefined ? {} : { routineId }),
-      }) as Promise<{ ok: boolean; routine?: { id: string }; blockers?: { reason: string }[] }>;
+      }) as Promise<{
+        ok: boolean;
+        routine?: { id: string; updatedAt: number };
+        blockers?: { reason: string }[];
+      }>;
     return { host, captainId, rpc, list, save };
   }
 
@@ -471,7 +476,12 @@ describe("the Overview's routines", () => {
       ((await rpc("routineRuns", { captainId, routineId: "r1" })) as { runs: unknown[] }).runs;
     await vi.waitFor(async () => expect(await runs()).toHaveLength(1));
     expect(await runs()).toEqual([
-      expect.objectContaining({ routineId: "r1", trigger: "test", status: "sent" }),
+      expect.objectContaining({
+        routineId: "r1",
+        trigger: "test",
+        status: "sent",
+        automationRunId: test.runId,
+      }),
     ]);
     await rpc("routineAction", { captainId, routineId: "r1", action: "delete" });
     expect(await list()).toEqual([]);
@@ -503,6 +513,83 @@ describe("the Overview's routines", () => {
       name: SWEEP.name,
       schedule: { cron: "0 16 * * 5", timezone: "UTC" },
     });
+  });
+
+  test("overlapping cron saves at the same revision cannot both succeed", async () => {
+    const { host, captainId, rpc, save } = await routinesHost();
+    const created = await save(SWEEP);
+    if (!created.ok || created.routine === undefined) throw new Error("create refused");
+    const updatedAt = created.routine.updatedAt;
+    const firstUpdate = deferred();
+    host.automations.gate = {
+      until: firstUpdate.promise,
+      methods: new Set(["automations_update"]),
+    };
+    const edit = (cron: string) =>
+      rpc("saveRoutine", {
+        captainId,
+        routineId: "r1",
+        updatedAt,
+        routine: { ...SWEEP, schedule: { cron, timezone: "UTC" } },
+      });
+    const first = edit("0 16 * * 5");
+    await vi.waitFor(() => expect(host.automations.inFlight).toBe(1));
+    const second = edit("0 18 * * 5");
+    host.automations.gate = null;
+    firstUpdate.resolve();
+    await expect(first).resolves.toMatchObject({ ok: true });
+    await expect(second).resolves.toMatchObject({ ok: false, stale: true });
+    expect([...host.automations.rows.values()][0]?.trigger).toMatchObject({ cron: "0 16 * * 5" });
+  });
+
+  test("a delayed Active read cannot overwrite a newer pause", async () => {
+    const { host, captainId, list, rpc, save } = await routinesHost();
+    await save(SWEEP);
+    const old = deferred();
+    const followup = deferred();
+    let reads = 0;
+    const call = host.automations.call;
+    host.automations.call = async (method, input) => {
+      const read = method === "automations_get" ? ++reads : 0;
+      const result = await call(method, input);
+      if (read === 1) await old.promise;
+      if (read >= 3) await followup.promise;
+      return result;
+    };
+    await list();
+    await vi.waitFor(() => expect(reads).toBe(1));
+    try {
+      await rpc("routineAction", { captainId, routineId: "r1", action: "pause" });
+      expect((await list())[0]?.automation?.enabled).toBe(false);
+      old.resolve();
+      await vi.waitFor(() => expect(reads).toBeGreaterThanOrEqual(3));
+      expect((await list())[0]?.automation?.enabled).toBe(false);
+    } finally {
+      old.resolve();
+      followup.resolve();
+    }
+  });
+
+  test("a cold load of twenty schedules publishes one routines tag", async () => {
+    const { host, captainId, list } = await routinesHost();
+    const owner = host.server.store.captain(captainId)!;
+    for (let index = 0; index < 20; index += 1)
+      await host.server.routines.create(owner, { ...SWEEP, name: `Sweep ${index}` });
+    const held = deferred();
+    host.automations.gate = { until: held.promise };
+    const invalidations = host.harness.inspection.experimental_rpcInvalidations;
+    const before = invalidations.length;
+    expect((await list()).every((row) => row.scheduleLoading)).toBe(true);
+    host.automations.gate = null;
+    held.resolve();
+    await vi.waitFor(() => expect(invalidations.length).toBeGreaterThan(before));
+    expect(
+      invalidations
+        .slice(before)
+        .flat()
+        .filter((tag) => tag === routinesTag(captainId)),
+    ).toHaveLength(1);
+    expect((await list()).every((row) => !row.scheduleLoading)).toBe(true);
   });
 
   test("a routine of another Captain is refused", async () => {
@@ -559,7 +646,12 @@ describe("the Overview's routines", () => {
       if (method === "automations_get" && input["automationId"] === slow.automationId) await held;
       return call(method, input);
     };
+    const invalidations = host.harness.inspection.experimental_rpcInvalidations;
+    const before = invalidations.length;
     await list();
+    await vi.waitFor(() =>
+      expect(invalidations.slice(before).flat()).toContain(routinesTag(captainId)),
+    );
     await vi.waitFor(async () =>
       expect((await list()).map((row) => [row.name, row.scheduleLoading])).toEqual([
         [SWEEP.name, false],

@@ -1,9 +1,10 @@
+import { routinesTag } from "../contract/routines.ts";
 import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, test } from "vitest";
 import { ROUTINE_ENV, ROUTINE_SCRIPT } from "./automations-client.ts";
 import { Refusal } from "./output.ts";
 import type { RoutineOwner } from "./routines.ts";
-import { captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
+import { deferred, captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
 
 const SWEEP = {
   name: "Stalled crew sweep",
@@ -581,6 +582,91 @@ describe("deletes, names and maintenance limits", () => {
       ["queued", null],
       ["skipped", "previous delivery in flight"],
     ]);
+  });
+
+  test("a reload preserves an outstanding send and records it on the current plugin", async () => {
+    const host = await captainHost({ threadDeadlineMs: 20 });
+    const { captainId, owner, routines } = await ownerOf(host);
+    const created = await routines.create(owner, SWEEP);
+    const call = { automationId: created.automationId!, runId: null };
+    host.busy.add(captainId);
+    const gate = deferred();
+    host.threadHolds.send = gate.promise;
+    try {
+      await expect(routines.fire(created.id, call)).rejects.toThrow(/no answer yet/);
+      await host.reload();
+      await expect(host.server.routines.fire(created.id, call)).resolves.toMatchObject({
+        state: "skipped",
+        run: { reason: "previous delivery in flight" },
+      });
+    } finally {
+      gate.resolve();
+    }
+    await waitFor(() => host.server.store.routineRuns(created.id).length === 2);
+    expect(host.queued.get(captainId)).toHaveLength(1);
+  });
+
+  test.each(["delete", "reschedule"] as const)(
+    "settling a late send after %s cannot change the current routine's completion",
+    async (mutation) => {
+      const host = await captainHost({ threadDeadlineMs: 20 });
+      const { captainId, owner, routines } = await ownerOf(host);
+      const created = await routines.create(owner, SWEEP);
+      const gate = deferred();
+      host.threadHolds.send = gate.promise;
+      await expect(
+        routines.fire(created.id, { automationId: created.automationId!, runId: null }),
+      ).rejects.toThrow(/no answer yet/);
+      const originalTime = host.now();
+      const at = originalTime + 60_000;
+      if (mutation === "delete") await routines.act(created, "delete");
+      else {
+        const updated = await routines.update(created, { schedule: { at } });
+        await routines.act(updated, "pause");
+      }
+      host.setNow(at + 1_000);
+      gate.resolve();
+      await waitFor(() => routineSends(host, captainId).length === 1);
+      if (mutation === "delete") {
+        expect(host.server.store.routineRuns(created.id)).toEqual([]);
+      } else {
+        const current = host.server.store.routine(created.id)!;
+        expect((await routines.view(current)).done).toBe(false);
+        expect(current).toMatchObject({ firedAt: null, deliveredAt: null });
+        expect(host.server.store.routineRuns(created.id)[0]).toMatchObject({ at: originalTime });
+      }
+    },
+  );
+
+  test("a completed wake invalidates the routines tag once", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const invalidations = host.harness.inspection.experimental_rpcInvalidations;
+    const before = invalidations.length;
+    await routines.fire(created.id, { automationId: created.automationId!, runId: null });
+    expect(
+      invalidations
+        .slice(before)
+        .flat()
+        .filter((tag) => tag === routinesTag(captainId)),
+    ).toHaveLength(1);
+  });
+
+  test("a queued create cannot escape a native archive", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const open = gate(host, ["automations_create"]);
+    const first = routines.create(owner, SWEEP);
+    await waitFor(() => host.automations.inFlight === 1);
+    const second = routines.create(owner, { ...SWEEP, name: "Digest" });
+    host.updateThread(captainId, { archivedAt: 5_000 });
+    await host.harness.behavior.emitThreadEvent("thread.archived", {
+      thread: makeThreadResponse({ id: captainId, archivedAt: 5_000 }),
+    });
+    open();
+    await first;
+    await expect(second).rejects.toThrow(/no longer live/);
+    await waitFor(() => [...host.automations.rows.values()].every((row) => !row.enabled));
+    expect(host.automations.rows.size).toBe(1);
   });
 
   test("a Captain lookup that times out is recorded, so a spent one-shot shows missed", async () => {

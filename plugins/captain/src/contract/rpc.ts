@@ -515,7 +515,7 @@ export const captainContract = defineRpcContract({
     output: z
       .object({
         runId: z.string().nullable(),
-        /** When the server took it: a test's delivery is the first test run recorded from then. */
+        /** When the server accepted the action. */
         requestedAt: z.number(),
       })
       .strict(),
