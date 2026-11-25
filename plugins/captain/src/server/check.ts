@@ -261,10 +261,13 @@ function backfillRoles(
   for (const thread of threads) {
     // A row whose role was retired is kept as it is, not backfilled again.
     if (deps.store.hasCrewRow(thread.id)) continue;
-    const preset = rows
+    const attachment = rows
       .filter((row) => row.threadId === thread.id)
-      .sort((a, b) => b.attachedAt.localeCompare(a.attachedAt))[0]?.presetName;
-    const role = preset === undefined ? null : roleOfPreset(preset);
+      .sort((a, b) => b.attachedAt.localeCompare(a.attachedAt))[0];
+    if (attachment === undefined) continue;
+    // A landed attach may still be waiting for the adoption to record its contract.
+    if (deps.store.pendingAdoption(thread.id, captain.threadId) === attachment.task.key) continue;
+    const role = roleOfPreset(attachment.presetName);
     if (role === null) continue;
     deps.store.ensureCrewRole({
       threadId: thread.id,

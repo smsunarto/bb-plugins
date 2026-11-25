@@ -396,6 +396,76 @@ describe("a new task reuses only the task its own failed attempt left", () => {
 });
 
 describe("a half-finished adopt can be finished from the dialog", () => {
+  test.each(["dialog", "CLI"])(
+    "a landed attach can be retried through the %s after a check pass",
+    async (entry) => {
+      const { host, captainId, adopt, cli, options, rpc } = await adoptHost();
+      const disarm = failTasksMethod(host, "taskThreadsAttach");
+      expect((await adopt({ task: EXISTING })).ok).toBe(false);
+      disarm();
+      host.attach(host.tasks.tasks[0]!.id, "thr_side", "Implement");
+
+      expect((await host.server.check.pass()).skipped).toEqual([]);
+
+      if (entry === "dialog") {
+        expect(await rpc("crewOf", { keys: ["thr_side"] })).toEqual({ thr_side: null });
+        expect((await options()).captains[0]?.blockers).toEqual([]);
+        expect(await adopt({ task: EXISTING })).toMatchObject({ ok: true });
+      } else {
+        expect(
+          (await cli(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--thread", "thr_side"]))
+            .exitCode,
+        ).toBe(0);
+      }
+      expect(host.tasks.taskThreads).toHaveLength(1);
+      expect((await cli(["tell", "BBPLUGINS-1", "--message", "Continue."])).exitCode).toBe(0);
+      expect((await cli(["tell", "BBPLUGINS-1", "--message", "Send an update."])).exitCode).toBe(0);
+      expect(host.sent.filter((message) => message.threadId === "thr_side")).toEqual([
+        expect.objectContaining({
+          text: expect.stringMatching(/Final:[\s\S]*Continue\./u),
+          senderThreadId: captainId,
+        }),
+        expect.objectContaining({ text: "Send an update.", senderThreadId: captainId }),
+      ]);
+    },
+  );
+
+  test.each(["edited title", "old Captain role"])(
+    "a landed new-task attach can be retried with an %s",
+    async (scenario) => {
+      const { host, adopt, cli } = await adoptHost();
+      if (scenario === "old Captain role") {
+        const oldCaptainId = await newCaptain(host, ["--name", "Previous", "--repo", "bb-plugins"]);
+        const oldAdoption = await host.harness.behavior.runCli(
+          ["dispatch", "BBPLUGINS-1", "--role", "Implement", "--thread", "thr_side"],
+          { threadId: oldCaptainId },
+        );
+        expect(oldAdoption.exitCode).toBe(0);
+        host.updateThread("thr_side", { parentThreadId: null });
+        host.tasks.taskThreads.length = 0;
+      }
+      const disarm = failTasksMethod(host, "taskThreadsAttach");
+      expect((await adopt({ task: NEW })).ok).toBe(false);
+      disarm();
+      host.attach(
+        host.tasks.tasks.find((task) => task.key === "BBPLUGINS-3")!.id,
+        "thr_side",
+        "Implement",
+      );
+
+      const title = scenario === "edited title" ? "Another title" : NEW.title;
+      expect(await adopt({ task: { ...NEW, title } })).toMatchObject({
+        ok: true,
+        task: "BBPLUGINS-3",
+        created: false,
+      });
+      expect(creates(host)).toHaveLength(1);
+      expect(host.tasks.taskThreads).toHaveLength(1);
+      expect((await cli(["tell", "BBPLUGINS-3", "--message", "Continue."])).exitCode).toBe(0);
+      expect(host.sent.at(-1)?.text).toMatch(/Final:[\s\S]*Continue\./u);
+    },
+  );
+
   test("attach fails after the parent is set; Adopt again converges", async () => {
     const { host, captainId, adopt, options, status } = await adoptHost();
     const disarm = failTasksMethod(host, "taskThreadsAttach");

@@ -396,6 +396,12 @@ export type Store = ReturnType<typeof openStore>;
 export function openStore(bb: Pick<BbPluginApi, "storage">) {
   const db: Database = bb.storage.database();
   bb.storage.migrate(db, [...MIGRATIONS]);
+  // This independent table can be initialized in any order with the numbered migrations.
+  db.exec(`CREATE TABLE IF NOT EXISTS pending_adoptions (
+    thread_id TEXT PRIMARY KEY,
+    captain_id TEXT NOT NULL,
+    task_key TEXT NOT NULL
+  )`);
 
   const reposOf = db.prepare<[string], RepoRecord>(
     "SELECT * FROM captain_repos WHERE captain_id = ? ORDER BY rowid",
@@ -562,6 +568,29 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     /** Whether the thread has a crew row, even one whose role no longer parses (a retired role). */
     hasCrewRow(threadId: string): boolean {
       return selectCrewRole.get(threadId) !== undefined;
+    },
+    /** The task an interrupted adoption was attaching under this Captain. */
+    pendingAdoption(threadId: string, captainId: string): string | null {
+      const row = db
+        .prepare<[string, string], { task_key: string }>(
+          "SELECT task_key FROM pending_adoptions WHERE thread_id = ? AND captain_id = ?",
+        )
+        .get(threadId, captainId);
+      return row?.task_key ?? null;
+    },
+    beginAdoption(threadId: string, captainId: string, taskKey: string): void {
+      db.prepare(
+        `INSERT INTO pending_adoptions (thread_id, captain_id, task_key) VALUES (?, ?, ?)
+         ON CONFLICT (thread_id) DO UPDATE SET captain_id = excluded.captain_id,
+           task_key = excluded.task_key`,
+      ).run(threadId, captainId, taskKey);
+    },
+    finishAdoption(threadId: string, crew: CrewRoleInput | null, rulesSeen: number | null): void {
+      db.transaction(() => {
+        if (crew !== null) this.putCrewRole(crew);
+        if (rulesSeen !== null) this.markRulesSeen(threadId, rulesSeen);
+        db.prepare("DELETE FROM pending_adoptions WHERE thread_id = ?").run(threadId);
+      })();
     },
     /** Every crew row this Captain ever recorded, archived crew included. */
     crewRolesOf(captainId: string): CrewRole[] {

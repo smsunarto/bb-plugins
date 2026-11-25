@@ -119,14 +119,10 @@ export function dispatchCommand(deps: CommandDeps) {
         const captain = await callerCaptain(deps.bb, deps.registry, ctx, {
           captain: input.options.captain,
         });
-        if (flags.thread !== undefined) {
-          const adopted = await adoptThread(
-            deps,
-            captain,
-            input.positionals.task,
-            input.options.role,
-            flags.thread,
-            flags,
+        const threadId = flags.thread;
+        if (threadId !== undefined) {
+          const adopted = await deps.taskGuard(`adopt:${threadId}`, () =>
+            adoptThread(deps, captain, input.positionals.task, input.options.role, threadId, flags),
           );
           return render([adopted.item], json, adopted.notes);
         }
@@ -714,6 +710,7 @@ async function adopt(
     return { item, notes: [] };
   }
 
+  deps.store.beginAdoption(threadId, captain.threadId, unit.task.key);
   if (thread.parentThreadId !== captain.threadId || thread.parentNotifications !== "stuck") {
     await deps.bb.sdk.threads.update({
       threadId,
@@ -738,19 +735,22 @@ async function adopt(
     return { item, notes: [] };
   }
   const prior = deps.store.crewRole(threadId);
-  if (prior === null || prior.captainId !== captain.threadId || prior.role !== unit.role) {
-    deps.store.putCrewRole({
-      threadId,
-      captainId: captain.threadId,
-      role: unit.role,
-      reportDueSince: null,
-      contractSent: false,
-    });
-    // New to this Captain: only rules from now on top its messages, and CREW.md
-    // reaches it at its next session. A role change keeps rules already queued.
-    if (prior?.captainId !== captain.threadId)
-      deps.store.markRulesSeen(threadId, deps.store.latestRuleId(captain.threadId));
-  }
+  const newCaptain = prior?.captainId !== captain.threadId;
+  const newRole = newCaptain || prior?.role !== unit.role;
+  // New to this Captain: only rules from now on top its messages. A role change keeps unseen rules.
+  deps.store.finishAdoption(
+    threadId,
+    newRole
+      ? {
+          threadId,
+          captainId: captain.threadId,
+          role: unit.role,
+          reportDueSince: null,
+          contractSent: false,
+        }
+      : null,
+    newCaptain ? deps.store.latestRuleId(captain.threadId) : null,
+  );
   const notes: string[] = [];
   let contract = deps.store.crewRole(threadId)?.contractSent === true ? "sent" : "on first tell";
   if (contract !== "sent" && isActive(thread.status)) {

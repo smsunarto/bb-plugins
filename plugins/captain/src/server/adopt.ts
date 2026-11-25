@@ -55,12 +55,16 @@ export async function crewOf(
   }
   const attached = await liveTasks(deps, unrecorded);
   await Promise.all(
-    [...attached.keys()].map(async (id) => {
+    [...attached].map(async ([id, keys]) => {
       const parent = await deps.bb.sdk.threads
         .get({ threadId: id })
         .then((thread) => thread.parentThreadId ?? null)
         .catch(() => null);
-      crew[id] = deps.registry.get(parent)?.threadId ?? null;
+      const captain = deps.registry.get(parent);
+      if (captain === null) return;
+      const pending = deps.store.pendingAdoption(id, captain.threadId);
+      if (pending !== null && keys.size === 1 && keys.has(pending)) return;
+      crew[id] = captain.threadId;
     }),
   );
   return crew;
@@ -68,15 +72,14 @@ export async function crewOf(
 
 /**
  * Why the menu leaves a thread out: it is a Captain, or its parent Captain's
- * live crew on a task. A thread live only on `retryOnto`'s task with no role
- * record is an adopt whose attach landed but reported failure, so a retry
- * onto that task finishes it.
+ * live crew on a task. A pending adoption can reopen the dialog. A retry must
+ * target the only attached task, including legacy attempts with no marker.
  */
 async function menuBlocker(
   deps: CommandDeps,
   threadId: string,
   parentId: string | null,
-  retryOnto: () => Promise<string | null> = async () => null,
+  retryOnto?: () => Promise<string | null>,
 ): Promise<Blocker | null> {
   if (deps.registry.get(threadId) !== null) {
     return { reason: `${threadId} is a Captain`, fix: "pick a thread that is not a Captain" };
@@ -86,8 +89,11 @@ async function menuBlocker(
   if (deps.store.crewRole(threadId)?.captainId !== parent.threadId) {
     const live = (await liveTasks(deps, [threadId])).get(threadId);
     if (live === undefined) return null;
-    const target = await retryOnto();
-    if (target !== null && [...live].every((key) => key === target.toUpperCase())) return null;
+    const target =
+      retryOnto === undefined
+        ? deps.store.pendingAdoption(threadId, parent.threadId)
+        : await retryOnto();
+    if (target !== null && live.size === 1 && live.has(target.toUpperCase())) return null;
   }
   return {
     reason: `${threadId} is already crew of the ${parent.name} Captain`,
@@ -269,9 +275,16 @@ async function markedTask(
       RESUME_CANDIDATES,
       adoptMarker(threadId),
     );
-    // This thread's own row counts only once its role is recorded: an attach
-    // that landed but reported failure leaves a row and no record.
-    const unrecorded = deps.store.crewRole(threadId) === null;
+    const pending = deps.store.pendingAdoption(threadId, captain.threadId);
+    const attached = marked.find((task) => task.key === pending);
+    if (attached !== undefined) {
+      const threads = await deps.tasks.taskThreads(attached.id);
+      if (threads.some((row) => row.threadId === threadId && LIVE_STATUSES.has(row.liveStatus))) {
+        return { project, earlier: attached };
+      }
+    }
+    // A role from a previous Captain does not finish this Captain's adoption.
+    const unrecorded = deps.store.crewRole(threadId)?.captainId !== captain.threadId;
     for (const task of marked.filter((each) => each.title.trim() === title)) {
       const threads = await deps.tasks.taskThreads(task.id);
       const taken = threads.some(
