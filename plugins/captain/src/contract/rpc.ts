@@ -297,6 +297,15 @@ export const captainContract = defineRpcContract({
     output: z.object({ ids: z.array(threadId) }).strict(),
     tags: () => [CAPTAINS_TAG],
   },
+  /**
+   * The bb projects the live Captains live in. t3-composer reads it to keep them out of
+   * new-thread project choices; change its copy of this method when this one changes.
+   */
+  homeProjects: {
+    input: z.object({}).strict(),
+    output: z.object({ projectIds: z.array(z.string()) }).strict(),
+    tags: () => [CAPTAINS_TAG],
+  },
   /** The Captain's open asks and answers still sending, from `data.db` alone. */
   asks: {
     input: z.object({ captainId: threadId }).strict(),

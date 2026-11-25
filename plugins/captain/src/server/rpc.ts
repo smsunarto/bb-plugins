@@ -91,6 +91,9 @@ export function registerRpc(
       return ladderOf(role);
     },
     captains: () => ({ ids: deps.store.liveCaptains().map((captain) => captain.threadId) }),
+    homeProjects: () => ({
+      projectIds: [...new Set(deps.store.liveCaptains().map((captain) => captain.homeProjectId))],
+    }),
     asks: ({ captainId }) => ({ items: askItems(deps, captainId) }),
     crew: async ({ captainId }) => {
       live(captainId);

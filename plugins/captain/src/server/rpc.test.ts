@@ -64,6 +64,19 @@ describe("the banner's reads", () => {
     expect(await rpc("captains", {})).toEqual({ ids: [] });
   });
 
+  test("homeProjects lists the live Captains' project once, and archive empties it", async () => {
+    const { host, captainId, rpc } = await bannerHost();
+    const homeProjectId = host.threads.get(captainId)?.projectId;
+    expect(homeProjectId).toBeTruthy();
+    expect(await rpc("homeProjects", {})).toEqual({ projectIds: [homeProjectId] });
+    await newCaptain(host, ["--name", "Second", "--repo", "bb-plugins"]);
+    expect(await rpc("homeProjects", {})).toEqual({ projectIds: [homeProjectId] });
+    for (const id of await rpc("captains", {}).then((r) => (r as { ids: string[] }).ids)) {
+      await host.harness.behavior.runCli(["archive", "--captain", id]);
+    }
+    expect(await rpc("homeProjects", {})).toEqual({ projectIds: [] });
+  });
+
   test("asks reads the open asks from data.db, and a CLI ask refreshes it", async () => {
     const { asks, invalidations, captainId } = await bannerHost();
     expect(await asks()).toEqual([
