@@ -68,9 +68,9 @@ function useAnnotations(filter: FilterId) {
     [filter],
   );
 
-  const refresh = useCallback(async () => {
-    try {
-      const [annotationResult, sessionResult] = await Promise.all([
+  const refresh = useCallback(
+    () =>
+      Promise.all([
         sharedRequest(`listAnnotations:${statuses?.join(",") ?? "all"}`, () =>
           rpc.call("listAnnotations", {
             sessionId: null,
@@ -79,17 +79,19 @@ function useAnnotations(filter: FilterId) {
           }),
         ),
         sharedRequest("listSessions", () => rpc.call("listSessions", { status: null })),
-      ]);
-      setAnnotations(annotationResult.annotations);
-      setRoutings(annotationResult.routings);
-      setSessions(sessionResult.sessions);
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [rpc, statuses]);
+      ])
+        .then(([annotationResult, sessionResult]) => {
+          setAnnotations(annotationResult.annotations);
+          setRoutings(annotationResult.routings);
+          setSessions(sessionResult.sessions);
+          return setError(null);
+        })
+        .catch((cause: unknown) => {
+          setError(cause instanceof Error ? cause.message : String(cause));
+        })
+        .finally(() => setIsLoading(false)),
+    [rpc, statuses],
+  );
 
   useEffect(() => {
     void refresh();
@@ -464,14 +466,15 @@ export function AnnotationPanelHeader() {
   const rpc = useRpc<typeof rpcContract>();
   const [pending, setPending] = useState(0);
 
-  const load = useCallback(async () => {
-    try {
-      const result = await sharedRequest("getConfig", () => rpc.call("getConfig"));
-      setPending(result.counts.pending);
-    } catch {
-      // Keep the last count visible while the connection recovers.
-    }
-  }, [rpc]);
+  const load = useCallback(
+    () =>
+      sharedRequest("getConfig", () => rpc.call("getConfig"))
+        .then((result) => setPending(result.counts.pending))
+        .catch(() => {
+          // Keep the last count visible while the connection recovers.
+        }),
+    [rpc],
+  );
 
   useEffect(() => {
     void load();
