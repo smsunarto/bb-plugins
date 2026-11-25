@@ -3,7 +3,6 @@
 // lives apart from the backend's handlers and storage.
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import type { MachineVisibilityChange } from "./machine-visibility.ts";
 
 /**
  * Tags on the backend's cached reads. A write invalidates its tag in every
@@ -13,21 +12,9 @@ import type { MachineVisibilityChange } from "./machine-visibility.ts";
 export const GTD_TAGS = {
   lifecycle: "lifecycle",
   collapsed: "collapsed",
-  machines: "machines",
   naming: "naming",
 } as const;
 
-const machineId = z.string().min(1);
-export const machineVisibilityChangeSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("all") }),
-  z.object({
-    kind: z.literal("set"),
-    machineId,
-    visible: z.boolean(),
-    machineIds: z.array(machineId).min(1),
-  }),
-  z.object({ kind: z.literal("only"), machineId, machineIds: z.array(machineId).min(1) }),
-]) satisfies z.ZodType<MachineVisibilityChange>;
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
 const lifecycleRowsSchema = z.array(
   z.object({
@@ -44,20 +31,6 @@ const lifecycleWriteSchema = z.object({
 });
 
 export const gtdSidebarRpcContract = defineRpcContract({
-  // Saving the hidden machines rather than the shown ones lets a machine bb
-  // adds later show.
-  listMachineVisibility: {
-    experimental_description: "Machines hidden from the thread list, as host IDs.",
-    input: z.object({}),
-    output: z.object({ hiddenMachineIds: z.array(z.string()) }),
-    tags: () => [GTD_TAGS.machines],
-  },
-  changeMachineVisibility: {
-    experimental_description:
-      "Show or hide one machine's threads, show only one machine, or show every machine.",
-    input: machineVisibilityChangeSchema,
-    output: z.object({ hiddenMachineIds: z.array(z.string()) }),
-  },
   listNamingThreads: {
     experimental_description: "Threads whose title the plugin is currently generating.",
     input: z.object({}),

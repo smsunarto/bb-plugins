@@ -92,26 +92,11 @@ moment it settled; expand Snoozed to see that order.
 An empty section disappears. A pending interaction stays in **Next Action** even if
 background work is also live, because the user can act now.
 
-### Visible machines
-
-The globe menu chooses which machines appear in the thread list. Check several
-machines without closing the menu, use **Only** to see one, or **All machines**
-to reset. The last visible machine stays checked. Choices persist across reloads
-and update other open windows and devices connected to the same bb.
-New machines appear by default; threads without a known machine stay visible.
-The menu lists only persistent machines bb still knows; deleted machines and
-disposable sandboxes stay out, and their threads remain visible.
-When the filter leaves exactly one machine visible, new threads opened from a
-project header preselect that machine.
-
 ### Project groups
 
 Once threads from two or more projects are in view, every shelf splits into
-project groups: a header naming the project, then that project's threads. A
-machine filter keeps these headers visible even when the visible machines have threads
-in only one project, so the repository context is not lost. Use **Settings → Plugins → GTD Sidebar → Group threads by project**
-to hide or restore project groups. The choice persists across reloads. The project selector stays available with
-repository grouping on or off, and toggling groups preserves the selected project. The
+project groups: a header naming the project, then that project's threads. Use **Settings → Plugins → GTD Sidebar → Group threads by project**
+to hide or restore project groups. The choice persists across reloads. The
 header folds the group; a folded header shows `needs-you / total` while
 something inside asks for you, and the total alone otherwise. The header's
 **+** opens the project's new-thread screen. It appears on hover or keyboard
@@ -277,17 +262,17 @@ services. The explicit naming command below is a separate user-requested inferen
 | Core sidebar feature    | What it does                                                                                                                                                                               |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Action shelves          | Pinned, Next Action, Waiting, Snoozed, and the last 24 hours of Settled. Running work and pending interactions stay visible.                                                               |
-| Repository groups       | Group shelves by BB repository, keep repository context under machine filters, toggle groups from plugin settings, fold groups, create a thread from a group, and reorder groups.          |
+| Repository groups       | Group shelves by BB repository, toggle groups from plugin settings, fold groups, create a thread from a group, and reorder groups.                                                         |
 | Thread families         | Fold using BB's shared preference. Desktop drag or keyboard drag nests/un-nests threads using BB's parent relation.                                                                        |
 | Thread actions          | Pin, snooze until tomorrow at 09:00, settle/archive with native Undo, restore, delete, and insert a thread reference into the composer.                                                    |
-| Navigation              | Row click, search, the persistent machine visibility picker, Cmd/Ctrl-click split-open, and drag-to-split. Preserve BB/Vimium thread shortcut anchors.                                     |
+| Navigation              | Row click, search, Cmd/Ctrl-click split-open, and drag-to-split. Preserve BB/Vimium thread shortcut anchors.                                                                               |
 | Status and details      | Unread titles, activity indicators/counts, time, native branch and PR information, provider tooltips, machine globe/color and host identity. These make thread state and location visible. |
 | Row layout              | Every thread takes one line; project, branch and agent show in its hover details. On mobile, long-press opens the action sheet without requiring haptics.                                  |
 | Explicit naming command | `bb gtd-sidebar rename [<threadId>]` is an explicit request for Codex title inference even with automatic naming off.                                                                      |
 
 | Optional setting (key)                               | Default | Effect when enabled                                                                                                                                                                         |
 | ---------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Group threads by project (`groupThreadsByProject`)   | On      | Organize each shelf into project groups. Turning it off keeps project and machine filters available.                                                                                        |
+| Group threads by project (`groupThreadsByProject`)   | On      | Organize each shelf into project groups.                                                                                                                                                    |
 | Enable mobile haptics (`mobileHaptics`)              | Off     | Attach iOS tactile menu-tap switches. Turning off removes those switches, including from an open menu.                                                                                      |
 | Show GitButler branches (`gitButlerBranches`)        | Off     | Periodically read GitButler branches on primary checkouts through the host CLI. Off stops refreshes and server host reads, restoring BB's native labels.                                    |
 | Let agents name threads (`automaticallyNameThreads`) | Off     | Give each root thread's agent instructions to title it on the first request and rename it when the work changes direction, with your project naming rules inlined. Off leaves titles to bb. |

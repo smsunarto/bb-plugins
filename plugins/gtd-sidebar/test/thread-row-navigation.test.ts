@@ -15,8 +15,6 @@ import type {
 import type { RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PointerEvent } from "react";
 import type { LifecycleApi } from "../hooks/use-lifecycle.ts";
-import { changeHiddenMachines } from "../lib/machine-visibility.ts";
-import { machineVisibilityChangeSchema } from "../lib/rpc-contract.ts";
 import { machineColors } from "../lib/machine-colors.ts";
 
 if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
@@ -160,7 +158,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     splitEnabled: boolean;
     onSplitPointerDown: (threadId: string, event: PointerEvent<HTMLElement>) => void;
     /** Hold the shelves until the saved machine choice loads, as bb does. */
-    awaitMachineVisibility?: boolean;
     /** bb's plugin list; unset lists none, as a bb without Captain does. */
     plugins?: readonly { id: string; enabled: boolean; status: string }[];
   }
@@ -239,18 +236,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   mock.module("../hooks/use-lifecycle.ts", () => ({ useLifecycle: () => useHost().lifecycle }));
   mock.module("../hooks/use-naming-threads.ts", () => ({
     useNamingThreads: () => useHost().naming ?? new Set(),
-  }));
-  // The real hook, captured before the mock replaces the module. Like the
-  // mocked lifecycle's `shelvesReady`, rows paint at mount unless a test asks
-  // for the real load gate.
-  const { useMachineVisibility, useComposerHostId } =
-    await import("../hooks/use-machine-visibility.ts");
-  mock.module("../hooks/use-machine-visibility.ts", () => ({
-    useComposerHostId,
-    useMachineVisibility: (machines: Parameters<typeof useMachineVisibility>[0]) => {
-      const visibility = useMachineVisibility(machines);
-      return useHost().awaitMachineVisibility ? visibility : { ...visibility, ready: true };
-    },
   }));
   // Every row body calls this once per render, and nothing else does.
   const rowBodyRender = spyOn(
@@ -511,23 +496,11 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       groupThreadsByProject: true,
       ...options.settings,
     };
-    let hiddenMachineIds: string[] = [];
     const slot = renderSlot({ component: Inbox }, current, {
       threadActions: (target, { requestRename }) =>
         registryEntries(target, requestRename, current.host, current.inbox),
       ...options,
       settings,
-      rpc: {
-        listMachineVisibility: () => ({ hiddenMachineIds }),
-        changeMachineVisibility: (change: unknown) => {
-          hiddenMachineIds = changeHiddenMachines(
-            hiddenMachineIds,
-            machineVisibilityChangeSchema.parse(change),
-          );
-          return { hiddenMachineIds };
-        },
-        ...options.rpc,
-      },
     });
     // Layout/navigation fixtures explicitly open families. Default-fold tests
     // leave them closed, as a fresh sidebar does.
@@ -1934,322 +1907,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       },
     );
 
-    it("preselects the scoped machine, including one with no threads yet", async () => {
-      const currentActions = actions();
-      const host = hostState([
-        thread("a", { host: { id: "host-a", name: "Studio" } }),
-        thread("draft"),
-      ]);
-      host.sidebar = {
-        ...host.sidebar,
-        experimental_hosts: [
-          { id: "host-a", name: "Studio" },
-          { id: "host-b", name: "Empty" },
-        ],
-      };
-      host.actions = currentActions;
-      const view = mount(host);
-      await act(async () => {});
-      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
-        key: "ArrowDown",
-      });
-      assert.deepEqual(
-        screen.getAllByRole("menuitemcheckbox").map((option) => option.textContent),
-        ["Empty", "Studio"],
-      );
-      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
-      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
-      fireEvent.click(view.slot.getByRole("button", { name: "New thread in One" }));
-      assert.deepEqual(currentActions.openNewThread.mock.calls, [
-        [{ projectId: "one", hostId: "host-a", focusPrompt: true }],
-      ]);
-      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: Studio" }), {
-        key: "ArrowDown",
-      });
-      fireEvent.click(screen.getByRole("menuitem", { name: "Only Empty" }));
-      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
-      assert.deepEqual(rowIds(view.slot), ["draft"]);
-      fireEvent.click(view.slot.getByRole("button", { name: "New thread in One" }));
-      assert.deepEqual(currentActions.openNewThread.mock.calls[1], [
-        { projectId: "one", hostId: "host-b", focusPrompt: true },
-      ]);
-    });
-
-    it("keeps checkbox toggles open, guards the last machine, and resets all machines", async () => {
-      const currentActions = actions();
-      const host = hostState([
-        thread("studio", { host: { id: "a", name: "Studio" } }),
-        thread("server", { host: { id: "b", name: "Server" } }),
-        thread("laptop", { projectId: "two", host: { id: "c", name: "Laptop" } }),
-        thread("unknown"),
-      ]);
-      host.actions = currentActions;
-      const view = mount(host, { isCompactViewport: true });
-      await act(async () => {});
-      // A phone opens the picker as bb's bottom sheet, from a tap.
-      fireEvent.click(view.slot.getByRole("button", { name: "Visible machines: All machines" }));
-      fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Laptop" }));
-      assert.ok(screen.getByRole("dialog", { name: "Visible machines" }));
-      assert.deepEqual(new Set(rowIds(view.slot)), new Set(["studio", "server", "unknown"]));
-      assert.equal(
-        screen.getByRole("menuitemcheckbox", { name: "Laptop" }).getAttribute("aria-checked"),
-        "false",
-      );
-      assert.ok(
-        screen.getByRole("menuitemcheckbox", { name: "Server" }).classList.contains("min-h-10"),
-      );
-      // The menu is modal; the visible trigger is still named for the partial selection.
-      assert.equal(
-        view.slot.container.querySelector('[aria-label="Visible machines: 2 of 3"]')?.textContent,
-        "2/3",
-      );
-      fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Server" }));
-      const last = screen.getByRole("menuitemcheckbox", { name: "Studio" });
-      assert.equal(last.getAttribute("aria-disabled"), "true");
-      fireEvent.click(last);
-      assert.deepEqual(new Set(rowIds(view.slot)), new Set(["studio", "unknown"]));
-      fireEvent.click(screen.getByRole("menuitem", { name: "All machines" }));
-      await waitFor(() =>
-        assert.ok(screen.queryByRole("dialog", { name: "Visible machines" }) === null),
-      );
-      assert.deepEqual(
-        new Set(rowIds(view.slot)),
-        new Set(["studio", "server", "laptop", "unknown"]),
-      );
-      fireEvent.click(view.slot.getByRole("button", { name: "New thread in One" }));
-      assert.deepEqual(currentActions.openNewThread.mock.calls, [
-        [{ projectId: "one", focusPrompt: true }],
-      ]);
-      await act(async () => {});
-    });
-
-    it("persists visibility across remounts and refreshes a second window when the read is invalidated", async () => {
-      const host = hostState([
-        thread("studio", { host: { id: "a", name: "Studio" } }),
-        thread("server", { host: { id: "b", name: "Server" } }),
-        thread("unknown"),
-      ]);
-      let hiddenMachineIds: string[] = [];
-      const options = {
-        rpc: {
-          listMachineVisibility: () => ({ hiddenMachineIds }),
-          changeMachineVisibility: (change: unknown) => {
-            hiddenMachineIds = changeHiddenMachines(
-              hiddenMachineIds,
-              machineVisibilityChangeSchema.parse(change),
-            );
-            return { hiddenMachineIds };
-          },
-        },
-      };
-      const first = mount(host, {}, "", options);
-      const second = mount(host, {}, "", options);
-      await act(async () => {});
-      fireEvent.keyDown(
-        within(first.slot.container).getByRole("button", {
-          name: "Visible machines: All machines",
-        }),
-        { key: "ArrowDown" },
-      );
-      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
-      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
-      await act(async () => {});
-      assert.deepEqual(new Set(rowIds(first.slot)), new Set(["studio", "unknown"]));
-      assert.deepEqual(new Set(rowIds(second.slot)), new Set(["studio", "server", "unknown"]));
-      await second.slot.behavior.experimental_invalidateRpc(["machines"]);
-      await waitFor(() =>
-        assert.deepEqual(new Set(rowIds(second.slot)), new Set(["studio", "unknown"])),
-      );
-      first.slot.lifecycle.unmount();
-      second.slot.lifecycle.unmount();
-      const remounted = mount(host, {}, "", options);
-      await waitFor(() =>
-        assert.deepEqual(new Set(rowIds(remounted.slot)), new Set(["studio", "unknown"])),
-      );
-      assert.ok(remounted.slot.getByRole("button", { name: "Visible machines: Studio" }));
-    });
-
-    it("never paints a hidden machine's rows before the saved choice loads", async () => {
-      const host = hostState([
-        thread("studio", { host: { id: "a", name: "Studio" } }),
-        thread("server", { host: { id: "b", name: "Server" } }),
-      ]);
-      host.awaitMachineVisibility = true;
-      let resolve!: (value: { hiddenMachineIds: string[] }) => void;
-      const saved = new Promise<{ hiddenMachineIds: string[] }>((done) => {
-        resolve = done;
-      });
-      const view = mount(host, {}, "", {
-        rpc: { listMachineVisibility: () => saved },
-      });
-      await act(async () => {});
-      assert.ok(!rowIds(view.slot).includes("server"));
-      await act(async () => {
-        resolve({ hiddenMachineIds: ["b"] });
-      });
-      await waitFor(() => assert.deepEqual(rowIds(view.slot), ["studio"]));
-    });
-
-    it("draws a machine choice made before the saved one loads", async () => {
-      const host = hostState([
-        thread("studio", { host: { id: "a", name: "Studio" } }),
-        thread("server", { host: { id: "b", name: "Server" } }),
-      ]);
-      let answer!: (value: { hiddenMachineIds: string[] }) => void;
-      const view = mount(host, {}, "", {
-        rpc: {
-          listMachineVisibility: () => new Promise(() => {}),
-          changeMachineVisibility: () =>
-            new Promise((resolve) => {
-              answer = resolve;
-            }),
-        },
-      });
-      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
-        key: "ArrowDown",
-      });
-      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
-      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
-      await waitFor(() => assert.deepEqual(rowIds(view.slot), ["studio"]));
-      // Saved while the read is still out: the write's answer stands in for it.
-      await act(async () => answer({ hiddenMachineIds: ["b"] }));
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      });
-      assert.deepEqual(rowIds(view.slot), ["studio"]);
-    });
-
-    it("keeps a saved machine choice when the first read then fails", async () => {
-      const host = hostState([
-        thread("studio", { host: { id: "a", name: "Studio" } }),
-        thread("server", { host: { id: "b", name: "Server" } }),
-      ]);
-      let failRead!: (error: Error) => void;
-      const read = new Promise<never>((_resolve, reject) => {
-        failRead = reject;
-      });
-      const view = mount(host, {}, "", {
-        rpc: {
-          listMachineVisibility: () => read,
-          changeMachineVisibility: () => ({ hiddenMachineIds: ["b"] }),
-        },
-      });
-      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
-        key: "ArrowDown",
-      });
-      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
-      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
-      await waitFor(() => assert.deepEqual(rowIds(view.slot), ["studio"]));
-      await act(async () => failRead(new Error("offline")));
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      });
-      assert.deepEqual(rowIds(view.slot), ["studio"]);
-    });
-
-    // Separate requests can reach the backend out of order.
-    it("sends a machine choice once the one before it answers", async () => {
-      const host = hostState([
-        thread("studio", { host: { id: "a", name: "Studio" } }),
-        thread("server", { host: { id: "b", name: "Server" } }),
-      ]);
-      const sent: unknown[] = [];
-      const answers: ((value: { hiddenMachineIds: string[] }) => void)[] = [];
-      const view = mount(host, {}, "", {
-        rpc: {
-          listMachineVisibility: () => ({ hiddenMachineIds: [] }),
-          changeMachineVisibility: (change: unknown) => {
-            sent.push(change);
-            return new Promise((resolve) => {
-              answers.push(resolve);
-            });
-          },
-        },
-      });
-      await act(async () => {});
-      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
-        key: "ArrowDown",
-      });
-      fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Server" }));
-      fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Server" }));
-      await act(async () => {});
-      assert.deepEqual(new Set(rowIds(view.slot)), new Set(["studio", "server"]));
-      assert.equal(sent.length, 1);
-      await act(async () => answers[0]!({ hiddenMachineIds: ["b"] }));
-      await waitFor(() => assert.equal(sent.length, 2));
-      assert.deepEqual(new Set(rowIds(view.slot)), new Set(["studio", "server"]));
-    });
-
-    it("keeps an unsaved machine choice when a refresh reads the older preference", async () => {
-      const host = hostState([
-        thread("studio", { host: { id: "a", name: "Studio" } }),
-        thread("server", { host: { id: "b", name: "Server" } }),
-      ]);
-      let savedIds: string[] = [];
-      let reads = 0;
-      let resolve!: (value: { hiddenMachineIds: string[] }) => void;
-      const write = new Promise<{ hiddenMachineIds: string[] }>((done) => {
-        resolve = done;
-      });
-      const view = mount(host, {}, "", {
-        rpc: {
-          listMachineVisibility: () => {
-            reads += 1;
-            return { hiddenMachineIds: savedIds };
-          },
-          changeMachineVisibility: () => write,
-        },
-      });
-      await act(async () => {});
-      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
-        key: "ArrowDown",
-      });
-      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
-      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
-      const readsBefore = reads;
-      await view.slot.behavior.experimental_invalidateRpc(["machines"]);
-      await waitFor(() => assert.ok(reads > readsBefore, "the refresh re-read the preference"));
-      await act(async () => {});
-      assert.deepEqual(rowIds(view.slot), ["studio"]);
-      await act(async () => {
-        savedIds = ["b"];
-        resolve({ hiddenMachineIds: savedIds });
-      });
-      await waitFor(() => assert.deepEqual(rowIds(view.slot), ["studio"]));
-      assert.ok(view.slot.getByRole("button", { name: "Visible machines: Studio" }));
-    });
-
-    it("reconciles a failed optimistic machine write with the saved preference", async () => {
-      const host = hostState([
-        thread("studio", { host: { id: "a", name: "Studio" } }),
-        thread("server", { host: { id: "b", name: "Server" } }),
-      ]);
-      let reject!: (error: Error) => void;
-      const pending = new Promise<never>((_, fail) => {
-        reject = fail;
-      });
-      const view = mount(host, {}, "", {
-        rpc: {
-          listMachineVisibility: () => ({ hiddenMachineIds: [] }),
-          changeMachineVisibility: () => pending,
-        },
-      });
-      await act(async () => {});
-      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
-        key: "ArrowDown",
-      });
-      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
-      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
-      assert.deepEqual(rowIds(view.slot), ["studio"]);
-      await act(async () => {
-        reject(new Error("offline"));
-      });
-      await waitFor(() =>
-        assert.deepEqual(new Set(rowIds(view.slot)), new Set(["studio", "server"])),
-      );
-      assert.ok(view.slot.getByRole("button", { name: "Visible machines: All machines" }));
-    });
-
     it("leads remote rows with the machine globe and local rows with an empty slot", () => {
       const localHost = { id: "local-host", name: "Local computer" };
       const remoteHost = { id: "remote-host", name: "Remote computer" };
@@ -2272,14 +1929,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         remoteChild.querySelector(
           '.gtd-host-lead [data-machine-id="remote-host"] [data-icon="Globe"]',
         ),
-      );
-      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
-        key: "ArrowDown",
-      });
-      assert.ok(
-        screen
-          .getByRole("menuitemcheckbox", { name: "Local computer" })
-          .querySelector('[data-icon="Globe"]'),
       );
     });
 
@@ -2434,40 +2083,14 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       );
     }
 
-    it("carries the sidebar's one visible machine into the composer, as the inbox does", async () => {
+    it("opens the composer on the open thread's project", async () => {
       const host = hostState([]);
-      host.sidebar = {
-        ...host.sidebar,
-        experimental_hosts: [
-          { id: "host-a", name: "Studio" },
-          { id: "host-b", name: "Empty" },
-        ],
-      };
-      let hiddenMachineIds: string[] = [];
-      const slot = renderSlot(
-        { component: Header },
-        { host },
-        { rpc: { listMachineVisibility: () => ({ hiddenMachineIds }) } },
-      );
+      const slot = renderSlot({ component: Header }, { host });
       await act(async () => {});
       fireEvent.click(slot.getByRole("button", { name: "New thread" }));
       assert.deepEqual(host.actions.openNewThread.mock.calls[0], [
         { projectId: "one", focusPrompt: true },
       ]);
-      slot.lifecycle.unmount();
-
-      hiddenMachineIds = ["host-b"];
-      const scoped = renderSlot(
-        { component: Header },
-        { host },
-        { rpc: { listMachineVisibility: () => ({ hiddenMachineIds }) } },
-      );
-      await waitFor(() => {
-        fireEvent.click(scoped.getAllByRole("button", { name: "New thread" }).at(-1)!);
-        assert.deepEqual(host.actions.openNewThread.mock.calls.at(-1), [
-          { projectId: "one", focusPrompt: true, hostId: "host-a" },
-        ]);
-      });
     });
   });
 
@@ -2544,40 +2167,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   });
 
   describe("committed row commands", () => {
-    it("matches machine selector and repo globe colors", async () => {
-      const host = hostState([
-        thread("a", { host: { id: "host-a", name: "Studio" } }),
-        thread("b", { host: { id: "host-b", name: "Server" } }),
-        thread("c", { projectId: "two", host: { id: "host-a", name: "Studio" } }),
-      ]);
-      // bb names no primary host, so every machine is remote once it answers.
-      host.primaryHostId = null;
-      const view = mount(host, {});
-      const chipGlobe = await waitFor(() => {
-        const globe = view.slot.container.querySelector<HTMLElement>(
-          '.gtd-host-lead [data-machine-id="host-a"]',
-        );
-        assert.ok(globe);
-        return globe;
-      });
-      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
-        key: "ArrowDown",
-      });
-      const option = screen.getByRole("menuitemcheckbox", { name: "Studio" });
-      assert.equal(
-        option.querySelector<HTMLElement>("[data-machine-id]")?.style.color,
-        chipGlobe.style.color,
-      );
-      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
-      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
-      assert.deepEqual(new Set(rowIds(view.slot)), new Set(["a", "c"]));
-      const trigger = view.slot.getByRole("button", { name: "Visible machines: Studio" });
-      assert.equal(
-        trigger.querySelector<HTMLElement>("[data-machine-id]")?.style.color,
-        chipGlobe.style.color,
-      );
-    });
-
     function globeColors(view: ReturnType<typeof mount>, hostIds: readonly string[]) {
       return waitFor(() => {
         const globes = hostIds.map((id) =>
@@ -2590,7 +2179,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       });
     }
 
-    it("uses a neutral bot for Boat machines in rows and the machine picker", async () => {
+    it("uses a neutral bot for Boat machines in rows", async () => {
       const host = hostState([thread("boat", { host: { id: "host-boat", name: "Sandbox" } })]);
       host.primaryHostId = null;
       const view = mount(host, {});
@@ -2602,15 +2191,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         assert.ok(glyph.querySelector('[data-icon="Bot"]'));
         assert.equal(glyph.style.color, "var(--muted-foreground)");
       });
-      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
-        key: "ArrowDown",
-      });
-      const option = screen.getByRole("menuitemcheckbox", { name: "Sandbox" });
-      assert.ok(option.querySelector('[data-icon="Bot"]'));
-      assert.equal(
-        option.querySelector<HTMLElement>("[data-machine-id]")?.style.color,
-        "var(--muted-foreground)",
-      );
     });
 
     it("recovers Boat identity after a failed lookup and reconnect with the same roster", async () => {
@@ -2671,7 +2251,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.equal(server, machineColors(["host-g"])("host-g"));
     });
 
-    it("keeps repository context under a machine filter and lets plugin settings hide groups", async () => {
+    it("draws no toolbar filters and lets plugin settings hide groups", async () => {
       const host = hostState([
         thread("studio", { host: { id: "host-a", name: "Studio" } }),
         thread("server", {
@@ -2681,17 +2261,12 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       ]);
       const view = mount(host);
       await act(async () => {});
-      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
-        key: "ArrowDown",
-      });
-      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
-      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
 
-      assert.deepEqual(rowIds(view.slot), ["studio"]);
+      assert.deepEqual(new Set(rowIds(view.slot)), new Set(["studio", "server"]));
       assert.ok(view.slot.getByRole("button", { name: "One project" }));
-      assert.equal(view.slot.queryByRole("button", { name: "Hide repository groups" }), null);
-      // The toolbar has no project scope picker; repository groups carry project identity.
+      // No project or machine filter: repository groups carry project identity.
       assert.equal(view.slot.queryByRole("combobox"), null);
+      assert.equal(view.slot.queryByRole("button", { name: /^Visible machines/ }), null);
 
       view.setGrouping(false);
       assert.equal(view.slot.container.querySelector(".gtd-project-group"), null);

@@ -10,7 +10,6 @@ import { defineCli, type BbPluginApi } from "@get-bb/plugin-sdk";
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
 import type { ThreadLifecycleRow } from "./lib/lifecycle.ts";
-import { createMachineVisibilityStore } from "./lib/machine-visibility-store.ts";
 import { threadFamilyIds } from "./lib/thread-family.ts";
 import { stayOpenReason } from "./lib/long-lived.ts";
 import { registerThreadNaming } from "./thread-naming-server.ts";
@@ -151,8 +150,6 @@ export default async function plugin(bb: BbPluginApi) {
       THREAD_PAGE_SIZE,
     );
 
-  const machineVisibility = createMachineVisibilityStore(bb.storage.kv);
-
   // Layout preferences, family folds among them, synced to every window over
   // realtime. A fold written by any path, CLI included, refreshes fold reads.
   const preferences = createPreferenceStore(bb, (key) => {
@@ -181,12 +178,6 @@ export default async function plugin(bb: BbPluginApi) {
     gtdSidebarRpcContract,
     {
       listNamingThreads: threadNamer.listNamingThreads,
-      listMachineVisibility: async () => ({ hiddenMachineIds: await machineVisibility.read() }),
-      changeMachineVisibility: async (change) => {
-        const hiddenMachineIds = await machineVisibility.change(change);
-        bb.rpc.experimental_invalidate([GTD_TAGS.machines]);
-        return { hiddenMachineIds };
-      },
       async listEnvironmentBranches({ environmentIds }) {
         if (!(await settings.get()).gitButlerBranches) return { environments: [] };
         // Environments live on every machine, and the answer waits for the

@@ -10,7 +10,6 @@ import { Button } from "../ui/button";
 import { ARCHIVE_ACTION_KEY, toThreadActionTarget } from "../../lib/thread-action-target";
 import { hasSidebarActions, settleThread } from "../../lib/sidebar-actions-bridge";
 import { isLongLivedThread } from "../../lib/long-lived";
-import { useComposerHostId } from "../../hooks/use-machine-visibility";
 
 /** The attribute `header-settle-style.ts` keys the "…" hide on. */
 export const HEADER_SETTLE_ATTRIBUTE = "data-gtd-header-settle";
@@ -52,13 +51,9 @@ export function HeaderSettle({ threadId, projectId, isCompactViewport }: HeaderA
   );
 }
 
-/**
- * Opens the New thread screen with the open thread's project selected and, as
- * the inbox's New thread does, the sidebar's one visible machine.
- */
+/** Opens the New thread screen with the open thread's project selected. */
 function NewThreadButton({ projectId }: { projectId: string }) {
   const navigate = useBbNavigate();
-  const hostId = useComposerHostId();
   return (
     <Button
       data-bb-plugin="gtd-sidebar"
@@ -70,7 +65,6 @@ function NewThreadButton({ projectId }: { projectId: string }) {
         navigate.toCompose({
           projectId,
           focusPrompt: true,
-          ...(hostId === undefined ? {} : { hostId }),
         })
       }
       className={ICON_BUTTON_CLASS}
