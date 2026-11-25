@@ -6,7 +6,7 @@
   "files": [
     {
       "path": "registry/components/ui/spinner.tsx",
-      "content": "import { experimental_Icon as Icon } from \"@get-bb/plugin-sdk/app\";\nimport { cn } from \"../../lib/utils.ts\";\n\n/** shadcn's Spinner, drawn with bb's icon. Decorative: the busy control says what is loading. */\nfunction Spinner({ className }: { className?: string }) {\n  return (\n    <Icon\n      name=\"Spinner\"\n      className={cn(\"size-3.5 shrink-0 animate-spin motion-reduce:animate-none\", className)}\n      aria-hidden\n    />\n  );\n}\n\nexport { Spinner };\n",
+      "content": "import { experimental_Icon as Icon } from \"@get-bb/plugin-sdk/app\";\nimport { cn } from \"../../lib/utils\";\n\n/** shadcn's Spinner, drawn with bb's icon. Decorative: the busy control says what is loading. */\nfunction Spinner({ className }: { className?: string }) {\n  return (\n    <Icon\n      name=\"Spinner\"\n      className={cn(\"size-3.5 shrink-0 animate-spin motion-reduce:animate-none\", className)}\n      aria-hidden\n    />\n  );\n}\n\nexport { Spinner };\n",
       "type": "registry:ui"
     }
   ]

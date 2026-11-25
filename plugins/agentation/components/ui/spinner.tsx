@@ -1,5 +1,5 @@
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
-import { cn } from "../../lib/utils.ts";
+import { cn } from "../../lib/utils";
 
 /** shadcn's Spinner, drawn with bb's icon. Decorative: the busy control says what is loading. */
 function Spinner({ className }: { className?: string }) {
