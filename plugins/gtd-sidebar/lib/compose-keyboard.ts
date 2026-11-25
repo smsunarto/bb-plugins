@@ -139,21 +139,8 @@ export function focusComposeEditorWithKeyboard(document: Document): void {
       if (!editor.contains(document.activeElement)) return;
       // Keep the existing draft and append the text buffered before focus.
       document.getSelection()?.collapse(editor, editor.childNodes.length);
-      if (
-        text.includes("\n") &&
-        typeof view.DataTransfer === "function" &&
-        typeof view.ClipboardEvent === "function"
-      ) {
-        // Let rich-text composers interpret line breaks as they do on paste.
-        const clipboardData = new view.DataTransfer();
-        clipboardData.setData("text/plain", text);
-        const paste = new view.ClipboardEvent("paste", {
-          clipboardData,
-          bubbles: true,
-          cancelable: true,
-        });
-        if (!editor.dispatchEvent(paste)) return;
-      }
+      // Native insertion uses the DOM caret. A synthetic paste can still use
+      // a rich-text editor's stored selection and replace the existing draft.
       document.execCommand("insertText", false, text);
     };
     const onFocus = () => {
