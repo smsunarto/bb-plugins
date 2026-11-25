@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
-import type { ComponentType } from "react";
-import type { ExperimentalPanelTabs } from "@get-bb/plugin-sdk/app";
+import { useState, type ComponentType } from "react";
+import {
+  experimental_useRpcKeyedQuery as useKeyed,
+  type ExperimentalPanelTabs,
+} from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { changeKeySchema } from "../core/ids.ts";
 import type { ChangeDetail, ChangeRow } from "../core/review.ts";
@@ -14,6 +17,12 @@ import {
   RESOLVE_MS,
 } from "./open-pull-request.tsx";
 import { resetPlaces } from "./open-review.ts";
+import {
+  pendingReviewThread,
+  retirePendingReview,
+  waitForReview,
+} from "./pending-review-request.ts";
+import { PullRequestTab } from "./pull-request-tab.tsx";
 
 const app = await loadPluginApp(() => import("./app.tsx"));
 const reviewTab = app.tabs.find((tab) => tab.id === "review") as unknown as {
@@ -28,6 +37,7 @@ afterEach(() => {
   cleanup();
   resetKnownPullRequests();
   resetPlaces();
+  retirePendingReview();
 });
 
 /** The Review tab a link opened for acme/api#12, as the panel lists it. */
@@ -242,13 +252,63 @@ test("a slow GitHub lookup can return its server failure after eight seconds", a
   expect(slot.getByRole("alert").textContent).toContain("Repository is unavailable.");
 });
 
-test("loading and error keep the PR heading top-aligned and state the branch error once", async () => {
+test("a missing Change states the branch error once", async () => {
   const detail = vi.fn((): ChangeDetail => ({ state: "missing", problem: null }));
   const { slot } = render(found, 12, detail);
-  const frame = slot.getByTestId("sc-pull-request-tab");
-  expect(frame.classList.contains("justify-center")).toBe(false);
   expect((await slot.findByRole("alert")).textContent).toBe(
     "Source Control doesn't know this pull request's branch.",
   );
-  expect(slot.getByTestId("sc-pull-request-tab")).toBe(frame);
+});
+
+test("an older PR handoff preserves a newer Tasks request", async () => {
+  let resolveDetail: (detail: ChangeDetail) => void = () => {};
+  const detail = vi.fn(() => new Promise<ChangeDetail>((resolve) => (resolveDetail = resolve)));
+  const { slot } = render(found, 12, detail);
+  await waitFor(() => expect(detail).toHaveBeenCalled());
+  waitForReview({
+    threadId: "thread-b",
+    url: "https://github.com/acme/api/pull/13",
+    fallback: () => {},
+  });
+  await act(async () => resolveDetail(detailShowing(12)));
+  await waitFor(() => expect(slot.inspection.experimental_panelCalls).toHaveLength(2));
+  expect(pendingReviewThread()).toBe("thread-b");
+});
+
+test("an in-flight refresh of a cached branch must finish before promotion", async () => {
+  rememberChange(LOOKUP, KEY, "thread-a");
+  let answer: (detail: ChangeDetail) => void = () => {};
+  const read = vi
+    .fn(() => new Promise<ChangeDetail>((resolve) => (answer = resolve)))
+    .mockResolvedValueOnce(detailShowing(12));
+  function Flow() {
+    const [show, setShow] = useState(false);
+    const q = useKeyed({ contract: sourceControlContract, method: "changeDetail", keys: [KEY] });
+    return (
+      <>
+        <button onClick={() => void q.refetchKeys([KEY])}>refresh</button>
+        <span>{q.data?.[KEY]?.state}</span>
+        <button onClick={() => setShow(true)}>link</button>
+        {show && (
+          <PullRequestTab threadId="thread-a" pr={{ owner: "acme", repo: "api", number: 12 }} />
+        )}
+      </>
+    );
+  }
+  const slot = renderSlot({ component: Flow as never }, {} as never, {
+    experimental_rpcContract: sourceControlContract,
+    pluginId: "source-control",
+    experimental_panel: { openTab: () => true, getTabs: () => SELF, closeTab: () => true },
+    rpc: { changeDetail: async () => ({ [KEY]: await read() }) } as never,
+  });
+  await slot.findByText("change");
+  fireEvent.click(slot.getByText("refresh"));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    fireEvent.click(slot.getByText("link"));
+  });
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+  await act(async () => answer(detailShowing(13)));
+  expect((await slot.findByRole("alert")).textContent).toContain("shows #13 now");
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
 });

@@ -42,15 +42,18 @@ export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }
   const needsLookup = state.at === "looking" && key === null;
 
   const keys = useMemo(() => (key ? [key] : []), [key]);
-  const { data, error, refetchKeys } = useRpcKeyedQuery({
+  const { data, error, isFetching, refetchKeys } = useRpcKeyedQuery({
     contract: sourceControlContract,
     method: "changeDetail",
     keys,
     enabled: key !== null,
   });
   const [validatedKey, setValidatedKey] = useState<ChangeKey | null>(null);
-  const detail = key && validatedKey === key ? data?.[key] : undefined;
-  const reviewProblem = key && validatedKey === key ? error?.message : undefined;
+  // The SDK may return from refetchKeys while a read already covering this
+  // key is in flight. Its published result is current once that read settles.
+  const ready = key !== null && validatedKey === key && !isFetching;
+  const detail = ready ? data?.[key] : undefined;
+  const reviewProblem = ready ? error?.message : undefined;
   const verdict = useMemo(() => {
     if (reviewProblem) return { at: "failed" as const, problem: reviewProblem };
     return detail && detail.state !== "pending" ? judge(detail, pr.number) : null;
@@ -118,7 +121,7 @@ export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }
     if (verdict.at === "elsewhere")
       return rememberMiss(lookup, threadId, `This branch's review shows #${verdict.number} now.`);
     rememberChange(lookup, key, threadId);
-    if (!openReview({ key })) return;
+    if (!openReview({ key }, { continuation: true })) return;
     const self = panel
       .getTabs()
       .tabs.find(
@@ -175,7 +178,10 @@ function PullRequestTabView({
         </output>
       ) : (
         <>
-          <p role="alert" className="m-0 max-w-sm text-[13px] leading-5 text-muted-foreground">
+          <p
+            role="alert"
+            className="m-0 w-full max-w-sm [overflow-wrap:anywhere] text-[13px] leading-5 text-muted-foreground"
+          >
             {phase.at === "elsewhere"
               ? `This branch's review shows #${phase.number} now, so #${pr.number} is on GitHub.`
               : phase.problem}

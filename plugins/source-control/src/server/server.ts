@@ -635,16 +635,17 @@ export function createSourceControl(deps: SourceControlDeps) {
       now: deps.now,
       worktreeHost,
     });
+    const placements = createPlacements({ bb, store, now: deps.now });
     const moved = createMoved({
       bb,
       store,
       host: checkoutCalls(host),
       read: sites.backgroundRead,
+      threadForgeHost: placements.threadForgeHost,
       run: (effect) => runtime.run(effect),
       invalidate,
       now: deps.now,
     });
-    const placements = createPlacements({ bb, store, now: deps.now });
     registerRpc(
       bb,
       runtime,

@@ -170,10 +170,12 @@ export function resetPlaces({ reload = false } = {}): void {
 
 // ── Opening ────────────────────────────────────────────────────────────
 
-/** Where an Open review may go when the surface has no side panel. */
+/** How the Review tab opens for this intent. */
 export type OpenReviewOptions = {
   /** Open the review page instead (the default). False: open nothing and return false. */
   readonly page?: boolean;
+  /** Promoting a PR tab continues an earlier click, leaving any newer requests pending. */
+  readonly continuation?: boolean;
 };
 
 /**
@@ -192,7 +194,7 @@ export function useOpenReview(
   });
   return useMemo(
     () =>
-      (target: ReviewOpenTarget, { page = true }: OpenReviewOptions = {}) => {
+      (target: ReviewOpenTarget, { page = true, continuation = false }: OpenReviewOptions = {}) => {
         const { panel, navigate, threadId } = latest.current;
         if ("pr" in target) {
           const opened = panel.openTab({
@@ -210,7 +212,7 @@ export function useOpenReview(
           title: reviewTabTitle(target.key),
         });
         if (opened) {
-          retirePendingReview();
+          if (!continuation) retirePendingReview();
           return true;
         }
         if (!page) {
@@ -218,7 +220,7 @@ export function useOpenReview(
           return false;
         }
         navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath(target) });
-        retirePendingReview();
+        if (!continuation) retirePendingReview();
         return true;
       },
     [],

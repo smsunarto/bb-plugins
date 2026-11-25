@@ -17,7 +17,7 @@ import {
   type PluginAgentToolContext,
 } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-plugins/instructions";
-import type { Effect } from "effect";
+import { Effect } from "effect";
 import { z } from "zod";
 import type { Placement } from "../core/change.ts";
 import { changeKeySchema, prWatchTag, type ChangeKey } from "../core/ids.ts";
@@ -33,9 +33,10 @@ import {
 import type { sourceControlContract } from "../contract/rpc.ts";
 import type { ReviewAnswer, ReviewRead } from "../forge/review.ts";
 import { createCutover, legacyBranchId } from "./cutover.ts";
-import type { ForgeSites, SiteOutcome } from "./forge-sites.ts";
+import type { ForgeHost, ForgeSites, SiteOutcome } from "./forge-sites.ts";
 import type { HostCalls } from "./host-calls.ts";
 import { createLanded, SHARE_LANDED } from "./landed.ts";
+import type { createPlacements } from "./placement.ts";
 import { createLegacy, LEGACY_PLUGIN } from "./legacy.ts";
 import { createPrWatcher, WATCH_PR } from "./pr-watch.ts";
 import { rowsOf } from "./review-sources.ts";
@@ -120,6 +121,7 @@ export function createMoved(deps: {
   store: Store;
   host: HostCalls;
   read: BackgroundRead;
+  threadForgeHost: ReturnType<typeof createPlacements>["threadForgeHost"];
   run: <A>(effect: Effect.Effect<A>) => Promise<A>;
   invalidate: (tags: readonly string[]) => void;
   now: () => number;
@@ -247,10 +249,17 @@ export function createMoved(deps: {
     },
   };
 
-  function prLookupHosts(threadId: string | null) {
+  async function prLookupHosts(threadId: string | null): Promise<ForgeHost[]> {
     // Old cards without a thread keep their existing lookup across checkouts.
     if (!threadId) return store.checkouts();
-    const host = placementsOf(threadId)[0] ?? store.lastChange(threadId)?.host;
+    const stored = placementsOf(threadId)[0] ?? store.lastChange(threadId)?.host;
+    if (stored) return [stored];
+    const host = await deps.run(
+      deps.threadForgeHost(threadId).pipe(
+        Effect.timeout("2 seconds"),
+        Effect.orElseSucceed(() => null),
+      ),
+    );
     return host ? [host] : [];
   }
 
@@ -261,6 +270,7 @@ export function createMoved(deps: {
   async function legacyChange(
     lookup: string,
     threadId: string | null,
+    hosts: () => Promise<ForgeHost[]>,
   ): Promise<{ key: ChangeKey | null; problem: string | null }> {
     const stored = store.legacyBranch(lookup) ?? store.legacyBranch(lookup.replace(/^branch:/, ""));
     if (stored) return { key: stored, problem: null };
@@ -276,14 +286,9 @@ export function createMoved(deps: {
     }
     const ref = parsePrReference(lookup.replace(/^pr:/, ""));
     if (!ref) return { key: null, problem: "This card names no pull request." };
+    const placements = await hosts();
     const outcome = await deps.run(
-      deps.read(
-        null,
-        repoOf(ref),
-        { kind: "prHead", ref },
-        prLookupHosts(threadId),
-        threadId ? "only" : "any",
-      ),
+      deps.read(null, repoOf(ref), { kind: "prHead", ref }, placements, threadId ? "only" : "any"),
     );
     if (!outcome.ok || outcome.value.kind !== "prHead")
       return {
@@ -297,12 +302,15 @@ export function createMoved(deps: {
 
   const handlers = {
     importFromOldPlugins: () => cutover.run(),
-    legacyChange: async ({ keys, threadId }) =>
-      Object.fromEntries(
+    legacyChange: async ({ keys, threadId }) => {
+      let placements: Promise<ForgeHost[]> | undefined;
+      const hosts = () => (placements ??= prLookupHosts(threadId ?? null));
+      return Object.fromEntries(
         await Promise.all(
-          keys.map(async (key) => [key, await legacyChange(key, threadId ?? null)] as const),
+          keys.map(async (key) => [key, await legacyChange(key, threadId ?? null, hosts)] as const),
         ),
-      ),
+      );
+    },
     landedCard: async (target) => {
       const first = target.prs[0] ?? target.commits[0];
       if (!first) return { ok: false as const, message: "Nothing listed.", away: false };

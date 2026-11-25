@@ -3856,4 +3856,20 @@ describe("pull request links", () => {
     expect(await firstHost("pr:acme/web#8", "thread-b")).toBe("host-b:prHead");
     expect(world.hostForge?.filter((each) => each.endsWith(":prHead"))).toEqual(["host-b:prHead"]);
   });
+
+  test("a linked PR can use the thread's own host before its placement refresh", async () => {
+    const world = twoHosts();
+    world.serverAccounts = [];
+    world.hosts["host-b"]!.ghAccounts = ["smsunarto"];
+    world.hosts["host-b"]!.forgeLive = true;
+    world.threads["thread-new"] = { ...world.threads["thread-b"]! };
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    world.hostForge = [];
+    await harness.behavior.callRpc("legacyChange", {
+      keys: ["pr:acme/web#8"],
+      threadId: "thread-new",
+    });
+    expect(world.hostForge).toContain("host-b:prHead");
+  });
 });

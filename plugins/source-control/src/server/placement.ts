@@ -73,12 +73,14 @@ export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () 
     return { state: "checkout", placement } as const;
   });
 
+  const threadEnvironment = (threadId: string) =>
+    Effect.tryPromise(() => bb.sdk.threads.get({ threadId, include: "environment" })).pipe(
+      Effect.map((thread) => ("environment" in thread ? thread.environment : undefined)),
+    );
+
   /** Where the thread's checkout is now, and what bb recorded of its environment. */
   const resolveThread = Effect.fn("resolvePlacement")(function* (threadId: string) {
-    const thread = yield* Effect.tryPromise(() =>
-      bb.sdk.threads.get({ threadId, include: "environment" }),
-    );
-    const environment = "environment" in thread ? thread.environment : undefined;
+    const environment = yield* threadEnvironment(threadId);
     if (!environment)
       return {
         where: { state: "none", reason: "This thread has no project environment." } as const,
@@ -130,6 +132,15 @@ export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () 
           hostName: names.get(hostId) ?? record?.name ?? hostId,
         })),
       ),
+    /** A PR lookup needs the selected machine, even before its checkout is ready. */
+    threadForgeHost: Effect.fnUntraced(function* (threadId: string) {
+      const environment = yield* threadEnvironment(threadId);
+      if (!environment) return null;
+      const { hostId } = environment;
+      const record = yield* lookup(hostId);
+      if (record === GONE) return null;
+      return { hostId, hostName: names.get(hostId) ?? record?.name ?? hostId } satisfies ForgeHost;
+    }),
     forEnvironment,
     /**
      * Resolve and store the thread's placement; `changed` when the stored one
