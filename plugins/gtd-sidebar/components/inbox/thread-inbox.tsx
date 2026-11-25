@@ -74,6 +74,7 @@ import { repoChoices } from "../../lib/new-captain";
 import { MachineAppearanceProvider } from "./machine-appearance";
 import { RenameProvider } from "./inline-rename";
 import { CompactViewportOverrideProvider } from "../ui/hooks/use-compact-viewport";
+import { EmptyState } from "../ui/empty-state";
 import { TooltipProvider } from "../ui/tooltip";
 import {
   useInboxWindow,
@@ -93,7 +94,6 @@ import {
 // archived threads too; `isShelvedThread` cuts it to the shelf's window.
 const SIDEBAR_LIFECYCLES = ["active", "archived"] as const;
 
-const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
 const GITBUTLER_REFRESH_MS = 30_000;
 
 export function ThreadInbox(props: PluginThreadListProps) {
@@ -1176,22 +1176,22 @@ function InboxContent({
 }) {
   if (status === "loading") return null;
   if (status === "error") {
-    return <InboxStatus>Could not load threads.</InboxStatus>;
+    return <InboxStatus message="Could not load threads." />;
   }
   if (!ready) return null;
   if (count === 0) {
-    return <InboxStatus>{searchQuery.trim() ? "No threads found" : "No threads yet"}</InboxStatus>;
+    return <InboxStatus message={searchQuery.trim() ? "No threads found" : "No threads yet"} />;
   }
   return children;
 }
 
-function InboxStatus({ children }: { children: React.ReactNode }) {
+function InboxStatus({ message }: { message: string }) {
   return (
     // A status message is a polite live region, not a calculation result.
     // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
-    <p role="status" className={EMPTY_STATE_CLASS}>
-      {children}
-    </p>
+    <div role="status" className="px-2 py-6">
+      <EmptyState message={message} className="justify-center" messageClassName="text-center" />
+    </div>
   );
 }
 
