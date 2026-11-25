@@ -40,23 +40,20 @@ function FieldGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="field-group"
-      className={cn(
-        "group/field-group flex w-full flex-col gap-7 [&>[data-slot=field-group]]:gap-4",
-        className,
-      )}
+      className={cn("group/field-group flex w-full flex-col gap-7", className)}
       {...props}
     />
   );
 }
 
-/** Vega's field, without the container-query `responsive` orientation, and with child
- * selectors that end in an attribute or class. */
+/** Vega's field, without the container-query `responsive` orientation. Its child rules sit on
+ * the children (`group-data-*`), so every selector ends in a class: a vertical field's controls
+ * are full width on their own. */
 const fieldVariants = cva("group/field flex w-full gap-3 data-[invalid=true]:text-destructive", {
   variants: {
     orientation: {
-      vertical: "flex-col [&>[data-slot]]:w-full [&>.sr-only]:w-auto",
-      horizontal:
-        "flex-row items-center has-[>[data-slot=field-content]]:items-start [&>[data-slot=field-label]]:flex-auto has-[>[data-slot=field-content]]:[&>[role=checkbox]]:mt-px has-[>[data-slot=field-content]]:[&>[role=radio]]:mt-px",
+      vertical: "flex-col",
+      horizontal: "flex-row items-center has-[>[data-slot=field-content]]:items-start",
     },
   },
   defaultVariants: { orientation: "vertical" },
@@ -82,7 +79,10 @@ function FieldContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="field-content"
-      className={cn("group/field-content flex flex-1 flex-col gap-1 leading-snug", className)}
+      className={cn(
+        "group/field-content flex min-w-0 flex-1 flex-col gap-1 leading-snug",
+        className,
+      )}
       {...props}
     />
   );
@@ -93,7 +93,7 @@ function FieldLabel({ className, ...props }: React.ComponentProps<typeof Label>)
     <Label
       data-slot="field-label"
       className={cn(
-        "group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50",
+        "group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 group-data-[orientation=horizontal]/field:flex-auto",
         className,
       )}
       {...props}
@@ -119,7 +119,7 @@ function FieldDescription({ className, ...props }: React.ComponentProps<"p">) {
     <p
       data-slot="field-description"
       className={cn(
-        "text-left text-sm leading-normal font-normal text-muted-foreground group-data-[orientation=horizontal]/field:text-balance [[data-variant=legend]+&]:-mt-1.5",
+        "text-left text-sm leading-normal font-normal text-muted-foreground group-data-[orientation=horizontal]/field:text-balance",
         "[&>a]:underline [&>a]:underline-offset-4 [&>a:hover]:text-foreground",
         className,
       )}

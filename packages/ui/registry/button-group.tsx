@@ -5,17 +5,17 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../lib/utils";
 import { Separator } from "./separator";
 
-/** Vega's button group, with selectors that end in an attribute so no rule falls into Blink's
- * universal bucket. Children are kit controls, which all carry `data-slot`. */
+/** Vega's button group, joining child buttons and inputs. Every child rule is keyed by a tag so
+ * none falls into the universal bucket. */
 const buttonGroupVariants = cva(
-  "group/button-group flex w-fit items-stretch has-[>[data-slot=button-group]]:gap-2 [&>[data-slot]:focus-visible]:relative [&>[data-slot]:focus-visible]:z-10 [&>[data-slot=select-trigger]:not([class*='w-'])]:w-fit [&>input]:flex-1",
+  "group/button-group flex w-fit items-stretch has-[>[data-slot=button-group]]:gap-2 [&>button:focus-visible]:relative [&>button:focus-visible]:z-10 [&>input:focus-visible]:relative [&>input:focus-visible]:z-10 [&>input]:flex-1",
   {
     variants: {
       orientation: {
         horizontal:
-          "[&>[data-slot]+[data-slot]]:rounded-l-none [&>[data-slot]+[data-slot]]:border-l-0 [&>[data-slot]:has(+[data-slot])]:rounded-r-none",
+          "[&>button:not(:first-child)]:rounded-l-none [&>button:not(:first-child)]:border-l-0 [&>button:not(:last-child)]:rounded-r-none [&>input:not(:first-child)]:rounded-l-none [&>input:not(:first-child)]:border-l-0 [&>input:not(:last-child)]:rounded-r-none",
         vertical:
-          "flex-col [&>[data-slot]+[data-slot]]:rounded-t-none [&>[data-slot]+[data-slot]]:border-t-0 [&>[data-slot]:has(+[data-slot])]:rounded-b-none",
+          "flex-col [&>button:not(:first-child)]:rounded-t-none [&>button:not(:first-child)]:border-t-0 [&>button:not(:last-child)]:rounded-b-none [&>input:not(:first-child)]:rounded-t-none [&>input:not(:first-child)]:border-t-0 [&>input:not(:last-child)]:rounded-b-none",
       },
     },
     defaultVariants: { orientation: "horizontal" },
