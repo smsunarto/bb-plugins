@@ -1,4 +1,8 @@
-import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
+import { createHash } from "node:crypto";
+import {
+  createFakePluginHost,
+  makePluginAgentConfigurationContext,
+} from "@get-bb/plugin-sdk/testing";
 import { describe, expect, onTestFinished, test } from "vitest";
 import { ROUTINES_PER_CAPTAIN } from "../contract/routines.ts";
 import { Refusal } from "./output.ts";
@@ -48,6 +52,118 @@ test("migrations apply once, a second open changes nothing, and rows survive a r
     makePluginAgentConfigurationContext({ thread: { id: "thr_crew", parentThreadId: captainId } }),
   );
   expect(resolved.instructions).toContain("# Role: Implement");
+});
+
+describe("Captain storage migration histories", () => {
+  // Pin the deployed statements and their slots independently of the production order.
+  const firstDivergentSlot = 21;
+  const answerer =
+    "ALTER TABLE asks ADD COLUMN answered_by TEXT CHECK (answered_by IN ('user', 'captain'))";
+  const routineRunId = "ALTER TABLE routine_runs ADD COLUMN automation_run_id TEXT";
+  const routineRunIndex = `DROP INDEX routine_runs_by_routine;
+   CREATE INDEX routine_runs_by_routine ON routine_runs (routine_id, at DESC, id DESC)`;
+  const mainOrder = [answerer, routineRunId, routineRunIndex];
+  const liveOrder = [routineRunId, routineRunIndex, answerer];
+
+  test.each([
+    { name: "fresh", deployed: null, expected: mainOrder },
+    { name: "main after #238", deployed: [answerer], expected: mainOrder },
+    { name: "live recovery", deployed: liveOrder, expected: liveOrder },
+    {
+      name: "routines before recovery",
+      deployed: [routineRunId, routineRunIndex],
+      expected: liveOrder,
+    },
+  ])(
+    "$name preserves migration slots, asks, routine runs and adoptions",
+    ({ deployed, expected }) => {
+      const { bb, harness } = createFakePluginHost({ pluginId: "captain" });
+      onTestFinished(() => harness.lifecycle.dispose());
+      const db = bb.storage.database();
+      const ledger = () =>
+        db.prepare("SELECT id, statement_hash FROM _bb_migrations ORDER BY id").all();
+      let before: unknown[] = [];
+      if (deployed !== null) {
+        bb.storage.migrate(db, [...MIGRATIONS.slice(0, firstDivergentSlot), ...deployed]);
+        before = ledger();
+        db.exec(`
+        INSERT INTO routine_runs (routine_id, trigger, status, at)
+        VALUES ('r1', 'test', 'sent', 2);
+      `);
+        if (deployed.includes(routineRunId)) {
+          db.exec("UPDATE routine_runs SET automation_run_id = 'arun_old' WHERE routine_id = 'r1'");
+        }
+        if (deployed.includes(answerer)) {
+          db.exec(`
+          INSERT INTO asks (id, captain_id, kind, text, detail, asked_at, answer, answered_by)
+          VALUES ('a1', 'thr_captain', 'decision', 'Continue?', '', 1, 'Yes', 'user');
+          CREATE TABLE pending_adoptions (
+            thread_id TEXT PRIMARY KEY,
+            captain_id TEXT NOT NULL,
+            task_key TEXT NOT NULL,
+            task_id TEXT
+          );
+          INSERT INTO pending_adoptions VALUES ('thr_old', 'thr_captain', 'BBP-1', 'task_1');
+        `);
+        }
+      }
+
+      const store = openStore(bb);
+      const upgraded = ledger();
+      expect(upgraded.slice(0, before.length)).toEqual(before);
+      expect(upgraded.slice(firstDivergentSlot, firstDivergentSlot + expected.length)).toEqual(
+        expected.map((sql, index) => ({
+          id: firstDivergentSlot + index,
+          statement_hash: createHash("sha256").update(sql).digest("hex"),
+        })),
+      );
+      if (deployed !== null) {
+        expect(store.routineRuns("r1")).toMatchObject([{ at: 2, status: "sent" }]);
+        if (deployed.includes(routineRunId)) {
+          expect(store.routineTestResult("r1", "arun_old")).toMatchObject({
+            at: 2,
+            status: "sent",
+          });
+        }
+        if (deployed.includes(answerer)) {
+          expect(store.ask("a1")).toMatchObject({ answer: "Yes", answeredBy: "user" });
+          expect(store.pendingAdoption("thr_old", "thr_captain")).toEqual({
+            taskId: "task_1",
+            taskKey: "BBP-1",
+          });
+        }
+      }
+
+      const ask = store.openAsk({
+        captainId: "thr_captain",
+        taskKey: null,
+        kind: "decision",
+        text: "Continue?",
+        detail: "",
+        options: [],
+        askedAt: 4,
+      });
+      store.answerAsk(ask.id, "Yes", "captain", 5);
+      const run = store.recordRoutineRun({
+        routineId: "r1",
+        automationRunId: "arun_new",
+        trigger: "test",
+        status: "sent",
+        reason: null,
+        at: 6,
+      });
+      store.beginAdoption("thr_new", "thr_captain", { key: "BBP-2", id: "task_2" });
+
+      const reopened = openStore(bb);
+      expect(ledger()).toEqual(upgraded);
+      expect(reopened.ask(ask.id)).toMatchObject({ answer: "Yes", answeredBy: "captain" });
+      expect(reopened.routineTestResult("r1", "arun_new")).toEqual(run);
+      expect(reopened.pendingAdoption("thr_new", "thr_captain")).toEqual({
+        taskId: "task_2",
+        taskKey: "BBP-2",
+      });
+    },
+  );
 });
 
 describe("routines", () => {
