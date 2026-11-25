@@ -25,6 +25,7 @@ bb captain tell --all --rule --message "Never push to main."
 bb captain tell --stalled --message-file nudge.md
 bb captain ask "Pick the Unity account" --task PLUG-19 --option Studio --option Personal --detail-file why.md
 bb captain ask resolve a7 --answer Studio
+bb captain ask show a7
 bb captain status [--since <cursor>] [--all]
 ```
 
@@ -33,6 +34,15 @@ An ask's options are button labels, ≤12 columns each (wide characters count 2)
 Long text goes through a file on the calling machine (`--message-file`, `--detail-file`). The stdin flags (`--message-stdin`, `--detail-stdin`) take one line only, as every bb plugin CLI stdin flag does.
 
 Run `bb captain --help` for every option. Every command takes `--json`.
+
+## Who may act for a Captain
+
+- A call from the user's terminal, with no thread, names its Captain with `--captain`.
+- A thread-bound call acts only for its own Captain. A Captain thread acts for itself; `--captain` may name only that same Captain. Crew and other threads are refused by every command except `drive read`, `drive write` and `ask show`.
+- `ask resolve` takes the user's terminal, the banner, or the ask's own Captain thread. The Captain may answer its own decision, access or improve asks, and may rerun any answer to retry its send. Only the user gives a ship ask its first answer.
+- Each ask records who answered it, `user` or `captain`, and `ask show` prints it. A superseded ship ask reads `captain`; asks answered before this was kept read `unknown`. `captain-ship` ships only on a Merge whose record says `user`.
+- Crew read the whole Drive and write only under `crew/`. `CAPTAIN.md`, `CREW.md`, `NOTES.md`, `skills/` and every other path are the Captain's. The check uses the real path, so a symlink cannot point a crew write elsewhere.
+- These checks guard against mistakes by cooperative clients, not a hostile one. The calling thread is request metadata the CLI reports, not an authenticated identity. A call that drops it reads as the user's terminal, an agent shell can call the `resolveAsk` RPC as a bb client, and crew on the server's machine can write the Drive by path.
 
 ## Routines
 

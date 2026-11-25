@@ -1,5 +1,5 @@
 import { cliCommand } from "@get-bb/plugin-sdk";
-import { callerCaptain } from "../caller.ts";
+import { actingFor } from "../caller.ts";
 import {
   joinCrew,
   listChildren,
@@ -28,7 +28,7 @@ export function statusCommand(deps: CommandDeps) {
     run(input, ctx) {
       const json = input.options.json;
       return guard("captain status", json, async () => {
-        const captain = await callerCaptain(deps.bb, deps.registry, ctx, {
+        const { captain } = await actingFor(deps, ctx, {
           captain: input.options.captain,
         });
         let since: number | null = null;

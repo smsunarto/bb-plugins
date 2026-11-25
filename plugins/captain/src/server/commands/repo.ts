@@ -1,5 +1,5 @@
 import { cliCommand } from "@get-bb/plugin-sdk";
-import { callerCaptain } from "../caller.ts";
+import { actingFor } from "../caller.ts";
 import { guard, Refusal, render } from "../output.ts";
 import { applyLink, isBlocker, planTasksLink, resolveBbProject } from "../repos.ts";
 import type { Repo } from "../store.ts";
@@ -29,7 +29,7 @@ export function repoAddCommand(deps: CommandDeps) {
     run(input, ctx) {
       const json = input.options.json;
       return guard("captain repo add", json, async () => {
-        const captain = await callerCaptain(deps.bb, deps.registry, ctx, {
+        const { captain } = await actingFor(deps, ctx, {
           captain: input.options.captain,
         });
         const resolved = resolveBbProject(
@@ -71,7 +71,7 @@ export function repoRemoveCommand(deps: CommandDeps) {
     run(input, ctx) {
       const json = input.options.json;
       return guard("captain repo remove", json, async () => {
-        const captain = await callerCaptain(deps.bb, deps.registry, ctx, {
+        const { captain } = await actingFor(deps, ctx, {
           captain: input.options.captain,
         });
         const address = input.positionals.project.trim();

@@ -101,9 +101,15 @@ export function registerRpc(
       live(captainId);
       return sinceYouLeft(deps, captainId);
     },
-    resolveAsk: async ({ askId, answer }) => {
+    resolveAsk: async ({ askId, answer }, { experimental_caller: caller }) => {
       try {
-        const { state, notes } = await resolveAsk(deps, askId, answer);
+        // The banner is a bb client, the user's; another plugin never answers for them.
+        if (caller.kind !== "client") {
+          throw new Refusal([
+            { reason: "only the user answers an ask", fix: "answer it in the banner" },
+          ]);
+        }
+        const { state, notes } = await resolveAsk(deps, askId, answer, null);
         return { state, warnings: notes };
       } catch (error) {
         if (error instanceof Refusal) throw new Error(error.message, { cause: error });

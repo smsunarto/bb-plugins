@@ -301,7 +301,7 @@ describe("bb captain repo", () => {
       blockers: [
         {
           reason: "thr_other is not a Captain",
-          fix: "run it in the Captain thread, or pass --captain <thread-id>",
+          fix: "run it in the Captain thread, or from your terminal with --captain <thread-id>",
         },
       ],
     });
@@ -374,26 +374,26 @@ describe("bb captain drive", () => {
 
     const inline = await run(
       host,
-      ["drive", "write", "notes/plan.md", "--content", "step one"],
+      ["drive", "write", "crew/plan.md", "--content", "step one"],
       "thr_crew",
     );
     const fromFile = await run(
       host,
-      ["drive", "write", "reports/r1.md", "--file", "report.md"],
+      ["drive", "write", "crew/reports/r1.md", "--file", "report.md"],
       "thr_crew",
       host.root,
     );
-    const read = await run(host, ["drive", "read", "notes/plan.md"], "thr_crew");
-    const readJson = await run(host, ["drive", "read", "reports/r1.md", "--json"], "thr_crew");
+    const read = await run(host, ["drive", "read", "crew/plan.md"], "thr_crew");
+    const readJson = await run(host, ["drive", "read", "crew/reports/r1.md", "--json"], "thr_crew");
 
-    expect(inline).toMatchObject({ exitCode: 0, stdout: "notes/plan.md  written  8 bytes\n" });
+    expect(inline).toMatchObject({ exitCode: 0, stdout: "crew/plan.md  written  8 bytes\n" });
     expect(fromFile.exitCode).toBe(0);
-    expect(readFileSync(join(host.storageRoot, captainId, "notes/plan.md"), "utf8")).toBe(
+    expect(readFileSync(join(host.storageRoot, captainId, "crew/plan.md"), "utf8")).toBe(
       "step one",
     );
     expect(read).toMatchObject({ exitCode: 0, stdout: "step one" });
     expect(json(readJson.stdout).results[0]).toMatchObject({
-      id: "reports/r1.md",
+      id: "crew/reports/r1.md",
       content: "# Report\nAll green.\n",
     });
   });
@@ -433,6 +433,78 @@ describe("bb captain drive", () => {
     }
     expect(existsSync(join(outside, "x.md"))).toBe(false);
     expect((await run(host, ["drive", "read", "../../etc/hostname"], "thr_crew")).exitCode).toBe(1);
+  });
+
+  test("crew write only under crew/: the Captain's rules and files are refused, with or without --captain", async () => {
+    const { host, captainId } = await withCrew();
+    const drive = join(host.storageRoot, captainId);
+    writeFileSync(join(drive, "CREW.md"), "rules");
+    mkdirSync(join(drive, "crew"));
+    symlinkSync(join(drive, "CREW.md"), join(drive, "crew", "rules.md"));
+    const paths = [
+      "CAPTAIN.md",
+      "CREW.md",
+      "NOTES.md",
+      "crew.md",
+      "Crew.md",
+      "skills/ship.md",
+      "repos/BBP.md",
+      "briefs/x.md",
+      "crew/rules.md",
+      "./CREW.md",
+    ];
+    for (const extra of [[], ["--captain", captainId]]) {
+      for (const path of paths) {
+        const result = await run(
+          host,
+          ["drive", "write", path, "--content", "x", ...extra],
+          "thr_crew",
+        );
+        expect(result.exitCode, path).toBe(1);
+        expect(result.stderr, path).toContain("crew write only under crew/");
+      }
+    }
+    expect(readFileSync(join(drive, "CREW.md"), "utf8")).toBe("rules");
+    for (const path of ["CAPTAIN.md", "NOTES.md"]) {
+      expect(readFileSync(join(drive, path), "utf8"), path).toBe("");
+    }
+    for (const path of ["crew.md", "Crew.md", "skills", "repos", "briefs"]) {
+      expect(existsSync(join(drive, path)), path).toBe(false);
+    }
+    // The Captain and the user's terminal still write anywhere in the Drive.
+    expect(
+      (await run(host, ["drive", "write", "CREW.md", "--content", "new"], captainId)).exitCode,
+    ).toBe(0);
+    expect(
+      (await run(host, ["drive", "write", "NOTES.md", "--content", "n", "--captain", captainId]))
+        .exitCode,
+    ).toBe(0);
+    expect(readFileSync(join(drive, "CREW.md"), "utf8")).toBe("new");
+  });
+
+  test("a crew Drive folder that is a symlink to the Drive grants no write", async () => {
+    const { host, captainId } = await withCrew();
+    const drive = join(host.storageRoot, captainId);
+    symlinkSync(drive, join(drive, "crew"));
+
+    const result = await run(
+      host,
+      ["drive", "write", "crew/CREW.md", "--content", "x"],
+      "thr_crew",
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(readFileSync(join(drive, "CREW.md"), "utf8")).toBe("");
+  });
+
+  test("crew cannot name another Captain's Drive", async () => {
+    const { host } = await withCrew();
+    const other = await newCaptain(host, ["--name", "Other", "--repo", "rampage"]);
+
+    const result = await run(host, ["drive", "read", "CREW.md", "--captain", other], "thr_crew");
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("acts only for the Plugins Captain");
   });
 
   test("refuses a thread that is neither the Captain nor its crew", async () => {

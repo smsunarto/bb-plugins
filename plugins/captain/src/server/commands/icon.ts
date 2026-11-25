@@ -1,6 +1,6 @@
 import { cliCommand } from "@get-bb/plugin-sdk";
 import { normalizeIconName, type CaptainIcon } from "../../contract/icon.ts";
-import { callerCaptain } from "../caller.ts";
+import { actingFor } from "../caller.ts";
 import { dataUrlBytes, setCaptainIcon } from "../icon.ts";
 import { guard, Refusal, render, type Item } from "../output.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
@@ -34,7 +34,7 @@ export function iconCommand(deps: CommandDeps) {
     run(input, ctx) {
       const json = input.options.json;
       return guard("captain icon", json, async () => {
-        const captain = await callerCaptain(deps.bb, deps.registry, ctx, {
+        const { captain } = await actingFor(deps, ctx, {
           captain: input.options.captain,
         });
         const value = input.positionals.icon?.trim() ?? "";

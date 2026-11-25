@@ -56,6 +56,18 @@ export function resolveDrivePath(driveDir: string, path: string): string {
   return resolved;
 }
 
+/** The one Drive folder crew may write. The rest, the Captain's rules files included, is the Captain's. */
+export const CREW_DRIVE_DIR = "crew";
+
+/**
+ * Whether a path `resolveDrivePath` returned lies in the Drive's crew folder by
+ * its real path, so a symlink in the folder, or the folder itself as one,
+ * cannot point a crew write at the Captain's files.
+ */
+export function inCrewDir(driveDir: string, resolved: string): boolean {
+  return isInside(join(realExisting(driveDir), CREW_DRIVE_DIR), realExisting(resolved));
+}
+
 /** The nearest existing ancestor's real path, with the missing tail re-appended. */
 function realExisting(path: string): string {
   let current = path;

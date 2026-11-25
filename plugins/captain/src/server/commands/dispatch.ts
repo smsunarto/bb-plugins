@@ -1,5 +1,5 @@
 import { cliCommand } from "@get-bb/plugin-sdk";
-import { callerCaptain } from "../caller.ts";
+import { actingFor } from "../caller.ts";
 import {
   crewOnTask,
   isActive,
@@ -116,7 +116,7 @@ export function dispatchCommand(deps: CommandDeps) {
           thread: input.options.thread?.trim() || undefined,
           rung: parseRungFlag(input.options.rung),
         };
-        const captain = await callerCaptain(deps.bb, deps.registry, ctx, {
+        const { captain } = await actingFor(deps, ctx, {
           captain: input.options.captain,
         });
         if (flags.thread !== undefined) {

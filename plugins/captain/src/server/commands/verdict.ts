@@ -7,7 +7,7 @@ import {
   shipBlockers,
   supersedeShipAsks,
 } from "../asks.ts";
-import { callerCaptain } from "../caller.ts";
+import { actingFor } from "../caller.ts";
 import { resolveTask, tasksOrRefuse } from "../crew.ts";
 import { guard, Refusal, render, type Blocker, type Item } from "../output.ts";
 import { parseVerdictField, SHIP_READY_REVIEWS, VERDICT_FIELDS } from "../roles.ts";
@@ -53,7 +53,7 @@ export function verdictCommand(deps: CommandDeps) {
     run(input, ctx) {
       const json = input.options.json;
       return guard("captain verdict", json, async () => {
-        const captain = await callerCaptain(deps.bb, deps.registry, ctx, {
+        const { captain } = await actingFor(deps, ctx, {
           captain: input.options.captain,
         });
         const { role, value: rawValue } = input.positionals;

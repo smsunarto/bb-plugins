@@ -5,7 +5,7 @@ import { Refusal, type Blocker, type Item } from "./output.ts";
 import { sendPush } from "./push.ts";
 import type { Captain } from "./registry.ts";
 import { SHIP_READY_REVIEWS } from "./roles.ts";
-import { NOTICE, type Ask, type AskKind } from "./store.ts";
+import { NOTICE, type Answerer, type Ask, type AskKind } from "./store.ts";
 import { TasksError, type TasksTask } from "./tasks-client.ts";
 import { clip, displayWidth } from "./width.ts";
 
@@ -193,7 +193,7 @@ export async function supersedeShipAsks(
     .filter((ask) => keep === null || shipAskHead(ask.detail) !== keep);
   for (const ask of stale) {
     const at = deps.now();
-    deps.store.answerAsk(ask.id, SUPERSEDED, at);
+    deps.store.answerAsk(ask.id, SUPERSEDED, "captain", at);
     deps.store.markAnswerDelivered(ask.id, at);
     const warning = await captainComment(
       deps,
@@ -292,6 +292,7 @@ export function askItem(ask: Ask, state: string): Item {
       text: ask.text,
       options: ask.options,
       answer: ask.answer,
+      answeredBy: ask.answeredBy,
       delivered: ask.answerDeliveredAt !== null,
     },
   };
@@ -365,23 +366,53 @@ export async function deliverAnswer(
   }
 }
 
+/**
+ * Who answers `ask` from `fromThread`, or a refusal: the user from no thread;
+ * the ask's own Captain thread, except for a ship ask's first answer; no one else.
+ */
+function answerer(ask: Ask, fromThread: string | null): Answerer {
+  if (fromThread === null) return "user";
+  if (fromThread !== ask.captainId) {
+    throw new Refusal([
+      {
+        reason: `${ask.id} is the user's to answer; ${fromThread} is not its Captain`,
+        fix: `report the answer you need to its Captain (${ask.captainId})`,
+      },
+    ]);
+  }
+  if (ask.kind === "ship" && ask.answer === null) {
+    throw new Refusal([
+      {
+        reason: `${ask.id} is a ship ask; only the user answers Merge or Hold`,
+        fix: "leave it in the user's banner",
+      },
+    ]);
+  }
+  return "captain";
+}
+
 export type Resolved = { ask: Ask; state: "answered" | "undelivered"; notes: string[] };
 
 /**
- * Answer an ask: record the answer once, post it on the task, and send it to
- * the Captain. `bb captain ask resolve` and the banner both run this; a rerun
- * with the same answer only retries an undelivered send. Throws a `Refusal`.
+ * Answer an ask: record the answer and who gave it once, post it on the task,
+ * and send it to the Captain. `bb captain ask resolve` and the banner both run
+ * this; a rerun with the same answer only retries an undelivered send.
+ * `fromThread` is the calling thread, or null for the user (the banner or a
+ * terminal). Only the ask's own Captain thread may answer from a thread, and
+ * never a ship ask's first answer: Merge is the user's alone. Throws a `Refusal`.
  */
 export async function resolveAsk(
   deps: CommandDeps,
   address: string,
   rawAnswer: string,
+  fromThread: string | null,
 ): Promise<Resolved> {
   // The user's shell has no thread, so the ask itself names its Captain.
   const id = address.trim().toLowerCase();
   const answer = rawAnswer.trim();
   const ask = deps.store.ask(id);
   if (ask === null) throw new Refusal([{ reason: `no ask ${id}`, fix: "bb captain status" }]);
+  const by = answerer(ask, fromThread);
   const captain = deps.registry.get(ask.captainId);
   const blockers: Blocker[] = [];
   if (captain === null) {
@@ -403,7 +434,7 @@ export async function resolveAsk(
 
   const notes: string[] = [];
   if (ask.answer === null) {
-    deps.store.answerAsk(id, answer, deps.now());
+    deps.store.answerAsk(id, answer, by, deps.now());
     deps.bb.rpc.experimental_invalidate([asksTag(ask.captainId)]);
     if (ask.taskKey !== null) {
       const task = await deps.tasks.getTaskByKey(ask.taskKey).catch(() => null);

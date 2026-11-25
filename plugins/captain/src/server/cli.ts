@@ -1,6 +1,6 @@
 import { defineCli } from "@get-bb/plugin-sdk";
 import { archiveCommand } from "./commands/archive.ts";
-import { askCommand, askResolveCommand } from "./commands/ask.ts";
+import { askCommand, askResolveCommand, askShowCommand } from "./commands/ask.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { driveReadCommand, driveWriteCommand } from "./commands/drive.ts";
 import { iconCommand } from "./commands/icon.ts";
@@ -39,6 +39,7 @@ export function captainCli(deps: CommandDeps) {
       tell: tellCommand(deps),
       ask: askCommand(deps),
       "ask resolve": askResolveCommand(deps),
+      "ask show": askShowCommand(deps),
       status: statusCommand(deps),
       "routine add": routineAddCommand(deps),
       "routine list": routineListCommand(deps),

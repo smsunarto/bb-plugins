@@ -178,6 +178,10 @@ export const MIGRATIONS: readonly string[] = [
     last_error TEXT,
     created_at INTEGER NOT NULL
   )`,
+  // Who answered an ask: `user` (the banner or the user's terminal) or
+  // `captain` (its Captain thread, or the plugin superseding a ship ask). Rows
+  // answered before this column stay null and prove no answer's source.
+  "ALTER TABLE asks ADD COLUMN answered_by TEXT CHECK (answered_by IN ('user', 'captain'))",
 ];
 
 /**
@@ -288,11 +292,16 @@ export type Ask = {
   askedAt: number;
   answer: string | null;
   answeredAt: number | null;
+  /** Who recorded the answer; null when unanswered or answered before this was kept. */
+  answeredBy: Answerer | null;
   answerDeliveredAt: number | null;
   /** Sends of the answer tried so far; the background check stops at `ANSWER_MAX_ATTEMPTS`. */
   deliveryAttempts: number;
   nextDeliveryAt: number | null;
 } & Defer;
+
+/** Who answered an ask: the user, through the banner or a terminal, or its Captain. */
+export type Answerer = "user" | "captain";
 
 type AskRecord = {
   id: string;
@@ -305,6 +314,7 @@ type AskRecord = {
   asked_at: number;
   answer: string | null;
   answered_at: number | null;
+  answered_by: Answerer | null;
   answer_delivered_at: number | null;
   delivery_attempts: number;
   next_delivery_at: number | null;
@@ -503,6 +513,7 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     askedAt: row.asked_at,
     answer: row.answer,
     answeredAt: row.answered_at,
+    answeredBy: row.answered_by,
     answerDeliveredAt: row.answer_delivered_at,
     deliveryAttempts: row.delivery_attempts,
     nextDeliveryAt: row.next_delivery_at,
@@ -701,6 +712,7 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         | "id"
         | "answer"
         | "answeredAt"
+        | "answeredBy"
         | "answerDeliveredAt"
         | "deliveryAttempts"
         | "nextDeliveryAt"
@@ -730,13 +742,11 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         return toAsk(selectAsk.get(id) as AskRecord);
       })();
     },
-    /** Record an answer once; a second answer leaves the first. */
-    answerAsk(id: string, answer: string, at: number): void {
-      db.prepare("UPDATE asks SET answer = ?, answered_at = ? WHERE id = ? AND answer IS NULL").run(
-        answer,
-        at,
-        id,
-      );
+    /** Record an answer and who gave it once; a second answer leaves the first. */
+    answerAsk(id: string, answer: string, by: Answerer, at: number): void {
+      db.prepare(
+        "UPDATE asks SET answer = ?, answered_by = ?, answered_at = ? WHERE id = ? AND answer IS NULL",
+      ).run(answer, by, at, id);
     },
     markAnswerDelivered(id: string, at: number): void {
       db.prepare(

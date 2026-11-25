@@ -6,48 +6,108 @@ import type { Captain, Registry } from "./registry.ts";
 import type { Store } from "./store.ts";
 
 /**
- * The Captain a command acts for: `--captain <id-or-name>` when given, else the
- * calling thread when it is a Captain, else, with `crew`, the calling thread's
- * parent when that is a Captain.
+ * Who a call acts as. The calling thread is request metadata the CLI reports,
+ * not an authenticated identity, so these checks stop cooperative crew from
+ * acting for their Captain by mistake, not a caller that drops its thread.
  */
-export async function callerCaptain(
+export type Acting = { captain: Captain; as: "user" | "captain" | "crew" };
+
+/** What a calling thread is to Captain: a live Captain, crew of a Captain (live or archived), or neither. */
+type ThreadRole =
+  | { kind: "captain"; captain: Captain }
+  | { kind: "crew"; captain: Captain; live: boolean }
+  | { kind: "other" };
+
+async function threadRole(
   bb: Pick<BbPluginApi, "sdk">,
   registry: Registry,
-  ctx: PluginCliContext,
-  options: { captain?: string; crew?: boolean },
-): Promise<Captain> {
-  if (options.captain !== undefined) {
-    const captain = registry.get(options.captain.trim()) ?? registry.byName(options.captain);
-    if (captain !== null) return captain;
-    throw new Refusal([
-      {
-        reason: `no live Captain is ${JSON.stringify(options.captain)}`,
-        fix: "pass a Captain's thread id or name",
-      },
-    ]);
-  }
-  const threadId = ctx.threadId ?? null;
-  if (threadId === null) {
-    throw new Refusal([
-      {
-        reason: "not run from a bb thread",
-        fix: "run it in the Captain thread, or pass --captain <thread-id>",
-      },
-    ]);
-  }
+  store: Pick<Store, "captain" | "crewRole">,
+  threadId: string,
+): Promise<ThreadRole> {
   const own = registry.get(threadId);
-  if (own !== null) return own;
-  if (options.crew === true) {
-    const { parentThreadId } = await bb.sdk.threads.get({ threadId });
-    const parent = registry.get(parentThreadId ?? null);
-    if (parent !== null) return parent;
-  }
+  if (own !== null) return { kind: "captain", captain: own };
+  const parentId =
+    store.crewRole(threadId)?.captainId ??
+    (await bb.sdk.threads.get({ threadId })).parentThreadId ??
+    null;
+  if (parentId === null) return { kind: "other" };
+  const live = registry.get(parentId);
+  if (live !== null) return { kind: "crew", captain: live, live: true };
+  const archived = store.captain(parentId);
+  return archived === null ? { kind: "other" } : { kind: "crew", captain: archived, live: false };
+}
+
+/** A `--captain` value as a live Captain, or a refusal. */
+function namedCaptain(registry: Registry, address: string): Captain {
+  const captain = registry.get(address.trim()) ?? registry.byName(address);
+  if (captain !== null) return captain;
   throw new Refusal([
     {
-      reason: `${threadId} is not a Captain${options.crew === true ? " or one of its crew" : ""}`,
-      fix: "run it in the Captain thread, or pass --captain <thread-id>",
+      reason: `no live Captain is ${JSON.stringify(address)}`,
+      fix: "pass a Captain's thread id or name",
     },
   ]);
+}
+
+/**
+ * The Captain a command acts for, and as whom. A call with no thread is the
+ * user's terminal and names its Captain with `--captain`. A thread-bound call
+ * acts only for its own Captain: a Captain thread for itself, and, with
+ * `crew`, a crew thread for the Captain it reports to. `--captain` can only
+ * name that same Captain; every other thread is refused.
+ */
+export async function actingFor(
+  deps: {
+    bb: Pick<BbPluginApi, "sdk">;
+    registry: Registry;
+    store: Pick<Store, "captain" | "crewRole">;
+  },
+  ctx: PluginCliContext,
+  options: { captain?: string; crew?: boolean },
+): Promise<Acting> {
+  const threadId = ctx.threadId ?? null;
+  if (threadId === null) {
+    if (options.captain === undefined) {
+      throw new Refusal([
+        {
+          reason: "not run from a bb thread",
+          fix: "run it in the Captain thread, or pass --captain <thread-id>",
+        },
+      ]);
+    }
+    return { captain: namedCaptain(deps.registry, options.captain), as: "user" };
+  }
+  const role = await threadRole(deps.bb, deps.registry, deps.store, threadId);
+  if (role.kind === "other") {
+    throw new Refusal([
+      {
+        reason: `${threadId} is not a Captain${options.crew === true ? " or one of its crew" : ""}`,
+        fix: "run it in the Captain thread, or from your terminal with --captain <thread-id>",
+      },
+    ]);
+  }
+  const { captain } = role;
+  if (role.kind === "crew" && (options.crew !== true || !role.live)) {
+    throw new Refusal([
+      {
+        reason: `${threadId} is crew of the ${captain.name} Captain; crew cannot run this command`,
+        fix: `report the need to the ${captain.name} Captain (${captain.threadId}); only it or the user runs it`,
+      },
+    ]);
+  }
+  if (options.captain !== undefined) {
+    const named =
+      deps.registry.get(options.captain.trim()) ?? deps.registry.byName(options.captain);
+    if (named === null || named.threadId !== captain.threadId) {
+      throw new Refusal([
+        {
+          reason: `${threadId} acts only for the ${captain.name} Captain, not ${JSON.stringify(options.captain)}`,
+          fix: "drop --captain, or run it from your terminal",
+        },
+      ]);
+    }
+  }
+  return { captain, as: role.kind };
 }
 
 /** The machine a CLI call came from: the calling thread's host, else the server's. */
@@ -119,7 +179,7 @@ export async function routineCaptain(
   captainOption: string | undefined,
 ): Promise<Captain> {
   if (ctx.threadId === undefined) {
-    return callerCaptain(bb, registry, ctx, { captain: captainOption });
+    return (await actingFor({ bb, registry, store }, ctx, { captain: captainOption })).captain;
   }
   const own = await threadCaptain(bb, registry, store, ctx.threadId);
   if (captainOption !== undefined) {
@@ -162,13 +222,10 @@ async function threadCaptain(
   store: Pick<Store, "captain" | "crewRole">,
   threadId: string,
 ): Promise<Captain> {
-  const own = registry.get(threadId);
-  if (own !== null) return own;
-  const role = store.crewRole(threadId);
-  const parentId =
-    role?.captainId ?? (await bb.sdk.threads.get({ threadId })).parentThreadId ?? null;
-  const parent = parentId === null ? null : (registry.get(parentId) ?? store.captain(parentId));
-  if (parent !== null) {
+  const role = await threadRole(bb, registry, store, threadId);
+  if (role.kind === "captain") return role.captain;
+  if (role.kind === "crew") {
+    const parent = role.captain;
     throw new Refusal([
       {
         reason: `${threadId} is crew of the ${parent.name} Captain; crew cannot manage routines`,
