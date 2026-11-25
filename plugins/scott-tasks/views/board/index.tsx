@@ -174,7 +174,7 @@ function TaskCard({
       onPointerDown={onPointerDown}
       onClick={onClick}
       className={cn(
-        "min-h-20 shrink-0 rounded-md border border-border-hairline bg-card px-3 py-2.5 text-left select-none",
+        "min-h-19 shrink-0 rounded-md bg-surface-recessed-solid px-3 py-2.5 text-left select-none",
         ghost
           ? "shadow-md"
           : "cursor-pointer touch-none hover:bg-state-hover focus-visible:outline-ring pointer-coarse:touch-auto",
@@ -431,18 +431,15 @@ export function BoardView({ projectId }: BoardViewProps) {
     if (indicatorBeforeTaskId === null) children.push(indicator);
 
     return (
-      <div
-        key={status}
-        className="flex max-h-full w-66 shrink-0 snap-start flex-col rounded-md bg-surface-recessed-solid"
-      >
-        <div className="flex min-h-10 items-center gap-2 px-3 text-xs font-semibold">
+      <div key={status} className="group flex max-h-full w-64 shrink-0 snap-start flex-col">
+        <div className="flex min-h-10 items-center gap-2 px-2 text-xs font-medium">
           <StatusIcon status={status} />
           <span>{STATUS_LABELS[status]}</span>
           <span className="font-normal text-muted-foreground">{cards.length}</span>
           <Button
             variant="ghost"
             size="icon"
-            className="ml-auto size-7 text-muted-foreground max-md:pointer-coarse:size-11"
+            className="ml-auto size-7 text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100 max-md:pointer-coarse:size-11 max-md:pointer-coarse:opacity-100"
             aria-label={`New ${STATUS_LABELS[status]} task`}
             onClick={() => openNewTask({ projectId, status })}
           >
@@ -456,7 +453,7 @@ export function BoardView({ projectId }: BoardViewProps) {
           }}
           data-board-column={status}
           className={cn(
-            "flex min-h-16 flex-col gap-1.5 overflow-y-auto rounded-md px-2 pb-2",
+            "flex min-h-16 flex-col gap-1.5 overflow-y-auto rounded-md pb-2",
             isDragOver && "bg-surface-selected outline-2 outline-dashed outline-input",
           )}
         >
@@ -470,7 +467,7 @@ export function BoardView({ projectId }: BoardViewProps) {
     <div
       ref={boardRef}
       className={cn(
-        "flex h-full snap-x items-start gap-3 overflow-x-auto px-3 py-4 @md:px-5",
+        "flex h-full snap-x items-start gap-4 overflow-x-auto px-3 py-3 @md:px-6 max-md:pointer-coarse:pb-22",
         drag !== null && "cursor-grabbing",
       )}
     >

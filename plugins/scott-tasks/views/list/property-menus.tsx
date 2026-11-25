@@ -304,6 +304,8 @@ export function TaskContextMenu({
   projects,
   onMoveToProject,
   children,
+  selected = false,
+  onToggleSelection,
 }: {
   task: Task;
   onEdit: EditFn;
@@ -311,6 +313,8 @@ export function TaskContextMenu({
   projects: readonly Project[];
   onMoveToProject: (task: Task, projectId: string) => void;
   children: ReactNode;
+  selected?: boolean;
+  onToggleSelection?: () => void;
 }) {
   const toggleLabel = (labelId: string) => {
     const labelIds = task.labelIds.includes(labelId)
@@ -322,6 +326,15 @@ export function TaskContextMenu({
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="min-w-44">
+        {onToggleSelection ? (
+          <>
+            <ContextMenuCheckboxItem checked={selected} onCheckedChange={onToggleSelection}>
+              Select task
+              <ContextMenuShortcut>X</ContextMenuShortcut>
+            </ContextMenuCheckboxItem>
+            <ContextMenuSeparator />
+          </>
+        ) : null}
         <ContextMenuSub>
           <ContextMenuSubTrigger>
             <StatusIcon status={task.status} />

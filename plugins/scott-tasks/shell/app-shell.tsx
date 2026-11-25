@@ -45,6 +45,8 @@ function RouteOutlet({ route }: { route: ResolvedTasksRoute }) {
       return <ListView projectId={null} />;
     case "active":
       return <ListView projectId={null} activeOnly />;
+    case "backlog":
+      return <ListView projectId={null} backlogOnly />;
     case "manage":
       return <ManagePanel />;
     case "task":
@@ -53,14 +55,18 @@ function RouteOutlet({ route }: { route: ResolvedTasksRoute }) {
       return route.view === "board" ? (
         <BoardView projectId={route.projectId} />
       ) : (
-        <ListView projectId={route.projectId} />
+        <ListView
+          projectId={route.projectId}
+          activeOnly={route.scope === "active"}
+          backlogOnly={route.scope === "backlog"}
+        />
       );
   }
 }
 
 function resolveRoute(route: TasksRoute): ResolvedTasksRoute {
   if (route.kind !== "project") return route;
-  return { ...route, view: route.view ?? loadViewMode(route.projectId) };
+  return { ...route, view: route.scope ? "list" : (route.view ?? loadViewMode(route.projectId)) };
 }
 
 function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
@@ -69,7 +75,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
   const navigation = useMemo<TasksNavigation>(
     () => ({
       go: (target, options) => {
-        if (target.kind === "project" && target.view !== null) {
+        if (target.kind === "project" && target.view !== null && target.scope === undefined) {
           storeViewMode(target.projectId, target.view);
         }
         tasksNavigation.go(target, options);
@@ -107,6 +113,10 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
 
   const noProjects = projects.data !== undefined && projects.data.length === 0;
   const newTaskProjectId = route.kind === "project" ? route.projectId : null;
+  const newTaskStatus =
+    route.kind === "backlog" || (route.kind === "project" && route.scope === "backlog")
+      ? "backlog"
+      : undefined;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -115,15 +125,16 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
       if (isEditableTarget(event.target)) return;
       if (hasOpenOverlay()) return;
       event.preventDefault();
-      openNewTask({ projectId: newTaskProjectId });
+      openNewTask({ projectId: newTaskProjectId, status: newTaskStatus });
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openNewTask, newTaskProjectId]);
+  }, [openNewTask, newTaskProjectId, newTaskStatus]);
 
   return (
     <div
       data-bb-plugin="scott-tasks"
+      data-scott-tasks-page=""
       className="relative flex h-full min-h-0 bg-background text-foreground"
     >
       <main className="@container flex min-w-0 flex-1 flex-col">
@@ -141,7 +152,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
                 }
           }
           onNavigate={navigation.go}
-          onNewTask={() => openNewTask({ projectId: newTaskProjectId })}
+          onNewTask={() => openNewTask({ projectId: newTaskProjectId, status: newTaskStatus })}
           onBack={backFromTask}
         />
         <div className="min-h-0 flex-1 overflow-auto">

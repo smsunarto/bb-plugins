@@ -22,7 +22,7 @@ export function listScrollScopeKey(params: {
 }): string {
   const list =
     params.projectId !== null
-      ? `project:${params.projectId}`
+      ? `project:${params.projectId}${params.activeOnly ? ":active" : ""}`
       : params.activeOnly
         ? "active"
         : "all";

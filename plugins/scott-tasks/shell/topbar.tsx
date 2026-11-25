@@ -115,13 +115,13 @@ function ViewToggle({
         // Pressing the current view emits "", which still pins that view as before.
         onChange(next === "list" || next === "board" ? next : view);
       }}
-      className="gap-0.5 rounded-md bg-surface-recessed-solid p-0.5"
+      className="gap-0.5"
     >
       <ToggleGroupItem
         value="list"
         aria-label="List"
         title="List view"
-        className="h-7 gap-1.5 px-2 text-xs max-md:pointer-coarse:size-11"
+        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground max-md:pointer-coarse:size-11"
       >
         <Icon name="ListView" className="size-4 shrink-0" />
         <span className="hidden @md:inline max-md:pointer-coarse:hidden">List</span>
@@ -130,7 +130,7 @@ function ViewToggle({
         value="board"
         aria-label="Board"
         title="Board view"
-        className="h-7 gap-1.5 px-2 text-xs max-md:pointer-coarse:size-11"
+        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground max-md:pointer-coarse:size-11"
       >
         <Icon name="Columns2" className="size-4 shrink-0" />
         <span className="hidden @md:inline max-md:pointer-coarse:hidden">Board</span>
@@ -157,6 +157,55 @@ function RefreshTasksButton() {
         <Icon name="RotateCcw" className={cn("size-3.5", isRefreshing && "animate-spin")} />
       </Button>
     </Hint>
+  );
+}
+
+const BROWSE_TABS = [
+  { id: "all", label: "All", icon: "ListView" },
+  { id: "active", label: "Active", icon: "Zap" },
+  { id: "backlog", label: "Backlog", icon: "Circle" },
+] as const;
+
+function TaskViewTabs({
+  route,
+  onNavigate,
+}: {
+  route: Extract<ResolvedTasksRoute, { kind: "all" | "active" | "backlog" | "project" }>;
+  onNavigate: (route: TasksRoute) => void;
+}) {
+  const current = route.kind === "project" ? (route.scope ?? "all") : route.kind;
+  return (
+    <nav aria-label="Task views" className="flex min-w-0 items-center gap-1">
+      {BROWSE_TABS.map(({ id, label, icon }) => (
+        <Button
+          key={id}
+          variant="ghost"
+          size="sm"
+          aria-current={id === current ? "page" : undefined}
+          className={cn(
+            "h-7 gap-1.5 px-2 text-xs max-md:pointer-coarse:h-11",
+            id === current
+              ? "bg-state-active font-semibold text-foreground"
+              : "text-muted-foreground",
+          )}
+          onClick={() => {
+            if (route.kind !== "project") {
+              onNavigate({ kind: id });
+              return;
+            }
+            onNavigate({
+              kind: "project",
+              projectId: route.projectId,
+              view: id === "all" ? null : "list",
+              ...(id === "all" ? {} : { scope: id }),
+            });
+          }}
+        >
+          <Icon name={icon} className="size-3.5" />
+          {label}
+        </Button>
+      ))}
+    </nav>
   );
 }
 
@@ -188,19 +237,19 @@ export function TasksTopbar({
     return null;
   }, [route, projects]);
 
+  const browsing =
+    route.kind === "all" ||
+    route.kind === "active" ||
+    route.kind === "backlog" ||
+    route.kind === "project";
   const breadcrumb = (() => {
     switch (route.kind) {
       case "all":
         return <span className="whitespace-nowrap font-semibold">All tasks</span>;
       case "active":
-        return (
-          <span className="flex items-center gap-2">
-            <span className="whitespace-nowrap font-semibold">Active</span>
-            <span className="hidden text-xs font-normal text-muted-foreground @md:inline">
-              agents working now
-            </span>
-          </span>
-        );
+        return <span className="font-semibold">Active tasks</span>;
+      case "backlog":
+        return <span className="font-semibold">Backlog</span>;
       case "manage":
         return (
           <span className="flex items-center gap-2">
@@ -221,6 +270,17 @@ export function TasksTopbar({
               />
             ) : null}
             <span className="truncate font-semibold">{project?.name ?? "Project"}</span>
+            <Icon
+              name="ChevronRight"
+              className="size-3 shrink-0 text-muted-foreground max-md:pointer-coarse:hidden"
+            />
+            <span className="text-xs font-normal text-muted-foreground max-md:pointer-coarse:hidden">
+              {route.scope === "active"
+                ? "Active"
+                : route.scope === "backlog"
+                  ? "Backlog"
+                  : "Tasks"}
+            </span>
           </span>
         );
       case "task":
@@ -277,34 +337,73 @@ export function TasksTopbar({
   })();
 
   return (
-    <header className="flex min-h-12 shrink-0 items-center gap-1.5 border-b border-border-hairline bg-background px-3 text-sm @md:gap-2 @md:px-5 max-md:pl-12 max-md:pointer-coarse:min-h-14 max-md:pointer-coarse:pl-14">
-      <div className="min-w-0 flex-1 overflow-hidden">{breadcrumb}</div>
-      {route.kind === "task" && (pagerScope !== null || projects !== undefined) ? (
-        <TaskPager
-          taskKey={route.taskKey}
-          projectId={pagerScope !== null ? pagerScope.projectId : (project?.id ?? null)}
-          onNavigate={onNavigate}
-        />
-      ) : null}
-      {route.kind === "project" ? (
-        <span className="shrink-0">
-          <ViewToggle view={route.view} onChange={(view) => onNavigate({ ...route, view })} />
-        </span>
-      ) : null}
-      <RefreshTasksButton />
-      {route.kind !== "task" && route.kind !== "manage" ? (
-        <Hint label="New task (C)" side="bottom">
-          <Button
-            size="sm"
-            className="h-7 gap-1 max-md:pointer-coarse:size-11"
-            aria-label="New task"
-            aria-keyshortcuts="C"
-            onClick={onNewTask}
-          >
-            <Icon name="Plus" className="size-3.5" />
-            <span className="hidden @lg:inline">New task</span>
-          </Button>
-        </Hint>
+    <header
+      className={cn(
+        "shrink-0 bg-background px-3 @md:px-6",
+        browsing &&
+          "@3xl:grid @3xl:min-h-12 @3xl:grid-cols-[auto_minmax(0,1fr)_auto] @3xl:items-center @3xl:gap-4",
+      )}
+    >
+      <div
+        className={cn(
+          "flex min-h-11 items-center gap-2 text-sm",
+          browsing
+            ? "max-md:pointer-coarse:min-h-15 @3xl:contents"
+            : "max-md:pointer-coarse:min-h-12",
+        )}
+      >
+        <div
+          className={cn(
+            "min-w-0 flex-1 overflow-hidden",
+            browsing &&
+              "max-md:pointer-coarse:text-2xl max-md:pointer-coarse:tracking-tight @3xl:col-start-1 @3xl:row-start-1 @3xl:max-w-64",
+          )}
+        >
+          {breadcrumb}
+        </div>
+        <div className="flex shrink-0 items-center gap-2 @3xl:col-start-3 @3xl:row-start-1">
+          {route.kind === "task" && (pagerScope !== null || projects !== undefined) ? (
+            <TaskPager
+              taskKey={route.taskKey}
+              projectId={pagerScope !== null ? pagerScope.projectId : (project?.id ?? null)}
+              onNavigate={onNavigate}
+            />
+          ) : null}
+          <RefreshTasksButton />
+          {browsing ? (
+            <Hint label="New task (C)" side="bottom">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1 px-2 text-xs max-md:pointer-coarse:absolute max-md:pointer-coarse:bottom-[max(1rem,env(safe-area-inset-bottom))] max-md:pointer-coarse:right-4 max-md:pointer-coarse:z-30 max-md:pointer-coarse:h-12 max-md:pointer-coarse:rounded-full max-md:pointer-coarse:bg-primary max-md:pointer-coarse:px-4 max-md:pointer-coarse:text-sm max-md:pointer-coarse:text-primary-foreground max-md:pointer-coarse:shadow-md"
+                aria-label="New task"
+                aria-keyshortcuts="C"
+                onClick={onNewTask}
+              >
+                <Icon name="Plus" className="size-3.5" />
+                New task
+              </Button>
+            </Hint>
+          ) : null}
+        </div>
+      </div>
+      {browsing ? (
+        <div className="flex min-h-9 items-center justify-between gap-2 border-b border-border-hairline @3xl:col-start-2 @3xl:row-start-1 @3xl:border-b-0">
+          <TaskViewTabs route={route} onNavigate={onNavigate} />
+          {route.kind === "project" ? (
+            <ViewToggle
+              view={route.view}
+              onChange={(view) =>
+                onNavigate({
+                  kind: "project",
+                  projectId: route.projectId,
+                  view,
+                  ...(view === "list" && route.scope !== undefined ? { scope: route.scope } : {}),
+                })
+              }
+            />
+          ) : null}
+        </div>
       ) : null}
     </header>
   );

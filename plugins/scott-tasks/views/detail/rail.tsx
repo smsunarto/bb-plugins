@@ -67,7 +67,7 @@ type PropertyTrigger = Pick<ButtonProps, "variant" | "className">;
 const RAIL_TRIGGER: PropertyTrigger = {
   variant: "ghost",
   className:
-    "h-8 justify-start gap-1.5 rounded-md border border-border-hairline px-2 font-normal @[45rem]:w-full @[45rem]:border-transparent @[45rem]:text-sm max-md:pointer-coarse:h-11",
+    "h-8 shrink-0 justify-start gap-2 rounded-full bg-surface-recessed-solid px-3 text-xs font-normal @[45rem]:w-full @[45rem]:rounded-md @[45rem]:bg-transparent @[45rem]:px-2 @[45rem]:text-sm max-md:pointer-coarse:h-11",
 };
 
 type PropertyMenuState = {
@@ -557,80 +557,74 @@ export function PropertiesRail({
   return (
     <aside
       ref={rail}
-      className={cn(
-        "min-w-0 @[45rem]:border-l @[45rem]:border-border-hairline @[45rem]:bg-surface-recessed-solid",
-        className,
-      )}
+      className={cn("min-w-0 @[45rem]:border-l @[45rem]:border-border-hairline", className)}
     >
-      <div className="flex flex-wrap items-center gap-1.5 @[45rem]:sticky @[45rem]:top-0 @[45rem]:block @[45rem]:px-4 @[45rem]:py-8">
-        <h2 className="sr-only @[45rem]:not-sr-only @[45rem]:mb-3 @[45rem]:text-sm @[45rem]:font-semibold">
+      <div className="@[45rem]:sticky @[45rem]:top-0 @[45rem]:px-4 @[45rem]:py-11">
+        <h2 className="sr-only @[45rem]:not-sr-only @[45rem]:mb-3 @[45rem]:px-2 @[45rem]:text-xs @[45rem]:font-semibold @[45rem]:text-muted-foreground">
           Properties
         </h2>
-        <StatusMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} menu={menu("status")} />
-        <PriorityMenu
-          task={task}
-          onUpdate={onUpdate}
-          trigger={RAIL_TRIGGER}
-          menu={menu("priority")}
-        />
-        <DueDateMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} />
+        <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto pb-1 @[45rem]:block @[45rem]:overflow-visible @[45rem]:pb-0">
+          <StatusMenu
+            task={task}
+            onUpdate={onUpdate}
+            trigger={RAIL_TRIGGER}
+            menu={menu("status")}
+          />
+          <PriorityMenu
+            task={task}
+            onUpdate={onUpdate}
+            trigger={RAIL_TRIGGER}
+            menu={menu("priority")}
+          />
+          <DueDateMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} />
 
-        <div className="hidden @[45rem]:mb-1 @[45rem]:mt-3 @[45rem]:block @[45rem]:text-xs @[45rem]:font-medium @[45rem]:text-muted-foreground">
-          Project
-        </div>
-        <ProjectMenu
-          task={task}
-          project={project}
-          projects={projects}
-          onMoveToProject={onMoveToProject}
-          trigger={RAIL_TRIGGER}
-        />
-
-        <div className="hidden @[45rem]:mb-1 @[45rem]:mt-3 @[45rem]:block @[45rem]:text-xs @[45rem]:font-medium @[45rem]:text-muted-foreground">
-          Labels
-        </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-1">
-          {taskLabels.map((label) => (
-            <LabelChip key={label.id} label={label} />
-          ))}
-          <LabelsMenu task={task} labels={labels} onUpdate={onUpdate} menu={menu("labels")}>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Edit labels (L)"
-              aria-keyshortcuts="L"
-              className="size-7 text-muted-foreground max-md:pointer-coarse:size-11"
-            >
-              <Icon name="Tag" className="size-3.5" />
-            </Button>
-          </LabelsMenu>
-        </div>
-
-        <div className="hidden @[45rem]:mb-1 @[45rem]:mt-4 @[45rem]:block @[45rem]:text-xs @[45rem]:font-medium @[45rem]:text-muted-foreground">
-          Dispatch target
-        </div>
-        {project !== undefined ? (
-          <DispatchTargetMenu
+          <ProjectMenu
+            task={task}
             project={project}
-            bbProjects={bbProjects.data ?? []}
-            onError={onError}
+            projects={projects}
+            onMoveToProject={onMoveToProject}
             trigger={RAIL_TRIGGER}
           />
-        ) : (
-          <div className="hidden text-sm text-muted-foreground @[45rem]:block">…</div>
-        )}
 
-        <div className="@[45rem]:mt-2">
-          <DispatchControl
-            taskId={task.id}
-            presets={presets}
-            onError={onError}
-            align="start"
-            className="max-w-56 @[45rem]:w-full"
-            menu={menu("agent")}
-          />
+          <div className="flex shrink-0 items-center gap-1 @[45rem]:flex-wrap @[45rem]:px-2 @[45rem]:py-1">
+            {taskLabels.map((label) => (
+              <LabelChip key={label.id} label={label} />
+            ))}
+            <LabelsMenu task={task} labels={labels} onUpdate={onUpdate} menu={menu("labels")}>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Edit labels (L)"
+                aria-keyshortcuts="L"
+                className="size-7 text-muted-foreground max-md:pointer-coarse:size-11"
+              >
+                <Icon name="Tag" className="size-3.5" />
+              </Button>
+            </LabelsMenu>
+          </div>
+
+          {project !== undefined ? (
+            <DispatchTargetMenu
+              project={project}
+              bbProjects={bbProjects.data ?? []}
+              onError={onError}
+              trigger={RAIL_TRIGGER}
+            />
+          ) : (
+            <div className="hidden text-sm text-muted-foreground @[45rem]:block">…</div>
+          )}
+
+          <div className="shrink-0 @[45rem]:mt-3">
+            <DispatchControl
+              taskId={task.id}
+              presets={presets}
+              onError={onError}
+              align="start"
+              className="max-w-56 @[45rem]:w-full"
+              menu={menu("agent")}
+            />
+          </div>
         </div>
-
         {active.length > 0 ? (
           <div className="mt-3 flex flex-col gap-1 text-xs">
             {active.map((thread) => (

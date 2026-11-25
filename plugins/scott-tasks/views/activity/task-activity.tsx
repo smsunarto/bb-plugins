@@ -57,7 +57,7 @@ function UserAvatar({ name }: { name: string }) {
   return (
     <span
       aria-hidden
-      className="z-[1] flex size-6 shrink-0 items-center justify-center rounded-full bg-attention text-2xs font-bold text-background outline outline-2 outline-background"
+      className="z-[1] flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-recessed-solid text-2xs font-medium text-muted-foreground outline outline-2 outline-background"
     >
       {initial}
     </span>
@@ -164,7 +164,7 @@ function SystemEvent({ comment, nowMs }: { comment: Comment; nowMs: number }) {
     <div className="relative z-[1] my-2 flex items-center gap-2 text-xs text-muted-foreground">
       <span
         aria-hidden
-        className="mx-2 size-2 shrink-0 rounded-full border-2 border-muted bg-card"
+        className="mx-1.5 size-2 shrink-0 rounded-full border border-border bg-background"
       />
       <span className="min-w-0 truncate">
         {splitSystemBody(comment.body, comment.authorName).map((segment, index) =>
@@ -190,7 +190,7 @@ function CommentCard({ comment, nowMs }: { comment: DisplayComment; nowMs: numbe
   const navigate = useBbNavigate();
   const [lightbox, setLightbox] = useState<Attachment | null>(null);
   return (
-    <div className="relative mb-4 flex gap-2">
+    <div className="relative mb-4 flex gap-3">
       {source.kind === "agent" ? (
         <CommentProviderAvatar provider={source.provider} />
       ) : (
@@ -285,7 +285,7 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
   };
 
   return (
-    <div className="mt-4 rounded-lg border border-border bg-card px-4 pb-3 pt-3 shadow-2xs transition-colors focus-within:border-input focus-within:ring-1 focus-within:ring-ring">
+    <div className="mt-6 rounded-md border border-border-hairline bg-card px-3 pb-2 pt-3 transition-colors focus-within:border-input focus-within:ring-1 focus-within:ring-ring">
       <TasksEditor
         value={body}
         onChange={setBody}
@@ -331,7 +331,7 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
           size="icon"
           variant="ghost"
           aria-label="Attach file"
-          className="size-7 shrink-0 text-muted-foreground"
+          className="size-7 shrink-0 text-muted-foreground max-md:pointer-coarse:size-11"
           onClick={() => fileInputRef.current?.click()}
         >
           <HugeiconsIcon icon={AttachmentIcon} className="size-3.5" />
@@ -341,7 +341,7 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
           size="icon"
           aria-label="Comment"
           disabled={!canSend}
-          className="size-7 shrink-0 rounded-md bg-foreground text-background hover:bg-foreground/90"
+          className="size-7 shrink-0 rounded-md bg-foreground text-background hover:bg-foreground/90 max-md:pointer-coarse:size-11"
           onClick={() => void send()}
         >
           <HugeiconsIcon icon={ArrowUp02Icon} className="size-3.5" />
@@ -413,7 +413,7 @@ export function TaskActivity({ taskId }: TaskActivityProps) {
         className={cn(
           "relative",
           comments.length > 0 &&
-            "before:absolute before:bottom-2 before:left-3 before:top-2 before:w-px before:bg-border-hairline",
+            "before:absolute before:bottom-2 before:left-2.5 before:top-2 before:w-px before:bg-border-hairline",
         )}
       >
         {feed.error ? (

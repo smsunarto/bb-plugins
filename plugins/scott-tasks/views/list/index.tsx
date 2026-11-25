@@ -57,6 +57,7 @@ function hasPendingWrites(task: Task): boolean {
 interface ListViewProps {
   projectId: string | null;
   activeOnly?: boolean;
+  backlogOnly?: boolean;
 }
 
 function readRow(container: HTMLElement, key: string) {
@@ -81,7 +82,7 @@ function LoadingRows() {
   );
 }
 
-export function ListView({ projectId, activeOnly = false }: ListViewProps) {
+export function ListView({ projectId, activeOnly = false, backlogOnly = false }: ListViewProps) {
   const navigation = useTasksNavigation();
   const openTask = useCallback(
     (taskKey: string) => navigation.go({ kind: "task", taskKey }),
@@ -104,7 +105,10 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
   const { filters, sort } = stored.preference;
   const setFilters = (next: ListFilterState) => {
     setPreference((current) => {
-      const updated: ListPreference = { filters: next, sort: current.sort };
+      const updated: ListPreference = {
+        filters: backlogOnly ? { ...next, statuses: current.filters.statuses } : next,
+        sort: current.sort,
+      };
       storeListPreference(preferenceScope, updated);
       return updated;
     });
@@ -133,8 +137,10 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
     return selectedLabelIds(labelOptions, filters.labelNames);
   }, [filters.labelNames, labelOptions, labels]);
 
+  const statuses: TaskStatus[] = backlogOnly ? ["backlog"] : filters.statuses;
+  const visibleFilters = backlogOnly ? { ...filters, statuses: [] } : filters;
   const tasksQuery = useListTasks(projectId, activeOnly, {
-    statuses: filters.statuses,
+    statuses,
     priorities: filters.priorities,
     labelIds,
   });
@@ -203,10 +209,15 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
   }, []);
 
   const showProject = projectId === null;
-  const filtered = hasActiveFilters(filters);
+  const filtered = hasActiveFilters(visibleFilters);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const scopeKey = listScrollScopeKey({ projectId, activeOnly, filters, sort });
+  const scopeKey = listScrollScopeKey({
+    projectId,
+    activeOnly,
+    filters: { ...filters, statuses },
+    sort,
+  });
   const pendingFocus = useRef<string | null>(null);
   // Rows are still arriving while the primary query loads or the closed split trails it.
   const loading =
@@ -363,7 +374,7 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
         <section key={group.status}>
           <div
             data-status-group-header={group.status}
-            className="sticky top-0 z-20 isolate flex h-9 items-center justify-between border-b border-border-hairline bg-surface-recessed-solid px-3 text-xs @md:px-5 max-md:pointer-coarse:h-11"
+            className="group sticky top-0 z-20 isolate flex h-8 items-center justify-between bg-surface-recessed-solid px-3 text-xs @md:px-6 max-md:pointer-coarse:h-11"
           >
             <Button
               type="button"
@@ -371,7 +382,7 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
               size="sm"
               aria-expanded={!isCollapsed}
               aria-controls={listId}
-              className="h-full gap-2 px-1"
+              className="h-full gap-2 px-1 text-xs font-medium"
               onClick={() => setCollapsed((state) => ({ ...state, [group.status]: !isCollapsed }))}
             >
               <Icon
@@ -388,7 +399,7 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
               type="button"
               variant="ghost"
               size="icon"
-              className="size-7 text-muted-foreground max-md:pointer-coarse:size-11"
+              className="size-7 text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100 max-md:pointer-coarse:size-11 max-md:pointer-coarse:opacity-100"
               aria-label={`New ${STATUS_LABELS[group.status]} task`}
               onClick={() => openNewTask({ projectId, status: group.status })}
             >
@@ -430,12 +441,13 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ListFilterBar
-        filters={filters}
+        filters={visibleFilters}
         onChange={setFilters}
         sort={sort}
         onSortChange={setSort}
         labelOptions={labelOptions}
         taskCount={tasksQuery.phase === "ready" ? tasksQuery.tasks.length : undefined}
+        fixedStatus={backlogOnly}
       />
       {selectedTasks.length > 0 ? (
         <div className="flex items-center gap-2 border-b border-border-hairline px-4 text-xs">
@@ -482,7 +494,9 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
         aria-keyshortcuts="J K ArrowUp ArrowDown"
         className="min-h-0 flex-1 overflow-y-auto focus-visible:outline-none"
       >
-        <div className="@container flex min-h-full flex-col">{body}</div>
+        <div className="@container flex min-h-full flex-col max-md:pointer-coarse:pb-22">
+          {body}
+        </div>
       </div>
       <DetailToasts toasts={toasts} onDismiss={dismiss} />
     </div>

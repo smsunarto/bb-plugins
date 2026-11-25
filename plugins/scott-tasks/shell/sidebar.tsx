@@ -23,8 +23,9 @@ function SidebarRow({ active, onClick, children, title }: SidebarRowProps) {
       type="button"
       onClick={onClick}
       title={title}
+      aria-current={active ? "page" : undefined}
       className={cn(
-        "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:pointer-coarse:h-11",
+        "flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:pointer-coarse:h-11",
         "cursor-pointer",
         active ? "bg-sidebar-accent font-medium text-foreground" : "text-muted-foreground",
         !active && "hover:bg-state-hover hover:text-foreground",
@@ -37,15 +38,17 @@ function SidebarRow({ active, onClick, children, title }: SidebarRowProps) {
 
 function SectionHeader({ label }: { label: string }) {
   return (
-    <div className="mt-4 flex items-center gap-1 px-2 pb-1 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+    <div className="mt-5 flex items-center gap-1 px-2.5 pb-1.5 text-xs font-medium text-muted-foreground">
       {label}
     </div>
   );
 }
 
-function ProjectDot({ color }: { color: string }) {
+function ProjectIcon({ color }: { color: string }) {
   return (
-    <span aria-hidden className="size-3 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
+    <span aria-hidden className="inline-flex size-4 shrink-0 items-center" style={{ color }}>
+      <Icon name="Folder" className="size-3.5" />
+    </span>
   );
 }
 
@@ -54,7 +57,7 @@ function WorkingDot() {
 }
 
 function RowCount({ value }: { value: number }) {
-  return <span className="ml-auto text-xs tabular-nums text-muted-foreground">{value}</span>;
+  return <span className="ml-auto text-2xs tabular-nums text-muted-foreground">{value}</span>;
 }
 
 function ProjectRow({
@@ -70,7 +73,7 @@ function ProjectRow({
 }) {
   return (
     <SidebarRow active={active} onClick={onClick} title={project.name}>
-      <ProjectDot color={project.color} />
+      <ProjectIcon color={project.color} />
       <span className="min-w-0 flex-1 truncate">{project.name}</span>
       {summary && summary.activeAgentCount > 0 ? <WorkingDot /> : null}
       {summary ? <RowCount value={summary.taskCount} /> : null}
@@ -183,7 +186,8 @@ export function TasksSidebar({
 
   return (
     <div data-bb-plugin="scott-tasks" className="flex h-full min-h-0 flex-col bg-sidebar">
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+        <SectionHeader label="Workspace" />
         <div className="flex flex-col">
           <SidebarRow active={route.kind === "all"} onClick={() => onNavigate({ kind: "all" })}>
             <Icon name="ListView" className="size-3.5 shrink-0" />
@@ -199,14 +203,23 @@ export function TasksSidebar({
             {activeTasks && activeTasks.length > 0 ? <WorkingDot /> : null}
             {activeTasks ? <RowCount value={activeTasks.length} /> : null}
           </SidebarRow>
+          <SidebarRow
+            active={route.kind === "backlog"}
+            onClick={() => onNavigate({ kind: "backlog" })}
+          >
+            <Icon name="Circle" className="size-3.5 shrink-0" />
+            <span className="flex-1">Backlog</span>
+          </SidebarRow>
         </div>
         {isLoading ? (
           <SidebarSkeleton />
         ) : (
           <>
+            {ungrouped.length > 0 || rootFolders.length > 0 ? (
+              <SectionHeader label="Projects" />
+            ) : null}
             {ungrouped.length > 0 ? (
               <>
-                <SectionHeader label="Projects" />
                 <div className="flex flex-col">
                   {ungrouped.map((project) => (
                     <ProjectRow

@@ -284,6 +284,7 @@ describe("list filter/sort preference persistence", () => {
       expect(slot.getByRole("button", { name: /Sort/ }).textContent).toContain("Priority"),
     );
 
+    fireEvent.click(slot.getByRole("button", { name: "Filter" }));
     fireEvent.click(slot.getByRole("button", { name: /^Status/ }));
     const doneOption = await slot.findByRole("menuitemcheckbox", {
       name: /Done/,
@@ -417,6 +418,7 @@ describe("list filter/sort preference persistence", () => {
     const slot = renderSlot(registration, { subPath: PROJECT_A }, { rpc });
     await slot.findByText("ALP-1");
 
+    fireEvent.click(slot.getByRole("button", { name: "Filter" }));
     fireEvent.click(slot.getByRole("button", { name: /^Priority/ }));
     fireEvent.click(await slot.findByRole("menuitemcheckbox", { name: /Urgent/ }));
     pageKeyboardEscape(slot);

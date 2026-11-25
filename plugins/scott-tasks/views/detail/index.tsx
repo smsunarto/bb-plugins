@@ -76,7 +76,7 @@ function EditableTitle({ task, onSave }: { task: Task; onSave: (title: string) =
       suppressContentEditableWarning
       role="textbox"
       aria-label="Task title"
-      className="text-[1.625rem] font-semibold leading-tight tracking-tight outline-none focus-visible:underline focus-visible:decoration-ring focus-visible:underline-offset-4 @[45rem]:text-3xl"
+      className="text-[1.75rem] font-semibold leading-tight tracking-tight outline-none focus-visible:underline focus-visible:decoration-ring focus-visible:underline-offset-4 @[45rem]:text-[2rem]"
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
@@ -323,7 +323,7 @@ function TaskDetail({ task }: { task: Task }) {
   return (
     <div className="@container min-h-full bg-background">
       <article className="grid min-h-full grid-cols-[minmax(0,1fr)] @[45rem]:grid-cols-[minmax(0,1fr)_16rem] @[45rem]:grid-rows-[auto_1fr] @[70rem]:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="mx-auto w-full min-w-0 max-w-[55rem] px-4 pb-3 pt-5 @[45rem]:col-start-1 @[45rem]:row-start-1 @[45rem]:px-8 @[45rem]:pb-5 @[45rem]:pt-8 @[70rem]:px-12">
+        <div className="mx-auto w-full min-w-0 max-w-[49rem] px-4 pb-4 pt-5 @[45rem]:col-start-1 @[45rem]:row-start-1 @[45rem]:px-8 @[45rem]:pb-7 @[45rem]:pt-12 @[70rem]:px-10">
           {parentTask || subtasks.data?.length ? (
             <div className="mb-4 flex flex-wrap items-center gap-2">
               {parentTask ? (
@@ -382,12 +382,12 @@ function TaskDetail({ task }: { task: Task }) {
             </div>
           ) : null}
         </PropertiesRail>
-        <div className="mx-auto w-full min-w-0 max-w-[55rem] px-4 pb-16 @[45rem]:col-start-1 @[45rem]:row-start-2 @[45rem]:px-8 @[70rem]:px-12">
+        <div className="mx-auto w-full min-w-0 max-w-[49rem] px-4 pb-14 @[45rem]:col-start-1 @[45rem]:row-start-2 @[45rem]:px-8 @[70rem]:px-10">
           <TasksEditor
             value={descriptionValue}
             onChange={onDescriptionChange}
             variant="doc"
-            className="min-h-24"
+            className="min-h-20"
             placeholder="Add a description…"
             onUploadImage={uploadForTask}
             mentionItems={mentionItems}

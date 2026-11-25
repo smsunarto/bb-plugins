@@ -142,7 +142,7 @@ describe("list-row Active chip", () => {
     });
     expect(slot.getByTitle("Agent working").textContent).toBe("Active");
     expect(slot.getByTitle("Agent starting").textContent).toBe("Active");
-    expect(slot.getAllByText("Active", { selector: "span[title]" })).toHaveLength(2);
+    expect(slot.getAllByTitle(/^Agent (working|starting)$/)).toHaveLength(2);
     expect(slot.queryByText(/Attached/)).toBeNull();
   });
 

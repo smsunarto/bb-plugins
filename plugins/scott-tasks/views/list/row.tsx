@@ -16,16 +16,19 @@ import {
 } from "./property-menus.js";
 
 const RAIL_CHIP_CLASS =
-  "h-5 gap-1 rounded-full px-1.5 py-0 text-2xs font-normal text-muted-foreground";
+  "h-4.5 gap-1 rounded-full px-1.5 py-0 text-2xs font-normal text-muted-foreground";
 
 function ActiveChip({ threads }: { threads: readonly TaskThread[] }) {
   if (threads.length === 0) return null;
   return (
-    <Badge variant="outline" title={activeWorkLabel(threads)} className={RAIL_CHIP_CLASS}>
-      <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-success" />
-      <Icon name="Bot" className="size-3 shrink-0" />
-      Active
-    </Badge>
+    <span
+      title={activeWorkLabel(threads)}
+      className="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-recessed text-muted-foreground"
+    >
+      <Icon name="Bot" className="size-3" aria-hidden />
+      <span aria-hidden className="absolute bottom-0 right-0 size-1.5 rounded-full bg-success" />
+      <span className="sr-only">Active</span>
+    </span>
   );
 }
 
@@ -67,10 +70,10 @@ function LabelChips({ task, labelsById }: { task: Task; labelsById: Map<string, 
   if (labels.length === 0) return null;
   return (
     <>
-      <span className="hidden items-center gap-2 @xl:flex">
+      <span className="hidden items-center gap-1 @xl:flex">
         <LabelChipRow labels={labels} maxVisible={2} />
       </span>
-      <span className="flex items-center gap-2 @xl:hidden">
+      <span className="flex items-center gap-1 @xl:hidden">
         <LabelChipRow labels={labels} maxVisible={1} />
       </span>
     </>
@@ -122,13 +125,15 @@ export const TaskRow = memo(function TaskRow({
       projectLabels={projectLabels}
       projects={projects}
       onMoveToProject={onMoveToProject}
+      selected={selected}
+      onToggleSelection={onToggleSelection ? () => onToggleSelection(task.id) : undefined}
     >
       <div
         data-task-key={task.key}
         aria-busy={pending || undefined}
         className={cn(
-          "group relative grid min-h-15 w-full grid-cols-[auto_auto_auto_minmax(0,1fr)] items-center gap-x-1 border-b border-border-hairline px-2 text-left hover:bg-state-hover @md:px-5",
-          "@md:flex @md:h-9 @md:min-h-9 @md:gap-2 max-md:pointer-coarse:h-auto",
+          "group relative grid min-h-14 w-full grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-x-2 px-3 text-left hover:bg-state-hover",
+          "pointer-fine:@md:h-9 pointer-fine:@md:min-h-9 pointer-fine:@md:grid-cols-[1.25rem_3.7rem_1.25rem_minmax(0,1fr)_minmax(0,9rem)_2.25rem_4.25rem] pointer-fine:@md:pl-7 pointer-fine:@md:pr-6",
           selected && "bg-surface-selected",
           pending && "opacity-70",
         )}
@@ -163,8 +168,11 @@ export const TaskRow = memo(function TaskRow({
           <label
             htmlFor={selectionId}
             className={cn(
-              "relative z-10 col-start-1 row-span-2 row-start-1 grid h-full w-7 cursor-pointer place-items-center opacity-0 focus-within:opacity-100 group-hover:opacity-100 max-md:pointer-coarse:min-h-11 max-md:pointer-coarse:w-11 max-md:pointer-coarse:opacity-100",
-              selectionActive && "opacity-100",
+              "absolute inset-y-0 left-3 z-20 grid w-11 cursor-pointer place-items-center pointer-fine:@md:left-0 pointer-fine:@md:w-7",
+              selectionActive || selected
+                ? "bg-background group-hover:bg-state-hover"
+                : "pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100 pointer-fine:group-hover:pointer-events-auto pointer-fine:group-hover:opacity-100",
+              selected && "bg-surface-selected",
             )}
             title="Select task (X)"
           >
@@ -182,10 +190,10 @@ export const TaskRow = memo(function TaskRow({
           onEdit={onEdit}
           open={openMenu === "priority"}
           onOpenChange={(next) => setOpenMenu(next ? "priority" : null)}
-          className="col-start-2 row-span-2 row-start-1 max-md:pointer-coarse:hidden"
+          className="col-start-1 row-start-1 hidden pointer-fine:@md:inline-flex"
         />
-        <span className="pointer-events-none relative col-start-4 row-start-2 flex min-w-0 items-center gap-1 self-center font-mono text-xs tabular-nums text-muted-foreground @md:w-16 @md:shrink-0">
-          <PriorityIcon priority={task.priority} className="hidden max-md:pointer-coarse:block" />
+        <span className="pointer-events-none relative col-start-2 row-start-2 flex min-w-0 items-center gap-1 self-center whitespace-nowrap text-2xs tabular-nums text-muted-foreground pointer-fine:@md:row-start-1">
+          <PriorityIcon priority={task.priority} className="size-3 pointer-fine:@md:hidden" />
           <span className="truncate">{task.key}</span>
         </span>
         <StatusEditor
@@ -193,13 +201,13 @@ export const TaskRow = memo(function TaskRow({
           onEdit={onEdit}
           open={openMenu === "status"}
           onOpenChange={(next) => setOpenMenu(next ? "status" : null)}
-          className="col-start-3 row-span-2 row-start-1"
+          className="col-start-1 row-span-2 row-start-1 pointer-fine:@md:col-start-3 pointer-fine:@md:row-span-1"
         />
-        <span className="pointer-events-none relative col-start-4 row-start-1 min-w-0 self-end truncate text-sm font-medium @md:flex-1 @md:self-auto">
+        <span className="pointer-events-none relative col-start-2 row-start-1 min-w-0 self-end truncate text-sm font-semibold pointer-fine:@md:col-start-4 pointer-fine:@md:self-center pointer-fine:@md:font-medium">
           {task.title}
         </span>
-        <span className="pointer-events-none relative col-start-4 row-start-2 flex max-w-[calc(100%-3.75rem)] min-w-0 items-center gap-1 justify-self-end text-xs text-muted-foreground @md:max-w-none @md:shrink-0 @md:gap-2">
-          <span className="pointer-events-auto min-w-0 overflow-hidden">
+        <span className="pointer-events-none relative col-start-2 row-start-2 flex max-w-[calc(100%-4.25rem)] min-w-0 items-center gap-1 self-center justify-self-end text-2xs text-muted-foreground pointer-fine:@md:col-span-3 pointer-fine:@md:col-start-5 pointer-fine:@md:row-start-1 pointer-fine:@md:grid pointer-fine:@md:w-full pointer-fine:@md:max-w-none pointer-fine:@md:grid-cols-[minmax(0,1fr)_2.25rem_4.25rem] pointer-fine:@md:self-center">
+          <span className="pointer-events-auto min-w-0 overflow-hidden justify-self-end">
             <LabelsEditor
               task={task}
               labels={projectLabels}
@@ -212,15 +220,17 @@ export const TaskRow = memo(function TaskRow({
               ) : null}
             </LabelsEditor>
           </span>
-          {activeThreads ? <ActiveChip threads={activeThreads} /> : null}
-          {showProject && project !== undefined ? (
-            <span
-              aria-hidden
-              title={project.name}
-              className="size-2.5 shrink-0 rounded-sm"
-              style={{ backgroundColor: project.color }}
-            />
-          ) : null}
+          <span className="flex shrink-0 items-center justify-center gap-1">
+            {activeThreads ? <ActiveChip threads={activeThreads} /> : null}
+            {showProject && project !== undefined ? (
+              <span
+                aria-hidden
+                title={project.name}
+                className="size-2.5 shrink-0 rounded-sm"
+                style={{ backgroundColor: project.color }}
+              />
+            ) : null}
+          </span>
           <time
             dateTime={date}
             title={
@@ -228,7 +238,7 @@ export const TaskRow = memo(function TaskRow({
                 ? `Updated ${formatDueDate(date)}`
                 : `Due ${formatDueDate(date)}`
             }
-            className="flex shrink-0 items-center justify-end gap-1 whitespace-nowrap tabular-nums @md:w-21"
+            className="flex min-h-5 shrink-0 items-center justify-end gap-1 whitespace-nowrap tabular-nums"
           >
             {task.dueDate !== null ? <Icon name="Clock" className="size-3 shrink-0" /> : null}
             {formatDueDate(date)}
