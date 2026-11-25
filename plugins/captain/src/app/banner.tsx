@@ -23,6 +23,7 @@ import {
   useState,
   type FocusEvent,
   type KeyboardEvent,
+  type RefCallback,
   type RefObject,
 } from "react";
 import {
@@ -200,7 +201,7 @@ function Queue({
   };
 
   const editing = other !== null && item?.kind === "ask" && !sending;
-  const editorRef = useEditorFocusReturn(root, sending ? null : (item?.key ?? null), editing);
+  const focusReturnRef = useQueueFocusReturn(root, !sending);
 
   // When More or Less goes while it has focus, focus lands on the banner, where
   // Enter answers. The Enter that follows was meant for the toggle: it does nothing.
@@ -275,6 +276,7 @@ function Queue({
           laterCount={laterCount}
           now={now}
           onSelect={select}
+          tabRef={focusReturnRef}
         />
       ) : null}
       <div
@@ -315,7 +317,12 @@ function Queue({
           </div>
         ) : null}
         {editing ? (
-          <div key={item.key} ref={editorRef} data-captain-answer-row="" className={ANSWER_ROW}>
+          <div
+            key={item.key}
+            ref={focusReturnRef}
+            data-captain-answer-row=""
+            className={ANSWER_ROW}
+          >
             <OtherAnswer
               value={other}
               pending={pending}
@@ -488,27 +495,26 @@ function AnswerRow({
   );
 }
 
-/** Restore focus when a refresh or an accepted answer removes the focused editor. */
-function useEditorFocusReturn(root: HTMLElement | null, key: string | null, editing: boolean) {
-  const editorLostFocus = useRef(false);
-  const editorRef = useCallback((node: HTMLDivElement | null) => {
+/** Editors and tabs give focus back to the queue when they unmount with focus. */
+function useQueueFocusReturn(root: HTMLElement | null, preferSelectedTab: boolean) {
+  const lostFocus = useRef(false);
+  const focusReturnRef = useCallback((node: HTMLElement | null) => {
     if (!node) return;
     return () => {
-      editorLostFocus.current = node.contains(document.activeElement);
+      if (node.contains(document.activeElement)) lostFocus.current = true;
     };
   }, []);
   useLayoutEffect(() => {
-    if (!editorLostFocus.current) return;
-    editorLostFocus.current = false;
+    if (!lostFocus.current) return;
+    lostFocus.current = false;
     // Cancel can already have focused Other. A reply must never steal focus.
     if (document.activeElement !== document.body || !root) return;
-    const selectedTab =
-      key === null ? null : root.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    const selectedTab = preferSelectedTab
+      ? root.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+      : null;
     (selectedTab ?? root).focus({ preventScroll: true });
-    // The key and editing state identify commits that can detach the editor ref.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
-  }, [root, key, editing]);
-  return editorRef;
+  });
+  return focusReturnRef;
 }
 
 /** Key local UI to the item so async updates from previous items are ignored. */
@@ -665,6 +671,7 @@ function QueueTabs({
   laterCount,
   now,
   onSelect,
+  tabRef,
 }: {
   id: string;
   tabs: readonly QueueItem[];
@@ -673,6 +680,7 @@ function QueueTabs({
   laterCount: number;
   now: number;
   onSelect: (item: QueueItem) => void;
+  tabRef: RefCallback<HTMLButtonElement>;
 }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 px-3 py-1.5">
@@ -705,6 +713,7 @@ function QueueTabs({
           return (
             <Button
               key={entry.key}
+              ref={tabRef}
               id={`${id}-${entry.key}`}
               role="tab"
               type="button"

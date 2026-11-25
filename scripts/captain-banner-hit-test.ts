@@ -202,9 +202,14 @@ async function assertSendFocus(
   await sent;
   const next = banner.getByRole("tab", { name: /Board column order/u });
   if (name === "send-revisit") {
-    await next.click();
+    const first = banner.getByRole("tab", { name: /Pick a cache backend/u });
+    await page.keyboard.press("Shift+Tab");
+    assert.ok(await first.evaluate((node) => node === document.activeElement));
+    await page.keyboard.press("ArrowRight");
+    assert.ok(await next.evaluate((node) => node === document.activeElement));
     assert.ok(await banner.getByRole("button", { name: "Sort by name" }).isEnabled());
-    await banner.getByRole("tab", { name: /Pick a cache backend/u }).click();
+    await page.keyboard.press("ArrowLeft");
+    assert.ok(await first.evaluate((node) => node === document.activeElement));
     await banner.getByText("Sending…", { exact: true }).waitFor();
     assert.equal(await banner.getByRole("button", { name: "SQLite" }).count(), 0);
     await page.keyboard.press("2");
@@ -244,16 +249,18 @@ async function assertFocusAfterRefresh(
   outside: ElementHandle | null,
   screenshot?: string,
 ) {
-  if (name === "send-next") {
+  if (name === "send-next" || name === "send-revisit") {
     await banner.getByRole("tab", { name: /Pick a cache backend/u }).waitFor({ state: "detached" });
     const next = banner.getByRole("tab", { name: /Board column order/u });
-    assert.ok(await next.evaluate((node) => node === document.activeElement));
+    assert.equal(
+      await next.evaluate((node) => node === document.activeElement),
+      true,
+      "the next ask owns focus after the first ask is removed",
+    );
     if (screenshot) await page.screenshot({ path: screenshot });
     const nextAnswer = page.waitForRequest((request) => request.url().endsWith("/rpc/resolveAsk"));
     await page.keyboard.press("2");
     assert.deepEqual((await nextAnswer).postDataJSON(), { askId: "a2", answer: "Sort by name" });
-  } else if (name === "send-revisit") {
-    assert.equal(await banner.getByRole("tab").count(), 1);
   } else {
     const clear = page.getByText("All clear", { exact: true });
     await clear.waitFor();
@@ -532,10 +539,14 @@ try {
             ["parallel", shortDetail],
             ["send-last", shortDetail],
             ["send-away", shortDetail],
+          ]
+        : []),
+      ...(!mode.mobile || mode.name === "390-safe-area"
+        ? [
+            ["send-next", shortDetail],
             ["send-revisit", shortDetail],
           ]
         : []),
-      ...(!mode.mobile || mode.name === "390-safe-area" ? [["send-next", shortDetail]] : []),
     ];
     for (const [name, detail] of cases) {
       assert(name !== undefined && detail !== undefined);
