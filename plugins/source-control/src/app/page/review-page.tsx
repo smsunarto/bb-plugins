@@ -35,7 +35,7 @@ import { cx, plural, shortRef } from "../format.ts";
 import { useOpenGuide } from "../guide-data.ts";
 import { MergeButton, mergeTarget, useChangeMerge } from "../merge.tsx";
 import { useChangeReview } from "../review-data.ts";
-import { SendControls } from "../send.tsx";
+import { SendControls, useSendControls } from "../send.tsx";
 import { DETAIL_TONE, ShipPath } from "../status.tsx";
 import { Badge } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
@@ -54,7 +54,7 @@ import { ConversationView, PullRequestDescription } from "./conversation-view.ts
 import { PrImagesContext } from "../pr-markdown.tsx";
 import { FilesView, WrapContext } from "./files-view.tsx";
 import { GuidedView, ViewedProgress } from "./guided-view.tsx";
-import { CLEAR_REVIEW_BAR, ReviewBar } from "./review-bar.tsx";
+import { ReviewBar, ReviewScroller } from "./review-bar.tsx";
 import { PANEL_PATH, PHONE, WIDE, useGo, useIsPage, useNow, useWidth, type Go } from "./hooks.ts";
 import { AskHost, BotIcon, useAskAgent } from "./ask-panel.tsx";
 import { ArrowRight, Chevron, StackIcon, StateIcon } from "./icons.tsx";
@@ -582,30 +582,40 @@ function TabBody({
 }) {
   const { key, tab } = location;
   const { revision } = detail;
+  const floatingBar =
+    bar && tab !== "overview" ? (
+      <PhoneBar changeKey={key} revision={revision}>
+        {bar}
+      </PhoneBar>
+    ) : null;
   const description =
     tab === "overview" && detail.row.number !== null ? (
       <PullRequestDescription changeKey={key} />
     ) : null;
   if (tab === "conversation")
     return (
-      <ConversationView changeKey={key} hasPullRequest={detail.row.number !== null} lead={lead} />
+      <ConversationView
+        changeKey={key}
+        hasPullRequest={detail.row.number !== null}
+        lead={lead}
+        bar={floatingBar}
+      />
     );
   if (!revision)
     return (
-      <div className={cx("min-h-0 flex-1 overflow-y-auto", CLEAR_REVIEW_BAR.scroll)}>
-        <div className={cx("flex flex-col gap-4 px-4 pt-4 @3xl:px-6", CLEAR_REVIEW_BAR.contentPb4)}>
-          {lead}
-          {description}
-          <p
-            className="m-0 text-[13px] leading-5 text-muted-foreground"
-            data-testid="sc-no-revision"
-          >
-            {detail.problem
-              ? `${describeProblem(detail.problem)} Files appear once bb can read them.`
-              : "Files appear once bb has read this change's head and base."}
-          </p>
-        </div>
-      </div>
+      <ReviewScroller
+        bar={floatingBar}
+        className="min-h-0 flex-1 overflow-y-auto"
+        contentClassName="flex flex-col gap-4 px-4 pt-4 @3xl:px-6"
+      >
+        {lead}
+        {description}
+        <p className="m-0 text-[13px] leading-5 text-muted-foreground" data-testid="sc-no-revision">
+          {detail.problem
+            ? `${describeProblem(detail.problem)} Files appear once bb can read them.`
+            : "Files appear once bb has read this change's head and base."}
+        </p>
+      </ReviewScroller>
     );
   if (tab === "overview")
     return (
@@ -634,6 +644,7 @@ function TabBody({
         url={detail.row.url}
         now={now}
         lead={lead}
+        bar={floatingBar}
         wide={wide}
         onCommit={onCommit}
         onPath={onPath}
@@ -648,6 +659,7 @@ function TabBody({
       line={location.line}
       onPath={onPath}
       lead={lead}
+      bar={floatingBar}
       showTree={wide}
       annotate
     />
@@ -734,11 +746,13 @@ function ReviewReady({
   detail,
   width,
   focus,
+  sendControls,
 }: {
   location: Here;
   detail: Ready;
   width: number;
   focus: ReviewFocus;
+  sendControls: ReturnType<typeof useSendControls>;
 }) {
   const { key } = location;
   const go = useGo();
@@ -764,22 +778,11 @@ function ReviewReady({
   );
   const send = (
     <SendControls
-      changeKey={key}
-      number={detail.row.number}
+      controls={sendControls}
       isDraft={detail.row.state === "draft"}
-      head={detail.head}
+      size={phone ? "bar" : "row"}
     />
   );
-  // On a phone every tab carries the send controls in a bottom bar (board E); the guide draws its own.
-  const barSend = phone ? (
-    <SendControls
-      changeKey={key}
-      number={detail.row.number}
-      isDraft={detail.row.state === "draft"}
-      head={detail.head}
-      size="bar"
-    />
-  ) : null;
   return (
     <FocusContext.Provider value={focus}>
       <WrapContext.Provider value={phone}>
@@ -796,8 +799,7 @@ function ReviewReady({
         <ReviewTabs location={location} files={detail.files} go={go}>
           {phone ? null : <TabControls location={location} detail={detail} send={send} />}
         </ReviewTabs>
-        {/* The phone's bar floats over this, the tabs' scrollers. */}
-        <div className="relative flex min-h-0 min-w-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1">
           <PrImagesContext value={location.key}>
             <TabBody
               location={location}
@@ -806,7 +808,7 @@ function ReviewReady({
               wide={wide}
               phone={phone}
               now={now}
-              bar={barSend}
+              bar={phone ? send : null}
               onPath={onPath}
               onCommit={onCommit}
             />
@@ -818,11 +820,6 @@ function ReviewReady({
             >
               {rail}
             </aside>
-          ) : null}
-          {phone && location.tab !== "overview" ? (
-            <PhoneBar changeKey={key} revision={detail.revision}>
-              {barSend}
-            </PhoneBar>
           ) : null}
         </div>
       </WrapContext.Provider>
@@ -841,6 +838,8 @@ function Review({ location, width }: { location: Here; width: number }) {
   const go = useGo();
   // One per Change (this component is keyed by it): the rail's pick, and the diff that shows it.
   const [focus] = useState(() => new ReviewFocus());
+  const ready = detail?.state === "change" ? detail : null;
+  const sendControls = useSendControls(key, ready?.row.number ?? null, ready?.head ?? null);
   // The one place a guide run starts: this page opening the Change, once per mount.
   useOpenGuide(key, detail?.state === "change");
   useLayoutEffect(
@@ -869,7 +868,15 @@ function Review({ location, width }: { location: Here; width: number }) {
     return <HeaderSkeleton />;
   }
   if (detail.state === "missing") return <Missing problem={detail.problem} />;
-  return <ReviewReady location={location} detail={detail} width={width} focus={focus} />;
+  return (
+    <ReviewReady
+      location={location}
+      detail={detail}
+      width={width}
+      focus={focus}
+      sendControls={sendControls}
+    />
+  );
 }
 
 function NoSelection() {

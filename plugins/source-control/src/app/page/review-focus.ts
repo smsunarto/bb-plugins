@@ -9,6 +9,7 @@ import type { Anchor } from "../../core/items.ts";
 
 /** Something drawn on the diff: `id` is its annotation's `data-sc-anchor`. A review item is one. */
 export type Spot = { id: string; anchor: Anchor };
+export type PagerDirection = -1 | 1;
 
 type Revealer = (spot: Spot) => void;
 
@@ -17,6 +18,7 @@ export class ReviewFocus {
   private readonly listeners = new Set<() => void>();
   private revealer: Revealer | null = null;
   private pending: Spot | null = null;
+  private pendingPagerFocus: PagerDirection | null = null;
   private whenDetached: Revealer | null = null;
 
   getFocused = (): string | null => this.focused;
@@ -27,7 +29,8 @@ export class ReviewFocus {
   };
 
   /** Mark the spot as the reader's, and scroll the diff to it. */
-  reveal = (spot: Spot): void => {
+  reveal = (spot: Spot, pagerFocus: PagerDirection | null = null): void => {
+    this.pendingPagerFocus = null;
     if (this.focused !== spot.id) {
       this.focused = spot.id;
       for (const listener of this.listeners) listener();
@@ -35,9 +38,17 @@ export class ReviewFocus {
     if (this.revealer) this.revealer(spot);
     else {
       this.pending = spot;
+      this.pendingPagerFocus = pagerFocus;
       this.whenDetached?.(spot);
     }
   };
+
+  /** The replacement review bar takes focus once when a pager action changes tabs. */
+  takePagerFocus(): PagerDirection | null {
+    const direction = this.pendingPagerFocus;
+    this.pendingPagerFocus = null;
+    return direction;
+  }
 
   /** Told when a spot is picked with no diff column mounted, to bring one. */
   onDetached(handler: Revealer): () => void {

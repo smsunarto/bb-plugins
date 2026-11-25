@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { renderSlot, type PluginRpcTestHandlers } from "@get-bb/plugin-sdk/testing/app";
+import { useMemo, useState } from "react";
 import { changeKeySchema, reviewTag, type ChangeKey } from "../../core/ids.ts";
 import type {
   BatchInput,
@@ -11,7 +12,12 @@ import type {
   DraftInput,
   ReviewItem,
 } from "../../core/items.ts";
-import { reviewPath, type ChangeDetail, type ChangeRow } from "../../core/review.ts";
+import {
+  reviewPath,
+  type ChangeDetail,
+  type ChangeRow,
+  type ReviewLocation,
+} from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { ChangeDirective } from "../chat-card.tsx";
 import { FindingsCard } from "../findings-card.tsx";
@@ -19,6 +25,7 @@ import { resetPendingWrites } from "../review-data.ts";
 import { ReviewPanel } from "../review-entry.tsx";
 import { patchLines } from "../review-model.ts";
 import { annotationProbe } from "./annotations.tsx";
+import { ReviewHostContext } from "./hooks.ts";
 import { resetNavStores } from "./sources.ts";
 import { resetPatchStores } from "./patches.ts";
 
@@ -201,9 +208,22 @@ function Both() {
   );
 }
 
-function render(review: Partial<Handlers>, detail: ChangeDetail = DETAIL) {
+function PhoneReview() {
+  const [location, go] = useState<Partial<ReviewLocation> & { key: ChangeKey }>({
+    key: KEY,
+    tab: "files",
+  });
+  const host = useMemo(() => ({ go }), [go]);
+  return (
+    <ReviewHostContext.Provider value={host}>
+      <ReviewPanel subPath={reviewPath(location)} />
+    </ReviewHostContext.Provider>
+  );
+}
+
+function render(review: Partial<Handlers>, detail: ChangeDetail = DETAIL, component = Both) {
   return renderSlot(
-    { component: Both },
+    { component },
     {},
     {
       experimental_rpcContract: sourceControlContract,
@@ -256,7 +276,11 @@ beforeEach(() => {
   resetPatchStores();
   annotationProbe.onRender = null;
 });
-afterEach(cleanup);
+const width = window.innerWidth;
+afterEach(() => {
+  cleanup();
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+});
 
 test("checking an item in the rail checks it in the diff's annotation and the thread tab's card", async () => {
   const server = reviewServer([finding(1, 2)]);
@@ -894,4 +918,135 @@ test("the rail lists the reader's drafts and sent comments in one group, marked 
   expect(within(group).getByTestId("sc-review-draft").textContent).toContain("Pending");
   expect(within(group).getByTestId("sc-review-row").dataset.item).toBe("you:d-1");
   expect(within(group).getByTestId("sc-review-sent").textContent).toBe("Sent");
+});
+
+test("switching review tabs keeps an excluded draft out of the send", async () => {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+  const drafts = ["first", "second"].map((id): Draft => ({
+    id,
+    anchor: { path: PATH, line: 3, startLine: null, side: "RIGHT", head: HEAD },
+    body: id,
+    replyTo: null,
+    state: "pending",
+    createdAt: 1,
+    updatedAt: 1,
+  }));
+  const server = reviewServer([], { drafts });
+  const slot = render(server.handlers, DETAIL, PhoneReview);
+  fireEvent.click(await slot.findByRole("button", { name: "Send 2" }));
+  const tray = await slot.findByTestId("sc-tray");
+  const [first] = within(tray).getAllByTestId("sc-tray-draft");
+  fireEvent.click(within(first!).getByText("Remove"));
+  fireEvent.keyDown(slot.getByTestId("sc-send"), { key: "Escape" });
+  await waitFor(() => expect(slot.queryByTestId("sc-tray")).toBeNull());
+
+  fireEvent.keyDown(slot.getByRole("tab", { name: "Conversation" }), { key: "Enter" });
+  expect(slot.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe(
+    "true",
+  );
+  fireEvent.click(slot.getByTestId("sc-send"));
+  const nextTray = await slot.findByTestId("sc-tray");
+  fireEvent.click(within(nextTray).getByTestId("sc-tray-send"));
+  await waitFor(() => expect(server.sent).toHaveLength(1));
+  expect(server.sent[0]?.draftIds).toEqual(["second"]);
+});
+
+test.each([
+  { name: "Next item", first: "1 of 2", second: "2 of 2" },
+  { name: "Previous item", first: "2 of 2", second: "1 of 2" },
+])(
+  "$name keeps focus when the pager opens Files from Conversation",
+  async ({ name, first, second }) => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    const slot = render(reviewServer([finding(1, 2), finding(2, 3)]).handlers, DETAIL, PhoneReview);
+    fireEvent.keyDown(await slot.findByRole("tab", { name: "Conversation" }), { key: "Enter" });
+    expect(slot.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+
+    const step = await slot.findByRole("button", { name });
+    step.focus();
+    fireEvent.click(step);
+    await slot.findByTestId("sc-files");
+    const replacement = slot.getByRole("button", { name });
+    expect(document.activeElement).toBe(replacement);
+    expect(slot.getByTestId("sc-review-bar-position").textContent).toBe(first);
+    fireEvent.click(replacement);
+    expect(slot.getByTestId("sc-review-bar-position").textContent).toBe(second);
+  },
+);
+test("a pill retry rejection remains visible after a tab change", async () => {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+  const server = reviewServer([finding(1, 2)], { batches: [failedBatch()] });
+  let rejectRequest: (reason: Error) => void = () => {
+    throw Error("no request");
+  };
+  let started = false;
+  const slot = render(
+    {
+      ...server.handlers,
+      sendBatch: () =>
+        new Promise<BatchView>((_, reject) => {
+          started = true;
+          rejectRequest = reject;
+        }),
+    },
+    DETAIL,
+    PhoneReview,
+  );
+  const pill = await slot.findByTestId("sc-review-bar");
+  fireEvent.click(within(pill).getByTestId("sc-batch-retry"));
+  await waitFor(() => expect(started).toBe(true));
+  fireEvent.keyDown(slot.getByRole("tab", { name: "Conversation" }), { key: "Enter" });
+  expect(slot.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe(
+    "true",
+  );
+  await act(async () => rejectRequest(Error("retry disconnected")));
+  await waitFor(() =>
+    expect(within(slot.getByTestId("sc-review-bar")).getByRole("alert").textContent).toContain(
+      "retry disconnected",
+    ),
+  );
+});
+
+test("an in-flight tray send retains its request and error across tabs", async () => {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+  const item = finding(1, 2);
+  const server = reviewServer([item], { selected: [item.id] });
+  const attempts: BatchInput[] = [];
+  let rejectRequest: (reason: Error) => void = () => {
+    throw new Error("Send did not start");
+  };
+  const slot = render(
+    {
+      ...server.handlers,
+      sendBatch: ({ batch }) => {
+        attempts.push(batch);
+        return new Promise<BatchView>((_, reject) => {
+          rejectRequest = reject;
+        });
+      },
+    },
+    DETAIL,
+    PhoneReview,
+  );
+  fireEvent.click(await slot.findByRole("button", { name: "Send 1" }));
+  const initialSubmit = await slot.findByTestId("sc-tray-send");
+  await waitFor(() => expect(initialSubmit.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(initialSubmit);
+  await waitFor(() => expect(attempts).toHaveLength(1));
+
+  fireEvent.keyDown(slot.getByRole("tab", { name: "Conversation" }), { key: "Enter" });
+  expect(slot.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe(
+    "true",
+  );
+  const submit = slot.getByRole("button", { name: "Sending…" });
+  expect(submit.hasAttribute("disabled")).toBe(true);
+  await act(async () => rejectRequest(new Error("send disconnected")));
+  expect((await slot.findByRole("alert")).textContent).toContain("send disconnected");
+
+  fireEvent.click(slot.getByTestId("sc-tray-send"));
+  await waitFor(() => expect(attempts).toHaveLength(2));
+  expect(attempts[1]).toEqual(attempts[0]);
+  await act(async () => rejectRequest(new Error("send disconnected again")));
 });

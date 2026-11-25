@@ -65,7 +65,7 @@ import { FileTree } from "./file-tree.tsx";
 import { Chevron } from "./icons.tsx";
 import { usePatch, usePatchStore, type PatchEntry, type PatchStore } from "./patches.ts";
 import { RevealRequestContext } from "./hooks.ts";
-import { CLEAR_REVIEW_BAR } from "./review-bar.tsx";
+import { ReviewScroller } from "./review-bar.tsx";
 import { FocusContext, type Spot } from "./review-focus.ts";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 
@@ -921,9 +921,11 @@ export function useViewed(
  */
 export function DiffColumn({
   scroller,
+  bar,
   children,
 }: {
   scroller: RefObject<HTMLDivElement | null>;
+  bar?: ReactNode;
   children: ReactNode;
 }) {
   const [virtualizer] = useState(() => new Virtualizer());
@@ -942,18 +944,14 @@ export function DiffColumn({
   }, [virtualizer, scroller]);
   return (
     <VirtualizerContext.Provider value={virtualizer}>
-      <div
-        ref={scroller}
-        data-testid="sc-diff-column"
-        className={cx(
-          "min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain",
-          CLEAR_REVIEW_BAR.scroll,
-        )}
+      <ReviewScroller
+        scroller={scroller}
+        bar={bar}
+        testId="sc-diff-column"
+        className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain"
       >
-        {/* One child: the virtualizer reads the page's height off the first. It keeps room under
-            the last card for the review bar. */}
-        <div className={CLEAR_REVIEW_BAR.content}>{children}</div>
-      </div>
+        {children}
+      </ReviewScroller>
     </VirtualizerContext.Provider>
   );
 }
@@ -965,6 +963,7 @@ export function FilesView({
   line,
   onPath,
   lead,
+  bar,
   showTree,
   annotate = false,
 }: {
@@ -979,6 +978,7 @@ export function FilesView({
   onPath: (path: string) => void;
   /** Drawn above the cards, inside the scrolling column (the rail on a narrow page). */
   lead?: ReactNode;
+  bar?: ReactNode;
   showTree: boolean;
 }) {
   const query = useRpcQuery({
@@ -1067,7 +1067,7 @@ export function FilesView({
             )}
           </aside>
         ) : null}
-        <DiffColumn scroller={scroller}>
+        <DiffColumn scroller={scroller} bar={bar}>
           <div className="flex min-w-0 flex-col gap-4 px-4 py-4 @3xl:px-6">
             {lead}
             <ViewerContext.Provider value={viewer}>{cards}</ViewerContext.Provider>

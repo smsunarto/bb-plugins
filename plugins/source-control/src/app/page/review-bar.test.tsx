@@ -67,10 +67,9 @@ test("the bar reserves its border-box height on its host", () => {
   expect(space()).toBe("116px");
 });
 
-test("a bottom inset that grows the bar's padding grows the reserve", () => {
+test("the reserve tracks later border-box height changes", () => {
   const { space } = mount();
   act(() => resize!(116));
-  // The pill rises by a 34px home-indicator inset: only the positioner's padding changed.
   act(() => resize!(150));
   expect(space()).toBe("150px");
 });
