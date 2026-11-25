@@ -126,6 +126,9 @@ export const MIGRATIONS = [
   // An observed Change always has a thread_branch row, even after a detached read.
   `UPDATE thread_change SET inferred = 1
    WHERE NOT EXISTS (SELECT 1 FROM thread_branch WHERE thread_branch.thread_id = thread_change.thread_id)`,
+  // A legacy null branch cannot establish that the remembered key was observed.
+  `UPDATE thread_change SET inferred = 1
+   WHERE thread_id IN (SELECT thread_id FROM thread_branch WHERE branch IS NULL)`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -750,8 +753,8 @@ export function openStore(bb: BbPluginApi) {
       return changed;
     },
     forge,
-    /** A unique cached Change for the repository and branch, preserving its original head owner. */
-    knownBranchChange(repo: Repo, branch: string): ChangeKey | null {
+    /** A unique cached Change, keeping an existing inference in the absence of conflicting evidence. */
+    knownBranchChange(repo: Repo, branch: string, inferred?: ChangeKey): ChangeKey | null {
       const prefix = `gh:${repo.owner}/${repo.name}`;
       // Bound the index scan to this repository: ";" follows ":" in the key's binary sort order.
       let match: { key: ChangeKey; eligible: boolean } | null = null;
@@ -766,10 +769,11 @@ export function openStore(bb: BbPluginApi) {
         if (match) return null;
         match = {
           key: key.data,
-          eligible: read.value !== null || parsedKey.headOwner === repo.owner,
+          eligible:
+            key.data === inferred || read.value !== null || parsedKey.headOwner === repo.owner,
         };
       }
-      return match?.eligible ? match.key : null;
+      return match ? (match.eligible ? match.key : null) : (inferred ?? null);
     },
     setForge(key: ChangeKey, facet: Facet<ForgeValue>): boolean {
       const changed = !sameFacet(forge(key), facet);
@@ -777,11 +781,29 @@ export function openStore(bb: BbPluginApi) {
       return changed;
     },
     checks,
-    setChecks(key: ChangeKey, facet: Facet<ChecksValue>): boolean {
-      const changed = !sameFacet(checks(key), facet);
-      putChecks.run(key, JSON.stringify(facet));
-      return changed;
-    },
+    /** A forge read publishes its PR, checks and review threads together. */
+    setForgeFacets: db.transaction(
+      (
+        key: ChangeKey,
+        facets: {
+          forge: Facet<ForgeValue>;
+          checks: Facet<ChecksValue>;
+          threads: Facet<ForgeThread[]>;
+        },
+      ) => {
+        const before = {
+          forge: forge(key),
+          checks: checks(key),
+        };
+        putForge.run(key, JSON.stringify(facets.forge));
+        putChecks.run(key, JSON.stringify(facets.checks));
+        return {
+          forge: !sameFacet(before.forge, facets.forge),
+          checks: !sameFacet(before.checks, facets.checks),
+          threads: review.setThreads(key, facets.threads),
+        };
+      },
+    ),
     /** The thread's branch in its checkout, as last worked out. */
     branch,
     setBranch(threadId: string, name: string | null): boolean {

@@ -33,8 +33,8 @@ export function createRemembered(deps: {
   forgeDue: (key: ChangeKey) => boolean;
   /** Read the Change's pull request on the server and `host` only. */
   readForge: (key: ChangeKey, host: ForgeHost) => Effect.Effect<void>;
-  /** The project's GitHub repository, or null when it has none. */
-  projectRepo: (projectId: string) => Effect.Effect<Repo | null>;
+  /** The project's GitHub repository, null when absent, or undefined when BB could not answer. */
+  projectRepo: (projectId: string) => Effect.Effect<Repo | null | undefined>;
   forgeHost: (hostId: string) => Effect.Effect<ForgeHost>;
   now: () => number;
   /** How long a list row trusts its last look before asking bb and GitHub again. */
@@ -60,7 +60,7 @@ export function createRemembered(deps: {
       const readers = inferenceReaders.get(branchId) ?? new Set<string>();
       readers.add(threadId);
       inferenceReaders.set(branchId, readers);
-      if (store.knownBranchChange(repo, branch) !== remembered.key) return null;
+      if (store.knownBranchChange(repo, branch, remembered.key) !== remembered.key) return null;
     }
     const threads = showing.get(remembered.key) ?? new Set<string>();
     threads.add(threadId);
@@ -71,12 +71,20 @@ export function createRemembered(deps: {
   /** A thread never read on a checkout: its project's Change on the recorded branch, if that branch was read. */
   const recover = Effect.fnUntraced(function* (threadId: string, recorded: RecordedEnvironment) {
     const repo = yield* deps.projectRepo(recorded.projectId);
-    const key = repo ? store.knownBranchChange(repo, recorded.branchName) : null;
+    if (repo === undefined) return;
+    const prior = store.lastChange(threadId);
+    const parsed = prior?.inferred ? parseChangeKey(prior.key) : null;
+    const sameBranch =
+      repo &&
+      parsed?.kind === "gh" &&
+      identity(repo, recorded.branchName) === identity(parsed.repo, parsed.branch);
+    const key = repo
+      ? store.knownBranchChange(repo, recorded.branchName, sameBranch ? prior?.key : undefined)
+      : null;
     if (!key) {
       if (store.forgetInference(threadId)) deps.announce([threadId]);
       return;
     }
-    const prior = store.lastChange(threadId);
     const host =
       prior?.host.hostId === recorded.hostId ? prior.host : yield* deps.forgeHost(recorded.hostId);
     if (store.rememberChange(threadId, key, host, true)) deps.announce([threadId]);

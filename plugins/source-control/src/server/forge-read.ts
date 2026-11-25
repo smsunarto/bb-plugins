@@ -13,6 +13,8 @@ import {
   type Facet,
   type ForgeAction,
   type ForgeResult,
+  type ForgeRead,
+  type Problem,
   type ForgeValue,
   type Placement,
 } from "../core/change.ts";
@@ -43,17 +45,54 @@ export function forgeInterval(facet: Facet<ForgeValue>): number {
   return FORGE_SETTLED_MS;
 }
 
+/** One publication order for every reader of a Change's shared forge facets. */
+export function createForgePublisher(deps: {
+  store: Store;
+  invalidate: (tags: readonly string[]) => void;
+  forgeChanged: (key: ChangeKey, threadId?: string) => void;
+  forgeRead: (key: ChangeKey) => void;
+  now: () => number;
+}) {
+  const { store } = deps;
+  let sequence = 0;
+  const published = new Map<ChangeKey, number>();
+  return (key: ChangeKey, threadId?: string) => {
+    const generation = ++sequence;
+    return (result: { value: ForgeRead } | { problem: Problem }) => {
+      if ((published.get(key) ?? 0) >= generation) return;
+      const at = deps.now();
+      const [forge, checks, threads] =
+        "value" in result
+          ? [
+              succeeded(result.value.pullRequest, at),
+              succeeded(result.value.checks, at),
+              succeeded(result.value.threads ?? [], at),
+            ]
+          : [
+              failed(store.forge(key), result.problem),
+              failed(store.checks(key), result.problem),
+              failed(store.threads(key), result.problem),
+            ];
+      const changed = store.setForgeFacets(key, { forge, checks, threads });
+      published.set(key, generation);
+      if (changed.forge) {
+        deps.invalidate([changeTag(key)]);
+        deps.forgeChanged(key, threadId);
+      }
+      if (changed.checks) deps.invalidate([checksTag(key)]);
+      if (changed.threads) deps.invalidate([reviewTag(key)]);
+      deps.forgeRead(key);
+    };
+  };
+}
+
+export type BeginForgeRead = ReturnType<typeof createForgePublisher>;
+
 export function createForgeReads(deps: {
   store: Store;
   sites: ForgeSites;
   share: Share;
-  /** Every thread currently showing this Change. */
-  threadsOf: (key: ChangeKey) => Iterable<string>;
-  announce: (threadIds: Iterable<string>) => void;
-  /** Tell readers of these tags, which are not thread tags, to read again. */
-  invalidate: (tags: readonly string[]) => void;
-  /** A Change's pull request was read: its review items may need a new head. */
-  forgeRead?: (key: ChangeKey) => void;
+  beginForgeRead: BeginForgeRead;
   now: () => number;
 }) {
   const { store } = deps;
@@ -71,7 +110,6 @@ export function createForgeReads(deps: {
         repo: workspace.github.repo,
         headOwner: workspace.github.headOwner,
         branch: remoteBranchName(branch),
-        ...knownOpen(store.forge(key)),
       },
     };
   }
@@ -89,26 +127,15 @@ export function createForgeReads(deps: {
           `forge:${key}`,
           Effect.gen(function* () {
             attempted.set(key, deps.now());
-            const answer = yield* deps.sites.pullRequest(query, placement).pipe(Effect.result);
-            const at = deps.now();
-            const [forge, checks] =
+            const publish = deps.beginForgeRead(key, threadId);
+            const answer = yield* deps.sites
+              .pullRequest({ ...query, ...knownOpen(store.forge(key)) }, placement)
+              .pipe(Effect.result);
+            publish(
               answer._tag === "Success"
-                ? [succeeded(answer.success.pullRequest, at), succeeded(answer.success.checks, at)]
-                : [
-                    failed(store.forge(key), answer.failure.problem),
-                    failed(store.checks(key), answer.failure.problem),
-                  ];
-            if (store.setForge(key, forge)) {
-              deps.announce([threadId, ...deps.threadsOf(key)]);
-              deps.invalidate([changeTag(key)]);
-            }
-            if (store.setChecks(key, checks)) deps.invalidate([checksTag(key)]);
-            const threads =
-              answer._tag === "Success"
-                ? succeeded(answer.success.threads ?? [], at)
-                : failed(store.threads(key), answer.failure.problem);
-            if (store.setThreads(key, threads)) deps.invalidate([reviewTag(key)]);
-            deps.forgeRead?.(key);
+                ? { value: answer.success }
+                : { problem: answer.failure.problem },
+            );
           }),
         )
         .pipe(Effect.as(key));
@@ -127,7 +154,12 @@ export function createForgeReads(deps: {
         status: "failed",
         problem: { kind: "moved", detail: "This thread's branch has no pull request here." },
       } satisfies ForgeResult;
-    const write = { ...found.query, number: expected.number, expectedHead: expected.head };
+    const write = {
+      ...found.query,
+      ...knownOpen(store.forge(found.key)),
+      number: expected.number,
+      expectedHead: expected.head,
+    };
     const result =
       action.kind === "setDraft"
         ? yield* deps.sites.setDraft({ ...write, draft: action.draft }, placement)

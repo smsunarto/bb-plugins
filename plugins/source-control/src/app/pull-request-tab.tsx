@@ -58,8 +58,7 @@ export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }
     if (reviewProblem) return { at: "failed" as const, problem: reviewProblem };
     return detail && detail.state !== "pending" ? judge(detail, pr.number) : null;
   }, [reviewProblem, detail, pr.number]);
-  const [handoff, setHandoff] = useState<Phase | null>(null);
-  const phase = handoff ?? (verdict?.at === "opened" ? state : (verdict ?? state));
+  const phase = state.at === "opened" || verdict?.at === "opened" ? state : (verdict ?? state);
 
   // On enable the SDK normally fetches. Force a read only if it kept a cached answer idle.
   const needsRefetch = useEffectEvent(() => data !== undefined && !isFetching);
@@ -122,12 +121,10 @@ export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }
       return rememberMiss(lookup, threadId, `This branch's review shows #${verdict.number} now.`);
     acted.current = true;
 
-    const opened = openReview({ key }, { continuation: true });
-    // oxlint-disable-next-line react/set-state-in-effect -- Reflect the panel API's result in the tab.
-    setHandoff(
-      opened ? { at: "opened" } : { at: "failed", problem: "The Review tab couldn't open." },
-    );
-    if (!opened) return;
+    // For a Change key, a declined side-panel open falls back to the Review page.
+    openReview({ key }, { continuation: true });
+    // oxlint-disable-next-line react/set-state-in-effect -- Reflect the panel navigation in this tab.
+    setPhase({ at: "opened" });
     rememberChange(lookup, key, threadId);
     const self = panel
       .getTabs()
@@ -148,7 +145,6 @@ export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }
       onRetry={() => {
         acted.current = false;
         setValidatedKey(null);
-        setHandoff(null);
         setPhase({ at: "looking", key: null });
       }}
     />

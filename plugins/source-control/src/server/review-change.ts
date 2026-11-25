@@ -5,21 +5,18 @@
  */
 import { Effect } from "effect";
 import {
-  failed,
   findBranch,
-  succeeded,
   uncommittedCount,
   type Facet,
   type ForgeAction,
   type ForgeResult,
-  type ForgeRead,
   type ForgeValue,
   type Placement,
   type Problem,
   type PullRequest,
   type WorkspaceValue,
 } from "../core/change.ts";
-import { changeTag, checksTag, reviewTag, type ChangeKey } from "../core/ids.ts";
+import type { ChangeKey } from "../core/ids.ts";
 import type { MergePolicy } from "../core/merge.ts";
 import {
   inboxRow,
@@ -30,7 +27,7 @@ import {
   type ReviewRevision,
 } from "../core/review.ts";
 import { changeState, publishedSummary, shipPath, type ChangeSummary } from "../core/status.ts";
-import { forgeInterval, FORGE_ACTIVE_MS, knownOpen } from "./forge-read.ts";
+import { forgeInterval, FORGE_ACTIVE_MS, knownOpen, type BeginForgeRead } from "./forge-read.ts";
 import type { ForgeHost, ForgeSites } from "./forge-sites.ts";
 import { rowsOf } from "./review-sources.ts";
 import type { Share } from "./shared.ts";
@@ -209,36 +206,11 @@ export function createReviewChange(deps: {
   share: Share;
   threadForgeHost: (threadId: string) => Effect.Effect<ForgeHost | null>;
   inboxRow: (key: ChangeKey) => ChangeRow | null;
-  invalidate: (tags: readonly string[]) => void;
-  /** A Change's pull request was read: the threads showing it read again. */
-  forgeChanged: (key: ChangeKey) => void;
-  /** A Change's pull request was read: its review items may need a new head. */
-  forgeRead?: (key: ChangeKey) => void;
+  beginForgeRead: BeginForgeRead;
   now: () => number;
 }) {
   const { store } = deps;
   const attempts = new Map<ChangeKey, number>();
-
-  function saveForge(key: ChangeKey, read: { value: ForgeRead } | { problem: Problem }) {
-    const at = deps.now();
-    const forge =
-      "value" in read
-        ? succeeded(read.value.pullRequest, at)
-        : failed(store.forge(key), read.problem);
-    const checks =
-      "value" in read ? succeeded(read.value.checks, at) : failed(store.checks(key), read.problem);
-    const threads =
-      "value" in read
-        ? succeeded(read.value.threads ?? [], at)
-        : failed(store.threads(key), read.problem);
-    if (store.setForge(key, forge)) {
-      deps.invalidate([changeTag(key)]);
-      deps.forgeChanged(key);
-    }
-    if (store.setChecks(key, checks)) deps.invalidate([checksTag(key)]);
-    if (store.setThreads(key, threads)) deps.invalidate([reviewTag(key)]);
-    deps.forgeRead?.(key);
-  }
 
   /**
    * Read the Change's pull request by its key, from wherever an account can
@@ -255,6 +227,7 @@ export function createReviewChange(deps: {
         // The Change's own checkout first, then any checkout's host, so a server with no gh login still reads it.
         const own = localMatch(store, key)?.placement;
         const placements = host ? [host] : own ? [own, ...store.checkouts()] : store.checkouts();
+        const publish = deps.beginForgeRead(key);
         const answer = yield* deps.sites
           .pullRequestVia(
             {
@@ -267,8 +240,7 @@ export function createReviewChange(deps: {
             host ? "only" : "any",
           )
           .pipe(Effect.result);
-        saveForge(
-          key,
+        publish(
           answer._tag === "Success"
             ? { value: answer.success }
             : { problem: answer.failure.problem },
@@ -303,6 +275,7 @@ export function createReviewChange(deps: {
           if (parsed?.kind !== "gh")
             return { [key]: { state: "missing", problem: null } satisfies ChangeDetail };
           const { repo, headOwner, branch } = parsed;
+          const publish = deps.beginForgeRead(key);
           const answer = yield* deps.sites
             .pullRequestVia(
               { repo, headOwner, branch, ...knownOpen(store.forge(key)) },
@@ -316,11 +289,13 @@ export function createReviewChange(deps: {
             return {
               [key]: { state: "missing", problem: answer.failure.problem } satisfies ChangeDetail,
             };
-          saveForge(key, { value: answer.success });
+          publish({ value: answer.success });
+          const forge = store.forge(key);
           return {
-            [key]: answer.success.pullRequest
-              ? detailOf(key)
-              : ({ state: "missing", problem: null } satisfies ChangeDetail),
+            [key]:
+              !forge.problem && forge.read?.value
+                ? detailOf(key)
+                : ({ state: "missing", problem: forge.problem } satisfies ChangeDetail),
           };
         }),
       ),

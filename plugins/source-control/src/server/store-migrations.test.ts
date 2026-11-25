@@ -6,6 +6,9 @@ import { MIGRATIONS, openStore } from "./store.ts";
 
 /** The migrations before pins left: what a database from that build has run. */
 const BEFORE_PINS_LEFT = MIGRATIONS.slice(0, MIGRATIONS.indexOf("DROP TABLE IF EXISTS pin"));
+// Fixed schema versions: before the branch index, and as deployed after round three.
+const BEFORE_BRANCH_INDEX = 39;
+const BEFORE_NULL_BRANCH_BACKFILL = 42;
 /** The two statements that drop pins. */
 const PINS_LEFT = MIGRATIONS.slice(BEFORE_PINS_LEFT.length, BEFORE_PINS_LEFT.length + 2);
 
@@ -98,7 +101,7 @@ test("upgrading keeps cached branch reads and makes the repository-and-branch lo
   const { bb, harness } = createFakePluginHost({ pluginId: "source-control" });
   onTestFinished(() => harness.lifecycle.dispose());
   const db = bb.storage.database();
-  bb.storage.migrate(db, MIGRATIONS.slice(0, -1));
+  bb.storage.migrate(db, MIGRATIONS.slice(0, BEFORE_BRANCH_INDEX));
   const key = "gh:acme/api:acme:main";
   db.prepare("INSERT INTO forge_facet (change_key, json) VALUES (?, ?)").run(
     key,
@@ -123,3 +126,30 @@ test("upgrading keeps cached branch reads and makes the repository-and-branch lo
     /SEARCH forge_facet USING INDEX forge_facet_by_branch .*<expr>=\? AND change_key>\? AND change_key<\?/,
   );
 });
+
+test.each([BEFORE_BRANCH_INDEX, BEFORE_NULL_BRANCH_BACKFILL])(
+  "upgrading database version %i rechecks legacy inferences and preserves observed branches",
+  (version) => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "source-control" });
+    onTestFinished(() => harness.lifecycle.dispose());
+    const db = bb.storage.database();
+    bb.storage.migrate(db, MIGRATIONS.slice(0, version));
+    const branch = db.prepare("INSERT INTO thread_branch(thread_id, branch) VALUES (?, ?)");
+    branch.run("detached", null);
+    branch.run("observed", "main");
+    const key = "gh:acme/api:acme:main";
+    const remember = db.prepare(
+      "INSERT INTO thread_change(thread_id, change_key, host_id, host_name) VALUES (?, ?, ?, ?)",
+    );
+    for (const thread of ["detached", "never-read", "observed"])
+      remember.run(thread, key, "host-a", "A");
+    if (version === BEFORE_NULL_BRANCH_BACKFILL) {
+      // This migration has already run on live and classified the two older row kinds differently.
+      db.prepare("UPDATE thread_change SET inferred = 1 WHERE thread_id = ?").run("never-read");
+    }
+    const store = openStore(bb);
+    expect(store.lastChange("detached")).toMatchObject({ key, inferred: true });
+    expect(store.lastChange("never-read")).toMatchObject({ key, inferred: true });
+    expect(store.lastChange("observed")).toMatchObject({ key, inferred: false });
+  },
+);

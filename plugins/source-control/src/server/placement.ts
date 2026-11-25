@@ -115,8 +115,8 @@ export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () 
       return Effect.tryPromise(() => bb.sdk.projects.get({ projectId })).pipe(
         Effect.map((project) => githubRepo(project.gitRemoteUrl ?? null)),
         Effect.tap((repo) => Effect.sync(() => repos.set(projectId, repo))),
-        // bb did not answer: no repository now, and ask again next time.
-        Effect.orElseSucceed(() => null),
+        // A failed lookup has not established that the project lacks a GitHub remote.
+        Effect.orElseSucceed(() => undefined),
       );
     });
 

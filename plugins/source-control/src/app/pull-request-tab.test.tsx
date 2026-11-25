@@ -101,6 +101,7 @@ function render(
   legacyChange: (input: { keys: string[]; threadId?: string }) => unknown,
   shown: number | null = 12,
   changeDetail = vi.fn((): ChangeDetail | Promise<ChangeDetail> => detailShowing(shown)),
+  openTab = () => true,
 ) {
   const asked: unknown[] = [];
   const slot = renderSlot(
@@ -109,7 +110,7 @@ function render(
     {
       experimental_rpcContract: sourceControlContract,
       pluginId: "source-control",
-      experimental_panel: { openTab: () => true, getTabs: () => SELF, closeTab: () => true },
+      experimental_panel: { openTab, getTabs: () => SELF, closeTab: () => true },
       rpc: {
         legacyChange: (input: { keys: string[]; threadId?: string }) => {
           asked.push(input);
@@ -342,5 +343,28 @@ test("report the forge failure when the branch is known", async () => {
     problem: { kind: "rate-limited", site: "GitHub", detail: "API rate limit exceeded" },
   }));
   const { slot } = render(found, 12, detail);
-  expect((await slot.findByRole("alert")).textContent).toMatch(/rate[- ]limit/i);
+  expect((await slot.findByRole("alert")).textContent).toContain("GitHub is rate-limiting");
+});
+
+test.each([
+  ["No signed-in GitHub account can see acme/api.", "can see acme/api"],
+  ["The token has expired.", "Run gh auth login"],
+])("the alert explains %s", async (reason, expected) => {
+  const detail = vi.fn((): ChangeDetail => ({
+    state: "missing",
+    problem: { kind: "auth", site: "bb server", detail: reason },
+  }));
+  const { slot } = render(found, 12, detail);
+  expect((await slot.findByRole("alert")).textContent).toContain(expected);
+});
+
+test("a declined Review tab opens the full Review page", async () => {
+  const detail = vi.fn(() => detailShowing(12));
+  const { slot } = render(found, 12, detail, () => false);
+  await slot.findByText("Opened in its review tab.");
+  expect(slot.navigateCalls).toContainEqual(expect.objectContaining({ method: "toPluginPanel" }));
+  expect(slot.inspection.experimental_panelCalls).toContainEqual({
+    method: "closeTab",
+    key: SELF.tabs[0]!.key,
+  });
 });

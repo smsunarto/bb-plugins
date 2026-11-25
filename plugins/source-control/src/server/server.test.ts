@@ -138,6 +138,8 @@ type Host = {
 };
 
 type World = {
+  failProjectLookup?: boolean;
+  delayResponse?: () => Promise<void>;
   hosts: Record<string, Host>;
   threads: Record<
     string,
@@ -312,7 +314,9 @@ async function liveHostForge(world: World, hostId: string, method: string, input
   }
   (world.hostForge ??= []).push(`${hostId}:pr`);
   const query = input as Parameters<typeof readPullRequest>[1];
-  return { ok: true, value: await readPullRequest(hostGh(world, hostId), query) };
+  const value = await readPullRequest(hostGh(world, hostId), query);
+  if (hostId === "host-a" && world.delayResponse) await world.delayResponse();
+  return { ok: true, value };
 }
 
 /** A host's `gh`: the same fake GitHub, its inbox searches recorded by host. */
@@ -635,6 +639,7 @@ function fakeSdk(world: World) {
     projects: {
       list: (async () => world.projects ?? []) as never,
       get: (async ({ projectId }: { projectId: string }) => {
+        if (world.failProjectLookup) throw new Error("service unavailable");
         const project = (world.projects as { id: string }[] | undefined)?.find(
           (each) => each.id === projectId,
         );
@@ -4038,3 +4043,107 @@ test("late evidence of ambiguity retires an inferred fork", async () => {
     pullRequest: { number: 482 },
   });
 });
+
+test("transient project lookup preserves inferred PR", async () => {
+  const world = twoHosts();
+  const repo = { owner: "smsunarto", name: "bb-plugins" };
+  const branch = "scott/route-gh";
+  world.projects = [{ id: "proj-1", gitRemoteUrl: "https://github.com/smsunarto/bb-plugins.git" }];
+  for (const [host, owner] of [
+    ["host-a", "alice"],
+    ["host-b", "bob"],
+  ] as const) {
+    const path = world.hosts[host]!.workspace!.path;
+    world.hosts[host]!.workspace = workspace(path, { github: { repo, headOwner: owner } });
+  }
+  world.pullRequests[branch] = [{ ...PR, headRepositoryOwner: { login: "alice" } }];
+  world.threads["thread-c"] = {
+    hostId: "host-b",
+    path: "/gone",
+    removed: true,
+    branchName: branch,
+  };
+  const { harness, restart } = await start(world);
+  await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+  await harness.behavior.callRpc("refreshThread", { threadId: "thread-c" });
+  const statusOf = async (instance: Harness, threadId: string) => {
+    const rows = (await instance.behavior.callRpc("statusForThread", {
+      keys: [threadId],
+    })) as Record<string, unknown>;
+    return rows[threadId];
+  };
+  expect(await statusOf(harness, "thread-c")).toMatchObject({ pullRequest: { number: 482 } });
+  const next = await restart();
+  world.failProjectLookup = true;
+  await next.behavior.callRpc("refreshThread", { threadId: "thread-c" });
+  expect(await statusOf(next, "thread-c")).toMatchObject({ pullRequest: { number: 482 } });
+
+  // A positive read with no PR still identifies Alice as the branch's only known owner.
+  world.pullRequests[branch] = [];
+  await next.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+  await next.behavior.callRpc("refreshThread", { threadId: "thread-c" });
+  expect(await statusOf(next, "thread-c")).toMatchObject({ source: "remembered" });
+  await next.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+  expect(await statusOf(next, "thread-c")).toEqual({ state: "none" });
+});
+
+test.each(["PR link", "checkout", "Review", "remembered"] as const)(
+  "a delayed %s read preserves the newer branch result",
+  async (source) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const world = twoHosts();
+    world.serverAccounts = [];
+    for (const host of Object.values(world.hosts)) {
+      host.ghAccounts = ["smsunarto"];
+      host.forgeLive = true;
+    }
+    const branch = "scott/route-gh";
+    world.pullRequests[branch] = [PR];
+    const { harness } = await start(world);
+    const key = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+    const read = (threadId: string, prNumber: number) =>
+      harness.behavior.callRpc("changeDetail", { keys: [key], threadId, prNumber });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    if (source === "remembered") world.threads["thread-a"]!.removed = true;
+    vi.setSystemTime(Date.now() + 61_000);
+    let markArrived!: () => void;
+    let release!: () => void;
+    const arrived = new Promise<void>((resolve) => {
+      markArrived = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    world.delayResponse = () => {
+      markArrived();
+      return blocked;
+    };
+    const old = (() => {
+      if (source === "PR link") return read("thread-a", 482);
+      if (source === "Review")
+        return harness.behavior.callRpc("changeForgeAction", {
+          key,
+          action: { kind: "close" },
+          expected: { number: 482, head: PR.headRefOid },
+        });
+      return harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    })();
+    await arrived;
+    world.pullRequests[branch] = [
+      { ...PR, number: 483, headRefOid: "decade", url: PR.url.replace(/482$/, "483") },
+    ];
+    try {
+      expect(await read("thread-b", 483)).toMatchObject({ [key]: { row: { number: 483 } } });
+    } finally {
+      release();
+    }
+    const verdict = await old;
+    if (source === "PR link") expect(verdict).toMatchObject({ [key]: { row: { number: 483 } } });
+    expect(await harness.behavior.callRpc("changeDetail", { keys: [key] })).toMatchObject({
+      [key]: { row: { number: 483 } },
+    });
+    expect(await harness.behavior.callRpc("checksForChange", { keys: [key] })).toMatchObject({
+      [key]: { read: { value: { head: "decade" } } },
+    });
+  },
+);
