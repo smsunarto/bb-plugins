@@ -28,6 +28,7 @@ import {
   resolvePullRequest,
 } from "./open-pull-request.tsx";
 import { prTabParams, REVIEW_TAB, useOpenReview } from "./open-review.ts";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 
 type Phase =
   | { at: "looking"; key: ChangeKey | null }
@@ -182,14 +183,13 @@ function PullRequestTabView({
         </output>
       ) : (
         <>
-          <p
-            role="alert"
-            className="m-0 w-full max-w-sm [overflow-wrap:anywhere] text-[13px] leading-5 text-muted-foreground"
-          >
-            {phase.at === "elsewhere"
-              ? `This branch's review shows #${phase.number} now, so #${pr.number} is on GitHub.`
-              : phase.problem}
-          </p>
+          <Alert variant={phase.at === "failed" ? "destructive" : "default"} className="max-w-sm">
+            <AlertDescription className="[overflow-wrap:anywhere]">
+              {phase.at === "elsewhere"
+                ? `This branch's review shows #${phase.number} now, so #${pr.number} is on GitHub.`
+                : phase.problem}
+            </AlertDescription>
+          </Alert>
           <div className="flex flex-wrap justify-center gap-2">
             <Button size="sm" variant="outline" className="pointer-coarse:h-11" asChild>
               <UrlLink href={prUrl(pr)}>Open #{pr.number} on GitHub</UrlLink>

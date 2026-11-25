@@ -24,6 +24,7 @@ import { PrMarkdown } from "../pr-markdown.tsx";
 import { GitHubAvatar } from "../review-ui.tsx";
 import { useNow } from "./hooks.ts";
 import { ReviewScroller } from "./review-bar.tsx";
+import { EmptyState } from "../components/ui/empty-state.tsx";
 
 // ── code-review's helpers ──────────────────────────────────────────────
 
@@ -224,7 +225,7 @@ function Activity({ items }: { items: readonly TimelineItem[] }) {
         </h2>
       </div>
       {items.length === 0 ? (
-        <p className="m-0 text-muted-foreground">No activity yet.</p>
+        <EmptyState messageClassName="m-0" message="No activity yet." />
       ) : (
         <ol className="m-0 flex list-none flex-col gap-2 p-0">
           {items.map((item) => (
@@ -345,7 +346,11 @@ function DescriptionCard({ description }: { description: Description }) {
           ) : null}
         </>
       ) : (
-        <p className="m-0 px-4 pt-2 pb-3 text-muted-foreground italic">No description provided.</p>
+        <EmptyState
+          className="mx-4 mt-2 mb-3"
+          messageClassName="m-0"
+          message="No description provided."
+        />
       )}
     </article>
   );
@@ -438,9 +443,10 @@ export function ConversationView({
       {hasPullRequest ? (
         <Timeline changeKey={changeKey} />
       ) : (
-        <p className="m-0 text-[13px] leading-5 text-muted-foreground">
-          This change has no pull request yet. Its conversation starts once it has one.
-        </p>
+        <EmptyState
+          messageClassName="m-0"
+          message="This change has no pull request yet. Its conversation starts once it has one."
+        />
       )}
     </ReviewScroller>
   );

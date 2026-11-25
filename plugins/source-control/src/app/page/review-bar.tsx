@@ -107,13 +107,13 @@ function Step({
   return (
     <Button
       ref={buttonRef}
-      size="sm"
+      size="icon-sm"
       variant="ghost"
       aria-label={label}
       onClick={(event) => onClick(direction, event.currentTarget)}
       // 32px drawn; a finger gets 44px, out to the pill's edge. Any coarse pointer, not only a
       // phone's: the bar shows by its container's width, so a tablet's narrow panel has it too.
-      className="relative size-8 px-0 pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5"
+      className="relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5"
     >
       <Chevron className={direction < 0 ? "rotate-90" : "-rotate-90"} />
     </Button>
