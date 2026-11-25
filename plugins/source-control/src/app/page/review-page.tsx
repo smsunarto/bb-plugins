@@ -935,7 +935,9 @@ function ReviewFrame({
       ref={root}
       data-bb-plugin="source-control"
       data-testid="sc-review-page"
-      className="@container relative flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground"
+      // Under bb Monokai on a phone the page runs under the home indicator; the phone
+      // list and the guided view's action bar pad by --plugin-page-bottom-inset.
+      className="@container relative flex h-[calc(100%+var(--plugin-page-bottom-inset,0px))] mb-[calc(-1*var(--plugin-page-bottom-inset,0px))] min-h-0 min-w-0 flex-col bg-background text-foreground"
     >
       {width === null ? null : (
         <AskHost changeKey={key} phone={width < PHONE}>

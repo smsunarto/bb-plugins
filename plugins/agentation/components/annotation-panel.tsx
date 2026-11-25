@@ -393,7 +393,8 @@ export function AnnotationPanel() {
   );
 
   return (
-    <div className="h-full overflow-y-auto">
+    // Under bb Monokai on a phone the page runs under the home indicator and pads its end by it.
+    <div className="h-[calc(100%+var(--plugin-page-bottom-inset,0px))] mb-[calc(-1*var(--plugin-page-bottom-inset,0px))] pb-[var(--plugin-page-bottom-inset,0px)] overflow-y-auto">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 md:p-5">
         <ToggleGroup
           type="single"

@@ -125,7 +125,12 @@ export function GalleryPanel({ subPath }: { subPath: string }) {
 
   return (
     // BB's page frame doesn't scroll; the page is its own scroll container.
-    <div {...motion} ref={scroller} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    // Under bb Monokai on a phone the page runs under the home indicator and pads its end by it.
+    <div
+      {...motion}
+      ref={scroller}
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto mb-[calc(-1*var(--plugin-page-bottom-inset,0px))] pb-[var(--plugin-page-bottom-inset,0px)]"
+    >
       <div className="mx-auto flex w-full max-w-3xl flex-col px-5 pb-12">
         <GalleryHeader
           selection={selection}

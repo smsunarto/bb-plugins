@@ -1106,7 +1106,8 @@ function SlopCopPanel() {
 
   if (editing !== null) {
     return (
-      <div className="h-full overflow-y-auto p-4">
+      // Under bb Monokai on a phone the page runs under the home indicator and pads its end by it.
+      <div className="h-[calc(100%+var(--plugin-page-bottom-inset,0px))] mb-[calc(-1*var(--plugin-page-bottom-inset,0px))] overflow-y-auto p-4 pb-[calc(1rem+var(--plugin-page-bottom-inset,0px))]">
         <div className="mx-auto w-full max-w-3xl">
           <RuleEditor
             rule={editing === "new" ? null : editing}
@@ -1123,7 +1124,8 @@ function SlopCopPanel() {
   }
 
   return (
-    <div className="flex h-full flex-col @container/panel">
+    // Under bb Monokai on a phone the page runs under the home indicator; its list pads its end by it.
+    <div className="flex h-[calc(100%+var(--plugin-page-bottom-inset,0px))] mb-[calc(-1*var(--plugin-page-bottom-inset,0px))] flex-col @container/panel">
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
         <Tabs value={tab} onValueChange={(value) => setTab(value as "rules" | "activity")}>
           <TabsList>
@@ -1158,7 +1160,7 @@ function SlopCopPanel() {
         </Button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-[calc(1rem+var(--plugin-page-bottom-inset,0px))]">
         <div className="mx-auto w-full max-w-3xl">
           {tab === "rules" ? (
             <RulesList

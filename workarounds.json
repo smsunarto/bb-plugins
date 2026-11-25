@@ -65,7 +65,7 @@
         "cd packages/ui && bun run test"
       ],
       "verify": "Open Agent instructions → Projects with a project chosen, in the left sidebar at viewport heights 400 and 1080: the file tree fills the space above its footer or the sidebar bottom, and the outer sidebar does not scroll.",
-      "manual": "Remove the useSidebarColumnFill call and its root ref in plugins/agent-instructions/src/app/app.tsx (AgentInstructionsSidebar), then the ./sidebar-fill export in packages/ui/package.json."
+      "manual": "Remove the useSidebarColumnFill calls and their root refs in plugins/agent-instructions/src/app/app.tsx (AgentInstructionsSidebar) and plugins/source-control/src/app/review-entry.tsx (ReviewSidebar, which then scrolls with bb's column again), then the ./sidebar-fill export in packages/ui/package.json."
     },
     {
       "id": "source-control/shadow-code-sidebar-swipe",

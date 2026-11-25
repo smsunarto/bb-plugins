@@ -466,23 +466,37 @@ function SourceLine({
   );
 }
 
+/** Whether the list ends in a footer naming sources that are not ready or not read. */
+function hasSourcesFooter(sources: ChangeSources): boolean {
+  return sources.stopped.length > 0 || sources.states.some((state) => state.status !== "ready");
+}
+
 function SourcesFooter({
   sources,
   now,
   phone,
+  drawer,
 }: {
   sources: ChangeSources;
   now: number;
   phone: boolean;
+  drawer: boolean;
 }) {
   const shown = sources.states.filter((state) => state.status !== "ready");
-  if (shown.length === 0 && sources.stopped.length === 0) return null;
+  if (!hasSourcesFooter(sources)) return null;
   return (
-    // Pinned to the bottom of whatever scrolls the list, on that surface's ground.
+    // Below the list, on that surface's ground: pinned to the bottom of bb's scrolling sidebar,
+    // or the nav's last row where the nav scrolls its own list. On a phone under bb Monokai that
+    // bottom is the home indicator's strip: the footer runs through it to the screen's edge and
+    // pads its lines clear of the indicator.
     <ul
       className={cx(
-        "sticky bottom-0 m-0 flex shrink-0 list-none flex-col gap-2 border-t border-solid border-border-hairline px-4 py-3",
-        phone ? "bg-background" : "bg-sidebar",
+        "m-0 flex shrink-0 list-none flex-col gap-2 border-t border-solid border-border-hairline px-4 pt-3",
+        phone
+          ? "bg-background pb-[calc(0.75rem+var(--plugin-page-bottom-inset,0px))]"
+          : drawer
+            ? "bg-sidebar pb-[calc(0.75rem+var(--sidebar-list-bottom-inset,0px))]"
+            : "sticky bottom-0 bg-sidebar pb-3",
       )}
     >
       {shown.map((state) => (
@@ -609,9 +623,23 @@ function ListItems({
   );
 }
 
-export function ChangesList({ subPath, variant }: { subPath: string; variant: Variant }) {
+/**
+ * `drawer`: the nav fills a phone drawer's sidebar column (useSidebarColumnFill) and scrolls its
+ * own list, so the footer ends the column at the screen's edge instead of floating above the
+ * home indicator's strip that bb Monokai pads the column's end with.
+ */
+export function ChangesList({
+  subPath,
+  variant,
+  drawer = false,
+}: {
+  subPath: string;
+  variant: Variant;
+  drawer?: boolean;
+}) {
   const selectedKey = useMemo(() => parseReviewPath(subPath).key, [subPath]);
   const sources = useChangeSources();
+  const footer = hasSourcesFooter(sources);
   const filter = useFilter();
   const merged = useMergedChanges(sources.rowSets, filter);
   const items = useMemo(() => flatten(merged.shelves), [merged.shelves]);
@@ -677,17 +705,23 @@ export function ChangesList({ subPath, variant }: { subPath: string; variant: Va
         </div>
         <Filters counts={merged.counts} variant={variant} />
       </div>
-      {/* bb's sidebar scrolls this list; on a phone page nothing above it does, so it scrolls
-          itself. The window follows `list`'s nearest scrolling ancestor, so the ref sits inside. */}
+      {/* bb's sidebar scrolls this list; on a phone page, and in a phone drawer that the nav
+          fills, nothing above it does, so it scrolls itself. The window follows `list`'s nearest
+          scrolling ancestor, so the ref sits inside. */}
       <div
         data-testid="sc-nav-scroll"
-        className={cx("min-h-0 flex-1", phone && "overflow-y-auto overscroll-contain")}
+        className={cx(
+          "min-h-0 flex-1",
+          (phone || drawer) && "overflow-y-auto overscroll-contain",
+          phone && !footer && "pb-[var(--plugin-page-bottom-inset,0px)]",
+          drawer && !footer && "pb-[var(--sidebar-list-bottom-inset,0px)]",
+        )}
       >
         <div ref={setList} className="pb-2">
           {body}
         </div>
       </div>
-      <SourcesFooter sources={sources} now={now} phone={phone} />
+      <SourcesFooter sources={sources} now={now} phone={phone} drawer={drawer} />
     </nav>
   );
 }

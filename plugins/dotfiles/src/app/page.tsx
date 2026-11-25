@@ -72,7 +72,8 @@ function DotfilesPageBody(props: PluginNavPanelProps): ReactElement {
 export function DotfilesPage(props: PluginNavPanelProps): ReactElement {
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex h-full min-h-0 flex-col">
+      {/* Under bb Monokai on a phone the page runs under the home indicator. */}
+      <div className="flex h-[calc(100%+var(--plugin-page-bottom-inset,0px))] mb-[calc(-1*var(--plugin-page-bottom-inset,0px))] min-h-0 flex-col">
         <DotfilesPageBody {...props} />
       </div>
     </QueryClientProvider>
