@@ -92,6 +92,14 @@ test("the byte cap holds on what is read, with no content-length to trust", asyn
   expect(await readCapped(new Response("é ok"), 16)).toBe("é ok");
 });
 
+test("git format-patch --no-stat draws the commit and its file", async () => {
+  open(readFileSync(join(FIXTURES, "followups/no-stat.patch"), "utf8"));
+  const commit = await screen.findByTestId("sc-patch-commit");
+  expect(commit.textContent).toContain("explain sidebar row stability");
+  expect(commit.textContent).toContain("stable-threads.ts");
+  expect(screen.queryByTestId("sc-patch-file-text")).toBeNull();
+});
+
 test("a multi-commit patch draws a card per file under each commit's subject", async () => {
   const fetch = open(readFileSync(join(FIXTURES, "format-patch-two-commits.patch"), "utf8"));
   expect(fetch).toHaveBeenCalledWith(
@@ -162,6 +170,22 @@ test.each([
     () => open("x", { headers: { "content-length": String(MAX_PATCH_BYTES + 1) } }),
     "This file is over 8 MB, too large for the diff view.",
   ],
+  [
+    "an insertion anchored past marked old EOF",
+    () =>
+      open(
+        "--- a/a\n+++ b/a\n@@ -1 +1 @@\n-old\n\\ arbitrary-marker\n+new\n@@ -9,0 +10 @@\n+later\n",
+      ),
+    "Line 7 starts a hunk past a no-newline marker on the same side.",
+  ],
+  [
+    "a deletion anchored past marked new EOF",
+    () =>
+      open(
+        "--- a/a\n+++ b/a\n@@ -1 +1 @@\n-old\n+new\n\\ arbitrary-marker\n@@ -10 +9,0 @@\n-later\n",
+      ),
+    "Line 7 starts a hunk past a no-newline marker on the same side.",
+  ],
 ])("%s falls back to BB's text preview", async (_, start, reason) => {
   start();
   await waitFor(() => expect(screen.getByTestId("bb-original")).toBeTruthy());
@@ -187,6 +211,20 @@ describe("re-reading the file", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  test("closing the opener aborts a pending read and clears its timers", () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn((_url: string, _init: RequestInit) => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetch);
+
+    const { unmount } = render();
+    const signal = fetch.mock.calls[0]?.[1].signal;
+    expect(signal?.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    unmount();
+    expect(signal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   test("the same text under a new ETag is downloaded once, then answered 304", async () => {

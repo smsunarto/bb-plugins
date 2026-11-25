@@ -617,7 +617,7 @@ describe("review round 4: a strict second reading", () => {
 
   test("a mail whose Subject runs straight into its diff reads as text", () => {
     expect(summary4("mail-separator-removed.patch")).toBe(
-      "Line 7 reads as part of a patch inside the mail's message, before its --- line.",
+      "Line 24 isn't part of the mail's header.",
     );
   });
 

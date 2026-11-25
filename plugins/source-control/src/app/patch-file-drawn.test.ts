@@ -50,3 +50,30 @@ test("a blank line standing for context draws as an empty context line", () => {
   expect(drawn.deletionLines).toEqual(["one\n", "\n", "two\n", "three\n", "\n", "five\n"]);
   expect(drawn.additionLines).toEqual(["one\n", "\n", "TWO\n", "three\n", "\n", "five\n"]);
 });
+
+test.each(["arbitrary-marker", "No newline at end of file"])(
+  "the review mutation's %s marks the final old line only",
+  (marker) => {
+    const read = readPatchFile(
+      `--- a/oracle.txt\n+++ b/oracle.txt\n@@ -1,2 +1,2 @@\n ctx-oracle\n-old-oracle\n\\ ${marker}\n+new-oracle\n`,
+    );
+    if (!read.ok) throw new Error(read.reason);
+    const drawn = parsePatch(read.read.commits[0]!.files[0]!.patch.patch)!;
+    expect(drawn.deletionLines).toEqual(["ctx-oracle\n", "old-oracle"]);
+    expect(drawn.additionLines).toEqual(["ctx-oracle\n", "new-oracle\n"]);
+    expect(drawn.hunks[0]).toMatchObject({ noEOFCRDeletions: true, noEOFCRAdditions: false });
+  },
+);
+
+test.each([
+  ["@@ -1,2 +1,2 @@\n-old\n\\ arbitrary-marker\n+new\n rest\n", "before the last line on its side"],
+  [
+    "@@ -1 +1 @@\n-old\n\\ No newline at end of file\n+new\n@@ -4 +4 @@\n-more\n+later\n",
+    "past a no-newline marker on the same side",
+  ],
+])("a no-newline marker before more lines on its side falls back to text", (hunks, reason) => {
+  expect(readPatchFile(`--- old\n+++ new\n${hunks}`)).toEqual({
+    ok: false,
+    reason: expect.stringContaining(reason),
+  });
+});
