@@ -10,7 +10,7 @@ import {
   experimental_useRpcMutation as useRpcMutation,
   experimental_useRpcQuery as useRpcQuery,
 } from "@get-bb/plugin-sdk/app";
-import { useRef, useState, type ChangeEvent, type SyntheticEvent } from "react";
+import { useLayoutEffect, useRef, useState, type ChangeEvent, type SyntheticEvent } from "react";
 import {
   DEFAULT_ICON_GLYPH,
   normalizeIconName,
@@ -102,8 +102,14 @@ function CaptainIconRow({
   const [note, setNote] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const preview = useRef<HTMLSpanElement>(null);
-  // Counts saves, so an upload still decoding when a newer one starts is dropped.
+  // An upload can save only while its row is mounted and no newer edit has started.
   const edits = useRef(0);
+  useLayoutEffect(
+    () => () => {
+      edits.current += 1;
+    },
+    [],
+  );
   const write = (choice: IconChoice) => {
     edits.current += 1;
     setProblem(null);

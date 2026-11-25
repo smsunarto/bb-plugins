@@ -24,8 +24,8 @@ export const ASK_TEXT_MAX = 80;
  */
 export const ASK_OPTION_COLUMNS = 12;
 /**
- * Every option, new or rerun, is one line of at most 80 UTF-16 units, so it
- * stays a valid `resolveAsk` answer; asks stored before the column cap meet it too.
+ * An option must fit the answer field: one line of at most 80 UTF-16 units.
+ * An identical rerun can keep labels stored before this rule.
  */
 const ASK_OPTION_UNITS = ASK_TEXT_MAX;
 /** A refused option is echoed from its first 64 units, cut to 24 columns. */
@@ -37,14 +37,17 @@ const OPTIONS_MAX = 9;
 
 export type AskDraft = {
   kind: AskKind;
-  task: TasksTask | null;
+  task: TasksTask | Blocker | null;
   text: string;
-  detail: string;
+  detail: string | Refusal;
   options: string[];
 };
 
-/** Every rule an ask must meet, checked before anything is written. */
-export function askBlockers(draft: Omit<AskDraft, "task"> & { taskKey: string | null }): Blocker[] {
+/** Draft blockers other than the new ask's column limit and task lookup. */
+export function askBlockers(
+  draft: Omit<AskDraft, "task"> & { hasTask: boolean },
+  storedOptions?: readonly string[],
+): Blocker[] {
   const blockers: Blocker[] = [];
   const text = draft.text.trim();
   if (text === "" || text.length > ASK_TEXT_MAX || /[\r\n]/u.test(text)) {
@@ -53,22 +56,28 @@ export function askBlockers(draft: Omit<AskDraft, "task"> & { taskKey: string | 
       fix: 'shorten it, such as "Pick the Unity account for cloud crew"; put the rest in --detail',
     });
   }
-  if (draft.detail.trim() === "") {
+  if (draft.detail instanceof Refusal) {
+    blockers.push(...draft.detail.blockers);
+  } else if (draft.detail.trim() === "") {
     blockers.push({
       reason: "an ask needs detail: what is blocked and why you recommend the first option",
       fix: "pass --detail <text> or --detail-file <path>",
     });
   }
-  if ((draft.kind === "decision" || draft.kind === "ship") && draft.taskKey === null) {
+  if ((draft.kind === "decision" || draft.kind === "ship") && !draft.hasTask) {
     blockers.push({ reason: `a ${draft.kind} ask needs its task`, fix: "pass --task <key>" });
   }
   const options = draft.options.map((option) => option.trim());
-  blockers.push(...optionListBlockers(draft.kind, options));
+  blockers.push(...optionListBlockers(draft.kind, options, storedOptions));
   return blockers;
 }
 
-/** The rules on a draft's trimmed options that hold for every ask, new or rerun. */
-function optionListBlockers(kind: AskKind, options: readonly string[]): Blocker[] {
+/** The list and answer field rules for a draft's trimmed options. */
+function optionListBlockers(
+  kind: AskKind,
+  options: readonly string[],
+  storedOptions: readonly string[] | undefined,
+): Blocker[] {
   if (kind === "ship") {
     return options.length === 0
       ? []
@@ -96,7 +105,8 @@ function optionListBlockers(kind: AskKind, options: readonly string[]): Blocker[
   if (options.some((option) => option === "")) {
     blockers.push({ reason: "an option is empty", fix: "drop the empty --option" });
   }
-  for (const option of options) {
+  const checkLabels = storedOptions === undefined || !sameOptions(storedOptions, options);
+  for (const option of checkLabels ? options.slice(0, OPTIONS_MAX) : []) {
     if (/[\r\n]/u.test(option)) {
       blockers.push({
         reason: `option ${echo(option)} spans lines; an option is one line`,
@@ -121,7 +131,7 @@ function optionListBlockers(kind: AskKind, options: readonly string[]): Blocker[
  * still retries its push.
  */
 export function optionLabelBlockers(options: readonly string[]): Blocker[] {
-  return options.flatMap((option): Blocker[] => {
+  return options.slice(0, OPTIONS_MAX).flatMap((option): Blocker[] => {
     const columns = displayWidth(option);
     if (columns <= ASK_OPTION_COLUMNS) return [];
     return [
@@ -133,16 +143,17 @@ export function optionLabelBlockers(options: readonly string[]): Blocker[] {
   });
 }
 
-function refuseUnlessLabelsFit(options: readonly string[]): void {
-  const blockers = optionLabelBlockers(options);
-  if (blockers.length > 0) throw new Refusal(blockers);
-}
-
 /** An option quoted for a blocker, bounded in size however long it is. */
 function echo(option: string): string {
-  const head = option.slice(0, ECHO_UNITS);
-  const clipped = clip(head, ECHO_COLUMNS);
-  return JSON.stringify(head.length < option.length && clipped === head ? `${head}…` : clipped);
+  const cutsPair = /[\u{10000}-\u{10ffff}]/u.test(option.slice(ECHO_UNITS - 1, ECHO_UNITS + 1));
+  const head = option.slice(0, cutsPair ? ECHO_UNITS - 1 : ECHO_UNITS);
+  const candidate = head.length < option.length && !head.endsWith("…") ? head + "…" : head;
+  const clipped = clip(candidate, ECHO_COLUMNS);
+  const label = clipped !== candidate && clipped.endsWith("……") ? clipped.slice(0, -1) : clipped;
+  return JSON.stringify(label).replace(
+    /[\u007f-\u009f\u2028\u2029\p{Bidi_Control}]/gu,
+    (value) => "\\u" + value.charCodeAt(0).toString(16).padStart(4, "0"),
+  );
 }
 
 /** The ship gate: a ship ask needs a `review` verdict of passed or skipped. */
@@ -227,24 +238,21 @@ export async function supersedeShipAsks(
   return notes;
 }
 
-/**
- * Open an ask, or return the open one with the same kind, task and text, so a
- * rerun opens nothing twice. A new ask is posted on its task as an `Asked:`
- * comment and sends one push; the push is retried on a rerun until it is sent.
- */
-export async function openAsk(
-  deps: CommandDeps,
-  captain: Captain,
-  draft: AskDraft,
-): Promise<{ item: Item; notes: string[] }> {
-  const notes: string[] = [];
+/** Validate against the open match and record a new ask in the same synchronous step. */
+function recordAsk(deps: CommandDeps, captain: Captain, draft: AskDraft) {
   const text = draft.text.trim();
-  const taskKey = draft.task?.key ?? null;
+  const target = draft.task;
+  const resolved = target === null || "key" in target;
+  const task = resolved ? target : null;
+  const taskKey = task?.key ?? null;
   const options = draft.kind === "ship" ? [...SHIP_OPTIONS] : draft.options.map((o) => o.trim());
-  const existing = deps.store.findOpenAsk(captain.threadId, draft.kind, taskKey, text);
-  // No await between this lookup and the insert, so the ask a rerun matches
-  // cannot be answered in between and let a new ask skip the column rule.
-  if (existing === null) refuseUnlessLabelsFit(options);
+  const existing = resolved
+    ? deps.store.findOpenAsk(captain.threadId, draft.kind, taskKey, text)
+    : null;
+  const blockers = askBlockers({ ...draft, hasTask: target !== null }, existing?.options);
+  if (!resolved) blockers.push(target);
+  if (existing === null) blockers.push(...optionLabelBlockers(options));
+  if (blockers.length > 0 || draft.detail instanceof Refusal) throw new Refusal(blockers);
   const ask =
     existing ??
     deps.store.openAsk({
@@ -256,7 +264,24 @@ export async function openAsk(
       options,
       askedAt: deps.now(),
     });
-  if (existing === null && draft.task !== null) {
+  return { ask, existing, task, options };
+}
+
+/**
+ * Open an ask, or return the open one with the same kind, task and text, so a
+ * rerun opens nothing twice. A new ask is posted on its task as an `Asked:`
+ * comment and sends one push; the push is retried on a rerun until it is sent.
+ * Throws a Refusal with the blockers to opening or rerunning the ask.
+ */
+export async function openAsk(
+  deps: CommandDeps,
+  captain: Captain,
+  draft: AskDraft,
+): Promise<{ item: Item; notes: string[] }> {
+  const { ask, existing, task, options } = recordAsk(deps, captain, draft);
+  const { text, taskKey } = ask;
+  const notes: string[] = [];
+  if (existing === null && task !== null) {
     const body = [
       `Asked: ${text} (${ask.id})`,
       options.length === 0
@@ -268,7 +293,7 @@ export async function openAsk(
     ]
       .filter((part) => part !== null)
       .join("\n\n");
-    const warning = await captainComment(deps, captain, draft.task.id, body);
+    const warning = await captainComment(deps, captain, task.id, body);
     if (warning !== null) notes.push(`warning: ${warning}`);
   }
   if (existing === null) deps.bb.rpc.experimental_invalidate([asksTag(captain.threadId)]);
@@ -289,14 +314,15 @@ export async function openAsk(
 /** A rerun of an open ask keeps its stored options; say so when it gave different ones. */
 function ignoredOptions(existing: Ask | null, options: readonly string[]): string[] {
   if (existing === null || options.length === 0) return [];
-  const same =
-    existing.options.length === options.length &&
-    existing.options.every((option, i) => option === options[i]);
-  return same
+  return sameOptions(existing.options, options)
     ? []
     : [
         `note: ${existing.id} is already open, so it keeps its options; the new --option values were ignored`,
       ];
+}
+
+function sameOptions(stored: readonly string[], supplied: readonly string[]): boolean {
+  return stored.length === supplied.length && stored.every((option, i) => option === supplied[i]);
 }
 
 export function askItem(ask: Ask, state: string): Item {

@@ -152,6 +152,13 @@ describe("a Captain's sidebar icon", () => {
     });
   });
 
+  test("settings stores canonical base64 for the validated PNG bytes", async () => {
+    const { setIcon, icons, captainId } = await iconHost();
+    const canonical = { kind: "image", src: PNG_URL };
+    expect(await setIcon({ ...canonical, src: PNG_URL.replace(/=+$/u, "") })).toEqual(canonical);
+    expect(await icons()).toEqual({ [captainId]: canonical });
+  });
+
   test("settings lists each live Captain with its name and icon", async () => {
     const { host, setIcon, captainId } = await iconHost();
     await setIcon({ kind: "icon", name: "Brain" });

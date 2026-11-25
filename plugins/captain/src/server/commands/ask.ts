@@ -1,17 +1,10 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
-import {
-  ASK_OPTION_COLUMNS,
-  askBlockers,
-  askItem,
-  askOrRefuse,
-  openAsk,
-  resolveAsk,
-} from "../asks.ts";
+import { ASK_OPTION_COLUMNS, askItem, askOrRefuse, openAsk, resolveAsk } from "../asks.ts";
 import { actingFor, readCallerFile } from "../caller.ts";
-import { resolveTask, tasksOrRefuse } from "../crew.ts";
-import { guard, Refusal, render, type Blocker } from "../output.ts";
+import { resolveTask, tasksBlocker } from "../crew.ts";
+import { guard, Refusal, render } from "../output.ts";
 import { ASK_KINDS, type AskKind } from "../../contract/queue.ts";
-import type { TasksTask } from "../tasks-client.ts";
+import { TasksError } from "../tasks-client.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
 
 export function askCommand(deps: CommandDeps) {
@@ -82,25 +75,21 @@ export function askCommand(deps: CommandDeps) {
           input.options.detail,
           input.options["detail-file"],
           "--detail-stdin",
-        );
-        const taskKey = input.options.task?.trim().toUpperCase() || null;
-        const blockers: Blocker[] = askBlockers({
-          kind,
-          taskKey,
-          text: input.positionals.text,
-          detail,
-          options: input.options.option,
+        ).catch((error: unknown) => {
+          if (error instanceof Refusal) return error;
+          throw error;
         });
-        let task: TasksTask | null = null;
-        if (taskKey !== null) {
-          const resolved = await tasksOrRefuse(() => resolveTask(deps, captain, taskKey));
-          if ("blocker" in resolved) blockers.push(resolved.blocker);
-          else task = resolved.task;
-        }
-        if (blockers.length > 0) throw new Refusal(blockers);
+        const taskKey = input.options.task?.trim().toUpperCase() || null;
+        const resolved =
+          taskKey === null
+            ? { task: null }
+            : await resolveTask(deps, captain, taskKey).catch((error: unknown) => {
+                if (error instanceof TasksError) return { blocker: tasksBlocker(error) };
+                throw error;
+              });
         const { item, notes } = await openAsk(deps, captain, {
           kind,
-          task,
+          task: "task" in resolved ? resolved.task : resolved.blocker,
           text: input.positionals.text,
           detail,
           options: input.options.option,

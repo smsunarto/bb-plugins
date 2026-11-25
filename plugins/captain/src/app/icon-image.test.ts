@@ -37,4 +37,31 @@ describe("an uploaded SVG is sized before it is drawn", () => {
     expect(sizeSvg("<html><body/></html>")).toBeNull();
     expect(sizeSvg("not xml")).toBeNull();
   });
+
+  test("inline physical dimensions take precedence and scale with the drawing", () => {
+    const sized = sizeSvg(
+      '<svg xmlns="' +
+        SVG +
+        '" width="20" height="10" style="width:1in !important;height:1in;fill:red"/>',
+    );
+    expect(sized).toMatchObject({ width: 192, height: 192 });
+    const svg = root(sized?.text ?? "");
+    expect(svg.getAttribute("viewBox")).toBe("0 0 96 96");
+    expect(svg.getAttribute("style")).toMatch(/width:\s*192px/u);
+    expect(svg.getAttribute("style")).toMatch(/height:\s*192px/u);
+    expect(svg.getAttribute("style")).toMatch(/fill:\s*red/u);
+  });
+
+  test("subnormal exponent dimensions are refused before drawing", () => {
+    expect(sizeSvg('<svg xmlns="' + SVG + '" width="1e-320in" height="1e-320in"/>')).toBeNull();
+  });
+
+  test.each(["1in", "2.54cm", "25.4mm", "101.6q", "72pt", "6pc"])(
+    "an SVG sized in %s keeps its intrinsic artwork coordinates",
+    (length) => {
+      const sized = sizeSvg(`<svg xmlns="${SVG}" width="${length}" height="48px"/>`);
+      expect(sized).toMatchObject({ width: 384, height: 192 });
+      expect(root(sized?.text ?? "").getAttribute("viewBox")).toBe("0 0 96 48");
+    },
+  );
 });

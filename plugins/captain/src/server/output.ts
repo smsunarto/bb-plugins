@@ -53,7 +53,7 @@ export function render(
   return { exitCode, stdout: `${lines.join("\n")}\n`, ...(stderr ? { stderr } : {}) };
 }
 
-/** A whole-command refusal that names every blocker at once. Nothing was changed. */
+/** Render the blockers collected for a whole-command refusal. */
 export function refuse(
   command: string,
   blockers: readonly Blocker[],
