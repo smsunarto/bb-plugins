@@ -16,6 +16,7 @@ import { Rail } from "../workspace-lane.tsx";
 import { FilesView } from "./files-view.tsx";
 import { ReviewScroller } from "./review-bar.tsx";
 import { EmptyState } from "../components/ui/empty-state.tsx";
+import { Card } from "../components/ui/card.tsx";
 
 /**
  * A commit's own changes as a revision: its parent to itself. The host reads
@@ -223,9 +224,9 @@ export function CommitsView({
   );
 
   const card = (
-    <div className="min-w-0 overflow-hidden rounded-[8px] border border-solid border-border-hairline bg-surface-recessed">
+    <Card size="flush" className="min-w-0">
       {list}
-    </div>
+    </Card>
   );
   const elsewhere = selected && !at ? <OnGitHub url={url} commit={selected} /> : null;
   // A narrow column puts the picked commit's files (or its GitHub link) under the whole list, out

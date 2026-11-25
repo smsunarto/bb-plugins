@@ -60,10 +60,7 @@ export function PriorityChip({ priority }: { priority: number }) {
 /** A small pill after a line's author: Pending, Outdated, Resolved. */
 export function StatePill({ tone, children }: { tone: "warning" | "quiet"; children: ReactNode }) {
   return (
-    <Badge
-      variant={tone === "warning" ? "warning" : "outline"}
-      className="h-4 rounded-full px-2 py-0 leading-3"
-    >
+    <Badge variant={tone === "warning" ? "warning" : "outline"} size="sm">
       {children}
     </Badge>
   );
