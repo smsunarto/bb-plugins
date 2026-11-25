@@ -28,6 +28,7 @@ const PROXY_MARK = "data-gtd-keyboard-proxy";
 const INSET = '[data-sidebar="inset"]';
 const SETTLE_MS = 120;
 const TIMEOUT_MS = 3000;
+const RETRY_MS = 75;
 
 /** Call synchronously from the tap's handler, before navigating. */
 export function focusComposeEditorWithKeyboard(document: Document): void {
@@ -57,28 +58,43 @@ export function focusComposeEditorWithKeyboard(document: Document): void {
   document.body.append(proxy);
   proxy.focus({ preventScroll: true });
 
-  const started = view.performance.now();
-  const step = () => {
-    const elapsed = view.performance.now() - started;
-    // Another tap or field took focus: leave it be.
-    if (document.activeElement !== proxy || elapsed > TIMEOUT_MS) {
-      proxy.remove();
+  const deadline = view.performance.now() + TIMEOUT_MS;
+  let timer: number;
+  let composing = false;
+  proxy.addEventListener("compositionstart", () => {
+    composing = true;
+  });
+  proxy.addEventListener("compositionend", () => {
+    composing = false;
+  });
+
+  const cleanup = () => {
+    view.clearTimeout(timer);
+    proxy.remove();
+  };
+
+  const check = () => {
+    if (document.activeElement !== proxy || view.performance.now() >= deadline) {
+      cleanup();
       return;
     }
     const editor =
-      elapsed >= SETTLE_MS && drawerClosed(document)
-        ? document.querySelector<HTMLElement>(EDITOR)
-        : null;
+      !composing && drawerClosed(document) ? document.querySelector<HTMLElement>(EDITOR) : null;
     if (editor !== null) {
+      const text = proxy.value;
       editor.focus({ preventScroll: true });
       if (editor.contains(document.activeElement)) {
-        proxy.remove();
+        // Use the browser's editing operation so the composer gets a native
+        // input event and applies the edit at its selection with normal undo.
+        if (text !== "") document.execCommand("insertText", false, text);
         return;
       }
     }
-    view.requestAnimationFrame(step);
+    if (document.activeElement === proxy) timer = view.setTimeout(check, RETRY_MS);
   };
-  view.requestAnimationFrame(step);
+
+  proxy.addEventListener("blur", cleanup, { once: true });
+  timer = view.setTimeout(check, SETTLE_MS);
 }
 
 /** The drawer is shut and still, or there is no drawer (a desktop layout). */
