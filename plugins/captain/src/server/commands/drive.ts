@@ -1,6 +1,6 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
 import { join } from "node:path";
-import { actingFor, readCallerFile, type Acting } from "../caller.ts";
+import { actingFor, readCallerFile } from "../caller.ts";
 import {
   CREW_DRIVE_DIR,
   DRIVE_FILE_MAX_BYTES,
@@ -25,8 +25,8 @@ async function drivePath(
   ctx: PluginCliContext,
   path: string,
   captainOption: string | undefined,
-): Promise<{ file: string; driveDir: string; as: Acting["as"]; captainId: string }> {
-  const { captain, as } = await actingFor(deps, ctx, { captain: captainOption, crew: true });
+): Promise<{ file: string; driveDir: string; crew: boolean; captainId: string }> {
+  const { captain, crew } = await actingFor(deps, ctx, { captain: captainOption, crew: true });
   const root = await ensureStorageRoot(deps);
   if (root === null) {
     throw new Refusal([
@@ -35,7 +35,7 @@ async function drivePath(
   }
   const driveDir = join(root, captain.threadId);
   try {
-    return { file: resolveDrivePath(driveDir, path), driveDir, as, captainId: captain.threadId };
+    return { file: resolveDrivePath(driveDir, path), driveDir, crew, captainId: captain.threadId };
   } catch (error) {
     if (!(error instanceof DrivePathError)) throw error;
     throw new Refusal([
@@ -107,11 +107,11 @@ export function driveWriteCommand(deps: CommandDeps) {
         const {
           file: target,
           driveDir,
-          as,
+          crew,
           captainId,
         } = await drivePath(deps, ctx, path, input.options.captain);
         // The Drive's rules steer the crew, so crew write only their own folder.
-        if (as === "crew" && !inCrewDir(driveDir, target)) {
+        if (crew && !inCrewDir(driveDir, target)) {
           throw new Refusal([
             {
               reason: `crew write only under ${CREW_DRIVE_DIR}/ in the Drive, not ${path}`,

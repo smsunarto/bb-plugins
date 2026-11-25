@@ -174,8 +174,10 @@ function shipAskHead(detail: string): string | null {
 /**
  * Close the task's open ship asks that no longer match its review verdict:
  * every one when the verdict is not ship-ready, else each that names another
- * head. A Merge on such an ask would cover commits no review approved. Each
- * is answered `Superseded` without a send, and the task gets a comment.
+ * head. A Merge on such an ask would cover commits no review approved. The
+ * review field is the task's, so this covers every Captain's asks on it, not
+ * only the recording Captain's. Each is answered `Superseded` without a send,
+ * and the task gets a comment from the ask's own Captain.
  */
 export async function supersedeShipAsks(
   deps: CommandDeps,
@@ -188,8 +190,8 @@ export async function supersedeShipAsks(
   const keep = SHIP_READY_REVIEWS.has(verdict.value) ? head : null;
   const recorded = `review ${verdict.value}${head === null ? "" : ` at ${head}`}`;
   const stale = deps.store
-    .asksOf(captain.threadId, { open: true })
-    .filter((ask) => ask.kind === "ship" && ask.taskKey === task.key)
+    .openAsksOnTask(task.key)
+    .filter((ask) => ask.kind === "ship")
     .filter((ask) => keep === null || shipAskHead(ask.detail) !== keep);
   for (const ask of stale) {
     const at = deps.now();
@@ -197,14 +199,17 @@ export async function supersedeShipAsks(
     deps.store.markAnswerDelivered(ask.id, at);
     const warning = await captainComment(
       deps,
-      captain,
+      deps.registry.get(ask.captainId) ?? captain,
       task.id,
       `${SUPERSEDED}: ${ask.id} does not match the recorded ${recorded}; a Merge on it grants nothing.`,
     );
     notes.push(`${ask.id} superseded: it does not match the recorded ${recorded}`);
     if (warning !== null) notes.push(`warning: ${warning}`);
   }
-  if (stale.length > 0) deps.bb.rpc.experimental_invalidate([asksTag(captain.threadId)]);
+  if (stale.length > 0) {
+    const owners = new Set(stale.map((ask) => ask.captainId));
+    deps.bb.rpc.experimental_invalidate([...owners].map(asksTag));
+  }
   return notes;
 }
 
@@ -366,6 +371,14 @@ export async function deliverAnswer(
   }
 }
 
+/** The ask an id such as `A7` names, or a refusal. */
+export function askOrRefuse(store: Pick<CommandDeps["store"], "ask">, address: string): Ask {
+  const id = address.trim().toLowerCase();
+  const ask = store.ask(id);
+  if (ask === null) throw new Refusal([{ reason: `no ask ${id}`, fix: "bb captain status" }]);
+  return ask;
+}
+
 /**
  * Who answers `ask` from `fromThread`, or a refusal: the user from no thread;
  * the ask's own Captain thread, except for a ship ask's first answer; no one else.
@@ -408,10 +421,9 @@ export async function resolveAsk(
   fromThread: string | null,
 ): Promise<Resolved> {
   // The user's shell has no thread, so the ask itself names its Captain.
-  const id = address.trim().toLowerCase();
+  const ask = askOrRefuse(deps.store, address);
+  const { id } = ask;
   const answer = rawAnswer.trim();
-  const ask = deps.store.ask(id);
-  if (ask === null) throw new Refusal([{ reason: `no ask ${id}`, fix: "bb captain status" }]);
   const by = answerer(ask, fromThread);
   const captain = deps.registry.get(ask.captainId);
   const blockers: Blocker[] = [];

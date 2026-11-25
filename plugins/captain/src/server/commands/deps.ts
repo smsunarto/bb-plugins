@@ -36,7 +36,8 @@ export const JSON_OPTION = {
 export const CAPTAIN_OPTION = {
   type: "string",
   placeholder: "thread-id-or-name",
-  description: "The Captain to act for; defaults to the calling thread",
+  description:
+    "The Captain to act for, from your terminal; from a thread it may only name that thread's own Captain, the default",
 } as const;
 
 /** Read the server machine's thread-storage root once it is known; refuse while it is not. */

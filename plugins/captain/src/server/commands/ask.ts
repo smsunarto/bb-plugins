@@ -1,5 +1,12 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
-import { ASK_OPTION_COLUMNS, askBlockers, askItem, openAsk, resolveAsk } from "../asks.ts";
+import {
+  ASK_OPTION_COLUMNS,
+  askBlockers,
+  askItem,
+  askOrRefuse,
+  openAsk,
+  resolveAsk,
+} from "../asks.ts";
 import { actingFor, readCallerFile } from "../caller.ts";
 import { resolveTask, tasksOrRefuse } from "../crew.ts";
 import { guard, Refusal, render, type Blocker } from "../output.ts";
@@ -140,9 +147,7 @@ export function askShowCommand(deps: CommandDeps) {
     run(input) {
       const json = input.options.json;
       return guard("captain ask show", json, async () => {
-        const id = input.positionals.id.trim().toLowerCase();
-        const ask = deps.store.ask(id);
-        if (ask === null) throw new Refusal([{ reason: `no ask ${id}`, fix: "bb captain status" }]);
+        const ask = askOrRefuse(deps.store, input.positionals.id);
         const item = askItem(ask, ask.answer === null ? "open" : "answered");
         const by = ask.answer === null ? null : `by ${ask.answeredBy ?? "unknown"}`;
         return render(

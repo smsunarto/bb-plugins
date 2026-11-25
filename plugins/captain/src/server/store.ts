@@ -690,6 +690,15 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         .all(captainId)
         .map(toAsk);
     },
+    /** Every Captain's open asks on one task, oldest first. */
+    openAsksOnTask(taskKey: string): Ask[] {
+      return db
+        .prepare<[string], AskRecord>(
+          "SELECT * FROM asks WHERE task_key = ? AND answer IS NULL ORDER BY asked_at, rowid",
+        )
+        .all(taskKey)
+        .map(toAsk);
+    },
     /** The open ask with this kind, task and text, so a rerun of `ask` finds the first. */
     findOpenAsk(
       captainId: string,

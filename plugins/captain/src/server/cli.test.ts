@@ -497,6 +497,28 @@ describe("bb captain drive", () => {
     expect(readFileSync(join(drive, "CREW.md"), "utf8")).toBe("");
   });
 
+  test("a re-parented crew thread follows its bb parent, not a stale crew row", async () => {
+    const { host, captainId } = await withCrew();
+    const other = await newCaptain(host, ["--name", "Other", "--repo", "rampage"]);
+    host.server.store.putCrewRole({
+      threadId: "thr_moved",
+      captainId,
+      role: "implement",
+      reportDueSince: null,
+      contractSent: true,
+    });
+    host.addThread({ id: "thr_moved", parentThreadId: other });
+    writeFileSync(join(host.storageRoot, other, "CREW.md"), "other rules");
+
+    const read = await run(host, ["drive", "read", "CREW.md"], "thr_moved");
+    const wrote = await run(host, ["drive", "write", "crew/n.md", "--content", "x"], "thr_moved");
+
+    expect(read).toMatchObject({ exitCode: 0, stdout: "other rules" });
+    expect(wrote.exitCode).toBe(0);
+    expect(existsSync(join(host.storageRoot, other, "crew", "n.md"))).toBe(true);
+    expect(existsSync(join(host.storageRoot, captainId, "crew", "n.md"))).toBe(false);
+  });
+
   test("crew cannot name another Captain's Drive", async () => {
     const { host } = await withCrew();
     const other = await newCaptain(host, ["--name", "Other", "--repo", "rampage"]);
@@ -709,12 +731,14 @@ describe("bb captain routine", () => {
 
     const fromOther = await run(host, ["routine", "pause", "r1", "--captain", captainId], other);
     expect(fromOther.exitCode).toBe(1);
-    expect(fromOther.stderr).toContain("Other Captain manages only its own routines");
+    expect(fromOther.stderr).toContain(
+      `${other} acts only for the Other Captain, not "${captainId}"`,
+    );
     expect((await run(host, ["routine", "pause", "r1"], other)).stderr).toContain("has no routine");
     const plain = await run(host, ["routine", "list", "--captain", captainId], "thr_plain");
     expect(plain.stderr).toContain("thr_plain is not a Captain");
     const fire = await run(host, ["routine", "fire", "r1", "--automation", "auto_1"], other);
-    expect(fire.stderr).toContain("manages only its own routines");
+    expect(fire.stderr).toContain("acts only for the Other Captain");
     // The user's terminal still works with --captain.
     expect((await run(host, ["routine", "pause", "r1", "--captain", captainId])).exitCode).toBe(0);
   });

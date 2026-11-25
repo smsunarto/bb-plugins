@@ -38,11 +38,22 @@ Run `bb captain --help` for every option. Every command takes `--json`.
 ## Who may act for a Captain
 
 - A call from the user's terminal, with no thread, names its Captain with `--captain`.
-- A thread-bound call acts only for its own Captain. A Captain thread acts for itself; `--captain` may name only that same Captain. Crew and other threads are refused by every command except `drive read`, `drive write` and `ask show`.
+- A thread-bound call acts only for its own Captain. A Captain thread acts for itself, and `--captain` may name only that same Captain.
+- A crew thread is the child of a Captain in bb. Crew may run `drive read`, `drive write` and `ask show`, and nothing else that acts for a Captain.
+- Other threads, neither a Captain nor its crew, are refused by every command that acts for a Captain, `drive read` and `drive write` included. They may still run `ask show` and `bb captain new`; crew may not run `new`.
 - `ask resolve` takes the user's terminal, the banner, or the ask's own Captain thread. The Captain may answer its own decision, access or improve asks, and may rerun any answer to retry its send. Only the user gives a ship ask its first answer.
 - Each ask records who answered it, `user` or `captain`, and `ask show` prints it. A superseded ship ask reads `captain`; asks answered before this was kept read `unknown`. `captain-ship` ships only on a Merge whose record says `user`.
+- A review verdict supersedes the task's open ship asks from every Captain, not only the one recording it.
 - Crew read the whole Drive and write only under `crew/`. `CAPTAIN.md`, `CREW.md`, `NOTES.md`, `skills/` and every other path are the Captain's. The check uses the real path, so a symlink cannot point a crew write elsewhere.
-- These checks guard against mistakes by cooperative clients, not a hostile one. The calling thread is request metadata the CLI reports, not an authenticated identity. A call that drops it reads as the user's terminal, an agent shell can call the `resolveAsk` RPC as a bb client, and crew on the server's machine can write the Drive by path.
+
+### Limits
+
+These checks stop cooperative clients' mistakes, not a hostile caller. bb gives a plugin no authenticated caller:
+
+- The calling thread is request metadata the CLI reports. A call that drops `BB_THREAD_ID` reads as the user's terminal.
+- An RPC handler sees only `client` or `plugin`, and the bb app, the `bb` CLI and every agent shell are all `client`. These RPC methods act for any client: `resolveAsk`, `setLadder`, `defer`, `markSeen`, `adopt`, `newCaptain`, `setIcon`, `routineAction` and `saveRoutine`. Any agent can reach them with `bb plugin rpc call captain <method>`.
+- So an ask's `answeredBy` of `user` means the answer did not come from the CLI in a thread: the banner, the user's terminal, or any client that calls `resolveAsk`. It does not prove the user clicked.
+- Crew on the server's machine can write the Drive by path.
 
 ## Routines
 

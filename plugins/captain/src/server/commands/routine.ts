@@ -1,6 +1,6 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
 import type { Routine, RoutineRun, RoutineView, Schedule } from "../../contract/routines.ts";
-import { readCallerFile, routineCaptain, routineThreadAllowed } from "../caller.ts";
+import { actingFor, readCallerFile } from "../caller.ts";
 import { guard, Refusal, render, type Item } from "../output.ts";
 import type { RoutineOwner } from "../routines.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
@@ -108,7 +108,11 @@ async function owner(
   ctx: PluginCliContext,
   captainOption: string | undefined,
 ): Promise<RoutineOwner> {
-  const captain = await routineCaptain(deps.bb, deps.registry, deps.store, ctx, captainOption);
+  // Routines are the user's to set: crew and other threads are refused.
+  const { captain } = await actingFor(deps, ctx, {
+    captain: captainOption,
+    action: "manage routines",
+  });
   return { threadId: captain.threadId, name: captain.name, homeProjectId: captain.homeProjectId };
 }
 
@@ -439,13 +443,12 @@ export function routineFireCommand(deps: CommandDeps) {
       return guard("captain routine fire", json, async () => {
         const routine = deps.store.routine(input.positionals.routine);
         // A thread-bound call is refused unless it is the routine's own Captain.
-        await routineThreadAllowed(
-          deps.bb,
-          deps.registry,
-          deps.store,
-          ctx,
-          routine?.captainId ?? "",
-        );
+        if (ctx.threadId !== undefined) {
+          await actingFor(deps, ctx, {
+            captain: routine?.captainId ?? "",
+            action: "manage routines",
+          });
+        }
         if (routine !== null) {
           const named = input.options.captain?.trim();
           const owner = deps.store.captain(routine.captainId);

@@ -6,65 +6,88 @@ import type { Captain, Registry } from "./registry.ts";
 import type { Store } from "./store.ts";
 
 /**
- * Who a call acts as. The calling thread is request metadata the CLI reports,
+ * Who a call acts for. The calling thread is request metadata the CLI reports,
  * not an authenticated identity, so these checks stop cooperative crew from
  * acting for their Captain by mistake, not a caller that drops its thread.
  */
-export type Acting = { captain: Captain; as: "user" | "captain" | "crew" };
+export type Acting = { captain: Captain; crew: boolean };
 
-/** What a calling thread is to Captain: a live Captain, crew of a Captain (live or archived), or neither. */
+type CallerDeps = {
+  bb: Pick<BbPluginApi, "sdk">;
+  registry: Registry;
+  store: Pick<Store, "captain">;
+};
+
+/**
+ * What a calling thread is to Captain: a live Captain, crew of a Captain
+ * (live or archived), or neither. Crew are found by their bb parent, as
+ * `configure` finds them, so a re-parented thread follows its new Captain.
+ */
 type ThreadRole =
   | { kind: "captain"; captain: Captain }
   | { kind: "crew"; captain: Captain; live: boolean }
   | { kind: "other" };
 
-async function threadRole(
-  bb: Pick<BbPluginApi, "sdk">,
-  registry: Registry,
-  store: Pick<Store, "captain" | "crewRole">,
-  threadId: string,
-): Promise<ThreadRole> {
-  const own = registry.get(threadId);
+async function threadRole(deps: CallerDeps, threadId: string): Promise<ThreadRole> {
+  const own = deps.registry.get(threadId);
   if (own !== null) return { kind: "captain", captain: own };
-  const parentId =
-    store.crewRole(threadId)?.captainId ??
-    (await bb.sdk.threads.get({ threadId })).parentThreadId ??
-    null;
+  let parentId: string | null;
+  try {
+    parentId = (await deps.bb.sdk.threads.get({ threadId })).parentThreadId ?? null;
+  } catch (error) {
+    throw new Refusal([
+      {
+        reason: `could not read the calling thread ${threadId}: ${(error as Error).message}`,
+        fix: "run it from a bb thread bb knows, or from your terminal with --captain <thread-id>",
+      },
+    ]);
+  }
   if (parentId === null) return { kind: "other" };
-  const live = registry.get(parentId);
+  const live = deps.registry.get(parentId);
   if (live !== null) return { kind: "crew", captain: live, live: true };
-  const archived = store.captain(parentId);
+  const archived = deps.store.captain(parentId);
   return archived === null ? { kind: "other" } : { kind: "crew", captain: archived, live: false };
 }
 
-/** A `--captain` value as a live Captain, or a refusal. */
-function namedCaptain(registry: Registry, address: string): Captain {
-  const captain = registry.get(address.trim()) ?? registry.byName(address);
-  if (captain !== null) return captain;
-  throw new Refusal([
+/** A live Captain by thread id or name. */
+function findCaptain(registry: Registry, address: string): Captain | null {
+  return registry.get(address.trim()) ?? registry.byName(address);
+}
+
+function crewRefusal(threadId: string, captain: Captain, action: string): Refusal {
+  return new Refusal([
     {
-      reason: `no live Captain is ${JSON.stringify(address)}`,
-      fix: "pass a Captain's thread id or name",
+      reason: `${threadId} is crew of the ${captain.name} Captain; crew cannot ${action}`,
+      fix: `report the need to the ${captain.name} Captain (${captain.threadId}); only it or the user can ${action}`,
     },
   ]);
 }
 
+/** Refuse a call from a crew thread; the user's terminal and every other thread pass. */
+export async function refuseCrew(
+  deps: CallerDeps,
+  ctx: PluginCliContext,
+  action: string,
+): Promise<void> {
+  if (ctx.threadId === undefined) return;
+  const role = await threadRole(deps, ctx.threadId);
+  if (role.kind === "crew") throw crewRefusal(ctx.threadId, role.captain, action);
+}
+
 /**
- * The Captain a command acts for, and as whom. A call with no thread is the
- * user's terminal and names its Captain with `--captain`. A thread-bound call
- * acts only for its own Captain: a Captain thread for itself, and, with
- * `crew`, a crew thread for the Captain it reports to. `--captain` can only
- * name that same Captain; every other thread is refused.
+ * The Captain a command acts for. A call with no thread is the user's terminal
+ * and names its Captain with `--captain`. A thread-bound call acts only for its
+ * own Captain: a Captain thread for itself, and, with `crew`, a crew thread for
+ * the live Captain it reports to. `--captain` may only name that same Captain;
+ * every other thread is refused. `action` words the refusals, such as
+ * "manage routines".
  */
 export async function actingFor(
-  deps: {
-    bb: Pick<BbPluginApi, "sdk">;
-    registry: Registry;
-    store: Pick<Store, "captain" | "crewRole">;
-  },
+  deps: CallerDeps,
   ctx: PluginCliContext,
-  options: { captain?: string; crew?: boolean },
+  options: { captain?: string; crew?: boolean; action?: string },
 ): Promise<Acting> {
+  const action = options.action ?? "run this command";
   const threadId = ctx.threadId ?? null;
   if (threadId === null) {
     if (options.captain === undefined) {
@@ -75,9 +98,18 @@ export async function actingFor(
         },
       ]);
     }
-    return { captain: namedCaptain(deps.registry, options.captain), as: "user" };
+    const captain = findCaptain(deps.registry, options.captain);
+    if (captain === null) {
+      throw new Refusal([
+        {
+          reason: `no live Captain is ${JSON.stringify(options.captain)}`,
+          fix: "pass a Captain's thread id or name",
+        },
+      ]);
+    }
+    return { captain, crew: false };
   }
-  const role = await threadRole(deps.bb, deps.registry, deps.store, threadId);
+  const role = await threadRole(deps, threadId);
   if (role.kind === "other") {
     throw new Refusal([
       {
@@ -88,26 +120,20 @@ export async function actingFor(
   }
   const { captain } = role;
   if (role.kind === "crew" && (options.crew !== true || !role.live)) {
+    throw crewRefusal(threadId, captain, action);
+  }
+  if (
+    options.captain !== undefined &&
+    findCaptain(deps.registry, options.captain)?.threadId !== captain.threadId
+  ) {
     throw new Refusal([
       {
-        reason: `${threadId} is crew of the ${captain.name} Captain; crew cannot run this command`,
-        fix: `report the need to the ${captain.name} Captain (${captain.threadId}); only it or the user runs it`,
+        reason: `${threadId} acts only for the ${captain.name} Captain, not ${JSON.stringify(options.captain)}`,
+        fix: "drop --captain, or run it from your terminal",
       },
     ]);
   }
-  if (options.captain !== undefined) {
-    const named =
-      deps.registry.get(options.captain.trim()) ?? deps.registry.byName(options.captain);
-    if (named === null || named.threadId !== captain.threadId) {
-      throw new Refusal([
-        {
-          reason: `${threadId} acts only for the ${captain.name} Captain, not ${JSON.stringify(options.captain)}`,
-          fix: "drop --captain, or run it from your terminal",
-        },
-      ]);
-    }
-  }
-  return { captain, as: role.kind };
+  return { captain, crew: role.kind === "crew" };
 }
 
 /** The machine a CLI call came from: the calling thread's host, else the server's. */
@@ -163,80 +189,4 @@ export async function readCallerFile(
     ]);
   }
   return file.content;
-}
-
-/**
- * The Captain a routine command acts for. Routines are the user's to set, so a
- * call bound to a thread is allowed only from a Captain's own thread, for its
- * own routines; `--captain` cannot point it elsewhere. A call with no thread
- * (the user's terminal) names its Captain with `--captain`.
- */
-export async function routineCaptain(
-  bb: Pick<BbPluginApi, "sdk">,
-  registry: Registry,
-  store: Pick<Store, "captain" | "crewRole">,
-  ctx: PluginCliContext,
-  captainOption: string | undefined,
-): Promise<Captain> {
-  if (ctx.threadId === undefined) {
-    return (await actingFor({ bb, registry, store }, ctx, { captain: captainOption })).captain;
-  }
-  const own = await threadCaptain(bb, registry, store, ctx.threadId);
-  if (captainOption !== undefined) {
-    const named = registry.get(captainOption.trim()) ?? registry.byName(captainOption);
-    if (named === null || named.threadId !== own.threadId) {
-      throw new Refusal([
-        {
-          reason: `${own.name} Captain manages only its own routines, not ${JSON.stringify(captainOption)}'s`,
-          fix: "drop --captain, or run it from your terminal",
-        },
-      ]);
-    }
-  }
-  return own;
-}
-
-/** Refuse a thread-bound call for a routine of another Captain; a call with no thread passes. */
-export async function routineThreadAllowed(
-  bb: Pick<BbPluginApi, "sdk">,
-  registry: Registry,
-  store: Pick<Store, "captain" | "crewRole">,
-  ctx: PluginCliContext,
-  captainId: string,
-): Promise<void> {
-  if (ctx.threadId === undefined) return;
-  const own = await threadCaptain(bb, registry, store, ctx.threadId);
-  if (own.threadId === captainId) return;
-  throw new Refusal([
-    {
-      reason: `${own.name} Captain manages only its own routines`,
-      fix: "run it in the routine's Captain thread, or from your terminal",
-    },
-  ]);
-}
-
-/** The calling thread as a live Captain; crew and every other thread are refused. */
-async function threadCaptain(
-  bb: Pick<BbPluginApi, "sdk">,
-  registry: Registry,
-  store: Pick<Store, "captain" | "crewRole">,
-  threadId: string,
-): Promise<Captain> {
-  const role = await threadRole(bb, registry, store, threadId);
-  if (role.kind === "captain") return role.captain;
-  if (role.kind === "crew") {
-    const parent = role.captain;
-    throw new Refusal([
-      {
-        reason: `${threadId} is crew of the ${parent.name} Captain; crew cannot manage routines`,
-        fix: `report the need to the ${parent.name} Captain (${parent.threadId}); only it or the user sets routines`,
-      },
-    ]);
-  }
-  throw new Refusal([
-    {
-      reason: `${threadId} is not a Captain; only a Captain's own thread or the user's terminal manages routines`,
-      fix: "run it in the Captain thread, or from your terminal with --captain <thread-id>",
-    },
-  ]);
 }
