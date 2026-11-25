@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { createElement, useState } from "react";
 import type { RefObject } from "react";
 import type { TraceEvent } from "../shared/model.ts";
 import { useRpcQuery } from "./rpc.ts";
@@ -137,7 +137,6 @@ export function Inspector({
   );
   const data = result.data;
   const event = data?.event ?? selected;
-  const Renderer = renderers.resolve(event.template);
   const hasFormattedView = renderers.hasFormattedView(event, data?.body);
   const showRaw = raw || Boolean(data?.body && !hasFormattedView);
   return (
@@ -175,14 +174,13 @@ export function Inspector({
                 Preview shortened. Open raw to inspect the complete source record.
               </div>
             )}
-            {data.body && (
-              <Renderer
-                event={event}
-                body={data.body}
-                related={data.related}
-                onRaw={() => onRaw(true)}
-              />
-            )}
+            {data.body &&
+              createElement(renderers.resolve(event.template), {
+                event,
+                body: data.body,
+                related: data.related,
+                onRaw: onRaw.bind(null, true),
+              })}
             {data.related.length > 0 && (
               <div className="tr-detail-section">
                 <h3>Related events</h3>

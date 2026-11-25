@@ -128,9 +128,15 @@ function clamp(value: number, min: number, max: number) {
 }
 
 // Both panes remember a pinned size. Unpinned, they follow the container width.
-function usePaneSizes(width: number) {
-  const workspaceRef = useRef<HTMLDivElement>(null);
-  const eventsRef = useRef<HTMLDivElement>(null);
+function usePaneSizes({
+  width,
+  workspaceRef,
+  eventsRef,
+}: {
+  width: number;
+  workspaceRef: RefObject<HTMLDivElement | null>;
+  eventsRef: RefObject<HTMLDivElement | null>;
+}) {
   const [pinnedSessions, pinSessions] = useStoredSize("traces:sessions");
   const [pinnedTimeline, pinTimeline] = useStoredSize("traces:timeline");
   const sessions = pinnedSessions ?? (width > 0 && width < 1000 ? 190 : 260);
@@ -138,8 +144,6 @@ function usePaneSizes(width: number) {
   const showSessions = useCallback(() => pinSessions(null), [pinSessions]);
   const hidden = sessions < 40;
   return {
-    workspaceRef,
-    eventsRef,
     dataSessions: hidden ? "hidden" : undefined,
     showSessions: hidden ? showSessions : undefined,
     style: {
@@ -215,7 +219,9 @@ export function TraceWorkbench({
   const rootRef = useRef<HTMLElement>(null);
   const width = useContainerWidth(rootRef);
   const stacked = width > 0 && width < 700;
-  const panes = usePaneSizes(width);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const eventsRef = useRef<HTMLDivElement>(null);
+  const panes = usePaneSizes({ width, workspaceRef, eventsRef });
   const pane = usePaneRouter({
     stacked,
     hasSession: Boolean(session),
@@ -342,7 +348,7 @@ export function TraceWorkbench({
           retry={() => void status.refetch()}
         />
         {status.data?.lastError && <div className="tr-notice">{status.data.lastError}</div>}
-        <div className="tr-workspace" ref={panes.workspaceRef}>
+        <div className="tr-workspace" ref={workspaceRef}>
           <SessionList
             key={`${hostId}:${provider}:${settledSessions}:${currentOnly}`}
             hostId={hostId}
@@ -357,7 +363,7 @@ export function TraceWorkbench({
             revision={revision}
           />
           <Splitter {...panes.sessionsSplitter} />
-          <div className="tr-event-workspace" ref={panes.eventsRef}>
+          <div className="tr-event-workspace" ref={eventsRef}>
             {session ? (
               <Timeline
                 key={`${session.id}:${kind}:${topic}:${includeUsage}:${settledEvents}`}
