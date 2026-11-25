@@ -7,7 +7,8 @@ import { LIST_HOVER_TRANSITION } from "./motion.js";
 import { Separator } from "./separator";
 
 /** `divided` joins its items in one bordered box with a rule between rows; `flush` keeps the
- * rules but drops the box, for rows that run edge to edge in a panel. */
+ * rules but drops the box, for rows that run edge to edge in a panel. `asChild` renders the
+ * group as the caller's own `ul` or `ol`, which keeps its native list role. */
 const itemGroupVariants = cva("group/item-group flex w-full flex-col", {
   variants: {
     variant: {
@@ -23,11 +24,13 @@ const itemGroupVariants = cva("group/item-group flex w-full flex-col", {
 function ItemGroup({
   className,
   variant = "default",
+  asChild = false,
   ...props
-}: React.ComponentProps<"div"> & VariantProps<typeof itemGroupVariants>) {
+}: React.ComponentProps<"div"> & VariantProps<typeof itemGroupVariants> & { asChild?: boolean }) {
+  const Comp = asChild ? Slot : "div";
   return (
-    <div
-      role="list"
+    <Comp
+      role={asChild ? undefined : "list"}
       data-slot="item-group"
       data-variant={variant}
       className={cn(itemGroupVariants({ variant }), className)}
@@ -63,6 +66,8 @@ const itemVariants = cva(
         default: "gap-3.5 px-4 py-3.5",
         sm: "gap-2.5 px-3 py-2.5",
         xs: "gap-2 px-2.5 py-2",
+        // No side padding: the row's text lines up with the column around it.
+        inline: "gap-3 rounded-none border-x-0 px-0 py-1",
         row: "min-h-7 flex-nowrap gap-2 px-2 py-1 max-md:pointer-coarse:[a]:min-h-11 max-md:pointer-coarse:[button]:min-h-11",
       },
     },

@@ -14,8 +14,9 @@ function part(name: string, style: string) {
 }
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-  /** `sm` is Vega's small card (1rem); `xs` packs dense tiles at 0.75rem. */
-  size?: "default" | "sm" | "xs";
+  /** `sm` is Vega's small card (1rem); `xs` packs dense tiles at 0.75rem; `flush` drops the
+   * padding and gap for rows that run edge to edge. */
+  size?: "default" | "sm" | "xs" | "flush";
 }
 export const Card = React.forwardRef<HTMLDivElement, CardProps>(
   ({ className, size = "default", ...props }, ref) => (
