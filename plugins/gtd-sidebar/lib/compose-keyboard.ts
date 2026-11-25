@@ -6,7 +6,7 @@
  * pointer, and iOS raises the keyboard only for a focus that starts inside
  * the tap itself (bb's iOS WebView keeps keyboardDisplayRequiresUserAction).
  * The composer mounts frames later, and the drawer takes about 350ms to slide
- * shut. So, during the tap, focus a hidden input with `inputmode="none"`,
+ * shut. So, during the tap, focus a hidden textarea with `inputmode="none"`,
  * which holds the tap's focus without raising a keyboard. Once the drawer
  * has fully closed and the composer's editor is on screen, move focus to the
  * editor; iOS shows the keyboard for a focus that moves from one focused
@@ -28,15 +28,23 @@ const PROXY_MARK = "data-gtd-keyboard-proxy";
 const INSET = '[data-sidebar="inset"]';
 const SETTLE_MS = 120;
 const TIMEOUT_MS = 3000;
-const RETRY_MS = 75;
+const SHELF = "data-sidebar-shelf";
+const ANIMATING = "data-vaul-animate";
+const handoffs = new WeakMap<Document, () => void>();
+
+export function cancelComposeKeyboardHandoff(document: Document): void {
+  handoffs.get(document)?.();
+}
 
 /** Call synchronously from the tap's handler, before navigating. */
 export function focusComposeEditorWithKeyboard(document: Document): void {
   const view = document.defaultView;
   if (view === null) return;
-  document.querySelector(`[${PROXY_MARK}]`)?.remove();
+  cancelComposeKeyboardHandoff(document);
+  const inset = document.querySelector(INSET);
+  if (inset === null) return;
 
-  const proxy = document.createElement("input");
+  const proxy = document.createElement("textarea");
   proxy.setAttribute(PROXY_MARK, "");
   proxy.setAttribute("aria-hidden", "true");
   proxy.tabIndex = -1;
@@ -58,50 +66,97 @@ export function focusComposeEditorWithKeyboard(document: Document): void {
   document.body.append(proxy);
   proxy.focus({ preventScroll: true });
 
-  const deadline = view.performance.now() + TIMEOUT_MS;
-  let timer: number;
+  let settled = false;
   let composing = false;
+
+  const canHandoff = () =>
+    settled &&
+    !composing &&
+    document.activeElement === proxy &&
+    inset.getAttribute(SHELF) !== "open" &&
+    !inset.hasAttribute(ANIMATING);
+
+  const focusEditor = () => {
+    inset.querySelector<HTMLElement>(EDITOR)?.focus({ preventScroll: true });
+  };
+
+  const check = () => {
+    if (canHandoff()) focusEditor();
+  };
+
+  const observer = new view.MutationObserver((records) => {
+    if (
+      canHandoff() &&
+      records.some(({ target, addedNodes, type }) => {
+        if (type === "attributes") {
+          return target === inset || (target instanceof view.Element && target.matches(EDITOR));
+        }
+        return Array.from(addedNodes).some(
+          (node) =>
+            node instanceof view.Element && (node.matches(EDITOR) || node.querySelector(EDITOR)),
+        );
+      })
+    ) {
+      focusEditor();
+    }
+  });
+  observer.observe(inset, {
+    subtree: true,
+    childList: true,
+    attributeFilter: [SHELF, ANIMATING, "contenteditable"],
+  });
+
+  const settle = view.setTimeout(() => {
+    settled = true;
+    check();
+  }, SETTLE_MS);
+  const expiry = view.setTimeout(() => cleanup(), TIMEOUT_MS);
+  const cleanup = () => {
+    observer.disconnect();
+    view.clearTimeout(settle);
+    view.clearTimeout(expiry);
+    handoffs.delete(document);
+    proxy.removeEventListener("blur", onBlur);
+    proxy.remove();
+  };
+
+  // Also catches the host focusing the editor before the drawer check runs.
+  const onBlur = ({ relatedTarget }: FocusEvent) => {
+    const editor = relatedTarget instanceof view.Element ? relatedTarget.closest(EDITOR) : null;
+    const text = proxy.value;
+    cleanup();
+    if (text === "" || editor === null || !inset.contains(editor)) return;
+
+    // Focus finishes after blur. Insert through the browser so the editor
+    // receives its normal input event and preserves selection and undo.
+    view.queueMicrotask(() => {
+      if (!editor.contains(document.activeElement)) return;
+      if (
+        text.includes("\n") &&
+        typeof view.DataTransfer === "function" &&
+        typeof view.ClipboardEvent === "function"
+      ) {
+        // Let rich-text composers interpret line breaks as they do on paste.
+        const clipboardData = new view.DataTransfer();
+        clipboardData.setData("text/plain", text);
+        const paste = new view.ClipboardEvent("paste", {
+          clipboardData,
+          bubbles: true,
+          cancelable: true,
+        });
+        if (!editor.dispatchEvent(paste)) return;
+      }
+      document.execCommand("insertText", false, text);
+    });
+  };
+
+  handoffs.set(document, cleanup);
+  proxy.addEventListener("blur", onBlur);
   proxy.addEventListener("compositionstart", () => {
     composing = true;
   });
   proxy.addEventListener("compositionend", () => {
     composing = false;
+    view.queueMicrotask(check);
   });
-
-  const cleanup = () => {
-    view.clearTimeout(timer);
-    proxy.remove();
-  };
-
-  const check = () => {
-    if (document.activeElement !== proxy || view.performance.now() >= deadline) {
-      cleanup();
-      return;
-    }
-    const editor =
-      !composing && drawerClosed(document) ? document.querySelector<HTMLElement>(EDITOR) : null;
-    if (editor !== null) {
-      const text = proxy.value;
-      editor.focus({ preventScroll: true });
-      if (editor.contains(document.activeElement)) {
-        // Use the browser's editing operation so the composer gets a native
-        // input event and applies the edit at its selection with normal undo.
-        if (text !== "") document.execCommand("insertText", false, text);
-        return;
-      }
-    }
-    if (document.activeElement === proxy) timer = view.setTimeout(check, RETRY_MS);
-  };
-
-  proxy.addEventListener("blur", cleanup, { once: true });
-  timer = view.setTimeout(check, SETTLE_MS);
-}
-
-/** The drawer is shut and still, or there is no drawer (a desktop layout). */
-function drawerClosed(document: Document): boolean {
-  const inset = document.querySelector(INSET);
-  if (inset === null) return true;
-  return (
-    inset.getAttribute("data-sidebar-shelf") !== "open" && !inset.hasAttribute("data-vaul-animate")
-  );
 }

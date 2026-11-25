@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, beforeEach, it, mock } from "bun:test";
 import { installDom } from "@bb-plugins/testing";
-import { focusComposeEditorWithKeyboard } from "../lib/compose-keyboard";
+import {
+  cancelComposeKeyboardHandoff,
+  focusComposeEditorWithKeyboard,
+} from "../lib/compose-keyboard";
 
 installDom();
 
@@ -25,14 +28,14 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cancelComposeKeyboardHandoff(document);
   drawer.remove();
-  document.querySelector("[data-gtd-keyboard-proxy]")?.remove();
   Reflect.deleteProperty(document, "execCommand");
 });
 
 it("transfers early typing once after the drawer closes and the composer takes focus", async () => {
   focusComposeEditorWithKeyboard(document);
-  const proxy = document.querySelector<HTMLInputElement>("[data-gtd-keyboard-proxy]")!;
+  const proxy = document.querySelector<HTMLTextAreaElement>("[data-gtd-keyboard-proxy]")!;
   assert.equal(document.activeElement, proxy);
   proxy.value = "Draft";
 
@@ -58,4 +61,57 @@ it("cancels the handoff if the user focuses another field", async () => {
   await sleep(150);
   assert.equal(document.activeElement, other);
   assert.equal(insertText.mock.calls.length, 0);
+});
+
+it("transfers multiline text when the host focuses the composer early", async () => {
+  focusComposeEditorWithKeyboard(document);
+  const proxy = document.querySelector<HTMLTextAreaElement>("[data-gtd-keyboard-proxy]")!;
+  proxy.value = "First line\nSecond line";
+  editor.focus();
+  await sleep(0);
+  assert.equal(proxy.isConnected, false);
+  assert.deepEqual(insertText.mock.calls, [["insertText", false, "First line\nSecond line"]]);
+});
+
+it("wakes on editor mount without probing a closed, idle drawer", async () => {
+  const prompt = editor.parentElement!;
+  editor.remove();
+  drawer.setAttribute("data-sidebar-shelf", "closed");
+  const query = mock(drawer.querySelector.bind(drawer));
+  drawer.querySelector = query;
+
+  focusComposeEditorWithKeyboard(document);
+  const proxy = document.querySelector<HTMLTextAreaElement>("[data-gtd-keyboard-proxy]")!;
+  proxy.value = "Delayed draft";
+  await sleep(350);
+  assert.equal(document.activeElement, proxy);
+  assert.equal(query.mock.calls.length, 1);
+
+  prompt.append(editor);
+  await sleep(0);
+  assert.equal(proxy.isConnected, false);
+  assert.deepEqual(insertText.mock.calls, [["insertText", false, "Delayed draft"]]);
+});
+
+it("cleans up on expiry and leaves a later editor mount alone", async () => {
+  const prompt = editor.parentElement!;
+  editor.remove();
+  drawer.setAttribute("data-sidebar-shelf", "closed");
+  focusComposeEditorWithKeyboard(document);
+  await sleep(3100);
+  assert.equal(document.querySelector("[data-gtd-keyboard-proxy]"), null);
+
+  prompt.append(editor);
+  await sleep(0);
+  assert.notEqual(document.activeElement, editor);
+  assert.equal(insertText.mock.calls.length, 0);
+});
+
+it("cancels the pending handoff when the plugin unmounts", async () => {
+  focusComposeEditorWithKeyboard(document);
+  cancelComposeKeyboardHandoff(document);
+  drawer.setAttribute("data-sidebar-shelf", "closed");
+  await sleep(150);
+  assert.equal(document.querySelector("[data-gtd-keyboard-proxy]"), null);
+  assert.notEqual(document.activeElement, editor);
 });

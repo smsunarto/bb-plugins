@@ -14,6 +14,7 @@ import {
   type LegacyThreadHeaderActionSlots,
 } from "./components/header/header-settle";
 import { mountHeaderSettleStyle } from "./components/header/header-settle-style";
+import { cancelComposeKeyboardHandoff } from "./lib/compose-keyboard";
 import { mountPhoneDrawer } from "./lib/phone-drawer";
 import { mountPhoneDrawerStyle } from "./lib/phone-drawer-style";
 
@@ -80,6 +81,7 @@ export default definePluginApp((app) => {
       const disposeEffects = mountPhoneDrawer(document, signal);
       const disposeStyle = mountPhoneDrawerStyle(document, signal);
       return () => {
+        cancelComposeKeyboardHandoff(document);
         disposeEffects();
         disposeStyle();
       };
