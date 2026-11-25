@@ -154,6 +154,17 @@ describe("tasks", () => {
     expect(await tasks()).toMatchObject({ total: TASKS_READ_MAX, truncated: true });
   });
 
+  test("restarts a stale continuation once and drops the abandoned page", async () => {
+    const { host, tasks } = await overviewHost();
+    for (let index = 1; index <= 501; index += 1) host.addTask(`BBPLUGINS-${index}`);
+    host.tasks.staleTaskPages = 1;
+    await expect(tasks()).resolves.toMatchObject({ total: 501, truncated: false, unavailable: [] });
+
+    host.tasks.staleTaskPages = 3;
+    await expect(tasks()).rejects.toThrow(/task-list data changed/u);
+    expect(host.tasks.staleTaskPages).toBe(1);
+  });
+
   test("a failed crewSnapshot keeps the tasks and says the crew is unavailable", async () => {
     const { host, as, tasks } = await overviewHost();
     host.addTask("BBPLUGINS-1", { status: "in_progress" });
@@ -306,6 +317,43 @@ describe("the shared crew read", () => {
 });
 
 describe("the Tasks recheck", () => {
+  test("refreshes when only the count changes from exact to truncated", async () => {
+    const { host, captainId, tasks, invalidations } = await overviewHost();
+    for (let index = 1; index <= TASKS_READ_MAX; index += 1) host.addTask(`BBPLUGINS-${index}`);
+    expect(await tasks()).toMatchObject({ total: TASKS_READ_MAX, truncated: false });
+    const stop = host.harness.behavior.experimental_watchRpc("tasks", { input: { captainId } });
+    try {
+      await settle();
+      const before = invalidations().length;
+      host.addTask(`BBPLUGINS-${TASKS_READ_MAX + 1}`);
+      await vi.waitFor(() => expect(invalidations().slice(before)).toContain(crewTag(captainId)));
+      expect(await tasks()).toMatchObject({ total: TASKS_READ_MAX, truncated: true });
+    } finally {
+      stop();
+    }
+  });
+
+  test("refreshes the missing crew link when crewSnapshot alone recovers", async () => {
+    const { host, as, captainId, tasks, invalidations } = await overviewHost();
+    host.addTask("BBPLUGINS-1", { status: "in_progress" });
+    const threadId = await dispatch(as, "BBPLUGINS-1");
+    host.tasks.failing.add("crewSnapshot");
+    expect(await tasks()).toMatchObject({ crewError: expect.stringContaining("crewSnapshot") });
+    const stop = host.harness.behavior.experimental_watchRpc("tasks", { input: { captainId } });
+    try {
+      await settle();
+      const before = invalidations().length;
+      host.tasks.failing.delete("crewSnapshot");
+      await vi.waitFor(() => expect(invalidations().slice(before)).toContain(crewTag(captainId)));
+      expect(await tasks()).toMatchObject({
+        crewError: null,
+        tasks: [expect.objectContaining({ crew: expect.objectContaining({ threadId }) })],
+      });
+    } finally {
+      stop();
+    }
+  });
+
   test("a task changed in Tasks refreshes a watched tasks read, and stops when unwatched", async () => {
     const { host, captainId, invalidations } = await overviewHost({ crewPollMs: 60_000 });
     const task = host.addTask("BBPLUGINS-1", { status: "todo" });

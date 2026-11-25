@@ -41,6 +41,7 @@ import {
   markSeen,
   needsYouCount,
   sinceYouLeft,
+  type CrewReads,
 } from "./queue.ts";
 
 /** How often a watched banner rechecks the crew for a new or answered interaction. */
@@ -67,6 +68,7 @@ export function registerRpc(
   };
   const crewReads = createCrewReads(deps);
   const readCrew = (captainId: string) => crewReads.read(captainId);
+  const crewUnavailable = new Set<string>();
   const primaryHost = createPrimaryHost(deps);
   const ladderOf = (role: LadderRole) => ({
     role,
@@ -89,9 +91,12 @@ export function registerRpc(
       live(captainId);
       return { items: await crewItems(deps, captainId, readCrew) };
     },
-    tasks: ({ captainId }) => {
+    tasks: async ({ captainId }) => {
       live(captainId);
-      return captainTasks(deps, readCrew, captainId);
+      const listing = await captainTasks(deps, readCrew, captainId);
+      if (listing.crewError === null) crewUnavailable.delete(captainId);
+      else crewUnavailable.add(captainId);
+      return listing;
     },
     drive: ({ captainId }) => {
       live(captainId);
@@ -170,7 +175,8 @@ export function registerRpc(
     deps,
     captainOf,
     createCrewWatch(deps, crewPollMs, crewReads.changed),
-    (captainId, signal) => watchTasks(deps, captainId, signal, tasksPollMs, crewReads.changed),
+    (captainId, signal) =>
+      watchTasks(deps, captainId, signal, tasksPollMs, { crewReads, crewUnavailable }),
   );
   registerDriveScan(deps, captainOf, driveScanMs);
 
@@ -203,25 +209,35 @@ function registerCrewWatch(
  * While a Captain's tasks read is watched, compare its open tasks every
  * `pollMs` and refresh the crew tag when they changed. A check that starts
  * or stops failing refreshes it too: the read then labels its rows as not
- * refreshed, and later replaces them, even when nothing else changed.
+ * refreshed, and later replaces them, even when nothing else changed. If a
+ * read had missing crew, also check whether that lookup has recovered.
  */
 async function watchTasks(
   deps: CommandDeps,
   captainId: string,
   signal: AbortSignal,
   pollMs: number,
-  changed: (captainId: string) => void,
+  { crewReads, crewUnavailable }: { crewReads: CrewReads; crewUnavailable: Set<string> },
 ): Promise<void> {
   // The first check's outcome is the baseline: the read just ran against the same Tasks.
   let last: { ok: true; signature: string } | { ok: false } | null = null;
   while (!signal.aborted) {
-    const now = await openTasksSignature(deps, captainId).then(
-      (signature) => ({ ok: true as const, signature }),
-      () => ({ ok: false as const }),
-    );
+    const [now, crewAvailable] = await Promise.all([
+      openTasksSignature(deps, captainId).then(
+        (signature) => ({ ok: true as const, signature }),
+        () => ({ ok: false as const }),
+      ),
+      crewUnavailable.has(captainId)
+        ? crewReads.read(captainId).rowsError.then(
+            (error) => error === null,
+            () => false,
+          )
+        : false,
+    ]);
     if (signal.aborted) return;
-    if (last !== null && tasksMoved(last, now)) {
-      changed(captainId);
+    const recovered = crewAvailable && crewUnavailable.delete(captainId);
+    if (recovered || (last !== null && tasksMoved(last, now))) {
+      crewReads.changed(captainId);
       deps.bb.rpc.experimental_invalidate([crewTag(captainId)]);
     }
     last = now;

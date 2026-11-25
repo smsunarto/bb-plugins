@@ -52,6 +52,7 @@ const seen = (selectedKey: string | null, extra: Partial<Watch> = {}): Watch => 
   selectedKey,
   lastOpenKey: selectedKey,
   pending: null,
+  newTabClick: 0,
   ...extra,
 });
 
@@ -61,7 +62,12 @@ const none = { kind: "none" };
 /** A run of observations on thread t1, one millisecond apart unless `at` says otherwise. */
 function steps(
   start: Watch | null,
-  frames: { tabs: ExperimentalPanelTabs; isCaptain?: boolean | null; at?: number }[],
+  frames: {
+    tabs: ExperimentalPanelTabs;
+    isCaptain?: boolean | null;
+    at?: number;
+    click?: number;
+  }[],
 ) {
   let watch = start;
   let clock = 0;
@@ -74,6 +80,7 @@ function steps(
       frame.tabs,
       frame.isCaptain === undefined ? true : frame.isCaptain,
       clock,
+      frame.click,
     );
     watch = step.watch;
     return step;
@@ -110,6 +117,25 @@ describe("classifyOpen", () => {
 });
 
 describe("a toggle on a Captain thread lands on Overview", () => {
+  test("an immediate + click keeps New tab selected during the settle window", () => {
+    const run = steps(seen(info.key), [
+      { tabs: panel(true, info.key) },
+      { tabs: panel(true, overview.key) },
+      { tabs: panel(true, newTab.key), click: 1, at: 250 },
+      { tabs: panel(true, newTab.key), click: 1, at: 350 },
+    ]);
+    expect(actions(run)).toEqual([selectOverview, none, none, none]);
+  });
+
+  test("a + click on New tab survives the Captain lookup", () => {
+    const run = steps(seen(info.key), [
+      { tabs: panel(true, newTab.key), isCaptain: null },
+      { tabs: panel(true, newTab.key), click: 1, isCaptain: null },
+      { tabs: panel(true, newTab.key), click: 1 },
+    ]);
+    expect(actions(run)).toEqual([none, none, none]);
+  });
+
   test("onto Info: selected at once", () => {
     expect(actions(steps(seen("info"), [{ tabs: panel(true, "info") }]))).toEqual([selectOverview]);
   });

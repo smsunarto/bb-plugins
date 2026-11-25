@@ -34,6 +34,22 @@ const FALLBACK_KINDS: ReadonlySet<string> = new Set(["info", "new-tab"]);
  */
 export const SETTLE_MS = 500;
 
+// workaround:captain/panel-new-tab-intent
+// workaround:captain/panel-new-tab-intent begin
+let newTabClick = 0;
+
+/** The panel SDK reports the selection, but both a toggle and + select New tab. */
+export function watchNewTabClicks(document: Document, signal: AbortSignal): () => void {
+  function capture(event: MouseEvent) {
+    if (event.target instanceof Element && event.target.closest("button[data-panel-new-tab]")) {
+      newTabClick += 1;
+    }
+  }
+  document.addEventListener("click", capture, { capture: true, passive: true, signal });
+  return () => document.removeEventListener("click", capture, true);
+}
+// workaround:captain/panel-new-tab-intent end
+
 export const OVERVIEW_TAB = {
   id: "overview",
   context: { kind: "thread" },
@@ -58,6 +74,9 @@ export type Watch = {
   /** The tab selected when the panel was last seen open, for a bb that reports none while closed. */
   lastOpenKey: string | null;
   pending: Pending | null;
+  // workaround:captain/panel-new-tab-intent begin
+  newTabClick: number;
+  // workaround:captain/panel-new-tab-intent end
 };
 
 export type OnOpen =
@@ -92,16 +111,25 @@ export function observe(
   next: ExperimentalPanelTabs,
   isCaptain: boolean | null,
   now: number,
+  // workaround:captain/panel-new-tab-intent begin
+  click = newTabClick,
+  // workaround:captain/panel-new-tab-intent end
 ): { watch: Watch; action: OnOpen } {
   const previous = prior?.threadId === threadId ? prior : null;
   const overview = next.tabs.find((tab) => isOverview(pluginId, tab));
-  const pending = settle(previous, next, overview, isCaptain, now);
+  // workaround:captain/panel-new-tab-intent begin
+  const explicitNewTab = previous !== null && previous.newTabClick !== click && isNewTab(next);
+  const pending = explicitNewTab ? null : settle(previous, next, overview, isCaptain, now);
+  // workaround:captain/panel-new-tab-intent end
   const watch: Watch = {
     threadId,
     open: next.open,
     selectedKey: next.selectedKey,
     lastOpenKey: next.open ? next.selectedKey : (previous?.lastOpenKey ?? null),
     pending,
+    // workaround:captain/panel-new-tab-intent begin
+    newTabClick: click,
+    // workaround:captain/panel-new-tab-intent end
   };
   const showing = overview !== undefined && overview.key === next.selectedKey;
   if (pending === null || !pending.sure || isCaptain !== true || showing) {

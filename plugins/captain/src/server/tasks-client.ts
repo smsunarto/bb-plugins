@@ -101,6 +101,26 @@ export class TasksError extends Error {
   }
 }
 
+/** BB 0.50 serializes Tasks' thrown cursor error as a handler error with its message. */
+export function isStaleTasksCursor(error: unknown): boolean {
+  if (!(error instanceof TasksError) || error.timedOut) return false;
+  const cause: unknown = error.cause;
+  if (
+    typeof cause === "object" &&
+    cause !== null &&
+    "code" in cause &&
+    cause.code === "stale_cursor"
+  ) {
+    return true;
+  }
+  return (
+    cause instanceof Error &&
+    cause.message.endsWith(
+      "task-list data changed after this cursor was issued; restart pagination without --cursor",
+    )
+  );
+}
+
 /** The code bb answers with when a plugin's RPC schema refuses the input, before its handler runs. */
 function isInputRefusal(error: unknown): boolean {
   const cause = error instanceof TasksError ? error.cause : undefined;

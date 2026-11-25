@@ -2,6 +2,9 @@ import { definePluginApp, experimental_THREAD_ACTION_GROUPS } from "@get-bb/plug
 import { ADOPT_ICON, ADOPT_LABEL, AdoptOverlay, adoptItem, useAdoptData } from "./adopt.tsx";
 import { CAPTAIN_OVERVIEW_TAB, NeedsYouBanner } from "./banner.tsx";
 import { CaptainIconSettings } from "./icon-settings.tsx";
+// workaround:captain/panel-new-tab-intent begin
+import { watchNewTabClicks } from "./overview-default.ts";
+// workaround:captain/panel-new-tab-intent end
 import { OverviewTab, useOverviewVisible } from "./overview.tsx";
 import { CrewModelsSettings } from "./settings.tsx";
 
@@ -10,6 +13,12 @@ import { CrewModelsSettings } from "./settings.tsx";
  * Captain icons in Captain's settings, and Adopt into Captain in every thread menu.
  */
 export default definePluginApp((app) => {
+  // workaround:captain/panel-new-tab-intent begin
+  app.contentScripts.register({
+    id: "new-tab-intent",
+    mount: ({ signal }) => watchNewTabClicks(document, signal),
+  });
+  // workaround:captain/panel-new-tab-intent end
   app.slots.settingsSection({
     id: "crew-models",
     title: "Crew models",

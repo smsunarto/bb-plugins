@@ -111,6 +111,7 @@ function render(
         asks: () => {
           calls.push("asks");
           fails("asks");
+          if (state.pending?.has("asks")) return new Promise(() => {});
           return { items: state.asks };
         },
         tasks: () => {
@@ -411,10 +412,15 @@ test("a task's status is the link's description and the crew button's tooltip, n
 });
 
 test("Tasks holds one-line rows while it loads; Needs you keeps two-line ones", async () => {
-  const { slot } = render({ ...seeded, pending: new Set(["tasks"]) });
+  const { slot } = render({ ...seeded, pending: new Set(["asks", "tasks"]) });
   const tasks = await section(slot, "Tasks");
   const needs = await section(slot, "Needs you");
-  await within(needs).findByText("Pick the cache backend");
+  const needsRows = [...needs.querySelectorAll("[aria-busy] > div")];
+  expect(needsRows).toHaveLength(2);
+  for (const row of needsRows) {
+    expect(row.className).toContain("items-start");
+    expect(row.querySelectorAll(".animate-pulse")).toHaveLength(3);
+  }
   const rows = [...tasks.querySelectorAll("[aria-busy] > div")];
   expect(rows).toHaveLength(3);
   for (const row of rows) {
@@ -423,11 +429,21 @@ test("Tasks holds one-line rows while it loads; Needs you keeps two-line ones", 
   }
 });
 
-test("a crew read that failed leaves the tasks listed, labelled", async () => {
-  const { slot } = render({ ...seeded, crewError: "bb did not answer" });
+test("retrying unavailable crew keeps the tasks listed and restores crew links", async () => {
+  const state: State = {
+    ...seeded,
+    tasks: seeded.tasks.map((item) => ({ ...item, crew: null })),
+    crewError: "bb did not answer",
+  };
+  const { slot } = render(state);
   const tasks = await section(slot, "Tasks");
   await within(tasks).findByText("Crew unavailable · bb did not answer");
   expect(within(tasks).getByText("Fix the sidebar")).not.toBeNull();
+  state.crewError = null;
+  state.tasks = seeded.tasks;
+  fireEvent.click(within(tasks).getByRole("button", { name: "Retry" }));
+  await within(tasks).findByRole("button", { name: "Open BBP-44's Review thread, working" });
+  expect(within(tasks).queryByText(/Crew unavailable/u)).toBeNull();
 });
 
 test("Tasks counts with + when a repo had more open tasks than were read", async () => {
