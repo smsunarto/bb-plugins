@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, expect, mock, test } from "bun:test";
 import { installDom } from "@bb-plugins/testing";
-import { HOME_ATTRIBUTE } from "../app/home-marker.ts";
 import { mountNewThreadLayout } from "../app/new-thread-layout.ts";
 
 installDom();
@@ -26,8 +25,6 @@ beforeEach(() => {
 afterEach(() => {
   controller.abort();
   Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
-  document.documentElement.removeAttribute(HOME_ATTRIBUTE);
-  document.getElementById("bb-app-theme")?.remove();
   document.body.replaceChildren();
 });
 
@@ -93,7 +90,7 @@ test("only searches for desktop wrappers while the desktop media query matches",
   expect(home.hasAttribute(marker)).toBe(true);
 });
 
-test("orders the compact selector tray, editor and Recent within their existing parents", async () => {
+test("preserves the native tab order of recents, editor and project controls on phones", async () => {
   media.matches = false;
   mountNewThreadLayout({ signal: controller.signal });
   const theme = document.createElement("style");
@@ -117,25 +114,16 @@ test("orders the compact selector tray, editor and Recent within their existing 
   const order = () =>
     [...document.querySelectorAll("a, button, [contenteditable]")].map((node) => node.textContent);
   expect(order()).toEqual(["Recent", "Editor", "Project"]);
-  document.documentElement.setAttribute(HOME_ATTRIBUTE, "");
-  await flush();
-  expect(order()).toEqual(["Project", "Editor", "Recent"]);
-  const edit = document.querySelector("[contenteditable]");
-  document.querySelector("[data-app-composer]")?.append(document.createElement("div"));
-  await flush();
-  expect(document.querySelector("[contenteditable]")).toBe(edit);
-  expect(order()).toEqual(["Project", "Editor", "Recent"]);
-
-  theme.textContent = "";
-  await flush();
-  expect(order()).toEqual(["Recent", "Editor", "Project"]);
-  theme.textContent = ".dark { --bb-monokai-active: 1; }";
-  await flush();
-  expect(order()).toEqual(["Project", "Editor", "Recent"]);
-  setDesktop(true);
-  expect(order()).toEqual(["Recent", "Editor", "Project"]);
-  setDesktop(false);
-  expect(order()).toEqual(["Project", "Editor", "Recent"]);
-  controller.abort();
-  expect(order()).toEqual(["Recent", "Editor", "Project"]);
+  document.documentElement.setAttribute("data-monokai-home", "");
+  try {
+    await flush();
+    expect(order()).toEqual(["Recent", "Editor", "Project"]);
+    setDesktop(true);
+    setDesktop(false);
+    await flush();
+    expect(order()).toEqual(["Recent", "Editor", "Project"]);
+  } finally {
+    theme.remove();
+    document.documentElement.removeAttribute("data-monokai-home");
+  }
 });
