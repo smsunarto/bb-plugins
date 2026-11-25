@@ -3,7 +3,7 @@ import { useLayoutEffect } from "react";
 // bb marks no route on the page, so the New thread screen announces itself:
 // bb mounts homepage sections only there, and this one draws nothing. The
 // theme hides the page outlines while the attribute is present.
-export const HOME_ATTRIBUTE = "data-monokai-home";
+const HOME_ATTRIBUTE = "data-monokai-home";
 
 export interface AttributeTarget {
   setAttribute(name: string, value: string): void;
