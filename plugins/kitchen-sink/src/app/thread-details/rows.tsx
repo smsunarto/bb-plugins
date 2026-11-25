@@ -40,9 +40,10 @@ export function RowActionButton({
             type="button"
             variant="ghost"
             size="icon"
+            tone="muted"
             aria-label={label}
             {...props}
-            className="size-5 shrink-0 text-muted-foreground data-[state=open]:bg-state-hover data-[state=open]:text-foreground max-md:pointer-coarse:size-7"
+            className="size-5 shrink-0 max-md:pointer-coarse:size-7"
           >
             <Icon name={icon} aria-hidden className="size-3.5" />
           </Button>
