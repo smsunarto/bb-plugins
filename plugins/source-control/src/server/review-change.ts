@@ -27,7 +27,13 @@ import {
   type ReviewRevision,
 } from "../core/review.ts";
 import { changeState, publishedSummary, shipPath, type ChangeSummary } from "../core/status.ts";
-import { forgeInterval, FORGE_ACTIVE_MS, knownOpen, type BeginForgeRead } from "./forge-read.ts";
+import {
+  forgeInterval,
+  forgeScope,
+  FORGE_ACTIVE_MS,
+  knownOpen,
+  type BeginForgeRead,
+} from "./forge-read.ts";
 import type { ForgeHost, ForgeSites } from "./forge-sites.ts";
 import { rowsOf } from "./review-sources.ts";
 import type { Share } from "./shared.ts";
@@ -210,7 +216,7 @@ export function createReviewChange(deps: {
   now: () => number;
 }) {
   const { store } = deps;
-  const attempts = new Map<ChangeKey, number>();
+  const attempts = new Map<string, number>();
 
   /**
    * Read the Change's pull request by its key, from wherever an account can
@@ -222,12 +228,12 @@ export function createReviewChange(deps: {
       Effect.gen(function* () {
         const parsed = parseChangeKey(key);
         if (parsed?.kind !== "gh") return;
-        attempts.set(key, deps.now());
+        attempts.set(forgeScope(key, host?.hostId), deps.now());
         const { repo, headOwner, branch } = parsed;
         // The Change's own checkout first, then any checkout's host, so a server with no gh login still reads it.
         const own = localMatch(store, key)?.placement;
         const placements = host ? [host] : own ? [own, ...store.checkouts()] : store.checkouts();
-        const publish = deps.beginForgeRead(key);
+        const publish = deps.beginForgeRead(key, host ? { hostId: host.hostId } : {});
         const answer = yield* deps.sites
           .pullRequestVia(
             {
@@ -248,15 +254,15 @@ export function createReviewChange(deps: {
       }),
     );
 
-  const due = (key: ChangeKey) => {
-    const last = attempts.get(key);
-    return last === undefined || deps.now() - last >= forgeInterval(store.forge(key));
+  const due = (key: ChangeKey, hostId?: string) => {
+    const last = attempts.get(forgeScope(key, hostId));
+    return last === undefined || deps.now() - last >= forgeInterval(store.forge(key, hostId));
   };
 
-  function detailOf(key: ChangeKey): ChangeDetail {
+  function detailOf(key: ChangeKey, forge = store.forge(key)): ChangeDetail {
     return changeDetail(key, {
       match: localMatch(store, key),
-      forge: store.forge(key),
+      forge,
       fromInbox: deps.inboxRow(key),
     });
   }
@@ -292,10 +298,9 @@ export function createReviewChange(deps: {
           publish({ value: answer.success });
           const forge = store.forge(key);
           return {
-            [key]:
-              !forge.problem && forge.read?.value
-                ? detailOf(key)
-                : ({ state: "missing", problem: forge.problem } satisfies ChangeDetail),
+            [key]: forge.read?.value
+              ? detailOf(key, { read: forge.read, problem: null })
+              : ({ state: "missing", problem: null } satisfies ChangeDetail),
           };
         }),
       ),

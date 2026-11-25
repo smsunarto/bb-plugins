@@ -4147,3 +4147,84 @@ test.each(["PR link", "checkout", "Review", "remembered"] as const)(
     });
   },
 );
+
+test("a confirmed branch change clears an inference even when project lookup fails", async () => {
+  const world = twoHosts();
+  const repo = { owner: "smsunarto", name: "bb-plugins" };
+  const branch = "scott/route-gh";
+  world.projects = [{ id: "proj-1", gitRemoteUrl: "https://github.com/smsunarto/bb-plugins.git" }];
+  for (const [host, owner] of [
+    ["host-a", "alice"],
+    ["host-b", "bob"],
+  ] as const) {
+    const path = world.hosts[host]!.workspace!.path;
+    world.hosts[host]!.workspace = workspace(path, { github: { repo, headOwner: owner } });
+  }
+  world.pullRequests[branch] = [{ ...PR, headRepositoryOwner: { login: "alice" } }];
+  world.threads["thread-c"] = {
+    hostId: "host-b",
+    path: "/gone",
+    removed: true,
+    branchName: branch,
+  };
+  const { harness, restart } = await start(world);
+  await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+  await harness.behavior.callRpc("refreshThread", { threadId: "thread-c" });
+  const statusOf = async (instance: Harness, threadId: string) => {
+    const rows = (await instance.behavior.callRpc("statusForThread", {
+      keys: [threadId],
+    })) as Record<string, unknown>;
+    return rows[threadId];
+  };
+  expect(await statusOf(harness, "thread-c")).toMatchObject({ pullRequest: { number: 482 } });
+  const next = await restart();
+  world.threads["thread-c"]!.branchName = "release";
+  world.failProjectLookup = true;
+  await next.behavior.callRpc("refreshThread", { threadId: "thread-c" });
+  expect(await statusOf(next, "thread-c")).toEqual({ state: "none" });
+});
+test("a newer failure stays with the host that made the request", async () => {
+  const world = twoHosts();
+  const key = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+  world.pullRequests["scott/route-gh"] = [PR];
+  const { harness, restart } = await start(world);
+  await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+  world.threads["thread-b"]!.removed = true;
+  world.serverAccounts = [];
+  world.hosts["host-a"]!.ghAccounts = ["smsunarto"];
+  world.hosts["host-a"]!.forgeLive = true;
+  const next = await restart();
+  let arrived!: () => void;
+  let release!: () => void;
+  const pending = new Promise<void>((r) => {
+    arrived = r;
+  });
+  const blocked = new Promise<void>((r) => {
+    release = r;
+  });
+  world.delayResponse = () => {
+    arrived();
+    return blocked;
+  };
+  const onA = next.behavior.callRpc("changeDetail", {
+    keys: [key],
+    prNumber: 482,
+    threadId: "thread-a",
+  });
+  await pending;
+  try {
+    await next.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+  } finally {
+    release();
+  }
+  expect(await onA).toMatchObject({ [key]: { row: { number: 482 }, problem: null } });
+  expect(await next.behavior.callRpc("changeDetail", { keys: [key] })).toMatchObject({
+    [key]: { row: { number: 482 }, problem: null },
+  });
+  expect(await next.behavior.callRpc("checksForChange", { keys: [key] })).toMatchObject({
+    [key]: { problem: null },
+  });
+  expect(await next.behavior.callRpc("statusForThread", { keys: ["thread-b"] })).toMatchObject({
+    "thread-b": { pullRequest: { number: 482 }, forge: { state: "failed" } },
+  });
+});

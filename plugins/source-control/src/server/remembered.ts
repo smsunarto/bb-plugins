@@ -30,7 +30,7 @@ export function createRemembered(deps: {
   store: Store;
   announce: (threadIds: Iterable<string>) => void;
   /** Whether the Change's pull request is due another read. */
-  forgeDue: (key: ChangeKey) => boolean;
+  forgeDue: (key: ChangeKey, hostId: string) => boolean;
   /** Read the Change's pull request on the server and `host` only. */
   readForge: (key: ChangeKey, host: ForgeHost) => Effect.Effect<void>;
   /** The project's GitHub repository, null when absent, or undefined when BB could not answer. */
@@ -70,10 +70,13 @@ export function createRemembered(deps: {
 
   /** A thread never read on a checkout: its project's Change on the recorded branch, if that branch was read. */
   const recover = Effect.fnUntraced(function* (threadId: string, recorded: RecordedEnvironment) {
-    const repo = yield* deps.projectRepo(recorded.projectId);
-    if (repo === undefined) return;
     const prior = store.lastChange(threadId);
     const parsed = prior?.inferred ? parseChangeKey(prior.key) : null;
+    if (parsed?.kind === "gh" && parsed.branch !== recorded.branchName) {
+      if (store.forgetInference(threadId)) deps.announce([threadId]);
+    }
+    const repo = yield* deps.projectRepo(recorded.projectId);
+    if (repo === undefined) return;
     const sameBranch =
       repo &&
       parsed?.kind === "gh" &&
@@ -102,7 +105,7 @@ export function createRemembered(deps: {
     status(threadId: string, row: ThreadChange): ThreadStatus {
       const change = row.state === "none" ? last(threadId) : null;
       return change
-        ? rememberedStatus(change.key, change.branch, store.forge(change.key))
+        ? rememberedStatus(change.key, change.branch, store.forge(change.key, change.host.hostId))
         : threadStatus(row);
     },
     /** Whether a list row should resolve the thread again. */
@@ -117,7 +120,8 @@ export function createRemembered(deps: {
         yield* recover(threadId, recorded);
       const change = last(threadId);
       if (!change || store.forge(change.key).read?.value?.state === "merged") return;
-      if (deps.forgeDue(change.key)) yield* deps.readForge(change.key, change.host);
+      if (deps.forgeDue(change.key, change.host.hostId))
+        yield* deps.readForge(change.key, change.host);
     }),
   };
 }

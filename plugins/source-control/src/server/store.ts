@@ -19,6 +19,7 @@ import {
   type Facet,
   type ForgeValue,
   type Placement,
+  type Problem,
   type WorkspaceValue,
 } from "../core/change.ts";
 import { changeKeySchema, type ChangeKey, type Repo } from "../core/ids.ts";
@@ -651,13 +652,18 @@ export function openStore(bb: BbPluginApi) {
     const row = getLocal.get(hostId, path);
     return (row && parsed(localFacetSchema, row.json)) ?? EMPTY_FACET;
   };
-  const forge = (key: ChangeKey): Facet<ForgeValue> => {
+  // A failed read describes one reader's connection. Only successful data is shared and persisted.
+  const forgeProblems = new Map<string | undefined, Map<ChangeKey, Problem>>();
+  const problem = (key: ChangeKey, hostId?: string) => forgeProblems.get(hostId)?.get(key) ?? null;
+  const forge = (key: ChangeKey, hostId?: string): Facet<ForgeValue> => {
     const row = getForge.get(key);
-    return (row && parsed(forgeFacetSchema, row.json)) ?? EMPTY_FACET;
+    const facet = (row && parsed(forgeFacetSchema, row.json)) ?? EMPTY_FACET;
+    return { read: facet.read, problem: problem(key, hostId) };
   };
   const checks = (key: ChangeKey): Facet<ChecksValue> => {
     const row = getChecks.get(key);
-    return (row && parsed(checksFacetSchema, row.json)) ?? EMPTY_FACET;
+    const facet = (row && parsed(checksFacetSchema, row.json)) ?? EMPTY_FACET;
+    return { read: facet.read, problem: problem(key) };
   };
   const placementRows = db.prepare<[], { host_id: string; path: string; json: string }>(
     `SELECT tc.host_id, tc.path, tp.json FROM thread_checkout tc
@@ -781,6 +787,19 @@ export function openStore(bb: BbPluginApi) {
       return changed;
     },
     checks,
+    threads: (key: ChangeKey): Facet<ForgeThread[]> => ({
+      read: review.threads(key).read,
+      problem: problem(key),
+    }),
+    setForgeProblem(key: ChangeKey, hostId: string | undefined, next: Problem | null): boolean {
+      if (JSON.stringify(problem(key, hostId)) === JSON.stringify(next)) return false;
+      if (next) {
+        const problems = forgeProblems.get(hostId) ?? new Map<ChangeKey, Problem>();
+        problems.set(key, next);
+        forgeProblems.set(hostId, problems);
+      } else forgeProblems.get(hostId)?.delete(key);
+      return true;
+    },
     /** A forge read publishes its PR, checks and review threads together. */
     setForgeFacets: db.transaction(
       (
@@ -792,8 +811,8 @@ export function openStore(bb: BbPluginApi) {
         },
       ) => {
         const before = {
-          forge: forge(key),
-          checks: checks(key),
+          forge: { read: forge(key).read, problem: null },
+          checks: { read: checks(key).read, problem: null },
         };
         putForge.run(key, JSON.stringify(facets.forge));
         putChecks.run(key, JSON.stringify(facets.checks));

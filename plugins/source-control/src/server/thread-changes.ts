@@ -127,7 +127,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
       branch: branch ? branchName : null,
       key,
       local,
-      forge: key ? store.forge(key) : EMPTY_FACET,
+      forge: key ? store.forge(key, placement.hostId) : EMPTY_FACET,
     };
   }
 
@@ -162,6 +162,17 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     invalidate,
     forgeChanged: (key, threadId) =>
       announce(threadId ? [threadId, ...showing(key)] : showing(key)),
+    hostProblemChanged: (key, hostId, requester) => {
+      const threads = showing(key).filter((threadId) => {
+        const placement = store.placement(threadId);
+        return (
+          (placement?.state === "checkout"
+            ? placement.placement.hostId
+            : store.lastChange(threadId)?.host.hostId) === hostId
+        );
+      });
+      announce(requester ? [requester, ...threads] : threads);
+    },
     forgeRead: (key) => review.items.settleIfBehind(key),
     now,
   });
