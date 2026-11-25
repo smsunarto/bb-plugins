@@ -41,6 +41,24 @@ try {
   await more.waitFor();
   const before = await more.boundingBox();
   assert.ok(before);
+  const visibleDrawer = await more.evaluate((button) => {
+    const sidebar = button.closest('[data-sidebar="sidebar"]');
+    if (!sidebar) throw new Error("More must be inside the drawer");
+    const { left, top, right, bottom } = sidebar.getBoundingClientRect();
+    return {
+      left: Math.max(left, 0),
+      top: Math.max(top, 0),
+      right: Math.min(right, window.innerWidth),
+      bottom: Math.min(bottom, window.innerHeight),
+    };
+  });
+  assert.ok(
+    before.x >= visibleDrawer.left &&
+      before.y >= visibleDrawer.top &&
+      before.x + before.width <= visibleDrawer.right &&
+      before.y + before.height <= visibleDrawer.bottom,
+    "More must be fully inside the visible drawer",
+  );
   const scrollTop = await scroller.evaluate((element) => element.scrollTop);
   await scroller.hover();
   await page.mouse.wheel(0, 120);
