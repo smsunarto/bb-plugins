@@ -14,6 +14,7 @@ import { cloudSessionSettled, DEVIN_PROVIDER_ID } from "../shared/devin.ts";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Card, CardContent } from "./components/ui/card.tsx";
+import { StatusDot } from "./components/ui/status-dot.tsx";
 import {
   InputGroup,
   InputGroupAddon,
@@ -239,11 +240,11 @@ function CloudBanner() {
           </div>
           <Badge
             aria-live="polite"
-            className="devin-cloud-status min-w-18 justify-center gap-1 uppercase"
+            className="min-w-18 justify-center gap-1 uppercase"
             data-state={data.state}
             variant={active === null ? "secondary" : "info"}
           >
-            <span aria-hidden="true" className="devin-cloud-status-dot" />
+            <StatusDot tone="current" size="sm" pulse={active === null} />
             {active === null ? "Starting" : "Active"}
           </Badge>
         </div>
