@@ -817,6 +817,110 @@
           "type": "registry:lib"
         }
       ]
+    },
+    {
+      "name": "item",
+      "type": "registry:ui",
+      "description": "Vega list item: rows with media, title, description and actions; `row` size for dense lists and trees.",
+      "dependencies": [
+        "@radix-ui/react-slot",
+        "class-variance-authority"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/motion",
+        "@bb-plugins/separator"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/item.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "kbd",
+      "type": "registry:ui",
+      "description": "Vega keyboard key and key group.",
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/kbd.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "input-group",
+      "type": "registry:ui",
+      "description": "Vega input group: an input or textarea with inline or block addons, text and buttons inside one field edge.",
+      "dependencies": [
+        "class-variance-authority"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/input",
+        "@bb-plugins/textarea"
+      ],
+      "docs": "Imports the plugin's `Button` and `utils` from @bb-plugins/ui; add @bb-plugins/button or @bb-plugins/utils only to a plugin that lacks it.",
+      "files": [
+        {
+          "path": "registry/components/ui/input-group.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "button-group",
+      "type": "registry:ui",
+      "description": "Vega button group: joins adjacent buttons, selects and inputs into one control.",
+      "dependencies": [
+        "@radix-ui/react-slot",
+        "class-variance-authority"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/separator"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/button-group.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "alert",
+      "type": "registry:ui",
+      "description": "Vega alert: a callout with an icon, title, description and optional action. Pass role=\"status\" for non-urgent notices.",
+      "dependencies": [
+        "class-variance-authority"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/alert.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "field",
+      "type": "registry:ui",
+      "description": "Vega field: label, control, description and error laid out together; FieldSet and FieldGroup for forms.",
+      "dependencies": [
+        "class-variance-authority"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/label",
+        "@bb-plugins/separator"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/field.tsx",
+          "type": "registry:ui"
+        }
+      ]
     }
   ]
 }
