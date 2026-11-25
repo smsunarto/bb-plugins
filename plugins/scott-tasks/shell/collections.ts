@@ -184,6 +184,17 @@ export class TaskWriteRefusedError extends Error {
  */
 const writtenVersions = new Map<string, number>();
 
+// The pager remembers the list's rows even after its query releases them. Only
+// confirmed writes/deletes change that snapshot; evicting cached rows is not a delete.
+const taskRecordListeners = new Set<(id: string, key: string | null) => void>();
+
+export function subscribeToTaskRecords(listener: (id: string, key: string | null) => void) {
+  taskRecordListeners.add(listener);
+  return () => {
+    taskRecordListeners.delete(listener);
+  };
+}
+
 function versionOf(task: Pick<Task, "updatedAt"> | undefined): number {
   const version = task === undefined ? Number.NaN : Date.parse(task.updatedAt);
   return Number.isNaN(version) ? Number.NEGATIVE_INFINITY : version;
@@ -203,12 +214,15 @@ export async function writeServerTask(task: Task): Promise<void> {
   if (version < known) return;
   writtenVersions.set(task.id, version);
   await tasksCollection.utils.writeUpsert(task);
+  const current = tasksCollection.get(task.id);
+  if (current) for (const listener of taskRecordListeners) listener(task.id, current.key);
 }
 
 /** Forget a task the server deleted. */
 export async function deleteServerTask(taskId: string): Promise<void> {
   writtenVersions.delete(taskId);
   if (tasksCollection.has(taskId)) await tasksCollection.utils.writeDelete(taskId);
+  for (const listener of taskRecordListeners) listener(taskId, null);
 }
 
 export const tasksCollection = createCollection(

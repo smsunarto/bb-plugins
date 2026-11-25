@@ -5,6 +5,8 @@ import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { COMPACT_VIEWPORT_QUERY } from "@/components/ui/hooks/use-compact-viewport";
 import type { Task } from "../../shared/contract.js";
 import { LIST_PREFERENCE_STORAGE_KEY } from "./list-preference.js";
+import { EMPTY_FILTERS } from "./filter-bar.js";
+import { listScrollScopeKey, writeListScroll } from "./scroll-restoration.js";
 import { makeTask, rpcInput } from "../../test-fixtures.js";
 
 window.matchMedia = (query: string) => ({
@@ -198,6 +200,107 @@ async function selectSort(slot: ReturnType<typeof renderProject>, label: string)
 }
 
 describe("list filter/sort preference persistence", () => {
+  it("restores focus when the anchor's row mounts in a 250-task virtual list", async () => {
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
+      function (this: HTMLElement) {
+        if (this.hasAttribute("data-task-key")) return 36;
+        return this.hasAttribute("data-status-group-header") ? 32 : 0;
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(450);
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(9032);
+    const rows = Array.from({ length: 250 }, (_, index) => task(PROJECT_A, index + 1, "todo"));
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: PROJECT_A },
+      {
+        rpc: baseRpc({
+          listTasks: (input: unknown) => ({ tasks: applyListFilters(rows, rpcInput(input)) }),
+          getTaskByKey: () => ({ task: rows[233] }),
+        }),
+      },
+    );
+    const region = slot.getByRole("region", { name: "Task list" });
+    await slot.findByRole("button", { name: /Open ALP-1:/ });
+    region.scrollTop = 32 + 36 * 230;
+    fireEvent.scroll(region);
+    const opened = await slot.findByRole("button", { name: /Open ALP-234:/ });
+    fireEvent.click(opened);
+    const Panel = app.navPanels[0]!.component;
+    slot.lifecycle.rerender(<Panel subPath="task/ALP-234" />);
+    writeListScroll(
+      listScrollScopeKey({
+        projectId: PROJECT_A,
+        activeOnly: false,
+        filters: EMPTY_FILTERS,
+        sort: "manual",
+      }),
+      0,
+    );
+    slot.lifecycle.rerender(<Panel subPath={PROJECT_A} />);
+    const restored = slot.getByRole("region", { name: "Task list" });
+    await waitFor(() => expect(restored.scrollTop).toBeGreaterThan(8000));
+    expect(slot.queryByRole("button", { name: /Open ALP-234:/ })).toBeNull();
+    fireEvent.scroll(restored);
+    const restoredRow = await slot.findByRole("button", { name: /Open ALP-234:/ });
+    expect(document.activeElement).toBe(restoredRow);
+    fireEvent.keyDown(restoredRow, { key: "j" });
+    expect(document.activeElement).toBe(slot.getByRole("button", { name: /Open ALP-235:/ }));
+  });
+
+  it("skips a queued bulk write when a later individual edit changes that task", async () => {
+    const rows = Array.from({ length: 8 }, (_, index) => task(PROJECT_A, index + 1, "todo"));
+    const releases: (() => void)[] = [];
+    let holdBatch = true;
+    const updateTask = vi.fn(async (raw: unknown) => {
+      const { taskId, status } = rpcInput(raw);
+      const original = rows.find(({ id }) => id === taskId)!;
+      if (status === "done" && holdBatch)
+        await new Promise<void>((resolve) => releases.push(resolve));
+      return { ok: true, task: { ...original, status } };
+    });
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: PROJECT_A },
+      {
+        rpc: baseRpc({
+          listTasks: (input: unknown) => ({ tasks: applyListFilters(rows, rpcInput(input)) }),
+          updateTask,
+        }),
+      },
+    );
+    for (const row of rows) {
+      fireEvent.click(await slot.findByRole("checkbox", { name: `Select ${row.key}` }));
+    }
+    fireEvent.click(slot.getByRole("button", { name: "Set status" }));
+    fireEvent.click(await slot.findByRole("menuitem", { name: "Done" }));
+    await waitFor(() => expect(updateTask).toHaveBeenCalledTimes(4));
+    try {
+      const edited = slot.getByRole("button", { name: /Open ALP-5:/ });
+      edited.focus();
+      fireEvent.keyDown(edited, { key: "s" });
+      const menu = await slot.findByRole("dialog", { name: "Change status" });
+      const inProgress = await within(menu).findByRole("menuitem", { name: /In Progress/ });
+      await act(async () => fireEvent.click(inProgress));
+      expect(updateTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskId: rows[4]!.id,
+          status: "in_progress",
+        }),
+      );
+    } finally {
+      holdBatch = false;
+      await act(async () => releases.splice(0).forEach((release) => release()));
+    }
+    await slot.findByText("ALP-5: Skipped because the task changed");
+    await waitFor(() => expect(updateTask).toHaveBeenCalledTimes(8));
+    expect(
+      updateTask.mock.calls
+        .map(([input]) => rpcInput(input))
+        .filter(({ taskId }) => taskId === rows[4]!.id),
+    ).toEqual([expect.objectContaining({ status: "in_progress" })]);
+  });
+
   it("restores the originating list's collapsed groups, selection, and row focus", async () => {
     const slot = renderProject(PROJECT_A);
     const Panel = app.navPanels[0]!.component;

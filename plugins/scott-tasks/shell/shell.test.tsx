@@ -192,6 +192,41 @@ function pagerTask(key: string, status: Task["status"], position: number) {
 }
 
 describe("task pager", () => {
+  it("pages from loaded list records without rereading them and survives a failed realtime read", async () => {
+    const current = pagerTask("TSK-13", "todo", 1);
+    const next = pagerTask("TSK-14", "todo", 2);
+    const byId = vi.fn(() => Promise.reject(new Error("Unexpected sibling reread")));
+    const getTask = vi.fn(() => Promise.reject(new Error("Update is temporarily unavailable")));
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "all" },
+      {
+        rpc: seededRpc({
+          listTasks: (input: unknown) => {
+            const { taskIds, parentTaskId } = rpcInput(input);
+            if (taskIds) return byId();
+            return { tasks: parentTaskId ? [] : [current, next] };
+          },
+          getTaskByKey: () => ({ task: current }),
+          getTask,
+          listLabels: () => ({ labels: [] }),
+          listAttachments: () => ({ attachments: [] }),
+          listTaskThreads: () => ({ taskThreads: [] }),
+          listComments: () => ({ comments: [] }),
+        }),
+      },
+    );
+    fireEvent.click(await slot.findByRole("button", { name: /Open TSK-13/ }));
+    const Panel = app.navPanels[0]!.component;
+    slot.lifecycle.rerender(<Panel subPath="task/TSK-13" />);
+    expect(slot.getByText("1 / 2")).toBeDefined();
+    await slot.emitRealtime("tasks:changed", { taskId: next.id, projectId: PROJECT_ID });
+    await waitFor(() => expect(getTask).toHaveBeenCalled());
+    fireEvent.click(slot.getByRole("button", { name: "Next task" }));
+    expect(slot.navigateCalls.at(-1)).toMatchObject({ options: { subPath: "task/TSK-14" } });
+    expect(byId).not.toHaveBeenCalled();
+  });
+
   it("skips a task deleted remotely while detail is open", async () => {
     const current = pagerTask("TSK-10", "todo", 1);
     const removed = pagerTask("TSK-11", "todo", 2);

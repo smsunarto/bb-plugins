@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { useProjects } from "./data.js";
+import { subscribeToTaskRecords } from "./collections.js";
 import {
   parseTasksRoute,
   tasksRouteToSubPath,
@@ -93,14 +94,29 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
 
   const lastBrowseRouteRef = useRef<TasksRoute | null>(null);
   const listResume = useRef<ListResume | null>(null);
+  const [pagerRows, setPagerRows] = useState<ListResume["orderedRows"] | null>(null);
   const { toasts, push, dismiss } = useDetailToasts();
   const openListTask = useCallback(
     (taskKey: string, resume: ListResume) => {
       // Retain what the user was browsing across detail-to-detail navigation.
       listResume.current = resume;
+      setPagerRows(resume.orderedRows);
       navigation.go({ kind: "task", taskKey });
     },
     [navigation],
+  );
+  useEffect(
+    () =>
+      subscribeToTaskRecords((id, key) => {
+        if (!listResume.current) return;
+        setPagerRows((rows) => {
+          const row = rows?.find((row) => row.id === id);
+          if (!rows || !row || row.key === key) return rows;
+          if (key === null) return rows.filter((row) => row.id !== id);
+          return rows.map((row) => (row.id === id ? { id, key } : row));
+        });
+      }),
+    [],
   );
   useEffect(() => {
     if (route.kind !== "task") {
@@ -160,7 +176,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
         <TasksTopbar
           route={route}
           projects={projects.data}
-          pagerIds={listResume.current?.orderedIds ?? null}
+          pagerRows={listResume.current === null ? null : pagerRows}
           pagerScope={
             lastBrowseRouteRef.current === null
               ? null

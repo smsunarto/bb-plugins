@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { replaceEqualDeep } from "@tanstack/react-query";
 import {
   TASK_STATUSES,
   type Label,
@@ -7,7 +8,7 @@ import {
   type TaskStatus,
 } from "../../shared/contract.js";
 import { errorMessage } from "../../shared/errors.js";
-import { editTask, type TaskEdit } from "../../shell/collections.js";
+import { editTask, tasksCollection, type TaskEdit } from "../../shell/collections.js";
 import { useActiveThreads, useLabels, useProjects, useTasksRpc } from "../../shell/data.js";
 import type { TaskScope } from "../../shell/routes.js";
 import { useTasksUi } from "../../shell/ui-store.js";
@@ -66,7 +67,7 @@ export interface ListResume {
   scopeKey: string;
   collapsed: CollapsedGroups;
   selection: ReadonlySet<string>;
-  orderedIds: readonly string[];
+  orderedRows: readonly Pick<Task, "id" | "key">[];
   openedId: string;
   anchor: ListScrollAnchor | null;
 }
@@ -235,7 +236,10 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
   const bulkStatusPending = useTasksUi((state) => state.bulkStatusPending);
   const setBulkStatus = async (status: TaskStatus) => {
     if (useTasksUi.getState().bulkStatusPending) return;
-    const queue = selectedTasks.filter((task) => task.status !== status).values();
+    const queue = selectedTasks
+      .map((task) => tasksCollection.get(task.id) ?? task)
+      .filter((task) => task.status !== status)
+      .values();
     useTasksUi.setState({ bulkStatusPending: true });
     setSelection(new Set());
     try {
@@ -245,6 +249,14 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
           async () => {
             for (const task of queue) {
               try {
+                const latest = tasksCollection.get(task.id);
+                if (
+                  latest &&
+                  (hasPendingWrites(latest) || replaceEqualDeep(task, latest) !== task)
+                ) {
+                  push(`${task.key}: Skipped because the task changed`);
+                  continue;
+                }
                 await editTask(task.id, { status });
               } catch (error) {
                 push(`${task.key}: ${errorMessage(error)}`);
@@ -271,7 +283,7 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
 
   const listRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const pendingFocus = useRef<string | null>(null);
+  const pendingFocus = useRef<{ key: string; reveal: boolean } | null>(null);
   const pendingResume = useRef(resume);
   // Rows are still arriving while the primary query loads or the closed split trails it.
   const loading =
@@ -320,7 +332,7 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
         scopeKey,
         collapsed,
         selection,
-        orderedIds: orderedTasks.map(({ id }) => id),
+        orderedRows: orderedTasks.map(({ id, key }) => ({ id, key })),
         openedId: task.id,
         anchor: captureListAnchor(anchorLayout, container.scrollTop),
       });
@@ -335,18 +347,27 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
       pendingResume.current = null;
       if (saved.scopeKey === scopeKey) {
         const target =
-          saved.anchor && resolveListAnchor(anchorLayout, saved.anchor, saved.orderedIds);
+          saved.anchor &&
+          resolveListAnchor(
+            anchorLayout,
+            saved.anchor,
+            saved.orderedRows.map(({ id }) => id),
+          );
         if (target !== null) container.scrollTop = target;
-        const openedKey = orderedTasks.find(({ id }) => id === saved.openedId)?.key;
-        const opened = openedKey && readRow(container, openedKey);
-        (opened || container).focus({ preventScroll: true });
+        const opened = orderedTasks.find(({ id }) => id === saved.openedId);
+        if (opened) pendingFocus.current = { key: opened.key, reveal: false };
+        container.focus({ preventScroll: true });
       }
     }
-    if (container === null || pendingFocus.current === null) return;
-    const row = readRow(container, pendingFocus.current);
+    const pending = pendingFocus.current;
+    if (container === null || pending === null) return;
+    // The anchor changes the mounted window on the next viewport update.
+    const row = readRow(container, pending.key);
     if (!row) return;
     pendingFocus.current = null;
-    row.focus();
+    if (!pending.reveal && document.activeElement !== container) return;
+    row.focus({ preventScroll: true });
+    if (pending.reveal) row.scrollIntoView?.({ block: "nearest" });
   });
 
   const moveFocus = (currentKey: string | undefined, direction: number) => {
@@ -362,12 +383,13 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
     if (!next || !container) return;
     const row = readRow(container, next.key);
     if (row) {
+      pendingFocus.current = null;
       row.focus({ preventScroll: true });
       row.scrollIntoView?.({ block: "nearest" });
       return;
     }
     const groupIndex = groups.findIndex((group) => group.status === next.status);
-    pendingFocus.current = next.key;
+    pendingFocus.current = { key: next.key, reveal: true };
     container.scrollTop = Math.max(
       0,
       viewport.headerHeight * (groupIndex + 1) + viewport.rowHeight * index - viewport.height / 2,
@@ -408,7 +430,8 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
         if (checkboxRow && rowKey) readRow(container, rowKey)?.focus({ preventScroll: true });
       } else if (key === "j" || key === "k" || key === "arrowup" || key === "arrowdown") {
         event.preventDefault();
-        moveFocus(rowKey, key === "j" || key === "arrowdown" ? 1 : -1);
+        const focusedKey = rowKey ?? (target === container ? pendingFocus.current?.key : undefined);
+        moveFocus(focusedKey, key === "j" || key === "arrowdown" ? 1 : -1);
       }
     };
   });
