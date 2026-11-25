@@ -9,6 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Spinner } from "@/components/ui/spinner";
 import { usePanelOverview } from "./host-picker.tsx";
 import { quickTasks, useTasks } from "./tasks.ts";
 
@@ -60,10 +62,13 @@ export function TasksSection(): ReactElement {
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {tasks.current === null ? (
-          <div className="p-4 text-sm text-muted-foreground">Run a task to see its output.</div>
+          <EmptyState className="m-4" message="Run a task to see its output." />
         ) : tasks.current.status === "running" ? (
-          <div className="p-4 text-sm text-muted-foreground">
-            {tasks.current.id} on {tasks.current.host} — running…
+          <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+            <Spinner />
+            <span>
+              {tasks.current.id} on {tasks.current.host} — running…
+            </span>
           </div>
         ) : tasks.current.status === "failed" ? (
           <div className="p-4 text-sm text-destructive">

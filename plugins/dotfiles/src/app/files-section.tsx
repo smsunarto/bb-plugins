@@ -4,7 +4,11 @@ import type { ReactElement } from "react";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { UrlLink } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Item, ItemContent, ItemTitle } from "@/components/ui/item";
 import { Icon } from "@/components/ui/icon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -70,9 +74,9 @@ export function FilesSection(props: PluginNavPanelProps & { workflows: boolean }
         {ready !== undefined && (
           <div className="mb-1 text-sm font-medium text-foreground">
             {ready.branch}
-            <span className="ml-2 text-xs text-muted-foreground">
+            <Badge variant="count" className="ml-2">
               {dirtyCount === 0 ? "clean" : `${dirtyCount} dirty`}
-            </span>
+            </Badge>
           </div>
         )}
         <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
@@ -89,22 +93,24 @@ export function FilesSection(props: PluginNavPanelProps & { workflows: boolean }
       {overview.isPending ? (
         <div className="h-full" aria-busy="true" aria-label="Loading dotfiles" />
       ) : overview.isError ? (
-        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-          <p className="text-sm text-destructive">
-            Failed to load dotfiles: {errorMessage(overview.error)}
-          </p>
-          <Button variant="outline" onClick={() => void overview.refetch()}>
-            Retry
-          </Button>
+        <div className="p-2">
+          <Alert variant="destructive" role="none">
+            <AlertTitle>Failed to load dotfiles</AlertTitle>
+            <AlertDescription>{errorMessage(overview.error)}</AlertDescription>
+            <AlertAction>
+              <Button size="sm" variant="outline" onClick={() => void overview.refetch()}>
+                Retry
+              </Button>
+            </AlertAction>
+          </Alert>
         </div>
       ) : overview.data.state === "offline" ? (
-        <div className="p-4 text-sm text-muted-foreground">
-          {overview.data.host.name} is not connected.
-        </div>
+        <EmptyState className="m-4" message={`${overview.data.host.name} is not connected.`} />
       ) : overview.data.state === "noRepository" ? (
-        <div className="p-4 text-sm text-muted-foreground">
-          No dotfiles repository at {overview.data.repoPath}.
-        </div>
+        <EmptyState
+          className="m-4"
+          message={`No dotfiles repository at ${overview.data.repoPath}.`}
+        />
       ) : (
         <FileList
           overview={overview.data}
@@ -184,10 +190,6 @@ function FileList({
   );
 }
 
-// The row's padding sits on its link or button, so the whole row height is the
-// tap target, 36px under a finger.
-const ROW_TARGET_CLASS = "py-1 max-md:pointer-coarse:min-h-9";
-
 function FileRow({
   item,
   instructionHref,
@@ -202,44 +204,31 @@ function FileRow({
   const selected = nav.path === item.path;
   const removeSkillName = item.removeSkillName;
   return (
-    <div
-      className={`group/row flex w-full items-center gap-2 rounded-md px-2 text-sm ${
-        selected ? "bg-accent text-accent-foreground" : "text-foreground hover:bg-accent/50"
-      }`}
-    >
+    // The link or button is the row's Item, so the whole row height is the tap target.
+    <div className="group/row flex w-full items-center gap-1">
       {instructionHref ? (
-        <UrlLink
-          href={instructionHref}
-          className={`${ROW_TARGET_CLASS} flex min-w-0 flex-1 items-center gap-2 text-left`}
-          title="Edit in Agent Instructions"
-        >
-          <span className="truncate">{item.title}</span>
-          {!item.exists && <span className="text-xs text-destructive">missing</span>}
-          {item.dirty && (
-            <span
-              className="size-1.5 shrink-0 rounded-full bg-amber-500"
-              aria-label="uncommitted changes"
-            />
-          )}
-        </UrlLink>
-      ) : (
-        <button
-          type="button"
-          disabled={!item.exists}
+        <Item
+          asChild
+          size="row"
           aria-current={selected ? "true" : undefined}
-          onClick={() => nav.open(item.path)}
-          className={`${ROW_TARGET_CLASS} flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60`}
-          title={item.note}
+          className="min-w-0 flex-1"
         >
-          <span className="min-w-0 flex-1 truncate">{item.title}</span>
-          {!item.exists && <span className="text-xs text-destructive">missing</span>}
-          {item.dirty && (
-            <span
-              className="size-1.5 shrink-0 rounded-full bg-amber-500"
-              aria-label="uncommitted changes"
-            />
-          )}
-        </button>
+          <UrlLink href={instructionHref} title="Edit in Agent Instructions">
+            <FileRowLabel item={item} />
+          </UrlLink>
+        </Item>
+      ) : (
+        <Item asChild size="row" className="min-w-0 flex-1">
+          <button
+            type="button"
+            disabled={!item.exists}
+            aria-current={selected ? "true" : undefined}
+            onClick={() => nav.open(item.path)}
+            title={item.note}
+          >
+            <FileRowLabel item={item} />
+          </button>
+        </Item>
       )}
       {removeSkillName !== undefined && (
         <Tooltip>
@@ -247,10 +236,10 @@ function FileRow({
             <Button
               type="button"
               variant="ghost"
-              size="icon"
+              size="icon-xs"
               aria-label={`Remove skill ${item.title}`}
               onClick={() => onRemove({ name: removeSkillName, path: item.path })}
-              className="size-6 shrink-0 opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 max-md:pointer-coarse:size-9 max-md:pointer-coarse:opacity-100"
+              className="shrink-0 opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 max-md:pointer-coarse:size-9 max-md:pointer-coarse:opacity-100"
             >
               <Icon name="X" className="size-3.5" />
             </Button>
@@ -259,5 +248,22 @@ function FileRow({
         </Tooltip>
       )}
     </div>
+  );
+}
+
+function FileRowLabel({ item }: { readonly item: OverviewFile }): ReactElement {
+  return (
+    <>
+      <ItemContent>
+        <ItemTitle>{item.title}</ItemTitle>
+      </ItemContent>
+      {!item.exists && <Badge variant="danger">missing</Badge>}
+      {item.dirty && (
+        <span
+          className="size-1.5 shrink-0 rounded-full bg-amber-500"
+          aria-label="uncommitted changes"
+        />
+      )}
+    </>
   );
 }
