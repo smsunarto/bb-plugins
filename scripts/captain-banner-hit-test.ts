@@ -340,7 +340,7 @@ async function assertInlineOther(banner: Locator, mobile: boolean, screenshot?: 
   }
 }
 
-async function assertMobileQueue(banner: Locator) {
+async function assertMobileQueue(banner: Locator, screenshot?: string) {
   const strip = banner.getByRole("tablist");
   const tabs = strip.getByRole("tab");
   assert.equal(await tabs.count(), 5);
@@ -382,6 +382,7 @@ async function assertMobileQueue(banner: Locator) {
     "the queue fits the banner and the tabs sit above the panel",
   );
   const choices = banner.locator("[data-captain-answers]");
+  assert.equal(await choices.getByRole("button").count(), 4);
   assert.equal(
     await choices.evaluate((node) => node.scrollWidth === node.clientWidth),
     true,
@@ -389,17 +390,38 @@ async function assertMobileQueue(banner: Locator) {
   );
   const gridBounds = await choices.boundingBox();
   assert.ok(gridBounds);
+  assert.ok(
+    await banner.evaluate((node) => {
+      const bounds = node.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      const top = viewport?.offsetTop ?? 0;
+      return bounds.top >= top && bounds.bottom <= top + (viewport?.height ?? innerHeight) + 1;
+    }),
+    "the whole banner fits within the viewport height",
+  );
+  const positions: { x: number; y: number; width: number; height: number }[] = [];
   for (const label of longOptions) {
     const choice = choices.getByRole("button", { name: new RegExp(label, "u") });
     const labelSpan = choice.getByText(label, { exact: true });
-    const fit = await labelSpan.evaluate((node) => ({
-      horizontal: node.scrollWidth <= node.clientWidth,
-      vertical: node.scrollHeight <= node.clientHeight,
-    }));
+    const fit = await labelSpan.evaluate((node) => {
+      const button = node.closest("button")!;
+      const labelBounds = node.getBoundingClientRect();
+      const buttonBounds = button.getBoundingClientRect();
+      const visibleTop = buttonBounds.top + button.clientTop;
+      const visibleBottom = visibleTop + button.clientHeight;
+      return {
+        horizontal: node.scrollWidth <= node.clientWidth,
+        vertical:
+          node.scrollHeight <= node.clientHeight &&
+          labelBounds.top >= visibleTop - 1 &&
+          labelBounds.bottom <= visibleBottom + 1,
+      };
+    });
     assert.ok(fit.horizontal, `answer label is horizontally clipped: ${label}`);
     assert.ok(fit.vertical, `answer label is vertically clipped: ${label}`);
     const bounds = await choice.boundingBox();
     assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44, `44 px target: ${label}`);
+    positions.push(bounds);
     assert.ok(
       bounds.x >= gridBounds.x &&
         bounds.y >= gridBounds.y &&
@@ -407,8 +429,23 @@ async function assertMobileQueue(banner: Locator) {
         bounds.y + bounds.height <= gridBounds.y + gridBounds.height,
       `answer button fits within the grid: ${label}`,
     );
-    await choice.tap({ trial: true });
   }
+  const [topLeft, topRight, bottomLeft, bottomRight] = positions;
+  assert.ok(
+    topLeft &&
+      topRight &&
+      bottomLeft &&
+      bottomRight &&
+      topLeft.y === topRight.y &&
+      bottomLeft.y === bottomRight.y &&
+      topLeft.x === bottomLeft.x &&
+      topRight.x === bottomRight.x &&
+      topLeft.x + topLeft.width <= topRight.x &&
+      topLeft.y + Math.max(topLeft.height, topRight.height) <= bottomLeft.y,
+    "answers form a 2×2 grid",
+  );
+  for (const option of await choices.getByRole("button").all()) await option.tap({ trial: true });
+  if (screenshot) await banner.page().screenshot({ path: screenshot });
   await tabs.last().tap();
   assert.equal(await tabs.last().getAttribute("aria-selected"), "true");
   await assertInlineOther(banner, true);
@@ -546,7 +583,10 @@ try {
             outputDir ? join(outputDir, `${mode.name}-other.png`) : undefined,
           );
         } else if (name === "mobile-queue") {
-          await assertMobileQueue(banner);
+          await assertMobileQueue(
+            banner,
+            outputDir ? join(outputDir, `${mode.name}-answer-grid.png`) : undefined,
+          );
         } else if (name === "ship") {
           await banner.getByText("Review passed.", { exact: true }).waitFor();
           await assertBalancedPadding(banner);
