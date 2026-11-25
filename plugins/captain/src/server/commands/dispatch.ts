@@ -14,6 +14,11 @@ import { rungLabel, type LadderRole } from "../../contract/ladder.ts";
 import {
   pickRung,
   readPool,
+  readProviders,
+  rungPermissionMode,
+  rungRefusal,
+  type ProviderViews,
+  type RungChecks,
   roleLadder,
   rungPresetName,
   type PoolView,
@@ -272,14 +277,16 @@ async function validate(
   let crew: CrewThread[];
   let resolved: ({ task: TasksTask } | { blocker: Blocker })[];
   let pool: PoolView | null = null;
-  // A forced rung and a thread brought in read no eligibility.
+  let providers: ProviderViews | null = null;
+  // A forced rung and a thread brought in read no pool; only a new thread reads bb's providers.
   const readsPool = flags.thread === undefined && forced === undefined;
   try {
-    [presets, crew, resolved, pool] = await Promise.all([
+    [presets, crew, resolved, pool, providers] = await Promise.all([
       deps.tasks.listPresets(),
       readCrew(deps, captain.threadId),
       Promise.all(uniqueKeys.map((key) => resolveTask(deps, captain, key))),
       readsPool ? readPool(deps.bb) : Promise.resolve(null),
+      flags.thread === undefined ? readProviders(deps.bb) : Promise.resolve(null),
     ]);
   } catch (error) {
     if (error instanceof TasksError) return { blockers: [tasksBlocker(error)] };
@@ -321,12 +328,26 @@ async function validate(
       }
       const unit = requires(entry.task, role, preset, crew, flags.baseBranch);
       const ladder = roleLadder(deps.store, role as LadderRole).rungs;
-      const choice = pickRung(ladder, pool, now, { forced });
+      const checks: RungChecks = {
+        providers,
+        permissionMode: rungPermissionMode(presets, role as LadderRole),
+      };
+      const choice = pickRung(ladder, pool, now, { forced, checks });
       // A live thread on the task and role reports exists; only a start needs a rung.
       const starts = flags.again || crewOnTask(crew, entry.task.key, role).length === 0;
-      if (choice.rung === null && starts) {
+      // A forced rung skips the pool, not bb: a thread bb would refuse is not started.
+      const refusal =
+        choice.rung !== null && choice.forced && starts
+          ? rungRefusal(choice.spec, choice.rung, checks)
+          : null;
+      if (choice.rung !== null && refusal !== null) {
         unit.blockers.push({
-          reason: `no rung of ${ROLE_SPECS[role].label}'s ladder has an eligible account: ${choice.skipped.join("; ")}`,
+          reason: `rung ${choice.rung} ${rungLabel(choice.spec)}: ${refusal}`,
+          fix: `set the ${ROLE_SPECS[role].label} preset's permission to one ${choice.spec.providerId} takes, or pass another --rung`,
+        });
+      } else if (choice.rung === null && starts) {
+        unit.blockers.push({
+          reason: `no rung of ${ROLE_SPECS[role].label}'s ladder can start now: ${choice.skipped.join("; ")}`,
           fix: `bb captain dispatch ${entry.task.key} --role ${ROLE_SPECS[role].label} --rung <n> to start on one anyway; bb pool status shows when accounts reset`,
         });
       } else if (choice.rung !== null) unit.choice = choice;

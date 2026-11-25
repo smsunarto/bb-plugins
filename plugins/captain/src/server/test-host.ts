@@ -123,6 +123,19 @@ export type FakeOptions = {
   tasksPollMs?: number;
 };
 
+/** One provider as bb's `providers.list` reports it, in the fields Captain reads. */
+export type FakeProvider = { id: string; available: boolean; permissionModes: string[] };
+
+/** Claude Code and Codex take every permission mode; ACP agents such as Antigravity take no `auto`. */
+function defaultProviders(): FakeProvider[] {
+  const all = ["accept-edits", "auto", "full"];
+  return [
+    { id: "claude-code", available: true, permissionModes: all },
+    { id: "codex", available: true, permissionModes: all },
+    { id: "acp-antigravity", available: true, permissionModes: ["accept-edits", "full"] },
+  ];
+}
+
 /** The Account Pooler's `status.get` fields Captain reads; null when the pool is not loaded. */
 export type FakePool = {
   routing: Record<string, boolean>;
@@ -344,6 +357,8 @@ export async function captainHost(options: FakeOptions = {}) {
   const threads = new Map<string, Thread>();
   /** `providers.models` calls, and how many of the next ones fail. */
   const providerModels = { calls: 0, fails: 0 };
+  /** bb's providers as `providers.list` serves them; null makes the read fail. */
+  const providerList: { value: FakeProvider[] | null } = { value: defaultProviders() };
   /** The parent of every `threads.list` read, in order, to count crew polls. */
   const threadLists: (string | undefined)[] = [];
   /** While `gate` is set, Tasks' `crewSnapshot` waits for it. */
@@ -693,6 +708,14 @@ export async function captainHost(options: FakeOptions = {}) {
     sdk: {
       system: { config: async () => ({ primaryHostId: SERVER_HOST }) as never },
       providers: {
+        list: async () => {
+          if (providerList.value === null) throw new Error("provider list unavailable");
+          return providerList.value.map((provider) => ({
+            id: provider.id,
+            available: provider.available,
+            capabilities: { permissionModes: provider.permissionModes },
+          })) as never;
+        },
         models: async () => {
           providerModels.calls += 1;
           if (providerModels.fails > 0) {
@@ -1018,6 +1041,7 @@ export async function captainHost(options: FakeOptions = {}) {
     threads,
     threadLists,
     providerModels,
+    providerList,
     crewSnapshotHold,
     interactionReads,
     metadata,

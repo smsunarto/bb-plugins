@@ -11,16 +11,20 @@ import {
 import {
   pickRung,
   readPool,
+  readProviders,
   readRetryDecision,
+  rungPermissionMode,
   roleLadder,
   rungOfPresetName,
   type PoolView,
+  type ProviderViews,
 } from "./ladder.ts";
 import type { Captain } from "./registry.ts";
 import { ROLE_SPECS } from "./roles.ts";
 import { ensureRungPreset, spawnCrew } from "./spawn.ts";
 import { reportedSince } from "./status.ts";
 import { NOTICE, type Fallback } from "./store.ts";
+import type { TasksPreset } from "./tasks-client.ts";
 
 /**
  * The rate-limit fallback, one step of the background check. A crew thread
@@ -53,7 +57,7 @@ export async function runFallbacks(
 
   const rows = await deps.tasks.crewSnapshot(threads.map((thread) => thread.id));
   const crew = joinCrew(deps, threads, rows);
-  let pool: PoolView | null | undefined;
+  let reads: Reads | undefined;
   for (const member of crew.filter((entry) => failed.includes(entry.thread))) {
     const verdict = await judge(deps, member, now);
     if (verdict === "wait") continue;
@@ -61,8 +65,8 @@ export async function runFallbacks(
       deps.store.noticeFirstSeen(NOTICE.noFallback(member.thread.id, member.thread.updatedAt), now);
       continue;
     }
-    pool ??= await readPool(deps.bb);
-    open(deps, captain, member, pool, now);
+    reads ??= await readForRungs(deps);
+    open(deps, captain, member, reads, now);
   }
 
   const lines: { key: string; failedThreadId: string; line: string }[] = [];
@@ -84,6 +88,25 @@ export async function runFallbacks(
     for (const entry of lines) deps.store.releaseNotice(entry.key, now);
     deps.bb.log.warn(`fallback wake for ${captain.threadId} not sent: ${(error as Error).message}`);
   }
+}
+
+type Reads = {
+  pool: PoolView | null;
+  providers: ProviderViews | null;
+  presets: readonly TasksPreset[];
+};
+
+/** What picking the next rung reads, once per pass; each part is skipped when it cannot be read. */
+async function readForRungs(deps: CheckDeps): Promise<Reads> {
+  const [pool, providers, presets] = await Promise.all([
+    readPool(deps.bb),
+    readProviders(deps.bb),
+    deps.tasks.listPresets().catch((error: unknown) => {
+      deps.bb.log.warn(`presets not read for the fallback: ${(error as Error).message}`);
+      return [];
+    }),
+  ]);
+  return { pool, providers, presets };
 }
 
 /** A failed crew thread of a laddered role that owes a report and was not judged yet. */
@@ -131,6 +154,16 @@ async function judge(
   return now - event.createdAt >= RETRY_GRACE_MS ? "fallback" : "wait";
 }
 
+/**
+ * Quota and rate-limit wording an agent puts in its error text. ACP agents
+ * such as Antigravity report errors as text only: bb records them as
+ * `{ message: "Provider error", detail }` with no `errorInfo`. The phrases are
+ * the Antigravity CLI's (`agy`) own quota messages and Google API statuses, not
+ * a bare "quota": a crash's detail carries agy's stderr, which logs `/quota`.
+ */
+const QUOTA_TEXT =
+  /RESOURCE_EXHAUSTED|MODEL_CAPACITY_EXHAUSTED|exhausted your (?:quota|capacity)|out of quota|quota (?:exceeded|reached)|rate.?limit|Too Many Requests|\b429\b/iu;
+
 /** A provider error that is a rate limit or an exhausted Account Pooler. */
 export function isRateLimit(data: unknown): boolean {
   const error = data as {
@@ -138,10 +171,12 @@ export function isRateLimit(data: unknown): boolean {
     message?: unknown;
     errorInfo?: { category?: unknown; httpStatusCode?: unknown } | null;
   };
-  if (error.errorInfo?.category === "rate-limit" || error.errorInfo?.httpStatusCode === 429)
-    return true;
+  const info = error.errorInfo ?? null;
+  if (info?.category === "rate-limit" || info?.httpStatusCode === 429) return true;
   const text = `${String(error.detail ?? "")} ${String(error.message ?? "")}`;
-  return /No Account Pooler account is currently eligible|\b429\b/u.test(text);
+  if (/No Account Pooler account is currently eligible|\b429\b/u.test(text)) return true;
+  // A provider that classified its error said what it was; only unclassified text is read for quota.
+  return info === null && QUOTA_TEXT.test(text);
 }
 
 /** Record the failed thread's fallback: the next eligible rung, or none. */
@@ -149,7 +184,7 @@ function open(
   deps: CheckDeps,
   captain: Captain,
   member: CrewThread,
-  pool: PoolView | null,
+  reads: Reads,
   now: number,
 ): void {
   const crewRole = member.crewRole;
@@ -159,7 +194,10 @@ function open(
   const ladder = roleLadder(deps.store, role).rungs;
   const from = crewRole.rung ?? rungOfPresetName(row.presetName);
   const fromSpec = ladder[from - 1];
-  const choice = pickRung(ladder, pool, now, { after: from });
+  const choice = pickRung(ladder, reads.pool, now, {
+    after: from,
+    checks: { providers: reads.providers, permissionMode: rungPermissionMode(reads.presets, role) },
+  });
   deps.store.openFallback({
     failedThreadId: member.thread.id,
     captainId: captain.threadId,

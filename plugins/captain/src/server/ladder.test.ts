@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { RETRY_GRACE_MS } from "./fallback.ts";
+import { isRateLimit, RETRY_GRACE_MS } from "./fallback.ts";
 import { rungEligibility } from "./ladder.ts";
 import { captainHost, newCaptain, type CaptainHost, type FakePool } from "./test-host.ts";
 
@@ -88,6 +88,85 @@ describe("rung eligibility", () => {
   });
 });
 
+describe("rungs on a provider the pool does not route, such as Antigravity", () => {
+  const ANTIGRAVITY = {
+    providerId: "acp-antigravity",
+    model: "gemini-4-neon",
+    reasoningLevel: "high",
+  };
+
+  test("dispatch starts an ACP rung when the pooled rungs are out, through its own preset", async () => {
+    const { host, as } = await ladderHost(NONE_READY);
+    await host.harness.behavior.callRpc("setLadder", {
+      role: "implement",
+      rungs: [
+        { providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high" },
+        ANTIGRAVITY,
+      ],
+    });
+
+    const result = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("started  rung 2 acp-antigravity gemini-4-neon high");
+    expect(presetNamed(host, "Captain Implement · 2")).toMatchObject({
+      providerId: "acp-antigravity",
+      modelId: "gemini-4-neon",
+      permissionMode: "full",
+    });
+  });
+
+  test("a rung bb would refuse is skipped: its provider is unavailable or lacks the role's permission mode", async () => {
+    const { host, as } = await ladderHost(NONE_READY);
+    const implement = presetNamed(host, "Implement");
+    if (implement !== undefined) implement.permissionMode = "auto";
+    await host.harness.behavior.callRpc("setLadder", {
+      role: "implement",
+      rungs: [ANTIGRAVITY, { providerId: "codex", model: "gpt-6-astra", reasoningLevel: "high" }],
+    });
+    host.pool.status = { routing: {}, accounts: [] };
+
+    const auto = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--dry-run"]);
+    expect(auto.stdout).toContain(
+      "rung 2 codex gpt-6-astra high; skipped rung 1 acp-antigravity gemini-4-neon high: acp-antigravity does not take permission mode auto",
+    );
+
+    // Forcing the rung skips the pool, not bb: it refuses before Tasks starts a thread bb rejects.
+    const forced = await as([
+      "dispatch",
+      "BBPLUGINS-1",
+      "--role",
+      "Implement",
+      "--rung",
+      "1",
+      "--json",
+    ]);
+    expect(forced.exitCode).toBe(1);
+    expect(json(forced.stdout).results[0]?.["blockers"]).toEqual([
+      expect.objectContaining({
+        reason:
+          "rung 1 acp-antigravity gemini-4-neon high: acp-antigravity does not take permission mode auto",
+      }),
+    ]);
+    expect(delegates(host)).toEqual([]);
+
+    const codex = host.providerList.value?.find((provider) => provider.id === "codex");
+    if (codex !== undefined) codex.available = false;
+    const none = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--json"]);
+    expect(json(none.stdout).results[0]?.["blockers"]).toEqual([
+      expect.objectContaining({
+        reason:
+          "no rung of Implement's ladder can start now: rung 1 acp-antigravity gemini-4-neon high: acp-antigravity does not take permission mode auto; rung 2 codex gpt-6-astra high: codex is not available",
+      }),
+    ]);
+
+    // An unread provider list skips no rung: bb's own refusal then names the problem.
+    host.providerList.value = null;
+    const unread = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--dry-run"]);
+    expect(unread.stdout).toContain("rung 1 acp-antigravity gemini-4-neon high");
+  });
+});
+
 describe("bb captain dispatch on a ladder", () => {
   test("starts on the first rung with an eligible account, through that rung's own preset, and says which", async () => {
     const { host, as } = await ladderHost(CLAUDE_CAPPED);
@@ -168,7 +247,7 @@ describe("bb captain dispatch on a ladder", () => {
     expect(json(result.stdout).results[0]?.["blockers"]).toEqual([
       {
         reason:
-          "no rung of Implement's ladder has an eligible account: rung 1 claude-code claude-opus-5-5 high: no ready claude account with opus left; rung 2 codex gpt-6-astra high: no ready codex account",
+          "no rung of Implement's ladder can start now: rung 1 claude-code claude-opus-5-5 high: no ready claude account with opus left; rung 2 codex gpt-6-astra high: no ready codex account",
         fix: expect.stringContaining("--rung <n>"),
       },
     ]);
@@ -279,7 +358,12 @@ describe("bb captain dispatch on a ladder", () => {
 /** A dispatched Implement thread that then fails on a rate limit bb declined to retry. */
 async function rateLimited(
   pool: FakePool,
-  options: { rung?: string; decision?: "decline" | "retry" | "none"; reported?: boolean } = {},
+  options: {
+    rung?: string;
+    decision?: "decline" | "retry" | "none";
+    reported?: boolean;
+    error?: unknown;
+  } = {},
 ) {
   const setup = await ladderHost(ALL_READY);
   const { host, as } = setup;
@@ -293,7 +377,7 @@ async function rateLimited(
     {
       type: "provider/error",
       createdAt: host.now(),
-      data: {
+      data: options.error ?? {
         message: "Provider error",
         detail:
           "API Error: Request rejected (429) · No Account Pooler account is currently eligible.",
@@ -421,6 +505,20 @@ describe("rate-limit fallback", () => {
     expect(delegates(undecided.host)).toHaveLength(2);
   });
 
+  test("an ACP agent's quota error, which bb records as text with no errorInfo, restarts on the next rung", async () => {
+    const { host, captainId, failed } = await rateLimited(CLAUDE_CAPPED, {
+      error: ACP_QUOTA_ERROR,
+    });
+
+    await host.server.check.pass();
+
+    expect(delegates(host)).toHaveLength(2);
+    expect(host.threads.get(failed)?.archivedAt).not.toBeNull();
+    expect(toCaptain(host, captainId).map((message) => message.text)).toEqual([
+      expect.stringContaining(`${failed} hit a provider rate limit on rung 1`),
+    ]);
+  });
+
   test("a thread that reported before it failed is not restarted", async () => {
     const { host, captainId } = await rateLimited(CLAUDE_CAPPED, { reported: true });
 
@@ -428,5 +526,47 @@ describe("rate-limit fallback", () => {
 
     expect(delegates(host)).toHaveLength(1);
     expect(toCaptain(host, captainId).filter((m) => m.text.includes("rate limit"))).toEqual([]);
+  });
+});
+
+/**
+ * The `provider/error` data bb recorded on a test instance (bb 0.50.1) when an
+ * ACP agent answered `session/prompt` with a JSON-RPC error. The envelope is
+ * bb's real one; the text is the quota message the Antigravity CLI (`agy`)
+ * ships, served by a stand-in agent because no real quota error was observed.
+ */
+const ACP_QUOTA_ERROR = {
+  providerThreadId: "fake-346648-1",
+  message: "Provider error",
+  detail: "Internal error: You have exhausted your quota on this model.",
+};
+
+describe("isRateLimit", () => {
+  test("reads quota wording only from errors no provider classified", () => {
+    expect(isRateLimit(ACP_QUOTA_ERROR)).toBe(true);
+    for (const detail of [
+      "Internal error: RESOURCE_EXHAUSTED",
+      "googleapi: Error 429: Too Many Requests",
+      "model gemini-4-neon is out of quota until 2026-11-26T00:00:00Z",
+      "Rate limit reached, try again later",
+    ]) {
+      expect(isRateLimit({ message: "Provider error", detail })).toBe(true);
+    }
+    // Other ACP failures are not rate limits, even when agy's stderr mentions its /quota command.
+    expect(
+      isRateLimit({
+        message: "Provider error",
+        detail:
+          'ACP agent "agy" exited unexpectedly (code 1): printmode.go:332] Print mode: running slash command /quota\npanic: runtime error',
+      }),
+    ).toBe(false);
+    // A provider that classified its error is believed, whatever its text says.
+    expect(
+      isRateLimit({
+        message: "Provider error",
+        detail: "Context window exceeded: quota of 200k tokens",
+        errorInfo: { category: "max-output-tokens", providerCode: null, httpStatusCode: null },
+      }),
+    ).toBe(false);
   });
 });

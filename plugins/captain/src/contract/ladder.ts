@@ -1,7 +1,8 @@
 /**
  * A role's model ladder: the provider, model and reasoning each crew thread of
  * that role starts on, in fallback order. Rung 1 is tried first; dispatch takes
- * the first rung whose provider has an eligible account, and a crew thread that
+ * the first rung that can start now (an eligible pool account for Claude Code
+ * and Codex; for any provider, bb would accept it), and a crew thread that
  * fails on a rate limit restarts on the next one. Shared by the server and the
  * settings section.
  */

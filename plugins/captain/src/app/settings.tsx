@@ -72,8 +72,10 @@ export function CrewModelsSettings() {
   return (
     <div className="flex flex-col gap-5" data-bb-plugin="captain" data-bb-plugin-scope-captain="">
       <p className="text-sm text-muted-foreground">
-        Crew start on the first rung whose provider has a ready Account Pooler account. A crew
-        thread that hits a rate limit before it reports restarts on the next rung.
+        Crew start on the first rung that can start now: Claude Code and Codex rungs need a ready
+        Account Pooler account, and every rung's provider must be available and take the role
+        preset's permission mode. A crew thread that hits a rate limit or quota before it reports
+        restarts on the next rung.
       </p>
       {ladders.data.roles.map((entry) => (
         <RoleSection key={entry.role} ladder={entry} onChange={write} />
@@ -129,9 +131,13 @@ function RoleSection({
             <div className="order-3 min-w-0 basis-full @xl:order-2 @xl:flex-1 @xl:basis-auto">
               <ProviderModelPicker
                 value={toPicker(rung)}
-                onChange={(value) =>
-                  set(rungs.map((entry, at) => (at === index ? fromPicker(value) : entry)))
-                }
+                onChange={(value) => {
+                  const next = fromPicker(value);
+                  // The picker re-emits a value it normalized, such as an ACP provider's
+                  // `default` tier, which `fromPicker` drops: saving that loops forever.
+                  if (sameRung(next, rung)) return;
+                  set(rungs.map((entry, at) => (at === index ? next : entry)));
+                }}
               />
             </div>
             <div className="order-2 ml-auto flex shrink-0 items-center @xl:order-3">
@@ -199,6 +205,15 @@ function toPicker(rung: Rung): ExperimentalProviderModelPickerValue {
           >,
         }),
   };
+}
+
+function sameRung(a: Rung, b: Rung): boolean {
+  return (
+    a.providerId === b.providerId &&
+    a.model === b.model &&
+    a.reasoningLevel === b.reasoningLevel &&
+    a.serviceTier === b.serviceTier
+  );
 }
 
 function fromPicker(value: ExperimentalProviderModelPickerValue): Rung {

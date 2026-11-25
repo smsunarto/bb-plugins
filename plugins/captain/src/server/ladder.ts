@@ -8,8 +8,9 @@ import type { Store } from "./store.ts";
  * Which rung of a role's ladder a crew thread starts on. Eligibility comes
  * from the Account Pooler's `status.get`, the read behind `bb pool status`:
  * the pool knows which accounts are exhausted, and per Claude model family
- * which weekly caps are hit. A provider the pool does not route is never
- * skipped, since Captain cannot see its credentials.
+ * which weekly caps are hit. A provider the pool does not route, such as an
+ * ACP agent like Antigravity, is skipped only when bb's provider list says bb
+ * would refuse it: not available, or without the role's permission mode.
  */
 
 /** Rung 1 is the role's preset as `bb captain new` creates it; rung 2 is Codex. */
@@ -88,10 +89,85 @@ export async function readPool(bb: Pick<BbPluginApi, "sdk" | "log">): Promise<Po
   }
 }
 
+/** What bb's provider list says about one provider, as eligibility reads it. */
+export type ProviderView = { available: boolean; permissionModes: readonly string[] };
+/** Each provider bb lists, by id; null when the list cannot be read. */
+export type ProviderViews = ReadonlyMap<string, ProviderView>;
+
+/** bb's providers on its primary machine, or null when bb does not answer in time. */
+export async function readProviders(
+  bb: Pick<BbPluginApi, "sdk" | "log">,
+): Promise<ProviderViews | null> {
+  try {
+    const providers = await bb.sdk.providers.list({
+      signal: AbortSignal.timeout(POOL_DEADLINE_MS),
+    });
+    return new Map(
+      providers.map((provider) => [
+        provider.id,
+        {
+          available: provider.available,
+          permissionModes: [...provider.capabilities.permissionModes],
+        },
+      ]),
+    );
+  } catch (error) {
+    bb.log.warn(`provider list not read: ${(error as Error).message}`);
+    return null;
+  }
+}
+
+/**
+ * What a rung is checked against besides the pool: bb's providers, and the
+ * permission mode the rung's preset starts threads with (its own preset's,
+ * else the role preset's it will copy). Null when not read: that check passes.
+ */
+export type RungChecks = {
+  providers: ProviderViews | null;
+  permissionMode: (rung: number) => string | null;
+};
+
+/** The permission mode a rung's thread starts with: its own preset's, else the role preset's. */
+export function rungPermissionMode(
+  presets: readonly { name: string; permissionMode?: string | undefined }[],
+  role: LadderRole,
+): (rung: number) => string | null {
+  const named = (name: string) =>
+    presets.find((preset) => preset.name.toLowerCase() === name.toLowerCase());
+  const template = named(ROLE_SPECS[role].preset?.name ?? "");
+  return (rung) => (named(rungPresetName(role, rung)) ?? template)?.permissionMode ?? null;
+}
+
 export type Eligibility = { eligible: true } | { eligible: false; reason: string };
 
-/** Whether a rung's provider has an account the pool would route this model to now. */
-export function rungEligibility(rung: Rung, pool: PoolView | null, now: number): Eligibility {
+/**
+ * Why bb would refuse to start a rung's thread: its provider is not available,
+ * or does not take the role's permission mode, as ACP agents such as
+ * Antigravity take no `auto`. Null when nothing stops it.
+ */
+export function rungRefusal(spec: Rung, rung: number, checks: RungChecks): string | null {
+  const provider = checks.providers?.get(spec.providerId);
+  if (provider === undefined) return null;
+  if (!provider.available) return `${spec.providerId} is not available`;
+  const mode = checks.permissionMode(rung);
+  if (mode !== null && !provider.permissionModes.includes(mode)) {
+    return `${spec.providerId} does not take permission mode ${mode}`;
+  }
+  return null;
+}
+
+/**
+ * Whether a rung can start now: bb would accept its provider and permission
+ * mode, and the pool has an account it would route this model to.
+ */
+export function rungEligibility(
+  rung: Rung,
+  pool: PoolView | null,
+  now: number,
+  checks?: { rung: number } & RungChecks,
+): Eligibility {
+  const refusal = checks === undefined ? null : rungRefusal(rung, checks.rung, checks);
+  if (refusal !== null) return { eligible: false, reason: refusal };
   const provider = PROVIDER_POOL[rung.providerId];
   if (provider === undefined || pool === null || pool.routing?.[provider] !== true) {
     return { eligible: true };
@@ -132,7 +208,7 @@ export function pickRung(
   ladder: readonly Rung[],
   pool: PoolView | null,
   now: number,
-  options: { after?: number; forced?: number } = {},
+  options: { after?: number; forced?: number; checks?: RungChecks } = {},
 ): RungChoice | { rung: null; skipped: string[] } {
   if (options.forced !== undefined) {
     const spec = ladder[options.forced - 1];
@@ -142,7 +218,12 @@ export function pickRung(
   const skipped: string[] = [];
   for (let index = options.after ?? 0; index < ladder.length; index++) {
     const spec = ladder[index] as Rung;
-    const verdict = rungEligibility(spec, pool, now);
+    const verdict = rungEligibility(
+      spec,
+      pool,
+      now,
+      options.checks === undefined ? undefined : { rung: index + 1, ...options.checks },
+    );
     if (verdict.eligible) return { rung: index + 1, spec, skipped, forced: false };
     skipped.push(`rung ${index + 1} ${rungLabel(spec)}: ${verdict.reason}`);
   }
