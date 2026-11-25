@@ -564,6 +564,21 @@ describe("bb Monokai contract audit", () => {
     );
   });
 
+  test("uses BB's scaled height for the collapsed follow-up editor", () => {
+    const compactEditor = styleRules(theme).find(
+      (rule) =>
+        rule.atRules.includes(
+          "@container follow-up-composer style(--follow-up-composer-container-compact: true)",
+        ) && rule.selector.endsWith("[data-promptbox-editor-scroll]"),
+    );
+    expect(compactEditor?.body).toContain(
+      "min-height: var(--compact-editor-height, 3rem) !important;",
+    );
+    expect(compactEditor?.body).toContain(
+      "max-height: var(--compact-editor-height, 3rem) !important;",
+    );
+  });
+
   test("mirrors the Diffs.com header shell with Monokai color roles", () => {
     expect(theme).toContain(
       ".dark [data-monokai-diff-panel] [data-monokai-diff-card] {\n  overflow: hidden;\n  border-color: var(--border);\n  border-radius: 10px;\n  background-color: #181818;",

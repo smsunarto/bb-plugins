@@ -1853,8 +1853,8 @@
     [data-follow-up-composer]:not([data-follow-up-composer-expanded])
     [data-promptbox]:not([data-promptbox-voice-active])
     [data-promptbox-editor-scroll] {
-    min-height: 3rem !important;
-    max-height: 3rem !important;
+    min-height: var(--compact-editor-height, 3rem) !important;
+    max-height: var(--compact-editor-height, 3rem) !important;
   }
 }
 

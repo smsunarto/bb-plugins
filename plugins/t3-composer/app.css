@@ -828,22 +828,26 @@
 
 /* Touch screens keep 36px targets, and 16px text so iOS does not zoom on focus. */
 @media (pointer: coarse) {
+  [data-t3-composer][data-promptbox] {
+    --t3-composer-editor-line-height: calc(24px * var(--bb-ios-font-scale, 1));
+  }
+
   [data-t3-composer][data-promptbox] [data-promptbox-editor-scroll] {
     font-size: 16px;
-    line-height: 24px;
+    line-height: var(--t3-composer-editor-line-height);
   }
 
   [data-t3-composer][data-promptbox] [data-promptbox-editor-content] .ProseMirror {
-    line-height: 24px;
+    line-height: var(--t3-composer-editor-line-height);
   }
 
-  /* One 24px line plus the editor's 4px padding above and below. */
+  /* One line plus the editor's 4px padding above and below. */
   [data-t3-composer][data-promptbox]:not([data-promptbox-compact]) [data-promptbox-editor-scroll],
   [data-follow-up-composer]
     [data-t3-composer][data-promptbox]:not([data-promptbox-compact])
     [data-promptbox-input-region]
     [data-promptbox-editor-scroll] {
-    min-height: 32px !important;
+    min-height: calc(var(--t3-composer-editor-line-height) + 8px) !important;
   }
 
   [data-t3-composer][data-promptbox] [data-t3-composer-actions-menu],
