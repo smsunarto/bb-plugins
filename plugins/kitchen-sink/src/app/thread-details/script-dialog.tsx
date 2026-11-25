@@ -10,8 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog.tsx";
+import { Field, FieldLabel } from "../components/ui/field.tsx";
 import { Input } from "../components/ui/input.tsx";
-import { Label } from "../components/ui/label.tsx";
 import { Textarea } from "../components/ui/textarea.tsx";
 
 export type ScriptDraft = Pick<ProjectScript, "name" | "command">;
@@ -65,8 +65,8 @@ export function ScriptDialog({
             submit();
           }}
         >
-          <div className="flex flex-col gap-1">
-            <Label htmlFor={`${id}-name`}>Name</Label>
+          <Field className="gap-1">
+            <FieldLabel htmlFor={`${id}-name`}>Name</FieldLabel>
             <Input
               id={`${id}-name`}
               value={name}
@@ -74,9 +74,9 @@ export function ScriptDialog({
               placeholder="Dev server"
               onChange={(event) => setName(event.target.value)}
             />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label htmlFor={`${id}-command`}>Command</Label>
+          </Field>
+          <Field className="gap-1">
+            <FieldLabel htmlFor={`${id}-command`}>Command</FieldLabel>
             <Textarea
               id={`${id}-command`}
               className="min-h-20 resize-y font-mono"
@@ -88,14 +88,14 @@ export function ScriptDialog({
                 if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit();
               }}
             />
-          </div>
+          </Field>
           <div className="flex flex-wrap items-center justify-end gap-2">
             {script ? (
               <Button
                 type="button"
-                variant="ghost"
+                variant="destructive"
                 size="sm"
-                className="me-auto text-destructive"
+                className="me-auto"
                 disabled={pending}
                 onClick={onDelete}
               >

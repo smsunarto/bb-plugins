@@ -17,7 +17,8 @@ import {
   type TodoSnapshot,
 } from "../../shared/rpiv-todo.ts";
 import { Button } from "../components/ui/button.tsx";
-import { CheckIcon, ChevronDownIcon, ListTodoIcon, LoaderIcon, SquareIcon } from "./icons.tsx";
+import { Spinner } from "../components/ui/spinner.tsx";
+import { CheckIcon, ChevronDownIcon, ListTodoIcon, SquareIcon } from "./icons.tsx";
 import type { TodoItem } from "../../shared/rpiv-todo-types.ts";
 
 const STATUS_ORDER = { in_progress: 0, pending: 1, completed: 2 } as const;
@@ -32,7 +33,8 @@ function StatusGlyph({ status }: { status: TodoItem["status"] }) {
     return <CheckIcon className="rpiv-todo-icon text-muted-foreground" />;
   }
   if (status === "in_progress") {
-    return <LoaderIcon className="rpiv-todo-icon rpiv-todo-spin text-foreground" />;
+    // The row is foreground while in progress, so the spinner takes its colour.
+    return <Spinner className="mt-0.5" />;
   }
   return <SquareIcon className="rpiv-todo-icon text-muted-foreground" />;
 }
