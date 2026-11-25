@@ -21,6 +21,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FocusEvent,
   type KeyboardEvent,
   type RefObject,
 } from "react";
@@ -41,7 +42,7 @@ import { cn } from "./lib/utils.ts";
 import { useOverviewOnOpen } from "./overview-default.ts";
 
 const NO_INPUT = {};
-type ItemUi = { key: string; other: string | null; error: string | null; planOpen: boolean };
+type ItemUi = { key: string | null; other: string | null; error: string | null; planOpen: boolean };
 const CLOSED_UI = { other: null, error: null, planOpen: false };
 const ASKS_UNAVAILABLE = "Couldn’t refresh asks";
 const NO_ITEMS: QueueItem[] = [];
@@ -100,36 +101,31 @@ function Banner({ captainId }: { captainId: string }) {
     [asks.data, crew.data],
   );
   const items = useMemo(() => orderQueue(allItems, now), [allItems, now]);
-  const asksError = asks.error?.message;
   if (asks.data === undefined && asks.error === null) return null;
-  if (items.length === 0) {
-    if (asks.error) return <QueueStatus label={ASKS_UNAVAILABLE} />;
-    if (crew.error) return <QueueStatus label="Crew status unavailable" />;
-    return crew.data ? <QueueStatus label="All clear" /> : null;
-  }
+  const emptyLabel = asks.error
+    ? ASKS_UNAVAILABLE
+    : crew.error
+      ? "Crew status unavailable"
+      : crew.data && "All clear";
   const laterCount = allItems.length - items.length;
   return (
     <Queue
-      key={captainId}
       captainId={captainId}
       items={items}
       laterCount={laterCount}
       now={now}
-      asksError={asksError}
+      emptyLabel={emptyLabel}
+      asksError={asks.error?.message}
       crewError={crew.error?.message}
     />
   );
 }
 
-function QueueStatus({ label }: { label: string }) {
+function QueueStatus({ id, label }: { id: string; label: string }) {
   const panel = useAppPanel();
   return (
-    <div
-      data-bb-plugin="captain"
-      data-bb-plugin-scope-captain=""
-      className="flex min-w-0 items-center gap-2 px-3 text-xs text-muted-foreground"
-    >
-      <span>{label}</span>
+    <div className="flex min-w-0 items-center gap-2 px-3 text-xs text-muted-foreground">
+      <span id={id}>{label}</span>
       <Button
         type="button"
         size="sm"
@@ -148,6 +144,7 @@ function Queue({
   items,
   laterCount,
   now,
+  emptyLabel,
   asksError,
   crewError,
 }: {
@@ -155,23 +152,25 @@ function Queue({
   items: readonly QueueItem[];
   laterCount: number;
   now: number;
+  emptyLabel: string | undefined;
   asksError: string | undefined;
   crewError: string | undefined;
 }) {
   const navigate = useBbNavigate();
   const sdk = useSdk();
   const id = useId();
-  const [root, setRoot] = useState<HTMLDivElement | null>(null);
+  const [root, setRoot] = useState<HTMLElement | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const waiting = items.filter((entry) => !isSending(entry));
-  const tabs = waiting.length > 0 ? waiting : items;
-  const item = tabs.find((entry) => entry.key === selected) ?? tabs[0]!;
-  const sending = isSending(item);
-  const { other, error, planOpen, patchUi, clearOther } = useItemUi(item.key);
+  const { queueItems, recordAnswer } = useRecordedAnswers(items);
+  const waiting = queueItems.filter((entry) => !isSending(entry));
+  const tabs = waiting.length > 0 ? waiting : queueItems;
+  const item = tabs.find((entry) => entry.key === selected) ?? tabs[0];
+  const sending = item !== undefined && isSending(item);
+  const { other, error, planOpen, patchUi } = useItemUi(item?.key ?? null);
   const setOther = (value: string | null) => patchUi({ other: value });
   const { answer, later, skip, fail, pending } = useItemCommands(
     captainId,
-    item.key,
+    item?.key ?? null,
     root,
     (value) => patchUi({ error: value }),
     other !== null,
@@ -183,22 +182,25 @@ function Queue({
       node.focus();
     }
   }, []);
-  const actions = sending ? [] : itemActions(item, { answer, navigate, sdk, fail });
-  const kind = bannerKind(item);
+  const actions =
+    item === undefined || sending || pending
+      ? []
+      : itemActions(item, { answer, navigate, sdk, fail });
+  const kind = item === undefined ? undefined : bannerKind(item);
   const showTabs = tabs.length > 1 || kind !== "plan" || laterCount > 0;
-  const detail = item.kind === "blocked" ? null : item.detail;
+  const detail = item?.kind === "blocked" ? null : item?.detail;
   const plan = kind === "plan" && detail;
   const dismiss = () => {
     setSelected(null);
     skip();
   };
   const select = (entry: QueueItem) => {
-    if (entry.key === item.key) return;
+    if (entry.key === item?.key) return;
     setSelected(entry.key);
   };
 
-  const editing = other !== null && item.kind === "ask" && !sending;
-  const editorRef = useEditorFocusReturn(root, item.key, editing);
+  const editing = other !== null && item?.kind === "ask" && !sending;
+  const editorRef = useEditorFocusReturn(root, sending ? null : (item?.key ?? null), editing);
 
   // When More or Less goes while it has focus, focus lands on the banner, where
   // Enter answers. The Enter that follows was meant for the toggle: it does nothing.
@@ -221,7 +223,7 @@ function Queue({
     const run = shortcut(
       event,
       actions,
-      sending ? null : { later, skip: dismiss },
+      sending || pending ? null : { later, skip: dismiss },
       kind !== "ship",
     );
     if (run === undefined) return;
@@ -229,28 +231,40 @@ function Queue({
     run();
   };
 
+  // The final editor can hand focus to the same frame after All clear mounts.
+  const frame = {
+    ref: setRoot,
+    "data-bb-plugin": "captain",
+    "data-bb-plugin-scope-captain": "",
+    className: "flex min-w-0 flex-col text-xs outline-none focus-visible:outline-1",
+    onFocus: (event: FocusEvent<HTMLElement>) => {
+      keyboardFocus.current = event.target.matches(":focus-visible");
+    },
+    onPointerDownCapture: () => {
+      keyboardFocus.current = false;
+    },
+    onBlur: () => {
+      keyboardFocus.current = false;
+      toggleGone.current = false;
+    },
+  };
+  if (item === undefined || kind === undefined) {
+    if (!emptyLabel && !root) return null;
+    return (
+      <div {...frame} tabIndex={-1} aria-describedby={emptyLabel ? id : undefined}>
+        {emptyLabel ? <QueueStatus id={id} label={emptyLabel} /> : null}
+      </div>
+    );
+  }
   return (
     <div
-      ref={setRoot}
+      {...frame}
       role="toolbar"
       tabIndex={0}
       aria-label={`Needs you, ${items.length} item${items.length === 1 ? "" : "s"}`}
       aria-keyshortcuts={kind === "ship" ? "1 2 L" : "1 2 3 4 5 6 7 8 9 Enter L"}
-      data-bb-plugin="captain"
-      data-bb-plugin-scope-captain=""
       data-testid="captain-needs-you"
       onKeyDown={onKeyDown}
-      onFocus={(event) => {
-        keyboardFocus.current = event.target.matches(":focus-visible");
-      }}
-      onPointerDownCapture={() => {
-        keyboardFocus.current = false;
-      }}
-      onBlur={() => {
-        keyboardFocus.current = false;
-        toggleGone.current = false;
-      }}
-      className="flex min-w-0 flex-col text-xs outline-none focus-visible:outline-1"
     >
       {showTabs ? (
         <QueueTabs
@@ -312,7 +326,13 @@ function Queue({
                 setOther(null);
               }}
               onSubmit={(text) => {
-                void answer(item.id, text).then((accepted) => accepted && clearOther());
+                void answer(item.id, text).then((accepted) => {
+                  if (accepted) {
+                    recordAnswer(item.id, text);
+                    setOther(null);
+                  }
+                  return accepted;
+                });
               }}
             />
           </div>
@@ -321,6 +341,7 @@ function Queue({
             item={item}
             kind={kind}
             actions={actions}
+            pending={pending}
             later={later}
             openOther={() => setOther("")}
             focusOther={focusOther}
@@ -347,10 +368,30 @@ function Queue({
   );
 }
 
+/** An acknowledgement can arrive before the refreshed asks list. */
+function useRecordedAnswers(items: readonly QueueItem[]) {
+  const [recorded, setRecorded] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const recordAnswer = (id: string, answer: string) =>
+    setRecorded((previous) => new Map(previous).set(id, answer));
+  if (recorded.size === 0) return { queueItems: items, recordAnswer };
+
+  const current = new Map<string, string>();
+  const queueItems = items.map((item) => {
+    if (item.kind !== "ask" || item.answer !== null) return item;
+    const answer = recorded.get(item.id);
+    if (answer === undefined) return item;
+    current.set(item.id, answer);
+    return { ...item, answer };
+  });
+  if (current.size < recorded.size) setRecorded(current);
+  return { queueItems, recordAnswer };
+}
+
 function AnswerRow({
   item,
   kind,
   actions,
+  pending,
   later,
   openOther,
   focusOther,
@@ -359,15 +400,16 @@ function AnswerRow({
   item: QueueItem;
   kind: BannerKind;
   actions: Action[];
+  pending: boolean;
   later: () => void;
   openOther: () => void;
   focusOther: (node: HTMLButtonElement | null) => void;
   plan: { id: string; open: boolean; toggle: () => void } | null;
 }) {
-  if (item.kind === "ask" && item.answer !== null) {
+  if (item.kind === "ask" && (item.answer !== null || pending)) {
     return (
       <output className="col-start-2 text-muted-foreground">
-        Answered {JSON.stringify(item.answer)} · Sending…
+        {item.answer === null ? "Sending…" : `Answered ${JSON.stringify(item.answer)} · Sending…`}
       </output>
     );
   }
@@ -447,7 +489,7 @@ function AnswerRow({
 }
 
 /** Restore focus when a refresh or an accepted answer removes the focused editor. */
-function useEditorFocusReturn(root: HTMLDivElement | null, key: string, editing: boolean) {
+function useEditorFocusReturn(root: HTMLElement | null, key: string | null, editing: boolean) {
   const editorLostFocus = useRef(false);
   const editorRef = useCallback((node: HTMLDivElement | null) => {
     if (!node) return;
@@ -460,7 +502,8 @@ function useEditorFocusReturn(root: HTMLDivElement | null, key: string, editing:
     editorLostFocus.current = false;
     // Cancel can already have focused Other. A reply must never steal focus.
     if (document.activeElement !== document.body || !root) return;
-    const selectedTab = root.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    const selectedTab =
+      key === null ? null : root.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
     (selectedTab ?? root).focus({ preventScroll: true });
     // The key and editing state identify commits that can detach the editor ref.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies
@@ -469,12 +512,12 @@ function useEditorFocusReturn(root: HTMLDivElement | null, key: string, editing:
 }
 
 /** Key local UI to the item so async updates from previous items are ignored. */
-function useItemUi(key: string) {
+function useItemUi(key: string | null) {
   const [ui, setUi] = useState<ItemUi>(() => ({ key, ...CLOSED_UI }));
   if (ui.key !== key) setUi({ key, ...CLOSED_UI });
   const patchUi = (patch: Partial<Omit<ItemUi, "key">>) =>
     setUi((current) => (current.key === key ? { ...current, ...patch } : current));
-  return { ...ui, patchUi, clearOther: () => patchUi({ other: null }) };
+  return { ...ui, patchUi };
 }
 
 /**
@@ -483,7 +526,7 @@ function useItemUi(key: string) {
  */
 export function useItemCommands(
   captainId: string,
-  key: string,
+  key: string | null,
   root: HTMLElement | null,
   setError: (value: string | null) => void,
   editInPlace = false,
@@ -510,6 +553,7 @@ export function useItemCommands(
     return deliver(askId, text);
   };
   const deferItem = (action: "later" | "skip") => {
+    if (key === null) return;
     keepFocus();
     void defer.mutate({ captainId, key, action }).catch(fail);
   };
@@ -1042,7 +1086,18 @@ export function OtherAnswer({
       aria-busy={showCancel && pending}
       onSubmit={(event) => {
         event.preventDefault();
-        if (value.trim() !== "" && !pending) onSubmit(value.trim());
+        const text = value.trim();
+        if (text === "" || pending) return;
+        const active = document.activeElement;
+        // Send is about to be disabled. The read-only input can keep focus.
+        if (
+          showCancel &&
+          (active === document.body ||
+            (active instanceof HTMLButtonElement && active.form === event.currentTarget))
+        ) {
+          event.currentTarget.querySelector("input")?.focus({ preventScroll: true });
+        }
+        onSubmit(text);
       }}
     >
       <Input

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { BrowserContext, Locator, Page } from "playwright";
+import type { BrowserContext, ElementHandle, Locator, Page } from "playwright";
 import { launchScreenshotBrowser } from "./plugin-screenshot-runtime";
 
 const [threadUrl, outputDir] = process.argv.slice(2);
@@ -32,6 +32,27 @@ const longDetail = [
   "The sixth line is clipped until expanded.",
 ].join("\n\n");
 
+async function mockAskInvalidation(context: BrowserContext) {
+  const invalidate = Promise.withResolvers<() => void>();
+  await context.routeWebSocket(
+    (socketUrl) => socketUrl.pathname === "/ws",
+    (socket) => {
+      socket.connectToServer();
+      invalidate.resolve(() =>
+        socket.send(
+          JSON.stringify({
+            type: "changed",
+            entity: "plugin",
+            pluginId: "captain",
+            tags: [`asks:${captainId}`],
+          }),
+        ),
+      );
+    },
+  );
+  return async () => (await invalidate.promise)();
+}
+
 async function seed(context: BrowserContext, name: string, detail: string) {
   await context.addInitScript(
     (mode) => localStorage.setItem("bb.theme", mode),
@@ -51,6 +72,17 @@ async function seed(context: BrowserContext, name: string, detail: string) {
     snoozedUntil: null,
     skipOrder: null,
   };
+  const nextAsk = {
+    ...ask,
+    id: "a2",
+    key: "ask:a2",
+    text: "Board column order",
+    options: ["Keep task order", "Sort by name"],
+    since: ask.since + 1,
+  };
+  const sendFixture = name.startsWith("send-");
+  const hasNextAsk = name === "send-next" || name === "send-revisit";
+  const invalidateAsks = sendFixture ? await mockAskInvalidation(context) : undefined;
   const captainReads: Record<string, unknown> = {
     captains: { ids: [captainId] },
     asks: {
@@ -105,6 +137,7 @@ async function seed(context: BrowserContext, name: string, detail: string) {
                     },
                   ]
                 : []),
+              ...(hasNextAsk ? [nextAsk] : []),
             ],
     },
     crew: { items: [] },
@@ -112,9 +145,25 @@ async function seed(context: BrowserContext, name: string, detail: string) {
     drive: { total: 0, truncated: false, files: [], folder: null },
   };
   const answer = Promise.withResolvers<void>();
+  const refresh = Promise.withResolvers<void>();
+  const submissions: { askId: string; answer: string }[] = [];
   await context.route(`${url.origin}/api/v1/plugins/captain/rpc/*`, async (route) => {
     const method = new URL(route.request().url()).pathname.split("/").at(-1);
-    if (method === "resolveAsk" && name === "parallel") {
+    if (method === "resolveAsk" && invalidateAsks) {
+      submissions.push(route.request().postDataJSON());
+      await answer.promise;
+      await route.fulfill({
+        json: {
+          ok: true,
+          result: { state: "answered", warnings: [] },
+        },
+      });
+      await invalidateAsks();
+    } else if (method === "asks" && sendFixture && submissions.length > 0) {
+      await refresh.promise;
+      const items = hasNextAsk ? [nextAsk] : [];
+      await route.fulfill({ json: { ok: true, result: { items } } });
+    } else if (method === "resolveAsk" && name === "parallel") {
       await answer.promise;
       await route.fulfill({
         json: {
@@ -128,7 +177,96 @@ async function seed(context: BrowserContext, name: string, detail: string) {
       await route.abort("blockedbyclient");
     }
   });
-  return answer.resolve;
+  return { releaseAnswer: answer.resolve, releaseRefresh: refresh.resolve, submissions };
+}
+
+async function assertSendFocus(
+  page: Page,
+  banner: Locator,
+  name: string,
+  { releaseAnswer, releaseRefresh, submissions }: Awaited<ReturnType<typeof seed>>,
+  screenshot?: string,
+) {
+  const input = banner.getByRole("textbox", { name: "Your answer" });
+  const send = banner.getByRole("button", { name: "Send", exact: true });
+  await banner.getByRole("button", { name: "Other…" }).click();
+  await input.fill("Use the shared cache");
+  const sent = page.waitForRequest((request) => request.url().endsWith("/rpc/resolveAsk"));
+  if (name === "send-last") {
+    await send.click();
+  } else {
+    await page.keyboard.press("Tab");
+    assert.ok(await send.evaluate((node) => node === document.activeElement));
+    await page.keyboard.press("Enter");
+  }
+  await sent;
+  const next = banner.getByRole("tab", { name: /Board column order/u });
+  if (name === "send-revisit") {
+    await next.click();
+    assert.ok(await banner.getByRole("button", { name: "Sort by name" }).isEnabled());
+    await banner.getByRole("tab", { name: /Pick a cache backend/u }).click();
+    await banner.getByText("Sending…", { exact: true }).waitFor();
+    assert.equal(await banner.getByRole("button", { name: "SQLite" }).count(), 0);
+    await page.keyboard.press("2");
+    assert.equal(submissions.length, 1);
+  } else if (name === "send-away") {
+    await page.keyboard.press("Tab");
+    assert.ok(
+      await banner.evaluate(
+        (node) =>
+          document.activeElement !== document.body && !node.contains(document.activeElement),
+      ),
+    );
+  } else {
+    assert.ok(
+      await input.evaluate((node) => node === document.activeElement),
+      "the pending editor retains focus after Send",
+    );
+  }
+  const outside = name === "send-away" ? await page.locator(":focus").elementHandle() : null;
+  const refresh = page.waitForRequest((request) => request.url().endsWith("/rpc/asks"));
+  releaseAnswer();
+  await refresh;
+  if (name === "send-revisit") {
+    await banner.getByRole("button", { name: "Sort by name" }).waitFor();
+    assert.equal(await banner.getByRole("button", { name: "SQLite" }).count(), 0);
+  }
+  const refreshed = page.waitForResponse((response) => response.url().endsWith("/rpc/asks"));
+  releaseRefresh();
+  await refreshed;
+  await assertFocusAfterRefresh(page, banner, name, outside, screenshot);
+}
+
+async function assertFocusAfterRefresh(
+  page: Page,
+  banner: Locator,
+  name: string,
+  outside: ElementHandle | null,
+  screenshot?: string,
+) {
+  if (name === "send-next") {
+    await banner.getByRole("tab", { name: /Pick a cache backend/u }).waitFor({ state: "detached" });
+    const next = banner.getByRole("tab", { name: /Board column order/u });
+    assert.ok(await next.evaluate((node) => node === document.activeElement));
+    if (screenshot) await page.screenshot({ path: screenshot });
+    const nextAnswer = page.waitForRequest((request) => request.url().endsWith("/rpc/resolveAsk"));
+    await page.keyboard.press("2");
+    assert.deepEqual((await nextAnswer).postDataJSON(), { askId: "a2", answer: "Sort by name" });
+  } else if (name === "send-revisit") {
+    assert.equal(await banner.getByRole("tab").count(), 1);
+  } else {
+    const clear = page.getByText("All clear", { exact: true });
+    await clear.waitFor();
+    assert.ok(
+      outside
+        ? await outside.evaluate((node) => node === document.activeElement)
+        : await clear.evaluate(
+            (node) => document.activeElement === node.closest("[data-bb-plugin='captain']"),
+          ),
+      "the final refresh preserves focus on the banner or the control the user moved to",
+    );
+    if (screenshot) await page.screenshot({ path: screenshot });
+  }
 }
 
 async function assertSeparateHitAreas(banner: Locator) {
@@ -302,7 +440,7 @@ async function assertParallelAnswer(page: Page, banner: Locator, release: () => 
 
   await input.press("Enter");
   await input.waitFor({ state: "detached" });
-  const next = banner.getByRole("tab", { name: /Board column order/u });
+  const next = banner.getByRole("tab", { name: /Stacked PR card/u });
   assert.equal(await next.evaluate((tab) => tab === document.activeElement), true);
 }
 
@@ -355,8 +493,12 @@ try {
             ["ship", "`branch → main`\n\nReview passed."],
             ["clear", ""],
             ["parallel", shortDetail],
+            ["send-last", shortDetail],
+            ["send-away", shortDetail],
+            ["send-revisit", shortDetail],
           ]
         : []),
+      ...(!mode.mobile || mode.name === "390-safe-area" ? [["send-next", shortDetail]] : []),
     ];
     for (const [name, detail] of cases) {
       assert(name !== undefined && detail !== undefined);
@@ -368,7 +510,7 @@ try {
         hasTouch: mode.mobile,
       });
       try {
-        const releaseAnswer = await seed(context, name, detail);
+        const fixture = await seed(context, name, detail);
         const page = await context.newPage();
         if (mode.mobile) {
           const cdp = await context.newCDPSession(page);
@@ -409,7 +551,17 @@ try {
           await banner.getByText("Review passed.", { exact: true }).waitFor();
           await assertBalancedPadding(banner);
         } else if (name === "parallel") {
-          await assertParallelAnswer(page, banner, releaseAnswer);
+          await assertParallelAnswer(page, banner, fixture.releaseAnswer);
+        } else if (name.startsWith("send-")) {
+          await assertSendFocus(
+            page,
+            banner,
+            name,
+            fixture,
+            outputDir ? join(outputDir, `${mode.name}-${name}.png`) : undefined,
+          );
+          console.log(`${mode.name} ${name} passed`);
+          continue;
         } else if (name === "short") {
           await banner.getByText(shortDetail, { exact: true }).waitFor();
           await page.evaluate(
