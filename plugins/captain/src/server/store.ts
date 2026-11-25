@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { captainIconSchema, type CaptainIcon, type IconChoice } from "../contract/icon.ts";
 import { ASK_KINDS, type AskKind } from "../contract/queue.ts";
@@ -13,6 +14,14 @@ import { Refusal, type Blocker } from "./output.ts";
 import { parseRole, type Role } from "./roles.ts";
 
 type Database = ReturnType<BbPluginApi["storage"]["database"]>;
+
+const ASK_ANSWERER_MIGRATION =
+  "ALTER TABLE asks ADD COLUMN answered_by TEXT CHECK (answered_by IN ('user', 'captain'))";
+const ROUTINE_RUN_MIGRATIONS = [
+  "ALTER TABLE routine_runs ADD COLUMN automation_run_id TEXT",
+  `DROP INDEX routine_runs_by_routine;
+   CREATE INDEX routine_runs_by_routine ON routine_runs (routine_id, at DESC, id DESC)`,
+] as const;
 
 /**
  * `captain/data.db`: only what nothing else records. The asks are the one
@@ -181,8 +190,36 @@ export const MIGRATIONS: readonly string[] = [
   // Who answered an ask: `user` (the banner or the user's terminal) or
   // `captain` (its Captain thread, or the plugin superseding a ship ask). Rows
   // answered before this column stay null and prove no answer's source.
-  "ALTER TABLE asks ADD COLUMN answered_by TEXT CHECK (answered_by IN ('user', 'captain'))",
+  ASK_ANSWERER_MIGRATION,
+  ...ROUTINE_RUN_MIGRATIONS,
 ];
+
+const ASK_ANSWERER_SLOT = MIGRATIONS.indexOf(ASK_ANSWERER_MIGRATION);
+const ROUTINE_RUN_ID_HASH = createHash("sha256").update(ROUTINE_RUN_MIGRATIONS[0]).digest("hex");
+
+function migrationsFor(db: Database): string[] {
+  const hasHashes = db
+    .prepare("SELECT 1 FROM pragma_table_info('_bb_migrations') WHERE name = 'statement_hash'")
+    .get();
+  const first = hasHashes
+    ? db
+        .prepare<[number], { statement_hash: string | null }>(
+          "SELECT statement_hash FROM _bb_migrations WHERE id = ?",
+        )
+        .get(ASK_ANSWERER_SLOT)
+    : undefined;
+  // The live routines branch used this slot before the ask-answerer change merged.
+  // Present the SDK with that database's existing order and append the missing migration.
+  if (first?.statement_hash === ROUTINE_RUN_ID_HASH) {
+    return [
+      ...MIGRATIONS.slice(0, ASK_ANSWERER_SLOT),
+      ...ROUTINE_RUN_MIGRATIONS,
+      ASK_ANSWERER_MIGRATION,
+      ...MIGRATIONS.slice(ASK_ANSWERER_SLOT + ROUTINE_RUN_MIGRATIONS.length + 1),
+    ];
+  }
+  return [...MIGRATIONS];
+}
 
 /**
  * `notices` keys. Each names one condition once, so a plugin reload neither
@@ -396,6 +433,7 @@ type RoutineRunRecord = {
   id: number;
   routine_id: string;
   trigger: RoutineRun["trigger"];
+  automation_run_id: string | null;
   status: RoutineRun["status"];
   reason: string | null;
   at: number;
@@ -405,7 +443,7 @@ export type Store = ReturnType<typeof openStore>;
 
 export function openStore(bb: Pick<BbPluginApi, "storage">) {
   const db: Database = bb.storage.database();
-  bb.storage.migrate(db, [...MIGRATIONS]);
+  bb.storage.migrate(db, migrationsFor(db));
   // This independent table can be initialized in any order with the numbered migrations.
   db.exec(`CREATE TABLE IF NOT EXISTS pending_adoptions (
     thread_id TEXT PRIMARY KEY,
@@ -516,6 +554,7 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     id: row.id,
     routineId: row.routine_id,
     trigger: row.trigger,
+    ...(row.automation_run_id === null ? {} : { automationRunId: row.automation_run_id }),
     status: row.status,
     reason: row.reason,
     at: row.at,
@@ -1185,14 +1224,22 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
       })();
     },
     /** Record one delivery, keeping the newest `ROUTINE_RUNS_KEPT` per routine. */
-    recordRoutineRun(run: Omit<RoutineRun, "id">): RoutineRun {
+    recordRoutineRun(run: Omit<RoutineRun, "id">, trackSchedule = true): RoutineRun {
       return db.transaction(() => {
         const { lastInsertRowid } = db
           .prepare(
-            "INSERT INTO routine_runs (routine_id, trigger, status, reason, at) VALUES (?, ?, ?, ?, ?)",
+            `INSERT INTO routine_runs (routine_id, trigger, status, reason, at, automation_run_id)
+             VALUES (?, ?, ?, ?, ?, ?)`,
           )
-          .run(run.routineId, run.trigger, run.status, run.reason, run.at);
-        if (run.trigger === "schedule") {
+          .run(
+            run.routineId,
+            run.trigger,
+            run.status,
+            run.reason,
+            run.at,
+            run.automationRunId ?? null,
+          );
+        if (run.trigger === "schedule" && trackSchedule) {
           const delivered = run.status === "sent" || run.status === "queued";
           db.prepare(
             `UPDATE routines SET fired_at = MAX(COALESCE(fired_at, 0), ?),
@@ -1202,19 +1249,30 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         }
         db.prepare(
           `DELETE FROM routine_runs WHERE routine_id = ? AND id NOT IN (
-             SELECT id FROM routine_runs WHERE routine_id = ? ORDER BY id DESC LIMIT ?)`,
+             SELECT id FROM routine_runs WHERE routine_id = ? ORDER BY at DESC, id DESC LIMIT ?)`,
         ).run(run.routineId, run.routineId, ROUTINE_RUNS_KEPT);
         return { ...run, id: Number(lastInsertRowid) };
       })();
     },
-    /** A routine's runs, newest first. */
+    /** A routine's runs, newest fire first. */
     routineRuns(routineId: string, limit: number = ROUTINE_RUNS_KEPT): RoutineRun[] {
       return db
         .prepare<[string, number], RoutineRunRecord>(
-          "SELECT * FROM routine_runs WHERE routine_id = ? ORDER BY id DESC LIMIT ?",
+          "SELECT * FROM routine_runs WHERE routine_id = ? ORDER BY at DESC, id DESC LIMIT ?",
         )
         .all(routineId, limit)
         .map(toRoutineRun);
+    },
+
+    /** Look up a Test by Automations ID within the routine's retained history. */
+    routineTestResult(routineId: string, runId: string): RoutineRun | null {
+      const row = db
+        .prepare<[string, string], RoutineRunRecord>(
+          `SELECT * FROM routine_runs WHERE routine_id = ? AND automation_run_id = ?
+           AND trigger = 'test' ORDER BY at DESC, id DESC LIMIT 1`,
+        )
+        .get(routineId, runId);
+      return row === undefined ? null : toRoutineRun(row);
     },
 
     /** A test run Captain started, so its fire is told apart from a scheduled one. */

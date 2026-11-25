@@ -10,6 +10,7 @@ import {
   experimental_useRpcQuery as useRpcQuery,
 } from "@get-bb/plugin-sdk/app";
 import {
+  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -77,6 +78,8 @@ type Draft = {
    * the stored time is sent back unchanged until the date field is edited.
    */
   atMs: number | null;
+  /** The draft owns its save lock across section remounts. */
+  saving?: boolean;
   /** Why the last save of this draft was refused, kept with it through a remount. */
   refusal: readonly string[];
   /** The last save was refused because the routine changed elsewhere. */
@@ -89,13 +92,18 @@ type Draft = {
  * the components: bb remounts a panel tab when its width crosses a
  * breakpoint, and none of this may reset under the user.
  */
+type RoutineTest = {
+  runId: string;
+  outcome: Pick<RoutineRun, "status" | "reason"> | null;
+};
+
 type RoutinesUi = {
   open: string | null;
   confirm: string | null;
   /** The last failed action per routine, so a row restored after a failed delete shows it. */
   errors: Readonly<Record<string, string>>;
-  /** When the server took each routine's last Test, until the panel closes. */
-  tests: Readonly<Record<string, number>>;
+  /** The most recent Test this client requested for each routine. */
+  tests: Readonly<Record<string, RoutineTest>>;
 };
 const CLOSED: RoutinesUi = { open: null, confirm: null, errors: {}, tests: {} };
 const uiStates = new Map<string, RoutinesUi>();
@@ -448,10 +456,13 @@ function RoutineRow({
     if (error !== null) setError(null);
     if (kind === "delete") patchUi(captainId, { confirm: null, open: null });
     void action.mutate({ captainId, routineId: routine.id, action: kind }).then(
-      ({ requestedAt }) =>
-        kind === "run"
+      ({ runId }) =>
+        kind === "run" && runId !== null
           ? patchUi(captainId, {
-              tests: { ...uiStates.get(captainId)?.tests, [routine.id]: requestedAt },
+              tests: {
+                ...uiStates.get(captainId)?.tests,
+                [routine.id]: { runId, outcome: null },
+              },
             })
           : undefined,
       (failure: unknown) => setError((failure as Error).message),
@@ -534,7 +545,7 @@ function RoutineRow({
               state={state}
               confirming={ui.confirm === routine.id}
               pending={pendingAction}
-              testedAt={ui.tests[routine.id] ?? null}
+              test={ui.tests[routine.id] ?? null}
               visible={visible}
               run={run}
               onRetry={onRetry}
@@ -561,7 +572,7 @@ function RoutineDetails({
   state,
   confirming,
   pending,
-  testedAt,
+  test,
   visible,
   run,
   onRetry,
@@ -573,8 +584,7 @@ function RoutineDetails({
   confirming: boolean;
   /** The action on its way to the server, if any. */
   pending: { action: RoutineAction } | undefined;
-  /** When the server took this panel's last Test; null when none was pressed. */
-  testedAt: number | null;
+  test: RoutineTest | null;
   visible: boolean;
   run: (action: RoutineAction) => void;
   onRetry: () => void;
@@ -700,7 +710,9 @@ function RoutineDetails({
           </Button>
         </div>
       )}
-      {testedAt === null ? null : <TestOutcome testedAt={testedAt} runs={runs.data?.runs} />}
+      {test === null ? null : (
+        <TestOutcome captainId={captainId} routineId={routine.id} test={test} visible={visible} />
+      )}
     </>
   );
 }
@@ -761,10 +773,37 @@ const TEST_OUTCOME: Record<RoutineRun["status"], string> = {
 
 /**
  * What became of the panel's last Test: requested until fire records a test
- * run from that time on, then that run's delivery state and reason.
+ * run with the matching Automations ID, then that run's delivery state and reason.
  */
-function TestOutcome({ testedAt, runs }: { testedAt: number; runs: RoutineRun[] | undefined }) {
-  const run = runs?.findLast((each) => each.trigger === "test" && each.at >= testedAt);
+function TestOutcome({
+  captainId,
+  routineId,
+  test,
+  visible,
+}: {
+  captainId: string;
+  routineId: string;
+  test: RoutineTest;
+  visible: boolean;
+}) {
+  const { runId, outcome } = test;
+  const result = useRpcQuery({
+    contract: captainContract,
+    method: "routineRun",
+    input: { captainId, routineId, runId },
+    enabled: visible && outcome === null,
+  }).data?.run;
+  const match = result?.automationRunId === runId ? result : undefined;
+  useEffect(() => {
+    const tests = uiStates.get(captainId)?.tests;
+    const current = tests?.[routineId];
+    if (match === undefined || current?.runId !== runId || current.outcome !== null) return;
+    const { status, reason } = match;
+    patchUi(captainId, {
+      tests: { ...tests, [routineId]: { runId, outcome: { status, reason } } },
+    });
+  }, [captainId, routineId, runId, match]);
+  const run = outcome ?? match;
   const text =
     run === undefined
       ? "Test requested · waiting for it to reach the Captain"
@@ -884,7 +923,9 @@ function DraftForm({
     !(draft.preset === ONCE && Number.isNaN(Date.parse(draft.at)));
   const submit = () => {
     const key = draft.key;
-    set({ refusal: [], stale: false });
+    const current = formStates.get(captainId)?.draft;
+    if (current?.key !== key || current.saving) return;
+    set({ saving: true, refusal: [], stale: false });
     void save
       .mutate({
         captainId,
@@ -902,6 +943,7 @@ function DraftForm({
           if (formStates.get(captainId)?.draft.key !== key) return undefined;
           if (!result.ok)
             return patchDraft(captainId, key, {
+              saving: false,
               refusal: result.blockers.map((blocker) => blocker.reason),
               stale: result.stale,
             });
@@ -909,7 +951,11 @@ function DraftForm({
           return patchUi(captainId, { open: result.routine.id });
         },
         (failure: unknown) =>
-          patchDraft(captainId, key, { refusal: [(failure as Error).message], stale: false }),
+          patchDraft(captainId, key, {
+            saving: false,
+            refusal: [(failure as Error).message],
+            stale: false,
+          }),
       );
   };
   /** Start the edit again from the routine as it is now. */
@@ -933,11 +979,11 @@ function DraftForm({
       )}
       onSubmit={(event) => {
         event.preventDefault();
-        if (ready && !save.isPending) submit();
+        if (ready && !draft.saving) submit();
       }}
     >
       {/* Fields lock while a save is on its way: an edit typed meanwhile would not be the one saved. */}
-      <fieldset disabled={save.isPending} className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
+      <fieldset disabled={draft.saving} className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
         <div className="flex min-w-0 flex-col gap-1">
           <label htmlFor={`${id}-name`} className={label}>
             Name
@@ -1107,9 +1153,9 @@ function DraftForm({
           type="submit"
           size="sm"
           className={cn(CONTROL, "px-3")}
-          disabled={!ready || save.isPending}
+          disabled={!ready || draft.saving}
         >
-          {save.isPending ? "Saving…" : draft.routineId === null ? "Create routine" : "Save"}
+          {draft.saving ? "Saving…" : draft.routineId === null ? "Create routine" : "Save"}
         </Button>
         <Button
           type="button"

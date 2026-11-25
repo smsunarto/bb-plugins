@@ -507,6 +507,12 @@ export const captainContract = defineRpcContract({
     output: z.object({ runs: z.array(routineRunSchema) }).strict(),
     tags: ({ captainId }) => [routinesTag(captainId)],
   },
+  /** One requested Test, independent of the visible history window. */
+  routineRun: {
+    input: z.object({ captainId: threadId, routineId, runId: z.string().min(1) }).strict(),
+    output: z.object({ run: routineRunSchema.nullable() }).strict(),
+    tags: ({ captainId }) => [routinesTag(captainId)],
+  },
   /** Pause, resume, run now (Test) or delete a routine, as `bb captain routine` does. */
   routineAction: {
     experimental_description:
@@ -515,7 +521,7 @@ export const captainContract = defineRpcContract({
     output: z
       .object({
         runId: z.string().nullable(),
-        /** When the server took it: a test's delivery is the first test run recorded from then. */
+        /** When the server accepted the action. */
         requestedAt: z.number(),
       })
       .strict(),
