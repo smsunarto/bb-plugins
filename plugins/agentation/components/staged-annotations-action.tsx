@@ -525,11 +525,10 @@ function AnnotationsActionContent({
             <Icon name="ArrowUp" aria-hidden="true" />
             {action?.kind === "send" && action.id === null ? "Sending…" : "Send all"}
           </CompactButton>
-          <Button
-            type="button"
-            size="icon"
+          <CompactButton
+            size="icon-sm"
             variant="ghost"
-            className="size-7 text-muted-foreground hover:text-destructive"
+            tone="danger"
             disabled={isMutating}
             aria-label="Discard all staged annotations"
             onClick={() => {
@@ -541,7 +540,7 @@ function AnnotationsActionContent({
             }}
           >
             <Icon name="Trash2" aria-hidden="true" />
-          </Button>
+          </CompactButton>
         </div>
       </div>
       <Separator />
@@ -642,18 +641,18 @@ function AnnotationRow({
               {isSending ? <Spinner /> : <Icon name="ArrowUp" aria-hidden="true" />}
             </CompactButton>
           )}
-          <Button
-            type="button"
-            size="icon"
+          <CompactButton
+            size="icon-sm"
             variant="ghost"
-            className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
+            tone="danger"
+            className="shrink-0"
             disabled={disabled}
             aria-label={isDiscarding ? "Discarding annotation" : "Discard annotation"}
             aria-describedby={descriptionId}
             onClick={onDiscard}
           >
             {isDiscarding ? <Spinner /> : <Icon name="Trash2" aria-hidden="true" />}
-          </Button>
+          </CompactButton>
         </ItemActions>
       </Item>
     </>
