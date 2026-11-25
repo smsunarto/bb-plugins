@@ -1,5 +1,6 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import type { ExperimentalPanelTabs } from "@get-bb/plugin-sdk/app";
+import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { installDom } from "@bb-plugins/testing";
 
 import {
@@ -7,6 +8,8 @@ import {
   mountPanelNewTab,
   panelOpenRedirect,
   pressPanelNewTab,
+  takePanelOpenRedirect,
+  usePanelOpensToNewTab,
 } from "../app/panel-new-tab.ts";
 
 installDom();
@@ -113,6 +116,9 @@ test("matches bb's toggle shortcut by key or code, with exact modifiers", () => 
 // bb's DOM around the new-tab button: the desktop panel, or the phone shelf.
 const DESKTOP_PANEL = '<div id="thread-detail-secondary-panel"></div>';
 const PHONE_SHELF = '<div data-testid="secondary-panel-shelf"></div>';
+const TOGGLE = '<button aria-label="Show right panel" aria-keyshortcuts="Control+\\"></button>';
+const closed = panel(false, info.key, [info, newTab]);
+const opened = panel(true, info.key, [info, newTab]);
 
 let dispose: (() => void) | null = null;
 afterEach(() => {
@@ -201,4 +207,47 @@ test("a cancelled or disposed press waiting for the button never lands", async (
   dispose = null;
   pressPanelNewTab(() => false);
   expect(presses).toEqual([]);
+});
+
+test("a toggle click expires and a fresh press redirects only once", () => {
+  mountWith(TOGGLE);
+  const clock = spyOn(performance, "now").mockReturnValue(100);
+  try {
+    const toggle = document.querySelector("button")!;
+    toggle.click();
+    clock.mockReturnValue(601);
+    expect(takePanelOpenRedirect(closed, opened)).toEqual({ kind: "none" });
+    toggle.click();
+    expect(takePanelOpenRedirect(closed, opened)).toEqual({ kind: "select", key: newTab.key });
+    expect(takePanelOpenRedirect(closed, opened)).toEqual({ kind: "none" });
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+test("the shortcut records intent only while a thread hook is mounted", () => {
+  mountWith(TOGGLE);
+  function pressShortcut() {
+    document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "\\", ctrlKey: true }));
+  }
+  pressShortcut();
+  expect(takePanelOpenRedirect(closed, opened)).toEqual({ kind: "none" });
+
+  const slot = renderSlot(
+    {
+      component: () => {
+        usePanelOpensToNewTab();
+        return null;
+      },
+    },
+    {},
+  );
+  try {
+    pressShortcut();
+    expect(takePanelOpenRedirect(closed, opened)).toEqual({ kind: "select", key: newTab.key });
+  } finally {
+    slot.lifecycle.unmount();
+  }
+  pressShortcut();
+  expect(takePanelOpenRedirect(closed, opened)).toEqual({ kind: "none" });
 });

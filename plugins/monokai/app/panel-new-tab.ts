@@ -29,8 +29,9 @@ import {
  *   `secondary-panel-shelf` test id). When the button is missing or ambiguous,
  *   the restored tab stays.
  *
- * The hook only reads and selects tabs through the SDK; every DOM read, press,
- * and listener belongs to the content script and ends with its signal.
+ * The hook reads and selects tabs through the SDK and can initiate a press.
+ * The content script owns the listeners and the press implementation; its
+ * signal and the hook's lifetime both cancel a pending press.
  */
 const TOGGLE_BUTTON = 'button[aria-label^="Show right panel"]';
 /** The toggle in either state; both carry the shortcut in `aria-keyshortcuts`. */
@@ -167,6 +168,17 @@ export function mountPanelNewTab({
   };
 }
 
+/** Consumes a recent toggle press only if this open would redirect. */
+export function takePanelOpenRedirect(
+  previous: ExperimentalPanelTabs | null,
+  next: ExperimentalPanelTabs,
+): PanelOpenRedirect {
+  if (performance.now() - lastToggleAt > INTENT_MS) return { kind: "none" };
+  const redirect = panelOpenRedirect(previous, next);
+  if (redirect.kind !== "none") lastToggleAt = Number.NEGATIVE_INFINITY;
+  return redirect;
+}
+
 /** Makes a toggle-open of this thread's right panel land on a new tab. */
 export function usePanelOpensToNewTab(): void {
   const panel = experimental_useAppPanel();
@@ -187,13 +199,9 @@ export function usePanelOpensToNewTab(): void {
   useLayoutEffect(() => {
     const before = previous.current;
     previous.current = tabs;
-    if (performance.now() - lastToggleAt > INTENT_MS) return;
-    const redirect = panelOpenRedirect(before, tabs);
-    if (redirect.kind === "none") return;
-    // One redirect per press, so a later open in the window is bb's.
-    lastToggleAt = Number.NEGATIVE_INFINITY;
+    const redirect = takePanelOpenRedirect(before, tabs);
     if (redirect.kind === "select") panel.selectTab(redirect.key);
-    else {
+    else if (redirect.kind === "create") {
       const signal = unmounted.current;
       pressPanelNewTab(() => signal.cancelled);
     }

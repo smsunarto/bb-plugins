@@ -12,6 +12,7 @@
     "packages/video-player/src/player.ts",
     "plugins/monokai/themes/**",
     "plugins/gtd-sidebar/CHANGELOG.md",
+    "plugins/monokai/CHANGELOG.md",
     "plugins/genui/app.tsx",
     "plugins/genui/components/ui/button.tsx",
     "plugins/genui/components/ui/dialog.tsx",

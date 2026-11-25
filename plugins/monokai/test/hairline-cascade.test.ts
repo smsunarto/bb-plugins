@@ -19,6 +19,10 @@ const tailwind = `
   .border-0 { border-width: 0px; }
   .border-t-0 { border-top-width: 0px; }
   .border-b { border-bottom-width: 1px; }
+  .not-first\\:border-t:not(:first-child) { border-top-width: 1px; }
+  .first\\:border-l:first-child { border-left-width: 1px; }
+  .\\[\\&\\>li\\+li\\]\\:border-t > li + li { border-top-width: 1px; }
+  .divide-y > :not(:last-child) { border-block-end-width: 1px; }
   .border-b-0 { border-bottom-width: 0px; }
   .border-t-\\[0\\.5px\\] { border-top-width: 0.5px; }
   .h-px { height: 1px; }
@@ -117,18 +121,35 @@ const LONGHANDS: Record<string, string[]> = {
     "border",
   ],
   "box-shadow": ["box-shadow"],
+  "--monokai-edge": ["--monokai-edge"],
+  "border-block-end-width": ["border-block-end-width"],
+  "border-left-width": ["border-left-width", "border-width"],
   height: ["height"],
   "background-color": ["background-color", "background"],
 };
 
-function matches(node: Element, selector: string): boolean {
-  return selector.split(/,(?![^()]*\))/).some((part) => {
-    try {
-      return node.matches(part.trim());
-    } catch {
-      return false;
+// Only split top-level commas. A ring predicate can nest selector lists
+// inside :is() and :not(), and escaped commas can be part of a utility name.
+function selectorList(selector: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote: string | undefined;
+  let start = 0;
+  for (let index = 0; index < selector.length; index++) {
+    const char = selector[index];
+    if (char === "\\") index++;
+    else if (quote !== undefined) {
+      if (char === quote) quote = undefined;
+    } else if (char === '"' || char === "'") quote = char;
+    else if (char === "(" || char === "[") depth++;
+    else if (char === ")" || char === "]") depth--;
+    else if (char === "," && depth === 0) {
+      parts.push(selector.slice(start, index).trim());
+      start = index + 1;
     }
-  });
+  }
+  parts.push(selector.slice(start).trim());
+  return parts;
 }
 
 type Key = [number, number, number, number, number, number];
@@ -141,7 +162,13 @@ function candidates(
   rule: Rule,
 ): Array<{ value: string; key: Key }> {
   if (!applies(rule.atRules, context)) return [];
-  const parts = rule.selector.split(/,(?![^()]*\))/).filter((part) => matches(node, part));
+  const parts = selectorList(rule.selector).filter((part) => {
+    try {
+      return node.matches(part);
+    } catch {
+      return false;
+    }
+  });
   if (parts.length === 0) return [];
   const spec = parts
     .map((part) => specificity(part.trim()))
@@ -232,7 +259,7 @@ describe("bb Monokai hairline cascade", () => {
     const field = element("input", BB_INPUT);
     const select = element("button", "h-7 w-full justify-between border border-border/60 bg-card");
     for (const control of [radio, checkbox, field, select]) {
-      expect(cascade(control, "box-shadow", AT_3X)).toMatch(RING);
+      expect(cascade(control, "box-shadow", AT_3X) ?? "", control.outerHTML).toMatch(RING);
       expect(cascade(control, "border-top-width", AT_3X)).toBe("0");
       expect(cascade(control, "box-shadow", AT_2X) ?? "").not.toMatch(RING);
     }
@@ -248,6 +275,36 @@ describe("bb Monokai hairline cascade", () => {
       expect(cascade(surface, "box-shadow", AT_3X) ?? "").not.toMatch(RING);
       expect(cascade(surface, "border-top-width", AT_3X)).toBe("var(--hairline-width)");
     }
+  });
+
+  test("rings only uniform controls and keeps settings triggers on the input edge", () => {
+    for (const [tag, className, attributes] of [
+      ["button", "cursor-zoom-in border border-border", {}],
+      ["div", "rounded-md border border-border", { role: "radio" }],
+      ["button", "rounded-lg border border-border", { role: "radio" }],
+      ["input", `${BB_INPUT} border-dashed`, {}],
+      ["input", `${BB_INPUT} border-t-0`, {}],
+      ["button", "border border-border hover:border-primary", {}],
+    ] as const) {
+      const control = element(tag, className, attributes);
+      expect(cascade(control, "box-shadow", AT_3X) ?? "", control.outerHTML).not.toMatch(RING);
+    }
+    const trigger = element("button", "border border-border/60 bg-card");
+    expect(cascade(trigger, "--monokai-edge", AT_3X)).toBe("var(--input)");
+  });
+
+  test("sizes positional and child divider utilities in either load order", () => {
+    const group = element("ul", "divide-y [&>li+li]:border-t");
+    const first = element("li", "first:border-l not-first:border-t");
+    const second = element("li", "not-first:border-t");
+    group.append(first, second);
+    expect(cascade(first, "border-left-width", AT_3X)).toBe("var(--hairline-width)");
+    expect(cascade(first, "border-top-width", AT_3X)).toBeUndefined();
+    expect(cascade(second, "border-top-width", AT_3X)).toBe("var(--hairline-width)");
+    second.className = "";
+    expect(cascade(second, "border-top-width", AT_3X)).toBe("var(--hairline-width)");
+    expect(cascade(first, "border-block-end-width", AT_3X)).toContain("var(--hairline-width)");
+    expect(cascade(second, "border-block-end-width", AT_3X)).toBeUndefined();
   });
 
   test("keeps a box's own widths and a hairline box's open side", () => {
