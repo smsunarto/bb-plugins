@@ -14,7 +14,6 @@ import {
 import { experimental_ProviderIcon as ProviderIcon } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
-import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { useCloseWhenAnchorDetaches } from "@/components/ui/overlay-anchor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
