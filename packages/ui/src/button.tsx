@@ -26,6 +26,8 @@ const buttonVariants = cva(styles["button"] + " " + styles["motion"], {
       "icon-sm": styles["size-icon-sm"],
       "icon-lg": styles["size-icon-lg"],
     },
+    // `muted` gives a ghost button muted ink until hover or open.
+    tone: { default: "", muted: styles["muted"] },
   },
   defaultVariants: { variant: "default", size: "default" },
 });
@@ -44,7 +46,7 @@ export interface ButtonProps
 }
 function createButton(profile: string, roles: boolean) {
   const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-    ({ className, variant, size, asChild = false, ...props }, ref) => {
+    ({ className, variant, size, tone, asChild = false, ...props }, ref) => {
       const Comp = asChild ? Slot : "button";
       return (
         <Comp
@@ -52,7 +54,7 @@ function createButton(profile: string, roles: boolean) {
           data-bb-control={
             roles ? controlRole(buttonRole[variant ?? "default"], className) : undefined
           }
-          className={cn(buttonVariants({ variant, size }), profile, className)}
+          className={cn(buttonVariants({ variant, size, tone }), profile, className)}
           ref={ref}
           {...props}
         />
@@ -87,19 +89,28 @@ const compactVariants = cva(styles["button"] + " " + styles["motion"] + " " + st
       ghost: styles["ghost"],
       destructive: styles["destructive"],
     },
-    size: { default: styles["size-default"], sm: styles["size-sm"], xs: styles["size-xs"] },
+    size: {
+      default: styles["size-default"],
+      sm: styles["size-sm"],
+      xs: styles["size-xs"],
+      icon: styles["size-icon"],
+      "icon-sm": styles["size-icon-sm"],
+      "icon-xs": styles["size-icon-xs"],
+    },
+    // `muted` gives a ghost button muted ink until hover or open.
+    tone: { default: "", muted: styles["muted"] },
   },
   defaultVariants: { variant: "default", size: "default" },
 });
 export interface CompactButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof compactVariants> {}
 export const CompactButton = React.forwardRef<HTMLButtonElement, CompactButtonProps>(
-  ({ className, variant, size, type = "button", ...props }, ref) => (
+  ({ className, variant, size, tone, type = "button", ...props }, ref) => (
     <button
       ref={ref}
       type={type}
       data-bb-control={controlRole(compactRole[variant ?? "default"], className)}
-      className={cn(compactVariants({ variant, size }), className)}
+      className={cn(compactVariants({ variant, size, tone }), className)}
       {...props}
     />
   ),

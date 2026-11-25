@@ -3,7 +3,7 @@
  * Shapes, sizes, and focus follow shadcn's Vega style (preset b5JNZnXf8);
  * every color is a bb theme token, so the active theme owns the palette. */
 @layer components {
-  .bbui-d1d4e1b3de65-button {
+  .bbui-3f4d637cd980-button {
     display: inline-flex;
     flex-shrink: 0;
     cursor: pointer;
@@ -19,23 +19,23 @@
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
     font-weight: 500;
   }
-  .bbui-d1d4e1b3de65-motion {
+  .bbui-3f4d637cd980-motion {
     transition-property:
       color, background-color, border-color, outline-color, fill, stroke, translate;
     transition-duration: 150ms;
   }
-  .bbui-d1d4e1b3de65-motion:hover {
+  .bbui-3f4d637cd980-motion:hover {
     transition-duration: 0ms;
   }
-  .bbui-d1d4e1b3de65-row-motion {
+  .bbui-3f4d637cd980-row-motion {
     transition: none;
   }
-  .bbui-d1d4e1b3de65-button:disabled {
+  .bbui-3f4d637cd980-button:disabled {
     pointer-events: none;
     opacity: 0.5;
   }
   /* Vega's focus: the edge takes --ring and a 3px halo of it sits outside. */
-  .bbui-d1d4e1b3de65-button:where(:not(.bbui-d1d4e1b3de65-native)):focus-visible {
+  .bbui-3f4d637cd980-button:where(:not(.bbui-3f4d637cd980-native)):focus-visible {
     outline: none;
     border-color: var(--ring);
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(3px + var(--tw-ring-offset-width, 0px))
@@ -44,74 +44,80 @@
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
   }
-  .bbui-d1d4e1b3de65-button:where(:not(.bbui-d1d4e1b3de65-native)):active:not([aria-haspopup]) {
+  .bbui-3f4d637cd980-button:where(:not(.bbui-3f4d637cd980-native)):active:not([aria-haspopup]) {
     translate: 0 1px;
   }
-  .bbui-d1d4e1b3de65-button :where(svg, [data-icon-root]) {
+  .bbui-3f4d637cd980-button :where(svg, [data-icon-root]) {
     pointer-events: none;
     flex-shrink: 0;
   }
   /* Filled actions read the theme's control layer. A theme without one keeps
    * bb's ink-on-canvas fill, so --primary stays the link and accent color. */
-  .bbui-d1d4e1b3de65-default {
+  .bbui-3f4d637cd980-default {
     background: var(--control-primary, var(--foreground));
     color: var(--control-primary-foreground, var(--background));
   }
-  .bbui-d1d4e1b3de65-default:hover {
+  .bbui-3f4d637cd980-default:hover {
     background: var(
       --control-primary-hover,
       color-mix(in oklab, var(--foreground) 90%, transparent)
     );
   }
-  .bbui-d1d4e1b3de65-destructive {
+  .bbui-3f4d637cd980-destructive {
     background: var(
       --surface-destructive,
       color-mix(in oklab, var(--destructive) 10%, transparent)
     );
     color: var(--destructive-text, var(--destructive));
   }
-  .bbui-d1d4e1b3de65-destructive:hover {
+  .bbui-3f4d637cd980-destructive:hover {
     background: color-mix(in oklab, var(--destructive) 20%, transparent);
   }
-  .bbui-d1d4e1b3de65-destructive:where(:not(.bbui-d1d4e1b3de65-native)):focus-visible {
+  .bbui-3f4d637cd980-destructive:where(:not(.bbui-3f4d637cd980-native)):focus-visible {
     border-color: color-mix(in oklab, var(--destructive) 40%, transparent);
     --tw-ring-color: color-mix(in oklab, var(--destructive) 20%, transparent);
   }
-  .bbui-d1d4e1b3de65-outline {
+  .bbui-3f4d637cd980-outline {
     border-color: var(--input);
     background: var(--control-background, transparent);
   }
   /* Vega lifts outline controls and fields with the theme's xs shadow. */
-  .bbui-d1d4e1b3de65-outline,
-  .bbui-d1d4e1b3de65-input,
-  .bbui-d1d4e1b3de65-textarea {
+  .bbui-3f4d637cd980-outline,
+  .bbui-3f4d637cd980-input,
+  .bbui-3f4d637cd980-textarea {
     --tw-shadow: var(--shadow-xs, 0 0 #0000);
     box-shadow:
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
   }
-  .bbui-d1d4e1b3de65-outline.bbui-d1d4e1b3de65-bordered {
+  .bbui-3f4d637cd980-outline.bbui-3f4d637cd980-bordered {
     border-color: var(--border);
   }
-  .bbui-d1d4e1b3de65-outline:hover,
-  .bbui-d1d4e1b3de65-outline:where([aria-expanded="true"]),
-  .bbui-d1d4e1b3de65-ghost:hover {
+  /* A quiet ghost: muted ink at rest, foreground on hover or when open. */
+  .bbui-3f4d637cd980-ghost.bbui-3f4d637cd980-muted:where(
+      :not([aria-pressed="true"], [aria-expanded="true"], [data-state="open"])
+    ) {
+    color: var(--muted-foreground);
+  }
+  .bbui-3f4d637cd980-outline:hover,
+  .bbui-3f4d637cd980-outline:where([aria-expanded="true"]),
+  .bbui-3f4d637cd980-ghost:hover {
     background: var(--state-hover);
     color: var(--foreground);
   }
-  .bbui-d1d4e1b3de65-secondary {
+  .bbui-3f4d637cd980-secondary {
     background: var(--secondary);
     color: var(--secondary-foreground);
   }
-  .bbui-d1d4e1b3de65-secondary:hover {
+  .bbui-3f4d637cd980-secondary:hover {
     background: color-mix(in oklch, var(--secondary), var(--foreground) 5%);
   }
-  .bbui-d1d4e1b3de65-ghost:where(
+  .bbui-3f4d637cd980-ghost:where(
     [aria-pressed="true"],
     [aria-expanded="true"],
     [data-state="open"]
   ),
-  .bbui-d1d4e1b3de65-ghost:where(
+  .bbui-3f4d637cd980-ghost:where(
       [aria-pressed="true"],
       [aria-expanded="true"],
       [data-state="open"]
@@ -119,75 +125,87 @@
     background: var(--state-active);
     color: var(--foreground);
   }
-  .bbui-d1d4e1b3de65-link {
+  .bbui-3f4d637cd980-link {
     color: var(--primary);
     text-underline-offset: 4px;
   }
-  .bbui-d1d4e1b3de65-link:hover {
+  .bbui-3f4d637cd980-link:hover {
     text-decoration-line: underline;
   }
-  .bbui-d1d4e1b3de65-size-default {
+  .bbui-3f4d637cd980-size-default {
     height: 2.25rem;
     padding: 0 0.625rem;
   }
-  .bbui-d1d4e1b3de65-size-xs {
+  .bbui-3f4d637cd980-size-xs {
     height: 1.5rem;
     gap: 0.25rem;
     padding: 0 0.5rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-d1d4e1b3de65-size-sm {
+  .bbui-3f4d637cd980-size-sm {
     height: 2rem;
     gap: 0.25rem;
     padding: 0 0.625rem;
   }
-  .bbui-d1d4e1b3de65-size-lg {
+  .bbui-3f4d637cd980-size-lg {
     height: 2.5rem;
     padding: 0 0.625rem;
   }
-  .bbui-d1d4e1b3de65-size-icon {
+  .bbui-3f4d637cd980-size-icon {
     height: 2.25rem;
     width: 2.25rem;
   }
-  .bbui-d1d4e1b3de65-size-icon-xs {
+  .bbui-3f4d637cd980-size-icon-xs {
     height: 1.5rem;
     width: 1.5rem;
   }
-  .bbui-d1d4e1b3de65-size-icon-sm {
+  .bbui-3f4d637cd980-size-icon-sm {
     height: 2rem;
     width: 2rem;
   }
-  .bbui-d1d4e1b3de65-size-icon-lg {
+  .bbui-3f4d637cd980-size-icon-lg {
     height: 2.5rem;
     width: 2.5rem;
   }
   /* CompactButton keeps bb's own denser control sizes. */
-  .bbui-d1d4e1b3de65-compact {
+  .bbui-3f4d637cd980-compact {
     gap: 0.375rem;
   }
-  .bbui-d1d4e1b3de65-compact.bbui-d1d4e1b3de65-outline {
+  .bbui-3f4d637cd980-compact.bbui-3f4d637cd980-outline {
     border-color: var(--border);
   }
-  .bbui-d1d4e1b3de65-compact.bbui-d1d4e1b3de65-size-default {
+  .bbui-3f4d637cd980-compact.bbui-3f4d637cd980-size-default {
     height: 2rem;
     padding: 0 0.75rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-d1d4e1b3de65-compact.bbui-d1d4e1b3de65-size-sm {
+  .bbui-3f4d637cd980-compact.bbui-3f4d637cd980-size-sm {
     height: 1.75rem;
     padding: 0 0.625rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-d1d4e1b3de65-compact.bbui-d1d4e1b3de65-size-xs {
+  .bbui-3f4d637cd980-compact.bbui-3f4d637cd980-size-xs {
     height: 1.5rem;
     padding: 0 0.5rem;
     font-size: var(--text-2xs, 0.625rem);
   }
-  .bbui-d1d4e1b3de65-input,
-  .bbui-d1d4e1b3de65-textarea {
+  .bbui-3f4d637cd980-compact.bbui-3f4d637cd980-size-icon {
+    height: 2rem;
+    width: 2rem;
+  }
+  .bbui-3f4d637cd980-compact.bbui-3f4d637cd980-size-icon-sm {
+    height: 1.75rem;
+    width: 1.75rem;
+  }
+  .bbui-3f4d637cd980-compact.bbui-3f4d637cd980-size-icon-xs {
+    height: 1.5rem;
+    width: 1.5rem;
+  }
+  .bbui-3f4d637cd980-input,
+  .bbui-3f4d637cd980-textarea {
     display: flex;
     width: 100%;
     min-width: 0;
@@ -198,10 +216,10 @@
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
   }
-  .bbui-d1d4e1b3de65-input {
+  .bbui-3f4d637cd980-input {
     height: 2.25rem;
   }
-  .bbui-d1d4e1b3de65-input::file-selector-button {
+  .bbui-3f4d637cd980-input::file-selector-button {
     border: 0;
     background: transparent;
     font-size: var(--text-sm, 0.8125rem);
@@ -209,20 +227,20 @@
     font-weight: 500;
     color: var(--foreground);
   }
-  .bbui-d1d4e1b3de65-input.bbui-d1d4e1b3de65-bordered {
+  .bbui-3f4d637cd980-input.bbui-3f4d637cd980-bordered {
     border-color: var(--border);
     background: var(--background);
   }
-  .bbui-d1d4e1b3de65-textarea {
+  .bbui-3f4d637cd980-textarea {
     min-height: 4rem;
     padding-block: 0.5rem;
   }
-  .bbui-d1d4e1b3de65-input::placeholder,
-  .bbui-d1d4e1b3de65-textarea::placeholder {
+  .bbui-3f4d637cd980-input::placeholder,
+  .bbui-3f4d637cd980-textarea::placeholder {
     color: var(--muted-foreground);
   }
-  .bbui-d1d4e1b3de65-input:focus-visible,
-  .bbui-d1d4e1b3de65-textarea:focus-visible {
+  .bbui-3f4d637cd980-input:focus-visible,
+  .bbui-3f4d637cd980-textarea:focus-visible {
     outline: none;
     border-color: var(--ring);
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(3px + var(--tw-ring-offset-width, 0px))
@@ -231,20 +249,20 @@
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
   }
-  .bbui-d1d4e1b3de65-input[aria-invalid="true"],
-  .bbui-d1d4e1b3de65-textarea[aria-invalid="true"] {
+  .bbui-3f4d637cd980-input[aria-invalid="true"],
+  .bbui-3f4d637cd980-textarea[aria-invalid="true"] {
     border-color: var(--destructive);
     --tw-ring-color: color-mix(in oklab, var(--destructive) 20%, transparent);
   }
-  .bbui-d1d4e1b3de65-input:disabled,
-  .bbui-d1d4e1b3de65-textarea:disabled {
+  .bbui-3f4d637cd980-input:disabled,
+  .bbui-3f4d637cd980-textarea:disabled {
     cursor: not-allowed;
     opacity: 0.5;
   }
   /* Surfaces: one card, edge, divider, and hairline for every plugin. Edges
    * take the theme's --hairline-width when it sets one. A card spaces its
    * parts with --card-spacing, as Vega's does; set it to make a card denser. */
-  .bbui-d1d4e1b3de65-card {
+  .bbui-3f4d637cd980-card {
     --card-spacing: 1.5rem;
     display: flex;
     flex-direction: column;
@@ -258,61 +276,73 @@
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
   }
-  .bbui-d1d4e1b3de65-card-header {
+  .bbui-3f4d637cd980-card-header {
     display: grid;
     grid-auto-rows: min-content;
     align-items: start;
     gap: 0.25rem;
     padding-inline: var(--card-spacing);
   }
-  .bbui-d1d4e1b3de65-card-title {
+  .bbui-3f4d637cd980-card-title {
     font-size: var(--text-base, 1rem);
     line-height: 1.5;
     font-weight: 500;
   }
-  .bbui-d1d4e1b3de65-card-description {
+  .bbui-3f4d637cd980-card-description {
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
     color: var(--muted-foreground);
   }
-  .bbui-d1d4e1b3de65-card-content {
+  .bbui-3f4d637cd980-card-content {
     padding-inline: var(--card-spacing);
   }
-  .bbui-d1d4e1b3de65-card-footer {
+  .bbui-3f4d637cd980-card-footer {
     display: flex;
     align-items: center;
     padding-inline: var(--card-spacing);
   }
-  .bbui-d1d4e1b3de65-edge {
+  /* Vega's small card, and bb's xs for dense tiles in panels. */
+  .bbui-3f4d637cd980-card[data-size="sm"] {
+    --card-spacing: 1rem;
+  }
+  .bbui-3f4d637cd980-card[data-size="xs"] {
+    --card-spacing: 0.75rem;
+    gap: 0.5rem;
+  }
+  .bbui-3f4d637cd980-card:where([data-size="sm"], [data-size="xs"]) .bbui-3f4d637cd980-card-title {
+    font-size: var(--text-sm, 0.8125rem);
+    line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
+  }
+  .bbui-3f4d637cd980-edge {
     border: var(--hairline-width, 1px) solid var(--border);
   }
-  .bbui-d1d4e1b3de65-divider {
+  .bbui-3f4d637cd980-divider {
     border-top: var(--hairline-width, 1px) solid var(--border);
   }
   /* The composer's edge: 0.5px and opaque, so stacked surfaces meet without a
    * bright stub where two translucent edges overlap at a rounded corner. */
-  .bbui-d1d4e1b3de65-hairline {
+  .bbui-3f4d637cd980-hairline {
     box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));
   }
-  .dark .bbui-d1d4e1b3de65-hairline {
+  .dark .bbui-3f4d637cd980-hairline {
     box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));
   }
   /* Drawn as a border: a box thinner than 1px can round to no pixels. */
-  .bbui-d1d4e1b3de65-separator {
+  .bbui-3f4d637cd980-separator {
     flex-shrink: 0;
     border-color: var(--border);
     border-style: solid;
     border-width: 0;
   }
-  .bbui-d1d4e1b3de65-separator[data-orientation="horizontal"] {
+  .bbui-3f4d637cd980-separator[data-orientation="horizontal"] {
     border-top-width: var(--hairline-width, 1px);
     width: 100%;
   }
-  .bbui-d1d4e1b3de65-separator[data-orientation="vertical"] {
+  .bbui-3f4d637cd980-separator[data-orientation="vertical"] {
     border-left-width: var(--hairline-width, 1px);
     align-self: stretch;
   }
-  .bbui-d1d4e1b3de65-badge {
+  .bbui-3f4d637cd980-badge {
     display: inline-flex;
     width: fit-content;
     height: 1.25rem;
@@ -329,31 +359,31 @@
     font-weight: 500;
     white-space: nowrap;
   }
-  .bbui-d1d4e1b3de65-badge > :where(svg, [data-icon-root]) {
+  .bbui-3f4d637cd980-badge > :where(svg, [data-icon-root]) {
     pointer-events: none;
     width: 0.75rem;
     height: 0.75rem;
   }
-  .bbui-d1d4e1b3de65-badge-default {
+  .bbui-3f4d637cd980-badge-default {
     background: var(--control-primary, var(--foreground));
     color: var(--control-primary-foreground, var(--background));
   }
-  .bbui-d1d4e1b3de65-badge-secondary {
+  .bbui-3f4d637cd980-badge-secondary {
     background: var(--secondary);
     color: var(--secondary-foreground);
   }
-  .bbui-d1d4e1b3de65-badge-destructive {
+  .bbui-3f4d637cd980-badge-destructive {
     background: var(
       --surface-destructive,
       color-mix(in oklab, var(--destructive) 10%, transparent)
     );
     color: var(--destructive-text, var(--destructive));
   }
-  .bbui-d1d4e1b3de65-badge-outline {
+  .bbui-3f4d637cd980-badge-outline {
     border-color: var(--border);
     color: var(--foreground);
   }
-  .bbui-d1d4e1b3de65-badge-count {
+  .bbui-3f4d637cd980-badge-count {
     height: 1rem;
     background: var(--surface-raised, var(--secondary));
     padding: 0 0.375rem;
@@ -362,63 +392,63 @@
     font-variant-numeric: tabular-nums;
   }
   /* Status tones: a tinted pill whose hue carries the meaning, for labels such as live/shadow or pass/fail. */
-  .bbui-d1d4e1b3de65-badge-success {
+  .bbui-3f4d637cd980-badge-success {
     border-color: color-mix(in srgb, var(--success) 30%, transparent);
     background: color-mix(in srgb, var(--success) 10%, transparent);
     color: var(--success-foreground, var(--success));
   }
-  .bbui-d1d4e1b3de65-badge-warning {
+  .bbui-3f4d637cd980-badge-warning {
     border-color: color-mix(in srgb, var(--attention, var(--warning)) 40%, transparent);
     background: var(--surface-attention, transparent);
     color: var(--warning-text, var(--warning));
   }
-  .bbui-d1d4e1b3de65-badge-info {
+  .bbui-3f4d637cd980-badge-info {
     border-color: color-mix(in srgb, var(--timeline-accent, var(--primary)) 30%, transparent);
     color: var(--timeline-accent, var(--primary));
   }
-  .bbui-d1d4e1b3de65-badge-danger {
+  .bbui-3f4d637cd980-badge-danger {
     border-color: color-mix(in srgb, var(--destructive) 35%, transparent);
     background: color-mix(in srgb, var(--destructive) 10%, transparent);
     color: var(--destructive-text, var(--destructive));
   }
   /* Table: shadcn's Vega table, as plain CSS. */
-  .bbui-d1d4e1b3de65-table-wrap {
+  .bbui-3f4d637cd980-table-wrap {
     position: relative;
     width: 100%;
     overflow: auto;
   }
-  .bbui-d1d4e1b3de65-table {
+  .bbui-3f4d637cd980-table {
     width: 100%;
     caption-side: bottom;
     font-size: var(--text-sm, 0.8125rem);
   }
-  .bbui-d1d4e1b3de65-table-row {
+  .bbui-3f4d637cd980-table-row {
     border-bottom: 1px solid var(--border);
     transition: background-color 150ms;
   }
-  .bbui-d1d4e1b3de65-table-body > tr:last-child {
+  .bbui-3f4d637cd980-table-body > tr:last-child {
     border-bottom-width: 0;
   }
-  .bbui-d1d4e1b3de65-table-body > .bbui-d1d4e1b3de65-table-row:hover {
+  .bbui-3f4d637cd980-table-body > .bbui-3f4d637cd980-table-row:hover {
     background: color-mix(in srgb, var(--muted) 50%, transparent);
   }
-  .bbui-d1d4e1b3de65-table-row[data-state="selected"] {
+  .bbui-3f4d637cd980-table-row[data-state="selected"] {
     background: var(--muted);
   }
-  .bbui-d1d4e1b3de65-table-footer {
+  .bbui-3f4d637cd980-table-footer {
     border-top: 1px solid var(--border);
     background: color-mix(in srgb, var(--muted) 50%, transparent);
     font-weight: 500;
   }
-  .bbui-d1d4e1b3de65-table-footer > tr:last-child {
+  .bbui-3f4d637cd980-table-footer > tr:last-child {
     border-bottom-width: 0;
   }
-  .bbui-d1d4e1b3de65-table-caption {
+  .bbui-3f4d637cd980-table-caption {
     margin-top: 1rem;
     font-size: var(--text-sm, 0.8125rem);
     color: var(--muted-foreground);
   }
-  .bbui-d1d4e1b3de65-table-head {
+  .bbui-3f4d637cd980-table-head {
     height: 2.5rem;
     padding: 0 0.5rem;
     text-align: left;
@@ -427,7 +457,7 @@
     white-space: nowrap;
     color: var(--foreground);
   }
-  .bbui-d1d4e1b3de65-table-cell {
+  .bbui-3f4d637cd980-table-cell {
     padding: 0.5rem;
     vertical-align: middle;
   }
@@ -435,14 +465,14 @@
 /* Desktop utility overrides must not shrink touch targets. Explicit coarse-
  * pointer utilities remain the caller's escape hatch, as with the old defaults. */
 @layer utilities {
-  :where(.bbui-d1d4e1b3de65-button:not(.bbui-d1d4e1b3de65-native)) :is(svg, [data-icon-root]),
-  .bbui-d1d4e1b3de65-native svg:not([class*="size-"]) {
+  :where(.bbui-3f4d637cd980-button:not(.bbui-3f4d637cd980-native)) :is(svg, [data-icon-root]),
+  .bbui-3f4d637cd980-native svg:not([class*="size-"]) {
     width: 1rem;
     height: 1rem;
   }
-  :where(.bbui-d1d4e1b3de65-button:not(.bbui-d1d4e1b3de65-native)):where(
-      .bbui-d1d4e1b3de65-size-xs,
-      .bbui-d1d4e1b3de65-size-icon-xs
+  :where(.bbui-3f4d637cd980-button:not(.bbui-3f4d637cd980-native)):where(
+      .bbui-3f4d637cd980-size-xs,
+      .bbui-3f4d637cd980-size-icon-xs
     )
     :is(svg, [data-icon-root]) {
     width: 0.75rem;
@@ -450,11 +480,11 @@
   }
 
   @media (width < 48rem) and (pointer: coarse) {
-    .bbui-d1d4e1b3de65-input.bbui-d1d4e1b3de65-input:not([class*="pointer-coarse:h-"]) {
+    .bbui-3f4d637cd980-input.bbui-3f4d637cd980-input:not([class*="pointer-coarse:h-"]) {
       height: 2.5rem;
     }
-    .bbui-d1d4e1b3de65-input.bbui-d1d4e1b3de65-input:not([class*="pointer-coarse:text-"]),
-    .bbui-d1d4e1b3de65-textarea.bbui-d1d4e1b3de65-textarea:not([class*="pointer-coarse:text-"]) {
+    .bbui-3f4d637cd980-input.bbui-3f4d637cd980-input:not([class*="pointer-coarse:text-"]),
+    .bbui-3f4d637cd980-textarea.bbui-3f4d637cd980-textarea:not([class*="pointer-coarse:text-"]) {
       font-size: var(--text-base, 1rem);
     }
   }
@@ -466,16 +496,16 @@
    * shadow, ring, and focus styles still draw beside it; other themes keep the
    * border. Cards and edges stay borders: a flush child would cover a ring. */
   @media (min-resolution: 2.5dppx) {
-    .bbui-d1d4e1b3de65-outline,
-    .bbui-d1d4e1b3de65-input,
-    .bbui-d1d4e1b3de65-textarea {
-      --bbui-d1d4e1b3de65-edge: var(--input);
+    .bbui-3f4d637cd980-outline,
+    .bbui-3f4d637cd980-input,
+    .bbui-3f4d637cd980-textarea {
+      --bbui-3f4d637cd980-edge: var(--input);
     }
-    .bbui-d1d4e1b3de65-outline.bbui-d1d4e1b3de65-bordered,
-    .bbui-d1d4e1b3de65-input.bbui-d1d4e1b3de65-bordered {
-      --bbui-d1d4e1b3de65-edge: var(--border);
+    .bbui-3f4d637cd980-outline.bbui-3f4d637cd980-bordered,
+    .bbui-3f4d637cd980-input.bbui-3f4d637cd980-bordered {
+      --bbui-3f4d637cd980-edge: var(--border);
     }
-    .bbui-d1d4e1b3de65-outline:not(
+    .bbui-3f4d637cd980-outline:not(
       .border-0,
       .border-t-0,
       .border-r-0,
@@ -490,7 +520,7 @@
       .border-transparent,
       [class*=":border-"]
     ),
-    .bbui-d1d4e1b3de65-input:not(
+    .bbui-3f4d637cd980-input:not(
       .border-0,
       .border-t-0,
       .border-r-0,
@@ -505,7 +535,7 @@
       .border-transparent,
       [class*=":border-"]
     ),
-    .bbui-d1d4e1b3de65-textarea:not(
+    .bbui-3f4d637cd980-textarea:not(
       .border-0,
       .border-t-0,
       .border-r-0,
@@ -525,7 +555,7 @@
         var(--tw-inset-shadow, 0 0 transparent),
         var(--tw-inset-ring-shadow, 0 0 transparent),
         inset 0 0 0 calc(var(--hairline-ring-width, 0px) * var(--hairline-rings, 0))
-          var(--bbui-d1d4e1b3de65-edge),
+          var(--bbui-3f4d637cd980-edge),
         var(--tw-ring-offset-shadow, 0 0 transparent),
         var(--tw-ring-shadow, 0 0 transparent),
         var(--tw-shadow, 0 0 transparent);

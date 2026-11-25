@@ -921,6 +921,36 @@
           "type": "registry:ui"
         }
       ]
+    },
+    {
+      "name": "empty",
+      "type": "registry:ui",
+      "description": "Vega empty state: media, title, description and actions; `sm` size for panels.",
+      "dependencies": [
+        "class-variance-authority"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/empty.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "status-dot",
+      "type": "registry:ui",
+      "description": "A small status dot in neutral, primary, success, warning, destructive or info tone.",
+      "dependencies": [
+        "class-variance-authority"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/status-dot.tsx",
+          "type": "registry:ui"
+        }
+      ]
     }
   ]
 }

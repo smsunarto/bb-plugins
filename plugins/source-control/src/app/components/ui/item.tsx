@@ -6,15 +6,31 @@ import { cn } from "../../lib/utils";
 import { LIST_HOVER_TRANSITION } from "./motion.js";
 import { Separator } from "./separator";
 
-function ItemGroup({ className, ...props }: React.ComponentProps<"div">) {
+/** `divided` joins its items in one bordered box with a rule between rows; `flush` keeps the
+ * rules but drops the box, for rows that run edge to edge in a panel. */
+const itemGroupVariants = cva("group/item-group flex w-full flex-col", {
+  variants: {
+    variant: {
+      default:
+        "gap-4 has-data-[size=sm]:gap-2.5 has-data-[size=xs]:gap-2 has-data-[size=row]:gap-0.5",
+      divided: "gap-0 overflow-hidden rounded-lg border border-border",
+      flush: "gap-0",
+    },
+  },
+  defaultVariants: { variant: "default" },
+});
+
+function ItemGroup({
+  className,
+  variant = "default",
+  ...props
+}: React.ComponentProps<"div"> & VariantProps<typeof itemGroupVariants>) {
   return (
     <div
       role="list"
       data-slot="item-group"
-      className={cn(
-        "group/item-group flex w-full flex-col gap-4 has-data-[size=sm]:gap-2.5 has-data-[size=xs]:gap-2 has-data-[size=row]:gap-0.5",
-        className,
-      )}
+      data-variant={variant}
+      className={cn(itemGroupVariants({ variant }), className)}
       {...props}
     />
   );
@@ -35,7 +51,7 @@ function ItemSeparator({ className, ...props }: React.ComponentProps<typeof Sepa
  * is 44px under a coarse pointer. An item rendered as a link or button (`asChild`) hovers with the state colour, and
  * `aria-pressed`, `aria-selected` or `aria-current` marks it selected, which hover keeps. */
 const itemVariants = cva(
-  `group/item flex w-full flex-wrap items-center rounded-md border text-sm ${LIST_HOVER_TRANSITION} outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 [a]:hover:bg-state-hover [button]:text-left [button]:hover:bg-state-hover [button]:disabled:pointer-events-none [button]:disabled:opacity-50 aria-pressed:bg-state-active aria-selected:bg-state-active aria-[current=page]:bg-state-active aria-[current=true]:bg-state-active aria-pressed:hover:bg-state-active aria-selected:hover:bg-state-active aria-[current=page]:hover:bg-state-active aria-[current=true]:hover:bg-state-active`,
+  `group/item flex w-full flex-wrap items-center rounded-md border text-sm ${LIST_HOVER_TRANSITION} outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 [a]:hover:bg-state-hover [button]:text-left [button]:hover:bg-state-hover [button]:disabled:pointer-events-none [button]:disabled:opacity-50 aria-pressed:bg-state-active aria-selected:bg-state-active aria-[current=page]:bg-state-active aria-[current=true]:bg-state-active aria-pressed:hover:bg-state-active aria-selected:hover:bg-state-active aria-[current=page]:hover:bg-state-active aria-[current=true]:hover:bg-state-active group-data-[variant=divided]/item-group:rounded-none group-data-[variant=divided]/item-group:not-first:border-t-border group-data-[variant=flush]/item-group:rounded-none group-data-[variant=flush]/item-group:not-first:border-t-border`,
   {
     variants: {
       variant: {

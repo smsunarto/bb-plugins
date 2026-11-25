@@ -34,7 +34,7 @@ export function WithTooltip({
   );
 }
 
-export interface IconButtonProps extends Omit<ButtonProps, "variant" | "size" | "children"> {
+export interface IconButtonProps extends Omit<ButtonProps, "variant" | "size" | "tone" | "children"> {
   /** The accessible name, also the tooltip unless `tooltip` says it shorter. */
   label: string;
   tooltip?: ReactNode;
