@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import type { ListFilterState } from "./filter-bar.js";
 import type { TaskSort } from "../../shared/pagination.js";
+import { listPreferenceScope } from "./list-preference.js";
 
 const STORAGE_PREFIX = "bb-tasks:list-scroll:";
 
@@ -17,15 +18,14 @@ function storage(): Storage | null {
 export function listScrollScopeKey(params: {
   projectId: string | null;
   activeOnly: boolean;
+  backlogOnly?: boolean;
   filters: ListFilterState;
   sort: TaskSort;
 }): string {
-  const list =
-    params.projectId !== null
-      ? `project:${params.projectId}${params.activeOnly ? ":active" : ""}`
-      : params.activeOnly
-        ? "active"
-        : "all";
+  const list = listPreferenceScope(
+    params.projectId,
+    params.activeOnly ? "active" : params.backlogOnly ? "backlog" : undefined,
+  );
   const statuses = JSON.stringify([...params.filters.statuses].sort());
   const priorities = JSON.stringify([...params.filters.priorities].sort());
   const labels = JSON.stringify([...params.filters.labelNames].sort());

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { useProjects } from "./data.js";
 import {
@@ -32,14 +32,19 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-function RouteOutlet({ route }: { route: ResolvedTasksRoute }) {
+function RouteOutlet({
+  route,
+  onOpenTask,
+}: {
+  route: ResolvedTasksRoute;
+  onOpenTask: (taskKey: string, orderedKeys: readonly string[]) => void;
+}) {
   switch (route.kind) {
     case "all":
-      return <ListView projectId={null} />;
+      return <ListView projectId={null} onOpenTask={onOpenTask} />;
     case "active":
-      return <ListView projectId={null} activeOnly />;
     case "backlog":
-      return <ListView projectId={null} backlogOnly />;
+      return <ListView projectId={null} scope={route.kind} onOpenTask={onOpenTask} />;
     case "manage":
       return <ManagePanel />;
     case "task":
@@ -48,11 +53,7 @@ function RouteOutlet({ route }: { route: ResolvedTasksRoute }) {
       return route.view === "board" ? (
         <BoardView projectId={route.projectId} />
       ) : (
-        <ListView
-          projectId={route.projectId}
-          activeOnly={route.scope === "active"}
-          backlogOnly={route.scope === "backlog"}
-        />
+        <ListView projectId={route.projectId} scope={route.scope} onOpenTask={onOpenTask} />
       );
   }
 }
@@ -84,8 +85,20 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
   const projects = useProjects();
 
   const lastBrowseRouteRef = useRef<TasksRoute | null>(null);
+  const pagerKeys = useRef<readonly string[] | null>(null);
+  const openListTask = useCallback(
+    (taskKey: string, orderedKeys: readonly string[]) => {
+      // Retain what the user was browsing across detail-to-detail navigation.
+      pagerKeys.current = orderedKeys;
+      navigation.go({ kind: "task", taskKey });
+    },
+    [navigation],
+  );
   useEffect(() => {
-    if (route.kind !== "task") lastBrowseRouteRef.current = route;
+    if (route.kind !== "task") {
+      lastBrowseRouteRef.current = route;
+      pagerKeys.current = null;
+    }
     // oxlint-disable-next-line react/exhaustive-deps
   }, [subPath]);
   const backFromTask = () => navigation.go(lastBrowseRouteRef.current ?? { kind: "all" });
@@ -134,6 +147,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
         <TasksTopbar
           route={route}
           projects={projects.data}
+          pagerKeys={pagerKeys.current}
           pagerScope={
             lastBrowseRouteRef.current === null
               ? null
@@ -162,7 +176,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
               }
             />
           ) : (
-            <RouteOutlet route={route} />
+            <RouteOutlet route={route} onOpenTask={openListTask} />
           )}
         </div>
       </main>

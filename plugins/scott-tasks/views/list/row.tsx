@@ -133,7 +133,7 @@ export const TaskRow = memo(function TaskRow({
         data-task-key={task.key}
         aria-busy={pending || undefined}
         className={cn(
-          "group relative grid min-h-14 w-full grid-cols-[2.75rem_minmax(0,1fr)] grid-rows-[1.75rem_1.75rem] items-center gap-x-2 px-3 text-left hover:bg-state-hover",
+          "group relative grid min-h-14 w-full grid-cols-[2.75rem_minmax(0,1fr)] grid-rows-[1.75rem_1.75rem] items-center gap-x-2 px-3 text-left hover:bg-state-hover pointer-coarse:grid-rows-[1.5rem_2.75rem]",
           "pointer-fine:@md:h-9 pointer-fine:@md:min-h-9 pointer-fine:@md:grid-cols-[1.25rem_3.7rem_1.25rem_minmax(0,1fr)_minmax(0,9rem)_2.25rem_4.25rem] pointer-fine:@md:grid-rows-1 pointer-fine:@md:pl-7 pointer-fine:@md:pr-6",
           selected && "bg-surface-selected",
           pending && "opacity-70",
@@ -193,7 +193,7 @@ export const TaskRow = memo(function TaskRow({
           onOpenChange={(next) => setOpenMenu(next ? "priority" : null)}
           className="col-start-1 row-start-1 hidden pointer-fine:@md:inline-flex"
         />
-        <span className="pointer-events-none relative col-start-2 row-start-2 flex min-w-0 items-center gap-1 self-center whitespace-nowrap text-2xs tabular-nums text-muted-foreground pointer-fine:@md:row-start-1 pointer-fine:@md:text-xs">
+        <span className="pointer-events-none relative col-start-2 row-start-2 flex min-w-0 items-center gap-1 self-center whitespace-nowrap text-2xs tabular-nums text-muted-foreground pointer-coarse:-translate-y-2 pointer-fine:@md:row-start-1 pointer-fine:@md:text-xs">
           <PriorityIcon priority={task.priority} className="size-3 pointer-fine:@md:hidden" />
           <span className="truncate">{task.key}</span>
         </span>
@@ -202,13 +202,13 @@ export const TaskRow = memo(function TaskRow({
           onEdit={onEdit}
           open={openMenu === "status"}
           onOpenChange={(next) => setOpenMenu(next ? "status" : null)}
-          className="col-start-1 row-start-1 justify-self-center pointer-coarse:row-span-2 pointer-coarse:size-11 pointer-coarse:pb-7 pointer-fine:@md:col-start-3"
+          className="col-start-1 row-start-1 justify-self-center pointer-coarse:row-span-2 pointer-coarse:size-11 pointer-coarse:self-start pointer-coarse:pb-4 pointer-fine:@md:col-start-3"
         />
-        <span className="pointer-events-none relative col-start-2 row-start-1 min-w-0 truncate text-sm font-semibold pointer-fine:@md:col-start-4 pointer-fine:@md:text-[0.9375rem] pointer-fine:@md:font-medium">
+        <span className="pointer-events-none relative col-start-2 row-start-1 min-w-0 truncate text-sm font-semibold pointer-coarse:self-end pointer-fine:@md:col-start-4 pointer-fine:@md:text-[0.9375rem] pointer-fine:@md:font-medium">
           {task.title}
         </span>
         <span className="pointer-events-none relative col-start-2 row-start-2 flex max-w-[calc(100%-4.25rem)] min-w-0 items-center gap-1 self-center justify-self-end text-2xs text-muted-foreground pointer-fine:@md:col-span-3 pointer-fine:@md:col-start-5 pointer-fine:@md:row-start-1 pointer-fine:@md:grid pointer-fine:@md:w-full pointer-fine:@md:max-w-none pointer-fine:@md:grid-cols-[minmax(0,1fr)_2.25rem_4.25rem] pointer-fine:@md:self-center">
-          <span className="pointer-events-auto min-w-0 overflow-hidden justify-self-end pointer-coarse:-translate-y-2">
+          <span className="pointer-events-auto min-w-0 overflow-hidden justify-self-end">
             <LabelsEditor
               task={task}
               labels={projectLabels}
@@ -221,7 +221,7 @@ export const TaskRow = memo(function TaskRow({
               ) : null}
             </LabelsEditor>
           </span>
-          <span className="flex shrink-0 items-center justify-center gap-1">
+          <span className="flex shrink-0 items-center justify-center gap-1 pointer-coarse:-translate-y-2">
             {activeThreads ? <ActiveChip threads={activeThreads} /> : null}
             {showProject && project !== undefined ? (
               <span
@@ -235,7 +235,7 @@ export const TaskRow = memo(function TaskRow({
           <time
             dateTime={date}
             title={`${task.dueDate === null ? "Updated" : "Due"} ${dateLabel}`}
-            className="flex min-h-5 shrink-0 items-center justify-end gap-1 whitespace-nowrap tabular-nums"
+            className="flex min-h-5 shrink-0 items-center justify-end gap-1 whitespace-nowrap tabular-nums pointer-coarse:-translate-y-2"
           >
             {task.dueDate !== null ? <Icon name="Clock" className="size-3 shrink-0" /> : null}
             {dateLabel}

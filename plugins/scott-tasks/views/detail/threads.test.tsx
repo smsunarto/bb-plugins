@@ -115,6 +115,58 @@ function detailRpc(overrides: Record<string, unknown> = {}) {
   };
 }
 
+it("blocks the dispatch shortcut until the current request completes", async () => {
+  let finishDispatch!: (response: { threadId: string }) => void;
+  const request = new Promise<{ threadId: string }>((resolve) => {
+    finishDispatch = resolve;
+  });
+  const delegate = vi.fn(() => request);
+  const preset = {
+    id: "01HZZZZZZZZZZZZZZZZZZZZZE1",
+    name: "Test worker",
+    providerId: "claude-code",
+    modelId: "claude-sonnet-5",
+    reasoningLevel: "medium",
+    serviceTier: null,
+    permissionMode: "accept-edits",
+    environmentKind: "new-worktree",
+    baseBranch: "main",
+    machineId: null,
+    instructions: "",
+    builtin: false,
+    createdAt: "2026-07-15T00:00:00.000Z",
+  };
+  const renderDetail = () =>
+    renderSlot(
+      app.navPanels[0]!,
+      { subPath: "task/TSK-5" },
+      { rpc: detailRpc({ listPresets: () => ({ presets: [preset] }), delegate }) },
+    );
+  const slot = renderDetail();
+  const trigger = await slot.findByRole("button", { name: preset.name });
+  fireEvent.click(trigger);
+  try {
+    await slot.findByText("Dispatching…");
+    slot.lifecycle.unmount();
+    const reopened = renderDetail();
+    const pending = await reopened.findByRole("button", { name: "Dispatching…" });
+    vi.spyOn(pending.closest("aside")!, "getClientRects").mockReturnValue([
+      new DOMRect(0, 0, 10, 10),
+    ] as unknown as DOMRectList);
+    fireEvent.keyDown(document.body, { key: "a" });
+    expect(reopened.queryByText("Dispatch with preset (A)")).toBeNull();
+    expect(delegate).toHaveBeenCalledTimes(1);
+
+    finishDispatch({ threadId: "thr_test" });
+    await reopened.findByRole("button", { name: preset.name });
+    fireEvent.keyDown(document.body, { key: "a" });
+    await reopened.findByText("Dispatch with preset (A)");
+    expect(delegate).toHaveBeenCalledTimes(1);
+  } finally {
+    finishDispatch({ threadId: "thr_test" });
+  }
+});
+
 describe("task detail pull request pills", () => {
   it("links a thread's pull request as a keyboard-reachable anchor", async () => {
     const slot = renderSlot(

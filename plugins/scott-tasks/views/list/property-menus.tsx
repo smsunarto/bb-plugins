@@ -137,7 +137,7 @@ export function LabelsEditor({
           size="sm"
           aria-label="Edit task labels"
           aria-keyshortcuts="L"
-          className="relative z-10 min-w-0 gap-1 px-1 pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:pt-4"
+          className="relative z-10 min-w-0 gap-1 px-1 pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:pb-4"
         >
           {children ?? <Icon name="Tag" className="size-3.5 text-subtle-foreground" />}
         </Button>
@@ -147,27 +147,28 @@ export function LabelsEditor({
         {labels.length === 0 ? (
           <DropdownMenuItem disabled>No project labels</DropdownMenuItem>
         ) : null}
-        {labels.map((label) => (
-          <DropdownMenuCheckboxItem
-            key={label.id}
-            checked={task.labelIds.includes(label.id)}
-            onSelect={(event) => event.preventDefault()}
-            onCheckedChange={(checked) =>
-              onEdit(task, {
-                labelIds: checked
-                  ? [...task.labelIds, label.id]
-                  : task.labelIds.filter((id) => id !== label.id),
-              })
-            }
-          >
-            <span
-              aria-hidden
-              className="size-2 rounded-full"
-              style={{ backgroundColor: label.color }}
-            />
-            {label.name}
-          </DropdownMenuCheckboxItem>
-        ))}
+        {open &&
+          labels.map((label) => (
+            <DropdownMenuCheckboxItem
+              key={label.id}
+              checked={task.labelIds.includes(label.id)}
+              onSelect={(event) => event.preventDefault()}
+              onCheckedChange={(checked) =>
+                onEdit(task, {
+                  labelIds: checked
+                    ? [...task.labelIds, label.id]
+                    : task.labelIds.filter((id) => id !== label.id),
+                })
+              }
+            >
+              <span
+                aria-hidden
+                className="size-2 rounded-full"
+                style={{ backgroundColor: label.color }}
+              />
+              {label.name}
+            </DropdownMenuCheckboxItem>
+          ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

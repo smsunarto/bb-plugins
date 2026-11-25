@@ -5,12 +5,13 @@ import {
   type TaskStatus,
 } from "../../shared/contract.js";
 import { TASK_SORTS, type TaskSort } from "../../shared/pagination.js";
+import type { TaskScope } from "../../shell/routes.js";
 import { EMPTY_FILTERS, type ListFilterState } from "./filter-bar.js";
 
 export const LIST_PREFERENCE_STORAGE_KEY = "bb-tasks:list-preferences";
 export const LIST_PREFERENCE_VERSION = 1 as const;
 
-type ListPreferenceScope = "all" | "active" | `project:${string}`;
+type ListPreferenceScope = "all" | TaskScope | `project:${string}`;
 
 export interface ListPreference {
   filters: ListFilterState;
@@ -29,11 +30,10 @@ interface StoredDocumentV1 {
 
 export function listPreferenceScope(
   projectId: string | null,
-  activeOnly: boolean,
+  scope: TaskScope | undefined,
 ): ListPreferenceScope {
-  if (activeOnly) return "active";
-  if (projectId !== null) return `project:${projectId}`;
-  return "all";
+  if (projectId === null) return scope ?? "all";
+  return scope ? `project:${projectId}:${scope}` : `project:${projectId}`;
 }
 
 const STATUS_SET = new Set<string>(TASK_STATUSES);

@@ -9,7 +9,7 @@ import {
 import { errorMessage } from "../../shared/errors.js";
 import { editTask, type TaskEdit } from "../../shell/collections.js";
 import { useActiveThreads, useLabels, useProjects, useTasksRpc } from "../../shell/data.js";
-import { useTasksNavigation } from "../../shell/routes.js";
+import type { TaskScope } from "../../shell/routes.js";
 import { useTasksUi } from "../../shell/ui-store.js";
 import { hasOpenOverlay } from "../../shell/keyboard.js";
 import { DetailToasts, useDetailToasts } from "../detail/toast.js";
@@ -57,8 +57,8 @@ function hasPendingWrites(task: Task): boolean {
 
 interface ListViewProps {
   projectId: string | null;
-  activeOnly?: boolean;
-  backlogOnly?: boolean;
+  scope?: TaskScope;
+  onOpenTask: (taskKey: string, orderedKeys: readonly string[]) => void;
 }
 
 function readRow(container: HTMLElement, key: string) {
@@ -83,15 +83,13 @@ function LoadingRows() {
   );
 }
 
-export function ListView({ projectId, activeOnly = false, backlogOnly = false }: ListViewProps) {
-  const navigation = useTasksNavigation();
-  const openTask = useCallback(
-    (taskKey: string) => navigation.go({ kind: "task", taskKey }),
-    [navigation],
-  );
+export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
+  const activeOnly = scope === "active";
+  const backlogOnly = scope === "backlog";
   const projects = useProjects();
   const { toasts, push, dismiss } = useDetailToasts();
-  const preferenceScope = listPreferenceScope(projectId, activeOnly);
+  const preferenceScope = listPreferenceScope(projectId, scope);
+  const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
   // Each scope keeps its own saved preference, read again when the scope changes.
   const [stored, setStored] = useState(() => ({
     scope: preferenceScope,
@@ -99,12 +97,14 @@ export function ListView({ projectId, activeOnly = false, backlogOnly = false }:
   }));
   if (stored.scope !== preferenceScope) {
     setStored({ scope: preferenceScope, preference: loadListPreference(preferenceScope) });
+    setSelection(new Set());
   }
   const setPreference = (update: (current: ListPreference) => ListPreference) => {
     setStored((current) => ({ scope: current.scope, preference: update(current.preference) }));
   };
   const { filters, sort } = stored.preference;
   const setFilters = (next: ListFilterState) => {
+    setSelection(new Set());
     setPreference((current) => {
       const updated: ListPreference = {
         filters: backlogOnly ? { ...next, statuses: current.filters.statuses } : next,
@@ -195,7 +195,16 @@ export function ListView({ projectId, activeOnly = false, backlogOnly = false }:
   const groups = useMemo(() => groupTasksByStatus(sortTasks(tasks, sort)), [tasks, sort]);
   const groupId = useId();
   const [collapsed, setCollapsed] = useState<Partial<Record<TaskStatus, boolean>>>({});
-  const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
+  const orderedKeys = useMemo(
+    () =>
+      groups.flatMap(({ status, tasks }) => (collapsed[status] ? [] : tasks.map(({ key }) => key))),
+    [collapsed, groups],
+  );
+  const orderedKeysRef = useRef(orderedKeys);
+  const openTask = useCallback(
+    (taskKey: string) => onOpenTask(taskKey, orderedKeysRef.current),
+    [onOpenTask],
+  );
   const selectedTasks = useMemo(
     () => tasks.filter((task) => selection.has(task.id)),
     [selection, tasks],
@@ -216,6 +225,7 @@ export function ListView({ projectId, activeOnly = false, backlogOnly = false }:
   const scopeKey = listScrollScopeKey({
     projectId,
     activeOnly,
+    backlogOnly,
     filters: { ...filters, statuses },
     sort,
   });
@@ -244,6 +254,7 @@ export function ListView({ projectId, activeOnly = false, backlogOnly = false }:
   });
 
   useLayoutEffect(() => {
+    orderedKeysRef.current = orderedKeys;
     const container = scrollRef.current;
     if (container === null || pendingFocus.current === null) return;
     const row = readRow(container, pendingFocus.current);
@@ -253,25 +264,26 @@ export function ListView({ projectId, activeOnly = false, backlogOnly = false }:
   });
 
   const moveFocus = (currentKey: string | undefined, direction: number) => {
-    const visible = groups.flatMap(({ status, tasks }) => (collapsed[status] ? [] : tasks));
-    const current = visible.findIndex((task) => task.key === currentKey);
+    const current = currentKey === undefined ? -1 : orderedKeys.indexOf(currentKey);
     const index =
       current === -1
         ? direction < 0
-          ? visible.length - 1
+          ? orderedKeys.length - 1
           : 0
-        : Math.min(visible.length - 1, Math.max(0, current + direction));
-    const next = visible[index];
+        : Math.min(orderedKeys.length - 1, Math.max(0, current + direction));
+    const nextKey = orderedKeys[index];
     const container = scrollRef.current;
-    if (!next || !container) return;
-    const row = readRow(container, next.key);
+    if (!nextKey || !container) return;
+    const row = readRow(container, nextKey);
     if (row) {
       row.focus({ preventScroll: true });
       row.scrollIntoView?.({ block: "nearest" });
       return;
     }
-    const groupIndex = groups.findIndex((group) => group.status === next.status);
-    pendingFocus.current = next.key;
+    const groupIndex = groups.findIndex((group) =>
+      group.tasks.some((task) => task.key === nextKey),
+    );
+    pendingFocus.current = nextKey;
     container.scrollTop = Math.max(
       0,
       viewport.headerHeight * (groupIndex + 1) + viewport.rowHeight * index - viewport.height / 2,
@@ -293,7 +305,13 @@ export function ListView({ projectId, activeOnly = false, backlogOnly = false }:
       const checkboxRow = target.matches('[role="checkbox"]')
         ? target.closest<HTMLElement>("[data-task-key]")
         : null;
-      const rowKey = target.dataset.openTask ?? checkboxRow?.dataset.taskKey;
+      const propertyRow = target.matches(
+        '[aria-keyshortcuts="S"], [aria-keyshortcuts="P"], [aria-keyshortcuts="L"]',
+      )
+        ? target.closest<HTMLElement>("[data-task-key]")
+        : null;
+      const rowKey =
+        target.dataset.openTask ?? checkboxRow?.dataset.taskKey ?? propertyRow?.dataset.taskKey;
       if (
         target !== document.body &&
         target !== container &&

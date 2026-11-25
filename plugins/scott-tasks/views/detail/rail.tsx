@@ -18,6 +18,7 @@ import { PriorityIcon, StatusIcon, formatDueDate, isActiveThread } from "./meta.
 import { DUE_DATE_PRESETS, localIsoDate, PRIORITY_LABELS, STATUS_LABELS } from "../list/lib.js";
 import { isBareKey, priorityForShortcut, statusForShortcut } from "../list/property-menus.js";
 import { hasOpenOverlay } from "../../shell/keyboard.js";
+import { useTasksUi } from "../../shell/ui-store.js";
 import { DispatchControl } from "./threads.js";
 import { CreateLabelItem } from "../../components/create-label-item.js";
 import { DEFAULT_COLOR } from "../manage/shared.js";
@@ -533,7 +534,12 @@ export function PropertiesRail({
       if (event.defaultPrevented || event.repeat || event.isComposing || !isBareKey(event)) return;
       const key = event.key.toLowerCase();
       const property = PROPERTY_KEYS[key as keyof typeof PROPERTY_KEYS];
-      if (!property || (property === "agent" && presets === undefined)) return;
+      if (
+        !property ||
+        (property === "agent" &&
+          (presets === undefined || useTasksUi.getState().dispatchingTaskIds.has(task.id)))
+      )
+        return;
       const target = event.target;
       const article = rail.current?.closest("article");
       if (!article || !(target instanceof HTMLElement)) return;
@@ -548,7 +554,7 @@ export function PropertiesRail({
     // The Tasks page owns these letters before BB's window-level commands run.
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [presets]);
+  }, [presets, task.id]);
 
   return (
     <aside

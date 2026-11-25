@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { makeTask } from "../test-fixtures.js";
+import { makeTask, rpcInput } from "../test-fixtures.js";
 import type { Task } from "../shared/contract.js";
 
 if (!window.matchMedia) {
@@ -192,6 +192,53 @@ function pagerTask(key: string, status: Task["status"], position: number) {
 }
 
 describe("task pager", () => {
+  it("keeps the originating Backlog order and stops at its final result", async () => {
+    const backlog = [
+      { ...pagerTask("TSK-5", "backlog", 1), priority: "low" },
+      { ...pagerTask("TSK-6", "backlog", 2), priority: "urgent" },
+    ] satisfies Task[];
+    window.localStorage.setItem(
+      LIST_PREFERENCE_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        scopes: { [`project:${PROJECT_ID}:backlog`]: { sort: "priority" } },
+      }),
+    );
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: PROJECT_ID + "?scope=backlog" },
+      {
+        rpc: seededRpc({
+          listTasks: (input: unknown) => ({
+            tasks: rpcInput(input).parentTaskId ? [] : [...tasks, ...backlog],
+          }),
+          getTaskByKey: (input: unknown) => ({
+            task: backlog.find((task) => task.key === rpcInput(input).taskKey) ?? null,
+          }),
+          listLabels: () => ({ labels: [] }),
+          listAttachments: () => ({ attachments: [] }),
+          listTaskThreads: () => ({ taskThreads: [] }),
+          listComments: () => ({ comments: [] }),
+        }),
+      },
+    );
+    const Panel = app.navPanels[0]!.component;
+    fireEvent.click(await slot.findByRole("button", { name: /Open TSK-6/ }));
+    slot.lifecycle.rerender(<Panel subPath="task/TSK-6" />);
+    await slot.findByText("1 / 2");
+    fireEvent.click(slot.getByRole("button", { name: "Next task" }));
+    expect(slot.navigateCalls).toContainEqual({
+      method: "toPluginPanel",
+      path: "tasks",
+      options: { subPath: "task/TSK-5" },
+    });
+    slot.lifecycle.rerender(<Panel subPath="task/TSK-5" />);
+    await slot.findByText("2 / 2");
+    expect((slot.getByRole("button", { name: "Next task" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
   const tasks = [
     pagerTask("TSK-3", "done", 1),
     pagerTask("TSK-1", "in_progress", 1),

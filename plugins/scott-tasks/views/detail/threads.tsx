@@ -27,6 +27,7 @@ import { PR_STATE_META, THREAD_STATUS_META, formatRelativeTime, isActiveThread }
 import { PresetDialog, savePresetDraft } from "../manage/preset-dialog.js";
 import { ConfirmDialog } from "../../components/confirm-dialog.js";
 import { useTasksRpc } from "../../shell/data.js";
+import { useTasksUi } from "../../shell/ui-store.js";
 import { badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Hint } from "../../components/hint.js";
@@ -274,25 +275,22 @@ export function DispatchControl({
 }: DispatchControlProps) {
   const rpc = useRpc<DelegationRpcContract>();
   const tasksRpc = useTasksRpc();
-  const [dispatching, setDispatching] = useState(false);
+  const dispatching = useTasksUi((state) => state.dispatchingTaskIds.has(taskId));
   const [lastPresetId, setLastPresetId] = useState(loadLastPresetId);
   const [createDialogKey, setCreateDialogKey] = useState<number | null>(null);
 
-  const dispatch = async (presetId: string) => {
-    setDispatching(true);
+  const pickPreset = async (preset: Preset) => {
+    const { beginDispatch, endDispatch } = useTasksUi.getState();
+    if (!beginDispatch(taskId)) return;
+    setLastPresetId(preset.id);
+    storeLastPresetId(preset.id);
     try {
-      await rpc.call("delegate", { taskId, presetId });
+      await rpc.call("delegate", { taskId, presetId: preset.id });
     } catch (error) {
       onError(errorMessage(error));
     } finally {
-      setDispatching(false);
+      endDispatch(taskId);
     }
-  };
-
-  const pickPreset = (preset: Preset) => {
-    setLastPresetId(preset.id);
-    storeLastPresetId(preset.id);
-    void dispatch(preset.id);
   };
 
   const primarySegment = "bg-primary text-primary-foreground hover:bg-primary/90";
@@ -342,14 +340,14 @@ export function DispatchControl({
             primarySegment,
           )}
           onClick={() => {
-            if (current) pickPreset(current);
+            if (current) void pickPreset(current);
           }}
         >
           <span className="truncate">
             {dispatching ? "Dispatching…" : (current?.name ?? "Dispatch")}
           </span>
         </Button>
-        <DropdownMenu {...menu}>
+        <DropdownMenu {...menu} open={menu ? menu.open && !dispatching : undefined}>
           <DropdownMenuTrigger asChild disabled={dispatching || !current}>
             <Button
               size="sm"
@@ -366,7 +364,7 @@ export function DispatchControl({
           <DropdownMenuContent align={align}>
             <DropdownMenuLabel>Dispatch with preset (A)</DropdownMenuLabel>
             {(presets ?? []).map((preset) => (
-              <DropdownMenuItem key={preset.id} onSelect={() => pickPreset(preset)}>
+              <DropdownMenuItem key={preset.id} onSelect={() => void pickPreset(preset)}>
                 <span className="min-w-0 flex-1 truncate">{preset.name}</span>
                 <span className="text-xs text-muted-foreground">{preset.modelId}</span>
                 {preset.id === current?.id ? <Icon name="Check" className="size-3.5" /> : null}

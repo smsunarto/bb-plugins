@@ -198,6 +198,61 @@ async function selectSort(slot: ReturnType<typeof renderProject>, label: string)
 }
 
 describe("list filter/sort preference persistence", () => {
+  it("resumes row navigation after closing a keyboard-opened property menu", async () => {
+    const matchMedia = window.matchMedia;
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      ...matchMedia(query),
+      matches: false,
+    }));
+    const slot = renderProject(PROJECT_A);
+    const first = await slot.findByRole("button", { name: /Open ALP-1/ });
+    first.focus();
+    fireEvent.keyDown(first, { key: "s" });
+    const menu = await slot.findByRole("menu");
+    fireEvent.keyDown(menu, { key: "Escape" });
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute("aria-keyshortcuts")).toBe("S"),
+    );
+    fireEvent.keyDown(document.activeElement!, { key: "j" });
+    expect(document.activeElement).toBe(slot.getByRole("button", { name: /Open ALP-2/ }));
+  });
+
+  it("discards selections when switching between project and workspace lists", async () => {
+    const slot = renderProject(PROJECT_A);
+    const Panel = app.navPanels[0]!.component;
+    fireEvent.click(await slot.findByRole("checkbox", { name: "Select ALP-1" }));
+    expect(slot.getByText("1 selected")).toBeDefined();
+    slot.lifecycle.rerender(<Panel subPath={PROJECT_B} />);
+    fireEvent.click(await slot.findByRole("checkbox", { name: "Select BET-1" }));
+    expect(slot.getByText("1 selected")).toBeDefined();
+    slot.lifecycle.rerender(<Panel subPath="all" />);
+    await slot.findByRole("button", { name: /Open ALP-1/ });
+    expect(slot.queryByText(/selected$/)).toBeNull();
+    for (const key of ["ALP-1", "BET-1"]) {
+      expect(
+        slot.getByRole("checkbox", { name: `Select ${key}` }).getAttribute("aria-checked"),
+      ).toBe("false");
+    }
+  });
+
+  it("isolates project Active filters from other projects and workspace Active", async () => {
+    const slot = renderProject(PROJECT_A + "?scope=active");
+    const Panel = app.navPanels[0]!.component;
+    await slot.findByText("ALP-9");
+    fireEvent.click(slot.getByRole("button", { name: "Filter" }));
+    fireEvent.click(slot.getByRole("button", { name: /^Priority/ }));
+    fireEvent.click(await slot.findByRole("menuitemcheckbox", { name: /Urgent/ }));
+    pageKeyboardEscape(slot);
+    await slot.findByText("No tasks match these filters");
+    slot.lifecycle.rerender(<Panel subPath={PROJECT_B + "?scope=active"} />);
+    await slot.findByText("BET-9");
+    slot.lifecycle.rerender(<Panel subPath="active" />);
+    await slot.findByText("ALP-9");
+    await slot.findByText("BET-9");
+    slot.lifecycle.rerender(<Panel subPath={PROJECT_A + "?scope=active"} />);
+    await slot.findByText("No tasks match these filters");
+  });
+
   // get-bb/bb#7056: one list instance serves All, Active, and every project.
   it("shows cached lists across project, all, and active navigation", async () => {
     const registration = app.navPanels[0]!;

@@ -32,19 +32,25 @@ interface PagerPosition {
 }
 
 export function pagerPosition(tasks: readonly Task[], taskKey: string): PagerPosition | null {
-  const ordered = groupTasksByStatus(sortTasks(tasks, "manual")).flatMap((group) => group.tasks);
+  const ordered = groupTasksByStatus(sortTasks(tasks, "manual")).flatMap((group) =>
+    group.tasks.map(({ key }) => key),
+  );
+  return orderedPagerPosition(ordered, taskKey);
+}
+
+function orderedPagerPosition(ordered: readonly string[], taskKey: string): PagerPosition | null {
   const wanted = taskKey.toUpperCase();
-  const index = ordered.findIndex((task) => task.key.toUpperCase() === wanted);
+  const index = ordered.findIndex((key) => key.toUpperCase() === wanted);
   if (index === -1) return null;
   return {
     index: index + 1,
     total: ordered.length,
-    prevKey: ordered[index - 1]?.key ?? null,
-    nextKey: ordered[index + 1]?.key ?? null,
+    prevKey: ordered[index - 1] ?? null,
+    nextKey: ordered[index + 1] ?? null,
   };
 }
 
-function TaskPager({
+function LiveTaskPager({
   taskKey,
   projectId,
   onNavigate,
@@ -65,6 +71,16 @@ function TaskPager({
     () => (siblings.isReady && siblings.data ? pagerPosition(siblings.data, taskKey) : null),
     [siblings.isReady, siblings.data, taskKey],
   );
+  return <TaskPager position={position} onNavigate={onNavigate} />;
+}
+
+function TaskPager({
+  position,
+  onNavigate,
+}: {
+  position: PagerPosition | null;
+  onNavigate: (route: TasksRoute) => void;
+}) {
   if (!position) return null;
   const step = (key: string | null) => {
     if (key !== null) onNavigate({ kind: "task", taskKey: key });
@@ -96,6 +112,26 @@ function TaskPager({
       </Button>
     </div>
   );
+}
+
+function TaskDetailPager({
+  taskKey,
+  orderedKeys,
+  projectId,
+  onNavigate,
+}: {
+  taskKey: string;
+  orderedKeys: readonly string[] | null;
+  projectId: string | null | undefined;
+  onNavigate: (route: TasksRoute) => void;
+}) {
+  if (orderedKeys !== null) {
+    return (
+      <TaskPager position={orderedPagerPosition(orderedKeys, taskKey)} onNavigate={onNavigate} />
+    );
+  }
+  if (projectId === undefined) return null;
+  return <LiveTaskPager taskKey={taskKey} projectId={projectId} onNavigate={onNavigate} />;
 }
 
 function ViewToggle({
@@ -213,6 +249,7 @@ interface TasksTopbarProps {
   route: ResolvedTasksRoute;
   projects: Project[] | undefined;
   pagerScope: { projectId: string | null } | null;
+  pagerKeys: readonly string[] | null;
   onNavigate: (route: TasksRoute) => void;
   onNewTask: () => void;
   onBack: () => void;
@@ -222,6 +259,7 @@ export function TasksTopbar({
   route,
   projects,
   pagerScope,
+  pagerKeys,
   onNavigate,
   onNewTask,
   onBack,
@@ -362,13 +400,16 @@ export function TasksTopbar({
           {breadcrumb}
         </div>
         <div className="flex shrink-0 items-center gap-2 @3xl:col-start-3 @3xl:row-start-1">
-          {route.kind === "task" && (pagerScope !== null || projects !== undefined) ? (
-            <TaskPager
+          {route.kind === "task" && (
+            <TaskDetailPager
               taskKey={route.taskKey}
-              projectId={pagerScope !== null ? pagerScope.projectId : (project?.id ?? null)}
+              orderedKeys={pagerKeys}
+              projectId={
+                pagerScope === null ? projects && (project?.id ?? null) : pagerScope.projectId
+              }
               onNavigate={onNavigate}
             />
-          ) : null}
+          )}
           <RefreshTasksButton />
           {browsing ? (
             <Hint label="New task (C)" side="bottom">
