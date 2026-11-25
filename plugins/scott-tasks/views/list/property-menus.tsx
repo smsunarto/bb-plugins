@@ -13,6 +13,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -77,9 +78,9 @@ function MenuHeading({ label, shortcut }: { label: string; shortcut: string }) {
   return (
     <DropdownMenuLabel className="flex items-center gap-2">
       <span className="flex-1">{label}</span>
-      <span className="w-3 text-right text-2xs tabular-nums text-subtle-foreground">
+      <DropdownMenuShortcut className="w-3 text-right tabular-nums">
         {shortcut}
-      </span>
+      </DropdownMenuShortcut>
     </DropdownMenuLabel>
   );
 }
@@ -105,9 +106,9 @@ function PickerOption({
       <span aria-hidden className="flex w-4 items-center justify-center text-subtle-foreground">
         {active ? <Icon name="Check" className="size-3.5" /> : null}
       </span>
-      <span aria-hidden className="w-3 text-right text-2xs tabular-nums text-subtle-foreground">
+      <DropdownMenuShortcut aria-hidden className="w-3 text-right tabular-nums">
         {shortcut}
-      </span>
+      </DropdownMenuShortcut>
     </>
   );
 }

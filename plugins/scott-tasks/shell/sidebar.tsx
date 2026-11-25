@@ -5,6 +5,8 @@ import type { TasksRoute } from "./routes.js";
 import { PresetDialog, savePresetDraft } from "../views/manage/preset-dialog.js";
 import { Icon } from "@/components/ui/icon";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Hint } from "../components/hint.js";
@@ -266,7 +268,7 @@ export function TasksSidebar({
                     </SidebarRow>
                   ))}
                   {presets.length === 0 ? (
-                    <div className="px-2 py-1 text-xs text-muted-foreground">No presets yet.</div>
+                    <EmptyState className="mx-2 my-1" message="No presets yet." />
                   ) : null}
                   <SidebarRow onClick={() => setPresetDialog({ key: Date.now(), editing: null })}>
                     <Icon name="Plus" className="size-3.5 shrink-0" />
@@ -278,7 +280,8 @@ export function TasksSidebar({
           </>
         )}
       </nav>
-      <div className="shrink-0 border-t border-border-hairline px-2 py-2">
+      <Separator />
+      <div className="shrink-0 px-2 py-2">
         <SidebarRow active={route.kind === "manage"} onClick={() => onNavigate({ kind: "manage" })}>
           <Icon name="Settings" className="size-3.5 shrink-0" />
           <span className="flex-1">Manage</span>

@@ -24,7 +24,7 @@ import { CreateLabelItem } from "../../components/create-label-item.js";
 import { DEFAULT_COLOR } from "../manage/shared.js";
 import { BbProjectLinkPicker } from "../manage/bb-project-link.js";
 import { Badge } from "@/components/ui/badge";
-import { Button, type ButtonProps } from "@/components/ui/button";
+import { Button, CompactButton, type ButtonProps } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -471,22 +471,22 @@ function DispatchTargetMenu({
         />
         <div className="mt-3 flex items-center justify-between gap-2">
           {linkedBbProjectId !== null ? (
-            <Button
+            <CompactButton
               variant="ghost"
               size="sm"
-              className="h-7 text-muted-foreground"
+              className="text-muted-foreground"
               disabled={saving}
               onClick={() => void save(null)}
             >
               <Icon name="X" className="size-3.5" />
               Unlink
-            </Button>
+            </CompactButton>
           ) : (
             <span />
           )}
-          <Button size="sm" className="h-7" disabled={saving} onClick={() => void save(selection)}>
+          <CompactButton size="sm" disabled={saving} onClick={() => void save(selection)}>
             Save
-          </Button>
+          </CompactButton>
         </div>
       </PopoverContent>
     </Popover>

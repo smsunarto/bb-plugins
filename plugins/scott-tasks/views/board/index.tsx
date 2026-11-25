@@ -501,7 +501,7 @@ export function BoardView({ projectId }: BoardViewProps) {
         <div className="flex min-h-10 items-center gap-2 px-2 text-xs font-medium">
           <StatusIcon status={status} />
           <span>{STATUS_LABELS[status]}</span>
-          <span className="font-normal text-muted-foreground">{cards.length}</span>
+          <Badge variant="count">{cards.length}</Badge>
           <Button
             variant="ghost"
             size="icon"

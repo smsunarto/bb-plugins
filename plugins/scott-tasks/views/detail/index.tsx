@@ -33,7 +33,7 @@ import { PropertiesRail, type TaskPropertyUpdate } from "./rail.js";
 import { ThreadsSection } from "./threads.js";
 import { DetailToasts, useDetailToasts } from "./toast.js";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Hint } from "../../components/hint.js";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -159,15 +159,15 @@ function SubTasksSection({
           />
         </div>
       ) : null}
-      <Button
+      <CompactButton
         variant="ghost"
         size="sm"
-        className="-ml-2 h-7 gap-1 px-2 text-muted-foreground"
+        className="-ml-2.5 gap-1 text-muted-foreground"
         onClick={() => setAdding(true)}
       >
         <Icon name="Plus" className="size-3" />
         Add sub-task
-      </Button>
+      </CompactButton>
     </section>
   );
 }
