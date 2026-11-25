@@ -197,6 +197,20 @@ describe("re-reading the file", () => {
     vi.useRealTimers();
   });
 
+  test("closing the opener aborts a pending read and clears its timers", () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn((_url: string, _init: RequestInit) => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetch);
+
+    const { unmount } = render();
+    const signal = fetch.mock.calls[0]?.[1].signal;
+    expect(signal?.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    unmount();
+    expect(signal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   test("the same text under a new ETag is downloaded once, then answered 304", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let etag = '"1"';

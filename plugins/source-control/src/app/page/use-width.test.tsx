@@ -19,7 +19,9 @@ test("useWidth follows the element when it is replaced, and lets go of the old o
         this.elements.push(element);
         watching.add(element);
       }
-      unobserve() {}
+      unobserve(element: Element) {
+        watching.delete(element);
+      }
       disconnect() {
         for (const element of this.elements) watching.delete(element);
       }

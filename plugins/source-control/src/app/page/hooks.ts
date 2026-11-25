@@ -79,28 +79,30 @@ export function useWidth(ref: RefObject<HTMLElement | null>, measured = false): 
   const [width, setWidth] = useState<number | null>(() =>
     measured && typeof ResizeObserver !== "undefined" ? null : windowWidth(),
   );
-  // The element may be replaced while the hook's component stays: check after every render.
-  const watched = useRef<{ element: HTMLElement; observer: ResizeObserver } | null>(null);
+  const watch = useRef<((element: HTMLElement | null) => void) | null>(null);
   useEffect(() => {
-    const element = ref.current;
-    if (watched.current?.element === element) return;
-    watched.current?.observer.disconnect();
-    watched.current = null;
-    if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver((entries) => {
+    if (typeof ResizeObserver === "undefined") return;
+    let watched: HTMLElement | null = null;
+    const resize = new ResizeObserver((entries) => {
       const entry = entries.at(-1);
-      if (entry) setWidth(Math.round(entry.contentRect.width));
+      if (entry && entry.target === watched) setWidth(Math.round(entry.contentRect.width));
     });
-    observer.observe(element);
-    watched.current = { element, observer };
+    watch.current = (element) => {
+      if (watched === element) return;
+      if (watched) resize.unobserve(watched);
+      watched = element;
+      if (element) resize.observe(element);
+    };
+    return () => {
+      watched = null;
+      watch.current = null;
+      resize.disconnect();
+    };
+  }, []);
+  // The element may be replaced while the hook's component stays: check after every render.
+  useEffect(() => {
+    watch.current?.(ref.current);
   });
-  useEffect(
-    () => () => {
-      watched.current?.observer.disconnect();
-      watched.current = null;
-    },
-    [],
-  );
   return width;
 }
 

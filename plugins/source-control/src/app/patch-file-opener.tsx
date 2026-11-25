@@ -158,6 +158,21 @@ type Known = {
   modified: string | null;
 };
 type Shown = { url: string | null; value: Loaded };
+/** One request owns its abort signal and slow-read notice until it settles or is replaced. */
+function beginRead(onSlow: () => void) {
+  const controller = new AbortController();
+  const slowTimer = setTimeout(onSlow, POLL_MS);
+  const clearNotice = () => clearTimeout(slowTimer);
+  return {
+    signal: controller.signal,
+    progressed: Date.now(),
+    clearNotice,
+    cancel() {
+      clearNotice();
+      controller.abort();
+    },
+  };
+}
 
 /** How a read's outcome lands: what shows for `url`, and whether to keep retrying. */
 function outcomes(
@@ -273,7 +288,7 @@ function usePatchFile(url: string | null) {
   const last = useRef<Known | null>(null);
   /** A re-read failed while something drew: keep asking until one succeeds. */
   const retrying = useRef(false);
-  const inflight = useRef<{ controller: AbortController; progressed: number } | null>(null);
+  const inflight = useRef<ReturnType<typeof beginRead> | null>(null);
   /** A re-read has run past a poll while a diff shows: say the copy shown may be old. */
   const [slow, setSlow] = useState(false);
 
@@ -284,14 +299,12 @@ function usePatchFile(url: string | null) {
       // A poll or focus waits for the read already running while it still makes progress.
       const stalled = running !== null && Date.now() - running.progressed >= STALL_MS;
       if (running && !force && !stalled) return;
-      running?.controller.abort();
-      const controller = new AbortController();
-      const flight = { controller, progressed: Date.now() };
+      running?.cancel();
+      const flight = beginRead(() => setSlow(inflight.current === flight));
       inflight.current = flight;
       const progress = () => {
         flight.progressed = Date.now();
       };
-      const slowTimer = setTimeout(() => setSlow(inflight.current === flight), POLL_MS);
       const known = last.current?.url === url ? last.current : null;
       const { current, put, succeed, fail } = outcomes(url, shown, retrying, setLoaded);
       if (stalled) fail(STALLED);
@@ -300,25 +313,26 @@ function usePatchFile(url: string | null) {
           credentials: "same-origin",
           cache: "no-cache",
           headers: conditional(known),
-          signal: controller.signal,
+          signal: flight.signal,
         });
         progress();
+        if (flight.signal.aborted) return;
         if (response.status === 304) return succeed();
         if (!response.ok) {
           void response.body?.cancel();
           return fail(failure(response));
         }
         const text = await readCapped(response, MAX_PATCH_BYTES, progress);
-        if (controller.signal.aborted) return;
+        if (flight.signal.aborted) return;
         last.current = { url, text, ...validators(response) };
         // Unchanged text keeps the drawn diff, its open cards and its scroll.
         if (text !== null && known?.text === text && current()) return succeed();
         retrying.current = false;
         put(shownFor(text));
       } catch {
-        if (!controller.signal.aborted) fail(failure(null));
+        if (!flight.signal.aborted) fail(failure(null));
       } finally {
-        clearTimeout(slowTimer);
+        flight.clearNotice();
         if (inflight.current === flight) {
           inflight.current = null;
           setRefreshing(false);
@@ -331,7 +345,7 @@ function usePatchFile(url: string | null) {
 
   useEffect(() => {
     void load(true);
-    return () => inflight.current?.controller.abort();
+    return () => inflight.current?.cancel();
   }, [load]);
 
   // Read again as the tab shows again, as the window regains focus, and on a poll while showing.
