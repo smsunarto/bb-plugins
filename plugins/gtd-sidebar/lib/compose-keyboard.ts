@@ -68,6 +68,7 @@ export function focusComposeEditorWithKeyboard(document: Document): void {
 
   let settled = false;
   let composing = false;
+  let stopTransfer: (() => void) | undefined;
 
   const canHandoff = () =>
     settled &&
@@ -115,6 +116,7 @@ export function focusComposeEditorWithKeyboard(document: Document): void {
     observer.disconnect();
     view.clearTimeout(settle);
     view.clearTimeout(expiry);
+    stopTransfer?.();
     handoffs.delete(document);
     proxy.removeEventListener("blur", onBlur);
     proxy.remove();
@@ -124,13 +126,19 @@ export function focusComposeEditorWithKeyboard(document: Document): void {
   const onBlur = ({ relatedTarget }: FocusEvent) => {
     const editor = relatedTarget instanceof view.Element ? relatedTarget.closest(EDITOR) : null;
     const text = proxy.value;
-    cleanup();
-    if (text === "" || editor === null || !inset.contains(editor)) return;
+    if (text === "" || editor === null || !inset.contains(editor)) {
+      cleanup();
+      return;
+    }
 
-    // Focus finishes after blur. Insert through the browser so the editor
-    // receives its normal input event and preserves selection and undo.
-    view.queueMicrotask(() => {
+    // A trusted click or Tab can run microtasks between blur and focusin.
+    // Wait for focus, then let the browser finish placing its caret.
+    let transfer: number | undefined;
+    const insert = () => {
+      cleanup();
       if (!editor.contains(document.activeElement)) return;
+      // Keep the existing draft and append the text buffered before focus.
+      document.getSelection()?.collapse(editor, editor.childNodes.length);
       if (
         text.includes("\n") &&
         typeof view.DataTransfer === "function" &&
@@ -147,11 +155,19 @@ export function focusComposeEditorWithKeyboard(document: Document): void {
         if (!editor.dispatchEvent(paste)) return;
       }
       document.execCommand("insertText", false, text);
-    });
+    };
+    const onFocus = () => {
+      transfer = view.setTimeout(insert);
+    };
+    stopTransfer = () => {
+      editor.removeEventListener("focusin", onFocus);
+      view.clearTimeout(transfer);
+    };
+    editor.addEventListener("focusin", onFocus, { once: true });
   };
 
   handoffs.set(document, cleanup);
-  proxy.addEventListener("blur", onBlur);
+  proxy.addEventListener("blur", onBlur, { once: true });
   proxy.addEventListener("compositionstart", () => {
     composing = true;
   });

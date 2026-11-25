@@ -63,7 +63,7 @@ it("cancels the handoff if the user focuses another field", async () => {
   assert.equal(insertText.mock.calls.length, 0);
 });
 
-it("transfers multiline text when the host focuses the composer early", async () => {
+it("falls back to browser insertion when a multiline paste cannot be dispatched", async () => {
   focusComposeEditorWithKeyboard(document);
   const proxy = document.querySelector<HTMLTextAreaElement>("[data-gtd-keyboard-proxy]")!;
   proxy.value = "First line\nSecond line";
@@ -71,6 +71,83 @@ it("transfers multiline text when the host focuses the composer early", async ()
   await sleep(0);
   assert.equal(proxy.isConnected, false);
   assert.deepEqual(insertText.mock.calls, [["insertText", false, "First line\nSecond line"]]);
+});
+
+it("waits for the editor's focus to complete after an early blur", async () => {
+  const view = document.defaultView!;
+  editor.textContent = "Existing ";
+  focusComposeEditorWithKeyboard(document);
+  const proxy = document.querySelector<HTMLTextAreaElement>("[data-gtd-keyboard-proxy]")!;
+  proxy.value = "Draft";
+
+  // Trusted input can yield to the microtask queue between blur and focusin.
+  proxy.dispatchEvent(new view.FocusEvent("blur", { relatedTarget: editor }));
+  await sleep(0);
+  assert.equal(insertText.mock.calls.length, 0);
+  assert.equal(proxy.isConnected, true);
+
+  document.getSelection()?.collapse(editor, 0);
+  editor.focus();
+  await sleep(10);
+  assert.equal(document.activeElement, editor);
+  assert.equal(document.getSelection()?.anchorNode, editor);
+  assert.equal(document.getSelection()?.anchorOffset, editor.childNodes.length);
+  assert.equal(proxy.isConnected, false);
+  assert.deepEqual(insertText.mock.calls, [["insertText", false, "Draft"]]);
+});
+
+it("delivers both lines to the paste consumer once", async () => {
+  const view = document.defaultView!;
+  const pasteEvents: string[] = [];
+  const originals = {
+    DataTransfer: Object.getOwnPropertyDescriptor(view, "DataTransfer"),
+    ClipboardEvent: Object.getOwnPropertyDescriptor(view, "ClipboardEvent"),
+  };
+  class TestDataTransfer {
+    private readonly data = new Map<string, string>();
+
+    setData(type: string, text: string): void {
+      this.data.set(type, text);
+    }
+
+    getData(type: string): string {
+      return this.data.get(type) ?? "";
+    }
+  }
+  class TestClipboardEvent extends view.Event {
+    readonly clipboardData: TestDataTransfer;
+
+    constructor(type: string, init: EventInit & { clipboardData: TestDataTransfer }) {
+      super(type, init);
+      this.clipboardData = init.clipboardData;
+    }
+  }
+
+  Object.defineProperties(view, {
+    DataTransfer: { configurable: true, value: TestDataTransfer },
+    ClipboardEvent: { configurable: true, value: TestClipboardEvent },
+  });
+  try {
+    editor.addEventListener("paste", (event) => {
+      pasteEvents.push(event.clipboardData?.getData("text/plain") ?? "");
+      event.preventDefault();
+    });
+    focusComposeEditorWithKeyboard(document);
+    const proxy = document.querySelector<HTMLTextAreaElement>("[data-gtd-keyboard-proxy]")!;
+    proxy.value = "First line\nSecond line";
+    editor.focus();
+    await sleep(10);
+
+    assert.deepEqual(pasteEvents, ["First line\nSecond line"]);
+    assert.equal(insertText.mock.calls.length, 0);
+    assert.equal(proxy.isConnected, false);
+  } finally {
+    for (const key of ["DataTransfer", "ClipboardEvent"] as const) {
+      const original = originals[key];
+      if (original) Object.defineProperty(view, key, original);
+      else Reflect.deleteProperty(view, key);
+    }
+  }
 });
 
 it("wakes on editor mount without probing a closed, idle drawer", async () => {
@@ -88,7 +165,7 @@ it("wakes on editor mount without probing a closed, idle drawer", async () => {
   assert.equal(query.mock.calls.length, 1);
 
   prompt.append(editor);
-  await sleep(0);
+  await sleep(10);
   assert.equal(proxy.isConnected, false);
   assert.deepEqual(insertText.mock.calls, [["insertText", false, "Delayed draft"]]);
 });
