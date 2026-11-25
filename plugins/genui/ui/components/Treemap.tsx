@@ -7,6 +7,7 @@
 import { Fragment, useCallback, useMemo, useState } from "react";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { formatAmount, formatShare } from "../../core/perf-units";
 import { findNode, GROUP_HEADER, layoutTreemap, readTreemap, trail, type Tile, type TreeNode } from "../../core/treemap";
@@ -288,9 +289,7 @@ function ListView({ node, unit, onZoom }: { node: TreeNode; unit: string | null;
                 <span className="shrink-0 text-xs tabular-nums text-foreground">{amount}</span>
                 <span className="w-11 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{share}</span>
               </div>
-              <div aria-hidden className="ml-4 h-1 overflow-hidden rounded-full bg-muted">
-                <div className="h-full rounded-full" style={{ width: `${largest > 0 ? (child.value / largest) * 100 : 0}%`, background: tint(index, 70) }} />
-              </div>
+              <Progress aria-hidden value={child.value} max={largest > 0 ? largest : 1} className="ml-4 h-1 w-auto" indicatorStyle={{ background: tint(index, 70) }} />
             </li>
           );
         })}

@@ -2,6 +2,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { formFields } from "../../core/form";
 import type { PropsOf } from "../../core/types";
 import { Button as BaseButton } from "@/components/ui/button";
+import { FieldSet } from "@/components/ui/field";
 import { deferAnswer, flushAnswers } from "../answerSheet";
 import { RenderNodes } from "../render";
 import { NodeKeyContext, questionClosed, sentFor, useAnswers, UiRuntimeContext, useUiRuntime, type UiRuntime } from "../runtime";
@@ -87,11 +88,11 @@ export function Form({ props }: { props: PropsOf<"Form"> }) {
     };
   }, [closed, target, message, edit, question, stage]);
   return (
-    <fieldset
+    <FieldSet
       data-genui-question={question}
       disabled={sending || closed}
       onBlur={flushAnswers}
-      className={`m-0 flex min-w-0 flex-col gap-4 border-0 p-0 ${READ_ONLY}`}
+      className={`m-0 gap-4 ${READ_ONLY}`}
     >
       <UiRuntimeContext value={inner}>
         <RenderNodes nodes={props.children} />
@@ -120,6 +121,6 @@ export function Form({ props }: { props: PropsOf<"Form"> }) {
       ) : entry !== undefined ? (
         <InMessageLine />
       ) : null}
-    </fieldset>
+    </FieldSet>
   );
 }

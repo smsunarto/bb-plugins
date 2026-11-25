@@ -12,6 +12,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -36,7 +37,7 @@ export const groupAnchor = (group: ComponentGroup) => `genui-gallery-group-${gro
 const ICON_BUTTON = "size-9 [@media(pointer:coarse)]:size-11 [&_[data-icon-root]]:size-4";
 /** The closed search trigger, drawn like the shadcn Input it opens into. */
 const FIELD = "h-9 rounded-md border border-input [@media(pointer:coarse)]:h-11";
-const KBD = "inline-flex h-5 items-center rounded border border-border px-1 font-mono text-[11px] leading-4 text-muted-foreground [@media(pointer:coarse)]:hidden";
+const KBD = "[@media(pointer:coarse)]:hidden";
 /** Space kept between the header and a group heading it scrolls to, or the search list and the screen's bottom. */
 const GAP = 12;
 
@@ -270,9 +271,9 @@ export function GalleryHeader({
               >
                 <Icon name="Search" aria-hidden className="size-4 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">Search {GALLERY_ORDER.length} components</span>
-                <kbd aria-hidden className={KBD}>
+                <Kbd aria-hidden className={KBD}>
                   /
-                </kbd>
+                </Kbd>
               </Button>
               <ReloadButton onReload={onReload} />
             </>
@@ -302,9 +303,9 @@ export function GalleryHeader({
               >
                 <Icon name="Search" aria-hidden className="shrink-0" />
                 <span className="hidden text-sm @xl:inline">Search</span>
-                <kbd aria-hidden className={cn(KBD, "ml-auto hidden @xl:inline")}>
+                <Kbd aria-hidden className={cn(KBD, "ml-auto hidden @xl:inline-flex")}>
                   /
-                </kbd>
+                </Kbd>
               </Button>
               <span className="hidden @lg:contents">
                 <ReloadButton onReload={onReload} />

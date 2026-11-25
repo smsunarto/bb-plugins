@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
 import { experimental_saveFile, useBbNavigate } from "@get-bb/plugin-sdk/app";
+import { Spinner } from "@/components/ui/spinner";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { processPartialHtml } from "../core/partialHtml";
@@ -254,7 +255,7 @@ function PreviewFrame({
         </span>
       ) : (
         <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span className="size-2 animate-pulse rounded-full bg-[var(--color-timeline-accent,var(--primary))]" />
+          <Spinner />
           Building app…
         </div>
       )}

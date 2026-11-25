@@ -10,7 +10,9 @@
 // queries), so a row opens at its final height without measuring first.
 import { useContext, useId, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Markdown, UrlLink } from "@get-bb/plugin-sdk/app";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Icon } from "@/components/ui/icon";
+import { Item } from "@/components/ui/item";
 import { cn } from "@/lib/utils";
 import {
   acceptanceVerdict,
@@ -263,11 +265,12 @@ function StatusBar({ counts, label }: { counts: Readonly<Record<AcceptanceStatus
 function NeedsYouBox({ items }: { items: readonly NeedsYou[] }) {
   if (items.length === 0) return null;
   return (
-    <div role="note" aria-label="Needs you" className="flex min-w-0 flex-col gap-1 rounded-lg bg-warning/10 px-3 py-2">
-      <p className="m-0 flex items-center gap-1 text-xs font-medium leading-5 text-warning-text">
+    <Alert variant="warning" role="note" aria-label="Needs you" className="min-w-0 gap-1">
+      <AlertTitle className="flex items-center gap-1 text-xs leading-5">
         <Icon name="UserRound" aria-hidden className="size-3.5 shrink-0" />
         Needs you
-      </p>
+      </AlertTitle>
+      <AlertDescription>
       <ul className="m-0 flex min-w-0 list-none flex-col gap-1 p-0">
         {items.map((item, index) => (
           <li key={index} className="flex min-w-0 flex-col">
@@ -278,7 +281,8 @@ function NeedsYouBox({ items }: { items: readonly NeedsYou[] }) {
           </li>
         ))}
       </ul>
-    </div>
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -357,19 +361,20 @@ function EvidenceFile({ item, tone }: { item: Extract<Evidence, { kind: "file" }
       </span>
     </>
   );
-  const box = "flex w-full min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2 py-1 text-left";
   if (opener === null) {
     return (
-      <div title={item.path} className={box}>
+      <Item variant="outline" size="row" title={item.path} className="min-w-0">
         {content}
-      </div>
+      </Item>
     );
   }
   return (
     <WithTooltip tip={`Open ${opener.target}`}>
-      <button type="button" onClick={() => void opener.open(null)} className={cn("group/file cursor-pointer hover:bg-state-hover", box, FOCUS_RING)}>
-        {content}
-      </button>
+      <Item asChild variant="outline" size="row" className="group/file min-w-0 cursor-pointer">
+        <button type="button" onClick={() => void opener.open(null)}>
+          {content}
+        </button>
+      </Item>
     </WithTooltip>
   );
 }
@@ -383,18 +388,16 @@ function EvidenceLink({ item }: { item: Extract<Evidence, { kind: "url" }> }) {
     // Shown as written.
   }
   return (
-    <UrlLink
-      href={item.url}
-      title={item.url}
-      className={cn("group/link flex min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2 py-1 no-underline hover:bg-state-hover", FOCUS_RING)}
-    >
-      <Icon name="Globe" aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="flex min-w-0 flex-1 flex-col">
-        {item.label === null ? null : <span className="truncate text-xs leading-4 text-foreground">{item.label}</span>}
-        <span className="truncate text-[11.5px] leading-5 text-primary group-hover/link:underline">{host}</span>
-      </span>
-      <Icon name="ExternalLink" aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-    </UrlLink>
+    <Item asChild variant="outline" size="row" className="group/link min-w-0 no-underline">
+      <UrlLink href={item.url} title={item.url}>
+        <Icon name="Globe" aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="flex min-w-0 flex-1 flex-col">
+          {item.label === null ? null : <span className="truncate text-xs leading-4 text-foreground">{item.label}</span>}
+          <span className="truncate text-[11.5px] leading-5 text-primary group-hover/link:underline">{host}</span>
+        </span>
+        <Icon name="ExternalLink" aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      </UrlLink>
+    </Item>
   );
 }
 

@@ -7,6 +7,7 @@
 // screen render, so an hour-long recording costs what a minute does. Untimed
 // input reads as aligned text instead.
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
@@ -670,7 +671,7 @@ function Controls({
       ) : null}
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {view === "timeline" ? (
-          <div className="flex items-center" role="group" aria-label="Zoom">
+          <ButtonGroup aria-label="Zoom">
             <IconButton label="Zoom out" disabled={zoomAt <= 0} onClick={() => onZoom(ZOOM_STEPS[Math.max(0, zoomAt - 1)])}>
               <Icon name="ZoomOut" aria-hidden className="size-3.5" />
             </IconButton>
@@ -681,7 +682,7 @@ function Controls({
             >
               <Icon name="ZoomIn" aria-hidden className="size-3.5" />
             </IconButton>
-          </div>
+          </ButtonGroup>
         ) : null}
         {timed ? <Segmented label="View" value={view} options={VIEWS} onChange={onView} /> : null}
       </div>

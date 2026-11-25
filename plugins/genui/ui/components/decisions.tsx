@@ -7,6 +7,7 @@ import { useContext, useEffect, useId, useState, type ReactNode } from "react";
 import { Markdown } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { Button as BaseButton } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
@@ -626,12 +627,13 @@ export function Decision({ props }: { props: Props }) {
                     {entry.index === leader && !tiedLead ? <Pill tone="info">Leads</Pill> : null}
                     <span className="text-[15px] font-semibold tabular-nums text-foreground">{formatNumber(entry.total)}</span>
                   </div>
-                  <div aria-hidden className="h-1 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-[var(--color-timeline-accent,var(--primary))] transition-[width] duration-300 motion-reduce:transition-none"
-                      style={{ width: `${(entry.total / model.scale) * 100}%` }}
-                    />
-                  </div>
+                  <Progress
+                    aria-hidden
+                    value={entry.total}
+                    max={model.scale}
+                    className="h-1"
+                    indicatorClassName="bg-[var(--color-timeline-accent,var(--primary))]"
+                  />
                   <dl className="m-0 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1">
                     {model.criteria.map((criterion, index) => (
                       <div key={index} className="contents">

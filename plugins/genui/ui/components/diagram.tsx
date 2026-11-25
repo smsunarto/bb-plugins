@@ -7,6 +7,7 @@
 // only and re-found by a MutationObserver; events are delegated.
 import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { Markdown } from "@get-bb/plugin-sdk/app";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import type { Size } from "../../core/compare";
@@ -365,33 +366,29 @@ export function DiagramViewer({
           />
         </ZoomPane>
         {detail === null ? null : (
+          <Collapsible key={detail.key} open={!folded} onOpenChange={(open) => setFolded(!open)} asChild>
           <section
-            key={detail.key}
             id={popupId}
             aria-label={title}
             className="absolute inset-x-3 bottom-16 z-20 mx-auto flex max-h-[min(50dvh,30rem)] max-w-md flex-col overflow-hidden rounded-xl border border-border bg-background text-foreground shadow-[0_8px_30px_rgb(0_0_0/0.18)] sm:left-auto sm:right-4 sm:mx-0 sm:w-96"
           >
             <div className="flex min-w-0 shrink-0 items-center gap-1 py-1 pl-1 pr-1">
-              <button
-                type="button"
-                aria-expanded={!folded}
+              <CollapsibleTrigger
                 aria-controls={`${popupId}-body`}
-                onClick={() => setFolded((value) => !value)}
                 className={cn("flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md px-1 py-1 text-left hover:bg-state-hover", FOCUS_RING)}
               >
                 <Icon name="ChevronDown" aria-hidden className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none", folded && "-rotate-90")} />
                 <h4 className="m-0 min-w-0 truncate text-sm font-medium leading-5">{title}</h4>
-              </button>
+              </CollapsibleTrigger>
               <IconButton label={`Close ${title}`} tooltipLayer={VIEWER_TOOLTIP_LAYER} onClick={() => setSelected(null)} className="size-7 [&_[data-icon-root]]:size-4">
                 <Icon name="X" aria-hidden />
               </IconButton>
             </div>
-            {folded ? null : (
-              <div id={`${popupId}-body`} className="min-h-0 select-text overflow-y-auto overscroll-contain px-3 pb-3">
-                <DetailBody detail={detail} />
-              </div>
-            )}
+            <CollapsibleContent id={`${popupId}-body`} className="min-h-0 select-text overflow-y-auto overscroll-contain px-3 pb-3">
+              <DetailBody detail={detail} />
+            </CollapsibleContent>
           </section>
+          </Collapsible>
         )}
       </div>
     </FullScreen>

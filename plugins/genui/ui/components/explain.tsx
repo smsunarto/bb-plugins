@@ -4,6 +4,7 @@
 import { useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Markdown } from "@get-bb/plugin-sdk/app";
 import { Button as BaseButton } from "@/components/ui/button";
+import { Progress as KitProgress } from "@/components/ui/progress";
 import { Icon as HostIcon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { resolveIconName } from "../icons";
@@ -97,12 +98,7 @@ function DealtStep({ step, from }: { step: WalkthroughStep; from: number }) {
 function Progress({ at, count }: { at: number; count: number }) {
   if (count > MAX_SEGMENTS) {
     return (
-      <div aria-hidden className="h-1 w-full overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none"
-          style={{ width: `${((at + 1) / count) * 100}%`, background: ACCENT }}
-        />
-      </div>
+      <KitProgress aria-hidden value={at + 1} max={count} className="h-1" indicatorStyle={{ background: ACCENT }} />
     );
   }
   return (

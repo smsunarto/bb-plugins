@@ -4,6 +4,7 @@
 // names its uncovered lines opens to them as range chips; a chip shows those
 // lines of the file, the uncovered ones marked.
 import { useContext, useId, useMemo, useState } from "react";
+import { Progress } from "@/components/ui/progress";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
@@ -72,11 +73,13 @@ interface RowContext {
 function Bar({ value, className }: { value: number | null; className?: string }) {
   const grow = useEntrance<HTMLDivElement>(GROW_X);
   return (
-    <span aria-hidden className={cn("h-2 shrink-0 overflow-hidden rounded-full bg-muted", className)}>
-      {value === null ? null : (
-        <span ref={grow} className={cn("block h-full origin-left rounded-full", TONE_FILL[coverageTone(value)])} style={{ width: `${value}%` }} />
-      )}
-    </span>
+    <Progress
+      aria-hidden
+      value={value ?? 0}
+      className={cn("h-2 shrink-0", className)}
+      indicatorRef={grow}
+      indicatorClassName={value === null ? "hidden" : TONE_FILL[coverageTone(value)]}
+    />
   );
 }
 

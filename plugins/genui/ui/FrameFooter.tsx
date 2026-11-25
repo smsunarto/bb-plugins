@@ -5,6 +5,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { CompactButton } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import type { Diagnostic } from "../core/types";
@@ -104,6 +105,7 @@ export function GalleryFooter({
   const panelId = useId();
   const { copied, copy } = useCopy(() => source, SOURCE_COPY);
   return (
+    <Collapsible open={open} onOpenChange={setOpen} asChild>
     <div
       className={cn(
         "@container overflow-hidden rounded-lg border transition-colors duration-150",
@@ -129,17 +131,18 @@ export function GalleryFooter({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <WithTooltip tip={open ? "Hide the source" : "Show the source"}>
-            <CompactButton
-              variant="ghost"
-              size="xs"
-              aria-expanded={open}
-              aria-controls={panelId}
-              onClick={() => setOpen((shown) => !shown)}
-              className={cn(ACTION, open && "bg-state-hover text-foreground")}
-            >
-              <Icon name="Code" aria-hidden className="size-3.5" />
-              <span className={ACTION_LABEL}>Source</span>
-            </CompactButton>
+            <CollapsibleTrigger asChild>
+              <CompactButton
+                variant="ghost"
+                size="xs"
+                aria-expanded={open}
+                aria-controls={panelId}
+                className={cn(ACTION, open && "bg-state-hover text-foreground")}
+              >
+                <Icon name="Code" aria-hidden className="size-3.5" />
+                <span className={ACTION_LABEL}>Source</span>
+              </CompactButton>
+            </CollapsibleTrigger>
           </WithTooltip>
           <WithTooltip tip="Copy the source">
             <CompactButton variant="ghost" size="xs" onClick={copy} className={ACTION}>
@@ -157,7 +160,7 @@ export function GalleryFooter({
           )}
         </div>
       </div>
-      {open ? (
+      <CollapsibleContent>
         <SourceBody
           id={panelId}
           name={example.file}
@@ -166,8 +169,9 @@ export function GalleryFooter({
           files={files}
           diagnostics={diagnostics}
         />
-      ) : null}
+      </CollapsibleContent>
     </div>
+    </Collapsible>
   );
 }
 

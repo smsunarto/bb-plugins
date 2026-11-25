@@ -5,6 +5,7 @@
 // nothing runs from here.
 import { useContext, useId, useMemo, useState, type ReactNode } from "react";
 import { UrlLink } from "@get-bb/plugin-sdk/app";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
@@ -397,14 +398,12 @@ function Group({ group, defaultOpen }: { group: OutdatedGroup; defaultOpen: bool
   const rest = group.packages.length - shown;
   const dev = group.packages.filter((item) => item.type === "dev").length;
   return (
+    <Collapsible open={open} onOpenChange={setOpen} asChild>
     <section ref={outer} aria-label={`${GROUP_LABEL[group.key]} updates`} className={cn("min-w-0", SMOOTH_HEIGHT_CLASS)}>
       <div ref={inner} className="flex min-w-0 flex-col">
-        <button
-          type="button"
+        <CollapsibleTrigger
           id={`${id}-group`}
-          aria-expanded={open}
           aria-controls={`${id}-packages`}
-          onClick={() => setOpen((value) => !value)}
           className={cn("group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md py-1 text-left text-xs leading-5", FOCUS_RING)}
         >
           <Chevron open={open} />
@@ -415,19 +414,18 @@ function Group({ group, defaultOpen }: { group: OutdatedGroup; defaultOpen: bool
             · {GROUP_HINT[group.key]}
             {dev > 0 && dev < group.packages.length ? ` · ${formatNumber(dev)} dev` : ""}
           </span>
-        </button>
-        {open ? (
-          <div id={`${id}-packages`} role="region" aria-labelledby={`${id}-group`} className="flex min-w-0 flex-col">
+        </CollapsibleTrigger>
+        <CollapsibleContent id={`${id}-packages`} role="region" aria-labelledby={`${id}-group`} className="flex min-w-0 flex-col">
             <ul className="m-0 flex min-w-0 list-none flex-col divide-y divide-border/50 p-0">
               {group.packages.slice(0, shown).map((item, index) => (
                 <OutdatedRow key={index} item={item} tone={tone} />
               ))}
             </ul>
             {rest > 0 ? <MoreButton rest={rest} noun={rest === 1 ? "package" : "packages"} onClick={() => setShown((count) => count + ROW_PAGE * 4)} /> : null}
-          </div>
-        ) : null}
+        </CollapsibleContent>
       </div>
     </section>
+    </Collapsible>
   );
 }
 
