@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 // The `@` and `/` menus in a mounted composer, with BB's mention and command search stubbed.
+import { useEffect } from "react";
 import { act, fireEvent, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { useComposer } from "@get-bb/plugin-sdk/app";
 import type {
+  ComposerDraftReplacement,
+  ComposerDraftSnapshot,
   ExperimentalComposerCommandSuggestion,
   ExperimentalComposerInput,
   ExperimentalComposerMentionSuggestion,
@@ -59,10 +63,11 @@ function command(
   };
 }
 
-async function mountComposer() {
+async function mountComposer(surface: ExperimentalComposerInput["surface"] = "new-thread") {
   const run = vi.fn();
   const input: ExperimentalComposerInput = {
-    surface: "new-thread",
+    surface,
+    autoFocus: false,
     executionControls: null,
     mentionTriggers: ["@"],
     commandTriggers: ["/"],
@@ -96,11 +101,25 @@ async function mountComposer() {
   const app = await loadPluginApp(() => import("../app"));
   const composer = app.composers[0];
   if (!composer) throw new Error("Composer replacement was not registered");
+  let replaceDraft: ((draft: ComposerDraftReplacement) => void) | undefined;
+  function ComposerWithHostDraft() {
+    const { replace } = useComposer();
+    useEffect(() => {
+      replaceDraft = replace;
+    }, [replace]);
+    return <composer.component />;
+  }
   const slot = renderSlot(
-    composer,
+    { component: ComposerWithHostDraft },
     {},
     {
-      composer: { scope: { kind: "new-thread", projectId: "p1" }, text: "" },
+      composer: {
+        scope:
+          surface === "thread"
+            ? { kind: "thread", threadId: "t1" }
+            : { kind: "new-thread", projectId: "p1" },
+        text: "",
+      },
       composerRenderer: renderer,
       rpc: { starredModels: () => ({ models: [] }), changeStarredModels: () => ({ models: [] }) },
     },
@@ -113,12 +132,14 @@ async function mountComposer() {
   // Tiptap keeps its editor on the view's DOM node.
   const editor = (element as HTMLElement & { editor: Editor }).editor;
   const type = (text: string) => act(() => void editor.commands.insertContent(text));
+  const moveCaret = (offset: number) =>
+    act(() => void editor.commands.setTextSelection(offset + 1));
   const deleteBack = () =>
     act(() => {
       const { from } = editor.state.selection;
       editor.commands.deleteRange({ from: from - 1, to: from });
     });
-  return { slot, run, type, deleteBack };
+  return { slot, run, type, moveCaret, deleteBack, element, replaceDraft };
 }
 
 afterEach(() => {
@@ -177,6 +198,141 @@ describe("@ mention menu", () => {
 });
 
 describe("/ command menu", () => {
+  it.each(["click", "Enter"])(
+    "submits mid-draft handoff as a leading built-in command via %s",
+    async (action) => {
+      search.mention = searchState([]);
+      search.command = searchState([
+        { key: "commands", label: "Commands", suggestions: [command("handoff", "builtin")] },
+      ]);
+      const { slot, run, type, element } = await mountComposer("thread");
+      const submitted: ComposerDraftSnapshot[] = [];
+      run.mockImplementation(() => {
+        submitted.push(slot.composer.draft);
+      });
+      try {
+        type(action === "click" ? "Review fixture /hand" : "Review fixture /handoff");
+        const row = await waitFor(() => slot.getByTitle("handoff"));
+        if (action === "click") {
+          fireEvent.mouseDown(row);
+        } else {
+          fireEvent.keyDown(element, { key: "Enter" });
+        }
+        await waitFor(() => expect(run).toHaveBeenCalledOnce());
+        expect(submitted).toMatchObject([
+          {
+            text: expect.stringMatching(/^\/handoff Review fixture\s*$/),
+            mentions: [
+              {
+                kind: "command",
+                trigger: "/",
+                origin: "builtin",
+                source: "command",
+                name: "handoff",
+                from: 0,
+                to: 8,
+              },
+            ],
+          },
+        ]);
+      } finally {
+        slot.lifecycle.unmount();
+      }
+    },
+  );
+
+  it("sends plain text ending in /handoff after the menu is dismissed", async () => {
+    search.mention = searchState([]);
+    search.command = searchState([
+      { key: "commands", label: "Commands", suggestions: [command("handoff", "builtin")] },
+    ]);
+    const { slot, run, type, element } = await mountComposer("thread");
+    const text = "List the flags for /handoff";
+    run.mockImplementation(() => slot.composer.draft);
+    try {
+      type(text);
+      await waitFor(() => slot.getByTitle("handoff"));
+      fireEvent.keyDown(element, { key: "Escape" });
+      fireEvent.click(slot.getByRole("button", { name: "Submit (Enter)" }));
+      expect(run).toHaveBeenCalledOnce();
+      expect(run).toHaveReturnedWith(expect.objectContaining({ text, mentions: [] }));
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("submits a plain leading /handoff and its follow-up with the menu closed", async () => {
+    search.mention = searchState([]);
+    search.command = searchState([]);
+    const { slot, run, type } = await mountComposer("thread");
+    const text = "/handoff Keep this follow-up";
+    run.mockImplementation(() => slot.composer.draft);
+    try {
+      type(text);
+      expect(slot.composer.draft).toMatchObject({ text, mentions: [] });
+      expect(slot.queryByTitle("handoff")).toBeNull();
+      fireEvent.click(slot.getByRole("button", { name: "Submit (Enter)" }));
+      expect(run).toHaveBeenCalledOnce();
+      expect(run).toHaveReturnedWith(
+        expect.objectContaining({
+          text,
+          mentions: [
+            expect.objectContaining({
+              kind: "command",
+              trigger: "/",
+              origin: "builtin",
+              source: "command",
+              name: "handoff",
+              from: 0,
+              to: 8,
+            }),
+          ],
+        }),
+      );
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it.each([0, 2, 4, 13])("keeps handoff indentation at offset %i", async (offset) => {
+    search.mention = searchState([]);
+    search.command = searchState([
+      { key: "commands", label: "Commands", suggestions: [command("handoff", "builtin")] },
+    ]);
+    const { slot, run, type, moveCaret, replaceDraft } = await mountComposer("thread");
+    const followUp = "    print(1) ";
+    const prefix = "Continue from @thread:t1";
+    if (!replaceDraft) throw new Error("Composer draft handle was not mounted");
+    run.mockImplementation(() => {
+      const { text, mentions } = slot.composer.draft;
+      const [picked] = mentions;
+      if (picked?.kind !== "command" || text.slice(0, picked.from).trim() !== "") return;
+      // BB 0.50.1 trims the text after the command before seeding the handoff.
+      replaceDraft({
+        text: prefix + "\n\n" + text.slice(picked.to).trimStart(),
+        mentions: [
+          {
+            kind: "thread",
+            threadId: "t1",
+            label: "Source",
+            from: "Continue from ".length,
+            to: prefix.length,
+          },
+        ],
+      });
+    });
+    try {
+      type(followUp);
+      moveCaret(offset);
+      type("/hand");
+      fireEvent.mouseDown(await waitFor(() => slot.getByTitle("handoff")));
+      await waitFor(() => expect(run).toHaveBeenCalledOnce());
+      expect(slot.composer.draft.text).toBe(prefix + "\n\n" + followUp);
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
   it.each([
     { origin: "builtin" as const, name: "compact", sends: true },
     { origin: "user" as const, name: "review", sends: false },

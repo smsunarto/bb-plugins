@@ -71,6 +71,18 @@ export function compareMentions(left: ComposerMention, right: ComposerMention): 
   return left.from - right.from || left.to - right.to;
 }
 
+export function isBuiltinHandoff(
+  command: Pick<ExperimentalComposerCommandSuggestion, "name" | "origin" | "source">,
+  trigger: ExperimentalComposerCommandTrigger,
+): boolean {
+  return (
+    trigger === "/" &&
+    command.name === "handoff" &&
+    command.origin === "builtin" &&
+    command.source === "command"
+  );
+}
+
 export function commandMentionTarget(
   command: Pick<
     ExperimentalComposerCommandSuggestion,
