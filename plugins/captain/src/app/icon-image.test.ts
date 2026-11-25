@@ -37,4 +37,13 @@ describe("an uploaded SVG is sized before it is drawn", () => {
     expect(sizeSvg("<html><body/></html>")).toBeNull();
     expect(sizeSvg("not xml")).toBeNull();
   });
+
+  test.each(["1in", "2.54cm", "25.4mm", "101.6q", "72pt", "6pc"])(
+    "an SVG sized in %s keeps its intrinsic artwork coordinates",
+    (length) => {
+      const sized = sizeSvg(`<svg xmlns="${SVG}" width="${length}" height="48px"/>`);
+      expect(sized).toMatchObject({ width: 384, height: 192 });
+      expect(root(sized?.text ?? "").getAttribute("viewBox")).toBe("0 0 96 48");
+    },
+  );
 });

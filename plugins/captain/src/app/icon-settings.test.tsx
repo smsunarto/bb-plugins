@@ -73,3 +73,23 @@ test("an upload that finishes after a newer edit is dropped", async () => {
   await new Promise((settle) => setTimeout(settle, 20));
   expect(saved).toEqual([{ kind: "icon", name: "Brain" }]);
 });
+
+test("an upload from an unmounted row cannot save after Settings is reopened", async () => {
+  const received: unknown[] = [];
+  const record = ({ icon }: { icon: unknown }) => {
+    received.push(icon);
+  };
+  const first = render(record).slot;
+  const input = await first.findByLabelText("Image for Plugins");
+  const file = new File(["png"], "crest.png", { type: "image/png" });
+  fireEvent.change(input, { target: { files: [file] } });
+  first.lifecycle.unmount();
+
+  const reopened = render(record).slot;
+  const field = await reopened.findByLabelText("Icon name for Plugins");
+  fireEvent.change(field, { target: { value: "Brain" } });
+  fireEvent.click(reopened.getByRole("button", { name: "Set icon" }));
+  await waitFor(() => expect(received).toEqual([{ kind: "icon", name: "Brain" }]));
+  await act(async () => decode.finish(PNG_URL));
+  expect(received).toEqual([{ kind: "icon", name: "Brain" }]);
+});

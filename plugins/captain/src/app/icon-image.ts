@@ -111,11 +111,25 @@ export function sizeSvg(text: string): { text: string; width: number; height: nu
   return { text: new XMLSerializer().serializeToString(root), ...drawn };
 }
 
-/** A plain or `px` length; null for a percentage, other units or nothing. */
+const PIXELS_PER_UNIT = new Map([
+  ["", 1],
+  ["px", 1],
+  ["in", 96],
+  ["cm", 96 / 2.54],
+  ["mm", 96 / 25.4],
+  ["q", 96 / 101.6],
+  ["pt", 96 / 72],
+  ["pc", 16],
+]);
+
+/** A unitless or absolute CSS length; null for a relative length or no size. */
 function pixels(value: string | null): number | null {
-  const match = /^\s*([\d.]+)(px)?\s*$/u.exec(value ?? "");
-  const number = match === null ? Number.NaN : Number(match[1]);
-  return number > 0 ? number : null;
+  const match = /^\s*([+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)([a-z]*)\s*$/iu.exec(value ?? "");
+  if (match === null) return null;
+  const scale = PIXELS_PER_UNIT.get((match[2] ?? "").toLowerCase());
+  if (scale === undefined) return null;
+  const size = Number(match[1]) * scale;
+  return Number.isFinite(size) && size > 0 ? size : null;
 }
 
 /** A base64 data URL's decoded size in bytes. */

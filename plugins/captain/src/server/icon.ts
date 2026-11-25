@@ -1,5 +1,6 @@
 import {
   ICON_IMAGE_MAX_BYTES,
+  ICON_IMAGE_PREFIX,
   ICON_IMAGE_SIDE,
   type CaptainIcon,
   type IconChoice,
@@ -54,8 +55,13 @@ export function setCaptainIcon(
   choice: IconChoice,
 ): CaptainIcon {
   if (deps.registry.get(captainId) === null) throw new Error(`${captainId} is not a live Captain`);
-  if (choice?.kind === "image") checkIconPng(dataUrlBytes(choice.src));
-  deps.store.setCaptainIcon(captainId, choice, deps.now());
+  let stored = choice;
+  if (choice?.kind === "image") {
+    const bytes = dataUrlBytes(choice.src);
+    checkIconPng(bytes);
+    stored = { kind: "image", src: ICON_IMAGE_PREFIX + bytes.toString("base64") };
+  }
+  deps.store.setCaptainIcon(captainId, stored, deps.now());
   refreshIcon(deps, captainId);
   return deps.store.captainIcon(captainId);
 }
