@@ -39,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
+import { StatusDot } from "@/components/ui/status-dot";
 import { cn } from "@/lib/utils";
 
 const CHECK_TONE: Record<ThreadPullRequestInfo["checks"][number]["id"], string> = {
@@ -199,7 +200,7 @@ function ThreadCard({
       <div className="wrap-anywhere text-sm font-medium">{thread.title}</div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
         <span className={cn("flex shrink-0 items-center gap-1 font-medium", meta.textClassName)}>
-          <span aria-hidden className={cn("size-1.5 rounded-full", meta.dotClassName)} />
+          <StatusDot tone={meta.dotTone} pulse={meta.pulse} size="sm" />
           {meta.label}
         </span>
         <span>

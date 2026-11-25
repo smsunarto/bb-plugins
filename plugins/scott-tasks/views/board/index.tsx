@@ -191,16 +191,8 @@ function TaskCard({
       <span className="mt-1 line-clamp-2 text-sm leading-snug font-medium">{task.title}</span>
       <span className="mt-2 flex flex-wrap items-center gap-2">
         {labels.map((label) => (
-          <Badge
-            key={label.id}
-            variant="outline"
-            className="h-5 gap-1 rounded-full px-1.5 py-0 text-2xs font-normal text-muted-foreground"
-          >
-            <span
-              aria-hidden
-              className="size-1.5 rounded-full"
-              style={{ backgroundColor: label.color }}
-            />
+          <Badge key={label.id} variant="outline" size="sm" className="gap-1">
+            <StatusDot tone="current" size="sm" style={{ color: label.color }} />
             {label.name}
           </Badge>
         ))}

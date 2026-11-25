@@ -1,40 +1,46 @@
 import type { TaskPullRequest, TaskThread } from "../../shared/contract.js";
 import type { IconName } from "@/components/ui/icon";
+import type { ComponentProps } from "react";
+import type { StatusDot } from "@/components/ui/status-dot";
+
+type StatusDotTone = ComponentProps<typeof StatusDot>["tone"];
 
 export { PriorityIcon, StatusIcon } from "../list/icons.js";
 
 export const THREAD_STATUS_META: Record<
   TaskThread["liveStatus"],
-  { label: string; dotClassName: string; textClassName: string }
+  { label: string; dotTone: StatusDotTone; pulse?: boolean; textClassName: string }
 > = {
   starting: {
     label: "Starting",
-    dotClassName: "bg-attention animate-pulse",
+    dotTone: "attention",
+    pulse: true,
     textClassName: "text-attention",
   },
   working: {
     label: "Working",
-    dotClassName: "bg-success animate-pulse",
+    dotTone: "success",
+    pulse: true,
     textClassName: "text-success",
   },
   idle: {
     label: "Idle",
-    dotClassName: "bg-muted-foreground",
+    dotTone: "neutral",
     textClassName: "text-muted-foreground",
   },
   completed: {
     label: "Completed",
-    dotClassName: "bg-muted",
+    dotTone: "muted",
     textClassName: "text-muted-foreground",
   },
   failed: {
     label: "Failed",
-    dotClassName: "bg-destructive",
+    dotTone: "destructive",
     textClassName: "text-destructive",
   },
   archived: {
     label: "Archived",
-    dotClassName: "bg-muted",
+    dotTone: "muted",
     textClassName: "text-muted-foreground",
   },
 };

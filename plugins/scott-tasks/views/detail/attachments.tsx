@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { attachmentDownloadUrl } from "../../shared/attachments.js";
 import type { Attachment, AttachmentOwner } from "../../shared/contract.js";
 import { errorMessage } from "../../shared/errors.js";
@@ -9,7 +9,7 @@ import {
   experimental_ImageLightbox as ImageLightbox,
   experimental_saveFile,
 } from "@get-bb/plugin-sdk/app";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 
 let tokenPromise: Promise<string> | null = null;
@@ -127,24 +127,38 @@ export function AttachmentsGrid({
 
   const removeButton = (attachment: Attachment, variant: "image" | "file") => {
     const busy = pending.has(attachment.id);
+    const label = `Remove ${attachment.fileName}`;
+    const onClick = (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!busy) requestRemove(attachment);
+    };
+    const glyph = busy ? <RemovalSpinner /> : <Icon name="X" className="size-3" />;
+    if (variant === "file") {
+      return (
+        <CompactButton
+          variant="ghost"
+          size="icon-2xs"
+          tone="muted"
+          aria-label={label}
+          disabled={busy}
+          className="shrink-0"
+          onClick={onClick}
+        >
+          {glyph}
+        </CompactButton>
+      );
+    }
     return (
       <Button
-        variant={variant === "image" ? "secondary" : "ghost"}
+        variant="secondary"
         size="icon"
-        aria-label={`Remove ${attachment.fileName}`}
+        aria-label={label}
         disabled={busy}
-        className={
-          variant === "image"
-            ? "absolute right-1 top-1 z-10 size-5 rounded-full"
-            : "size-5 shrink-0 text-muted-foreground"
-        }
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          if (!busy) requestRemove(attachment);
-        }}
+        className="absolute right-1 top-1 z-10 size-5 rounded-full"
+        onClick={onClick}
       >
-        {busy ? <RemovalSpinner /> : <Icon name="X" className="size-3" />}
+        {glyph}
       </Button>
     );
   };
