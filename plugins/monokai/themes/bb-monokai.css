@@ -1616,19 +1616,38 @@
  * below the chrome, and let recents extend past the last grid line. */
 @media (max-width: 767px) {
   [data-testid="root-compose-compact-home"] {
+    --monokai-home-chrome: 3.5rem;
+    --monokai-home-menu-room: 6rem;
+    --monokai-home-fade: 1.5rem;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) max-content max-content minmax(0, 1fr) 0;
-    margin-block-start: 3.5rem;
+    /* Reserve the typeahead's 5rem minimum and room for its gap above the editor. */
+    grid-template-rows:
+      minmax(var(--monokai-home-menu-room), 1fr) max-content max-content minmax(0, 1fr) 0;
+    margin-block-start: var(--monokai-home-chrome);
     overflow-y: auto;
     overscroll-behavior: contain;
     /* The fade softens a partial row. The list padding clears it at the end. */
-    mask-image: linear-gradient(to bottom, black calc(100% - 1.5rem), transparent);
+    mask-image: linear-gradient(to bottom, black calc(100% - var(--monokai-home-fade)), transparent);
   }
 
   [data-testid="root-compose-compact-home"] > [data-testid="root-compose-compact-composer"] {
     position: relative;
     grid-row: 3;
+  }
+
+  /* BB's inline editor cap already budgets for its chrome. Use the same
+   * measured cap, reserving the larger menu gap and the fade on short screens. */
+  [data-testid="root-compose-compact-home"]
+    [data-promptbox]:not([data-promptbox-compact])
+    [data-promptbox-editor-scroll] {
+    max-height: min(
+      calc(var(--bb-shell-height, 100dvh) * 0.7 - 3rem),
+      calc(
+        var(--composer-editor-available-height, 100dvh) + var(--monokai-home-chrome) -
+          var(--monokai-home-menu-room) - var(--monokai-home-fade)
+      )
+    ) !important;
   }
 
   [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-scroll-viewport"],

@@ -153,6 +153,57 @@ test("keeps the hint and recents reachable below a large composer with a short v
   }
 });
 
+for (const inset of [0, 47]) {
+  test(`fits the six-line draft and slash menu in the keyboard viewport with a ${inset}px top inset`, async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 480 } });
+    try {
+      await page.setContent(homeMarkup(true, false));
+      await page.addStyleTag({
+        content:
+          theme +
+          `
+          [data-test-pane] { padding-block-start: ${inset}px; }
+          .composer { height: auto; padding-block-end: 90px; }
+          [data-promptbox] {
+            position: relative;
+            --composer-editor-available-height: calc(100vh - ${inset}px - 56px - 56px - 90px);
+          }
+          [data-promptbox-editor-scroll] { overflow-y: auto; line-height: 32px; }
+          [data-promptbox-typeahead-menu] {
+            position: absolute;
+            inline-size: 100%;
+            block-size: 5rem;
+          }
+        `,
+      });
+      const composer = page.getByTestId("root-compose-compact-composer");
+      await composer.evaluate((element) => {
+        element.innerHTML = `
+          <div data-promptbox>
+            <div data-promptbox-editor-scroll><div contenteditable></div></div>
+          </div>`;
+      });
+      await composer.locator("[contenteditable]").fill("Draft line\n".repeat(6) + "/");
+      await composer.locator("[data-promptbox]").evaluate((element) => {
+        const menu = document.createElement("div");
+        menu.setAttribute("data-promptbox-typeahead-menu", "");
+        menu.innerHTML = '<button aria-label="Close suggestions">×</button>';
+        element.append(menu);
+      });
+      const viewport = await page.getByTestId("root-compose-compact-home").boundingBox();
+      const menu = await composer.locator("[data-promptbox-typeahead-menu]").boundingBox();
+      const draftBounds = await composer.boundingBox();
+      if (!viewport || !menu || !draftBounds) throw new Error("Missing menu or composer");
+      expect(menu.y).toBeGreaterThanOrEqual(viewport.y);
+      expect(menu.y + menu.height).toBeLessThan(draftBounds.y);
+      expect(draftBounds.y + draftBounds.height).toBeLessThanOrEqual(480 - 24);
+      await composer.getByRole("button", { name: "Close suggestions" }).click({ trial: true });
+    } finally {
+      await page.close();
+    }
+  });
+}
+
 for (const [width, height] of [
   [440, 956],
   [390, 844],
