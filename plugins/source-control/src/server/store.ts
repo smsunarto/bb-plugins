@@ -61,6 +61,11 @@ type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 /** Why a thread on a machine bb removed has no checkout. */
 export const HOST_REMOVED = "This thread's machine was removed from bb.";
 
+// GitHub keys are gh:owner/repo:headOwner:branch. Git branches cannot contain a colon.
+const FORGE_GITHUB_KEY = "substr(change_key, 1, 3) = 'gh:'";
+const FORGE_HEAD_AND_BRANCH = "substr(change_key, 4 + instr(substr(change_key, 4), ':'))";
+const FORGE_BRANCH = `substr(${FORGE_HEAD_AND_BRANCH}, instr(${FORGE_HEAD_AND_BRANCH}, ':') + 1)`;
+
 /** Numbered and never edited once landed: append only. */
 export const MIGRATIONS = [
   `CREATE TABLE thread_placement (thread_id TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at INTEGER NOT NULL)`,
@@ -116,6 +121,7 @@ export const MIGRATIONS = [
   // branch-only recovery wrote may name another repository's Change and cannot be told apart: they go.
   `DROP TABLE thread_change`,
   `CREATE TABLE thread_change (thread_id TEXT PRIMARY KEY, change_key TEXT NOT NULL, host_id TEXT NOT NULL, host_name TEXT NOT NULL)`,
+  `CREATE INDEX forge_facet_by_branch ON forge_facet (${FORGE_BRANCH}, change_key) WHERE ${FORGE_GITHUB_KEY}`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -594,12 +600,9 @@ export function openStore(bb: BbPluginApi) {
   const getForge = db.prepare<[string], { json: string }>(
     `SELECT json FROM forge_facet WHERE change_key = ?`,
   );
-  const forgeForBranch = db.prepare<
-    [string, string, string, string],
-    { change_key: string; json: string }
-  >(
+  const forgeForBranch = db.prepare<[string, string, string], { change_key: string; json: string }>(
     `SELECT change_key, json FROM forge_facet
-     WHERE change_key >= ? AND change_key < ? AND substr(change_key, -length(?)) = ?`,
+     WHERE ${FORGE_GITHUB_KEY} AND ${FORGE_BRANCH} = ? AND change_key >= ? AND change_key < ?`,
   );
   const putForge = db.prepare(
     `INSERT INTO forge_facet (change_key, json) VALUES (?, ?) ON CONFLICT (change_key) DO UPDATE SET json = excluded.json`,
@@ -732,18 +735,19 @@ export function openStore(bb: BbPluginApi) {
       return changed;
     },
     forge,
-    /** A unique cached PR for the repository and branch, preserving its original head owner. */
-    knownPullRequestChange(repo: Repo, branch: string): ChangeKey | null {
+    /** A unique cached Change for the repository and branch, preserving its original head owner. */
+    knownBranchChange(repo: Repo, branch: string): ChangeKey | null {
       const prefix = `gh:${repo.owner}/${repo.name}`;
-      const suffix = `:${branch}`;
       // Bound the index scan to this repository: ";" follows ":" in the key's binary sort order.
       let match: ChangeKey | null = null;
-      for (const row of forgeForBranch.all(`${prefix}:`, `${prefix};`, suffix, suffix)) {
+      for (const row of forgeForBranch.all(branch, `${prefix}:`, `${prefix};`)) {
         const key = changeKeySchema.safeParse(row.change_key);
         if (!key.success) continue;
         const parsedKey = parseChangeKey(key.data);
         if (parsedKey?.kind !== "gh" || parsedKey.branch !== branch) continue;
-        if (!parsed(forgeFacetSchema, row.json)?.read?.value) continue;
+        const read = parsed(forgeFacetSchema, row.json)?.read;
+        // A no-PR read identifies the original repository's own branch.
+        if (!read || (read.value === null && parsedKey.headOwner !== repo.owner)) continue;
         if (match) return null;
         match = key.data;
       }

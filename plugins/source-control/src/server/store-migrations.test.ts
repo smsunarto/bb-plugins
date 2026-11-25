@@ -1,4 +1,4 @@
-import { expect, onTestFinished, test } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { ChangeKey } from "../core/ids.ts";
 import type { ChangeRow, SourceRows } from "../core/review.ts";
@@ -92,4 +92,34 @@ test("a fresh database ends without a pin table", () => {
   expect(store.inbox("scott")).toEqual({ read: null, problem: null });
   openStore(bb);
   expect(hasPinTable(bb.storage.database())).toBe(false);
+});
+
+test("upgrading keeps cached branch reads and makes the repository-and-branch lookup indexed", () => {
+  const { bb, harness } = createFakePluginHost({ pluginId: "source-control" });
+  onTestFinished(() => harness.lifecycle.dispose());
+  const db = bb.storage.database();
+  bb.storage.migrate(db, MIGRATIONS.slice(0, -1));
+  const key = "gh:acme/api:acme:main";
+  db.prepare("INSERT INTO forge_facet (change_key, json) VALUES (?, ?)").run(
+    key,
+    JSON.stringify({ read: { at: 1, value: null }, problem: null }),
+  );
+  const prepare = vi.spyOn(db, "prepare");
+  onTestFinished(() => {
+    prepare.mockRestore();
+  });
+  const store = openStore(bb);
+  expect(store.knownBranchChange({ owner: "acme", name: "api" }, "main")).toBe(key);
+
+  const query = prepare.mock.calls
+    .map(([sql]) => sql)
+    .find((sql) => sql.includes("SELECT change_key, json FROM forge_facet"));
+  expect(query).toBeDefined();
+  if (!query) return;
+  const plan = db
+    .prepare<[string, string, string], { detail: string }>(`EXPLAIN QUERY PLAN ${query}`)
+    .all("main", "gh:acme/api:", "gh:acme/api;");
+  expect(plan.map((step) => step.detail).join("\n")).toMatch(
+    /SEARCH forge_facet USING INDEX forge_facet_by_branch .*<expr>=\? AND change_key>\? AND change_key<\?/,
+  );
 });

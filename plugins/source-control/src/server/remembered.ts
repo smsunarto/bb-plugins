@@ -8,8 +8,8 @@
  * whenever it finds one (forge-read.ts). Only another Change replaces it: a
  * read on no branch, as after a detached handoff, leaves it. A thread never
  * read on a checkout takes the Change its project's GitHub repository has on
- * the branch bb recorded for its environment, when that pull request has
- * been read; with no repository, nothing. A merged pull request is not read
+ * the branch bb recorded for its environment, when that branch has a cached
+ * read; with no repository, nothing. A merged pull request is not read
  * again.
  *
  * Its pull request is read on the server and the remembered host only: a
@@ -56,11 +56,11 @@ export function createRemembered(deps: {
     return { ...remembered, branch: parsed.branch };
   }
 
-  /** A thread never read on a checkout: its project's Change on the recorded branch, if that pull request was read. */
+  /** A thread never read on a checkout: its project's Change on the recorded branch, if that branch was read. */
   const recover = Effect.fnUntraced(function* (threadId: string, recorded: RecordedEnvironment) {
     const repo = yield* deps.projectRepo(recorded.projectId);
     if (!repo) return;
-    const key = store.knownPullRequestChange(repo, recorded.branchName);
+    const key = store.knownBranchChange(repo, recorded.branchName);
     if (!key) return;
     const host = yield* deps.forgeHost(recorded.hostId);
     if (store.rememberChange(threadId, key, host)) deps.announce([threadId]);

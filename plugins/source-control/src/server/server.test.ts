@@ -1629,6 +1629,28 @@ describe("a thread whose worktree is gone", () => {
     },
   );
 
+  test("a known same-owner branch with no PR is remembered after checkout removal", async () => {
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [];
+    world.projects = [
+      { id: "proj-1", gitRemoteUrl: "https://github.com/smsunarto/bb-plugins.git" },
+    ];
+    world.threads["thread-c"] = {
+      hostId: "host-a",
+      path: "/gone",
+      removed: true,
+      branchName: "scott/route-gh",
+    };
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-c" });
+    expect(await status(harness, "thread-c")).toMatchObject({
+      key: "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh",
+      source: "remembered",
+      line: "No pull request",
+    });
+  });
+
   test("another repository's pull request on the same branch name is never taken", async () => {
     const world = twoHosts();
     world.pullRequests["scott/route-gh"] = [
