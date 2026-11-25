@@ -1629,6 +1629,36 @@ describe("a thread whose worktree is gone", () => {
     },
   );
 
+  test("a second fork without a PR makes recovery ambiguous", async () => {
+    const world = twoHosts();
+    const repo = { owner: "smsunarto", name: "bb-plugins" };
+    const branch = "scott/route-gh";
+    world.projects = [
+      { id: "proj-1", gitRemoteUrl: "https://github.com/smsunarto/bb-plugins.git" },
+    ];
+    for (const [host, owner] of [
+      ["host-a", "alice"],
+      ["host-b", "bob"],
+    ] as const) {
+      const path = world.hosts[host]!.workspace!.path;
+      world.hosts[host]!.workspace = workspace(path, { github: { repo, headOwner: owner } });
+    }
+    world.pullRequests[branch] = [{ ...PR, headRepositoryOwner: { login: "alice" } }];
+    world.threads["thread-c"] = {
+      hostId: "host-b",
+      path: "/gone",
+      removed: true,
+      branchName: branch,
+    };
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    expect(await status(harness, "thread-a")).toMatchObject({ pullRequest: { number: 482 } });
+    expect(await status(harness, "thread-b")).toMatchObject({ line: "Pushed, no pull request" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-c" });
+    expect(await status(harness, "thread-c")).toEqual({ state: "none" });
+  });
+
   test("a known same-owner branch with no PR is remembered after checkout removal", async () => {
     const world = twoHosts();
     world.pullRequests["scott/route-gh"] = [];

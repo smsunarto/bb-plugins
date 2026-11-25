@@ -739,19 +739,22 @@ export function openStore(bb: BbPluginApi) {
     knownBranchChange(repo: Repo, branch: string): ChangeKey | null {
       const prefix = `gh:${repo.owner}/${repo.name}`;
       // Bound the index scan to this repository: ";" follows ":" in the key's binary sort order.
-      let match: ChangeKey | null = null;
+      let match: { key: ChangeKey; eligible: boolean } | null = null;
       for (const row of forgeForBranch.all(branch, `${prefix}:`, `${prefix};`)) {
         const key = changeKeySchema.safeParse(row.change_key);
         if (!key.success) continue;
         const parsedKey = parseChangeKey(key.data);
         if (parsedKey?.kind !== "gh" || parsedKey.branch !== branch) continue;
         const read = parsed(forgeFacetSchema, row.json)?.read;
-        // A no-PR read identifies the original repository's own branch.
-        if (!read || (read.value === null && parsedKey.headOwner !== repo.owner)) continue;
+        if (!read) continue;
+        // A different head owner is evidence of ambiguity even without a PR.
         if (match) return null;
-        match = key.data;
+        match = {
+          key: key.data,
+          eligible: read.value !== null || parsedKey.headOwner === repo.owner,
+        };
       }
-      return match;
+      return match?.eligible ? match.key : null;
     },
     setForge(key: ChangeKey, facet: Facet<ForgeValue>): boolean {
       const changed = !sameFacet(forge(key), facet);
