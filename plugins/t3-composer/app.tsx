@@ -3,6 +3,7 @@ import {
   experimental_useComposerRenderer as useComposerRenderer,
 } from "@get-bb/plugin-sdk/app";
 import { mountBranchPickerStyle } from "./src/branch-picker-style";
+import { mountChildThreadsBannerStyle } from "./src/child-threads-banner-style";
 import { ComposerHandleProvider } from "./src/composer-handle";
 import { PromptBoxInternal } from "./src/PromptBoxInternal";
 import { useSettingKeywords } from "./src/composer-settings/useSettingKeywords";
@@ -32,6 +33,10 @@ export default definePluginApp((app) => {
   app.contentScripts.register({
     id: "branch-picker-style",
     mount: ({ signal }) => mountBranchPickerStyle(document, signal),
+  });
+  app.contentScripts.register({
+    id: "child-threads-banner-style",
+    mount: ({ signal }) => mountChildThreadsBannerStyle(document, signal),
   });
   app.slots.experimental_composer({
     id: "composer",
