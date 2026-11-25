@@ -1,7 +1,7 @@
 import { cliCommand } from "@get-bb/plugin-sdk";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { callerCaptain } from "../caller.ts";
+import { actingFor } from "../caller.ts";
 import {
   crewOnTask,
   isActive,
@@ -66,7 +66,7 @@ export function tellCommand(deps: CommandDeps) {
     run(input, ctx) {
       const json = input.options.json;
       return guard("captain tell", json, async () => {
-        const captain = await callerCaptain(deps.bb, deps.registry, ctx, {
+        const { captain } = await actingFor(deps, ctx, {
           captain: input.options.captain,
         });
         const message = (

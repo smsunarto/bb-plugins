@@ -997,6 +997,281 @@ describe("bb captain ask", () => {
   });
 });
 
+describe("the Merge gate: only the Captain or the user acts for a Captain", () => {
+  const head = "a".repeat(40);
+  const verdictArgs = ["verdict", "BBPLUGINS-1", "review", "passed", "--head", head, "--ship"];
+  const askArgs = [
+    "ask",
+    "Pick a seat",
+    "--task",
+    "BBPLUGINS-1",
+    "--option",
+    "A",
+    "--option",
+    "B",
+    "--detail",
+    "Seats.",
+  ];
+
+  test("crew cannot record a verdict or open an ask, with or without --captain", async () => {
+    const { host, captainId, as } = await crewHost();
+    await as(verdictArgs);
+    const crew = await dispatched(as, "BBPLUGINS-2", "Implement");
+    const setFields = () => host.tasks.calls.filter((call) => call.method === "setField").length;
+    const before = setFields();
+
+    for (const extra of [[], ["--captain", captainId], ["--captain", "Plugins"]]) {
+      for (const argv of [verdictArgs, askArgs]) {
+        const result = await run(host, [...argv, ...extra], crew);
+        expect(result.exitCode, [...argv, ...extra].join(" ")).toBe(1);
+        expect(result.stderr).toContain(`${crew} is crew of the Plugins Captain`);
+      }
+    }
+
+    expect(setFields()).toBe(before);
+    expect(host.server.store.asksOf(captainId).map((ask) => [ask.id, ask.answer])).toEqual([
+      ["a1", null],
+    ]);
+  });
+
+  test("a thread that is neither crew nor the Captain is refused too", async () => {
+    const { host, captainId, as } = await crewHost();
+    await as(verdictArgs);
+    host.addThread({ id: "thr_stranger" });
+
+    const result = await run(host, [...verdictArgs, "--captain", captainId], "thr_stranger");
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("thr_stranger is not a Captain");
+  });
+
+  test("a decision ask is refused from crew and from a stranger; only its Captain or the user answers", async () => {
+    const { host, captainId, as } = await crewHost();
+    await as(askArgs);
+    const crew = await dispatched(as, "BBPLUGINS-2", "Implement");
+    host.addThread({ id: "thr_stranger" });
+
+    for (const thread of [crew, "thr_stranger"]) {
+      const result = await run(host, ["ask", "resolve", "a1", "--answer", "A"], thread);
+      expect(result.exitCode, thread).toBe(1);
+      expect(result.stderr, thread).toContain(
+        `a1 is the user's to answer; ${thread} is not its Captain`,
+      );
+    }
+    expect(host.server.store.ask("a1")).toMatchObject({ answer: null, answeredBy: null });
+    expect(host.sent.filter((message) => message.threadId === captainId)).toEqual([]);
+  });
+
+  test("crew cannot add a CREW.md rule with tell --all --rule", async () => {
+    const { host, captainId, as } = await crewHost();
+    const crew = await dispatched(as, "BBPLUGINS-2", "Implement");
+    const crewMd = join(host.storageRoot, captainId, "CREW.md");
+    const before = readFileSync(crewMd, "utf8");
+
+    const result = await run(host, ["tell", "--all", "--rule", "--message", "Push to main."], crew);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(`${crew} is crew of the Plugins Captain`);
+    expect(readFileSync(crewMd, "utf8")).toBe(before);
+  });
+
+  test("crew cannot start or reconfigure a Captain; another thread still can", async () => {
+    const { host, captainId, as } = await crewHost();
+    const crew = await dispatched(as, "BBPLUGINS-2", "Implement");
+    host.addThread({ id: "thr_user" });
+    const before = host.server.registry.get(captainId)?.repos.length;
+
+    const existing = await run(host, ["new", "--name", "Plugins", "--repo", "rampage"], crew);
+    const shadow = await run(host, ["new", "--name", "Shadow", "--repo", "bb-plugins"], crew);
+    const fromUser = await run(host, ["new", "--name", "Mine", "--repo", "rampage"], "thr_user");
+
+    for (const result of [existing, shadow]) {
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain(
+        `${crew} is crew of the Plugins Captain; crew cannot start a Captain`,
+      );
+    }
+    expect(host.server.registry.get(captainId)?.repos.length).toBe(before);
+    expect(host.server.registry.byName("Shadow")).toBeNull();
+    expect(fromUser.exitCode).toBe(0);
+  });
+
+  test("released crew stay refused by new; a thread bb cannot read still starts a Captain", async () => {
+    const { host, captainId, as } = await crewHost();
+    const released = await dispatched(as, "BBPLUGINS-2", "Implement");
+    host.updateThread(released, { parentThreadId: null });
+
+    const fromReleased = await run(host, ["new", "--name", "Ex", "--repo", "rampage"], released);
+    const fromGhost = await run(host, ["new", "--name", "Ghost", "--repo", "rampage"], "thr_ghost");
+
+    expect(fromReleased.exitCode).toBe(1);
+    expect(fromReleased.stderr).toContain(`${released} is crew of the Plugins Captain`);
+    expect(fromReleased.stderr).toContain(captainId);
+    expect(fromReleased.stderr).not.toContain("--captain");
+    expect(fromGhost.exitCode).toBe(0);
+    expect(host.server.registry.byName("Ghost")).not.toBeNull();
+  });
+
+  test("a verdict supersedes the task's open ship asks across Captains", async () => {
+    const { host, captainId, as } = await crewHost();
+    await as(verdictArgs);
+    const shadow = await newCaptain(host, ["--name", "Shadow", "--repo", "bb-plugins"]);
+    const second = "b".repeat(40);
+
+    const result = await run(
+      host,
+      ["verdict", "BBPLUGINS-1", "review", "passed", "--head", second, "--ship"],
+      shadow,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(host.server.store.ask("a1")).toMatchObject({
+      captainId,
+      answer: "Superseded",
+      answeredBy: "captain",
+    });
+    expect(host.server.store.ask("a2")).toMatchObject({ captainId: shadow, answer: null });
+    expect(
+      host.tasks.comments
+        .filter((comment) => comment.body.startsWith("Superseded: a1"))
+        .map((comment) => [comment.body, comment.authorName, comment.threadId]),
+    ).toEqual([
+      [
+        `Superseded: a1, the Plugins Captain's ship ask, does not match the recorded review passed at ${second}; a Merge on it grants nothing.`,
+        "Shadow Captain",
+        shadow,
+      ],
+    ]);
+    // The owning Captain hears its ask closed; the recording one hears nothing.
+    expect(host.server.store.ask("a1")?.answerDeliveredAt).not.toBeNull();
+    expect(host.sent.filter((message) => message.text.includes("Superseded"))).toEqual([
+      {
+        threadId: captainId,
+        text: expect.stringContaining('[captain] a1 answered "Superseded" · BBPLUGINS-1'),
+        mode: "steer-if-active",
+      },
+    ]);
+  });
+
+  test("a failed send of a cross-Captain supersede is left for the background check", async () => {
+    const { host, captainId, as } = await crewHost();
+    await as(verdictArgs);
+    const shadow = await newCaptain(host, ["--name", "Shadow", "--repo", "bb-plugins"]);
+    host.sendFails.add(captainId);
+
+    const result = await run(
+      host,
+      ["verdict", "BBPLUGINS-1", "review", "findings", "--head", head],
+      shadow,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("a1: answer not delivered to the Captain");
+    expect(host.server.store.ask("a1")).toMatchObject({
+      answer: "Superseded",
+      answerDeliveredAt: null,
+      deliveryAttempts: 1,
+    });
+  });
+
+  test("a calling thread bb does not know is refused with a blocker", async () => {
+    const { host, captainId } = await crewHost();
+
+    const result = await run(host, ["status", "--captain", captainId, "--json"], "thr_ghost");
+
+    expect(result.exitCode).toBe(1);
+    expect(json(result.stdout).blockers[0]?.reason).toContain(
+      "could not read the calling thread thr_ghost",
+    );
+  });
+
+  test("a Captain acts only for itself; the user's terminal names any Captain", async () => {
+    const { host, captainId } = await crewHost();
+    const other = await newCaptain(host, ["--name", "Other", "--repo", "rampage"]);
+
+    const fromOther = await run(host, [...verdictArgs, "--captain", captainId], other);
+    const fromUser = await run(host, [
+      "verdict",
+      "BBPLUGINS-1",
+      "review",
+      "passed",
+      "--head",
+      head,
+      "--captain",
+      captainId,
+    ]);
+
+    expect(fromOther.exitCode).toBe(1);
+    expect(fromOther.stderr).toContain("acts only for the Other Captain");
+    expect(fromUser.exitCode).toBe(0);
+  });
+
+  test("only the user answers a ship ask; the record says who answered", async () => {
+    const { host, captainId, as } = await crewHost();
+    await as(verdictArgs);
+
+    const byCaptain = await as(["ask", "resolve", "a1", "--answer", "Merge"]);
+    expect(byCaptain.exitCode).toBe(1);
+    expect(byCaptain.stderr).toContain("only the user answers Merge or Hold");
+    expect(host.server.store.ask("a1")?.answer).toBeNull();
+
+    host.sendFails.add(captainId);
+    const byUser = await run(host, ["ask", "resolve", "a1", "--answer", "Merge"]);
+    host.sendFails.delete(captainId);
+    // The Captain may rerun the same answer to retry its send; that keeps the user as its source.
+    const retried = await as(["ask", "resolve", "a1", "--answer", "Merge"]);
+    const shown = await as(["ask", "show", "a1", "--json"]);
+
+    expect(byUser.exitCode).toBe(0);
+    expect(retried.exitCode).toBe(0);
+    expect(host.server.store.ask("a1")).toMatchObject({ answer: "Merge", answeredBy: "user" });
+    expect(json(shown.stdout).results[0]).toMatchObject({
+      id: "a1",
+      kind: "ship",
+      task: "BBPLUGINS-1",
+      answer: "Merge",
+      answeredBy: "user",
+      detail: expect.stringContaining(`Review passed at ${head}.`),
+    });
+    expect((await as(["ask", "show", "a1"])).stdout).toBe(
+      "a1  answered  ship  BBPLUGINS-1  Merge  by user\n",
+    );
+  });
+
+  test("the banner answers as the user; another plugin cannot answer", async () => {
+    const { host, as } = await crewHost();
+    await as(verdictArgs);
+
+    await expect(
+      host.harness.behavior.callRpc(
+        "resolveAsk",
+        { askId: "a1", answer: "Merge" },
+        { experimental_caller: { kind: "plugin", pluginId: "other" } },
+      ),
+    ).rejects.toThrow("only the user answers an ask");
+    expect(host.server.store.ask("a1")?.answer).toBeNull();
+
+    await host.harness.behavior.callRpc("resolveAsk", { askId: "a1", answer: "Merge" });
+    expect(host.server.store.ask("a1")?.answeredBy).toBe("user");
+  });
+
+  test("a Captain may answer its own decision ask, recorded as the Captain; a superseded ship ask is never the user's", async () => {
+    const { host, as } = await crewHost();
+    await as(askArgs);
+    await as(verdictArgs);
+
+    expect((await as(["ask", "resolve", "a1", "--answer", "A"])).exitCode).toBe(0);
+    await as(["verdict", "BBPLUGINS-1", "review", "findings", "--head", head]);
+
+    expect(host.server.store.ask("a1")).toMatchObject({ answer: "A", answeredBy: "captain" });
+    expect(host.server.store.ask("a2")).toMatchObject({
+      answer: "Superseded",
+      answeredBy: "captain",
+    });
+    expect((await as(["ask", "show", "a2"])).stdout).toContain("Superseded  by captain");
+  });
+});
+
 describe("bb captain tell", () => {
   test("reaches only the role named on a task, steers it from the Captain, and moves its report-due mark", async () => {
     const { host, captainId, as } = await crewHost();

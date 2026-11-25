@@ -1,6 +1,13 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
-import { ASK_OPTION_COLUMNS, askBlockers, askItem, openAsk, resolveAsk } from "../asks.ts";
-import { callerCaptain, readCallerFile } from "../caller.ts";
+import {
+  ASK_OPTION_COLUMNS,
+  askBlockers,
+  askItem,
+  askOrRefuse,
+  openAsk,
+  resolveAsk,
+} from "../asks.ts";
+import { actingFor, readCallerFile } from "../caller.ts";
 import { resolveTask, tasksOrRefuse } from "../crew.ts";
 import { guard, Refusal, render, type Blocker } from "../output.ts";
 import { ASK_KINDS, type AskKind } from "../../contract/queue.ts";
@@ -55,7 +62,7 @@ export function askCommand(deps: CommandDeps) {
     run(input, ctx) {
       const json = input.options.json;
       return guard("captain ask", json, async () => {
-        const captain = await callerCaptain(deps.bb, deps.registry, ctx, {
+        const { captain } = await actingFor(deps, ctx, {
           captain: input.options.captain,
         });
         const kind = input.options.kind as AskKind;
@@ -117,15 +124,42 @@ export function askResolveCommand(deps: CommandDeps) {
       },
       json: JSON_OPTION,
     },
-    run(input) {
+    run(input, ctx) {
       const json = input.options.json;
       return guard("captain ask resolve", json, async () => {
         const { ask, state, notes } = await resolveAsk(
           deps,
           input.positionals.id,
           input.options.answer,
+          ctx.threadId ?? null,
         );
         return render([askItem(ask, state)], json, notes);
+      });
+    },
+  });
+}
+
+export function askShowCommand(deps: CommandDeps) {
+  return cliCommand({
+    summary: "Print one ask's record: its kind, task, detail, answer and who answered it",
+    positionals: [{ name: "id", required: true, description: "The ask id, such as a7" }],
+    options: { json: JSON_OPTION },
+    run(input) {
+      const json = input.options.json;
+      return guard("captain ask show", json, async () => {
+        const ask = askOrRefuse(deps.store, input.positionals.id);
+        const item = askItem(ask, ask.answer === null ? "open" : "answered");
+        const by = ask.answer === null ? null : `by ${ask.answeredBy ?? "unknown"}`;
+        return render(
+          [
+            {
+              ...item,
+              detail: [item.detail, by].filter((part) => part !== null).join("  "),
+              data: { ...item.data, detail: ask.detail, answeredAt: ask.answeredAt },
+            },
+          ],
+          json,
+        );
       });
     },
   });

@@ -24,3 +24,4 @@ The Captain started you for one task in Tasks. Your brief is the task's descript
 
 - The Drive is `{{drive}}` on the bb server's machine. On that machine, read it by path.
 - From any other machine, use `bb captain drive read <path>` and `bb captain drive write <path> --file <local file>`.
+- You may write only under `crew/` in the Drive. The rest, `CAPTAIN.md`, `CREW.md`, `NOTES.md` and `skills/` included, is the Captain's: report a change it needs instead of making it.

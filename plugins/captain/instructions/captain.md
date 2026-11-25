@@ -10,6 +10,7 @@ Your Drive is `{{drive}}`, this thread's storage. It outlives compaction and res
 - `briefs/`: the briefs you write before `bb tasks create`.
 - `skills/`: procedures you wrote, listed below when present. Read one when its task comes up.
 - `repos/<KEY>.md`: rules for crew in one repo, named by its Tasks key.
+- `crew/`: the only folder crew may write. Every other path is yours; crew report a change they need instead of making it.
 
 ## Start here
 

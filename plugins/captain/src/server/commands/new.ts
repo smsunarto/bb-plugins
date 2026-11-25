@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { CAPTAIN_NAME_MAX, CAPTAINS_TAG } from "../../contract/rpc.ts";
 import { markPersonFacing } from "../audience.ts";
-import { readCallerFile } from "../caller.ts";
+import { readCallerFile, refuseCrew } from "../caller.ts";
 import { DRIVE_FILES } from "../drive.ts";
 import { guard, refuse, Refusal, render, type Blocker, type Item } from "../output.ts";
 import { NOTICE, type Repo } from "../store.ts";
@@ -96,6 +96,8 @@ export function newCommand(deps: CommandDeps) {
     run(input, ctx) {
       const json = input.options.json;
       return guard("captain new", json, async () => {
+        // Crew would start or reconfigure a Captain that acts for them.
+        await refuseCrew(deps, ctx, "start a Captain");
         const path = input.options["prompt-file"];
         const started = await startCaptain(deps, {
           name: input.options.name,

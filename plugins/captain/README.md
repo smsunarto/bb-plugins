@@ -25,6 +25,7 @@ bb captain tell --all --rule --message "Never push to main."
 bb captain tell --stalled --message-file nudge.md
 bb captain ask "Pick the Unity account" --task PLUG-19 --option Studio --option Personal --detail-file why.md
 bb captain ask resolve a7 --answer Studio
+bb captain ask show a7
 bb captain status [--since <cursor>] [--all]
 ```
 
@@ -33,6 +34,26 @@ An ask's options are button labels, ≤12 columns each (wide characters count 2)
 Long text goes through a file on the calling machine (`--message-file`, `--detail-file`). The stdin flags (`--message-stdin`, `--detail-stdin`) take one line only, as every bb plugin CLI stdin flag does.
 
 Run `bb captain --help` for every option. Every command takes `--json`.
+
+## Who may act for a Captain
+
+- A call from the user's terminal, with no thread, names its Captain with `--captain`.
+- A thread-bound call acts only for its own Captain. A Captain thread acts for itself, and `--captain` may name only that same Captain.
+- A crew thread is the child of a Captain in bb. Crew may run `drive read`, `drive write` and `ask show`, and nothing else that acts for a Captain.
+- Other threads, neither a Captain nor its crew, are refused by every command that acts for a Captain, `drive read` and `drive write` included. They may still run `ask show` and `bb captain new`. Crew may not run `new`, nor may any thread ever dispatched as crew.
+- `ask resolve` takes the user's terminal, the banner, or the ask's own Captain thread. The Captain may answer its own decision, access or improve asks, and may rerun any answer to retry its send. Only the user gives a ship ask its first answer.
+- Each ask records who answered it, `user` or `captain`, and `ask show` prints it. A superseded ship ask reads `captain`; asks answered before this was kept read `unknown`. `captain-ship` ships only on a Merge whose record says `user`.
+- A review verdict supersedes the task's open ship asks from every Captain, not only the one recording it. Another Captain whose ask closes is sent its `Superseded` answer, as a resolved ask is.
+- Crew read the whole Drive and write only under `crew/`. `CAPTAIN.md`, `CREW.md`, `NOTES.md`, `skills/` and every other path are the Captain's. The check uses the real path, so a symlink cannot point a crew write elsewhere.
+
+### Limits
+
+These checks stop cooperative clients' mistakes, not a hostile caller. bb gives a plugin no authenticated caller:
+
+- The calling thread is request metadata the CLI reports. A call that drops `BB_THREAD_ID` reads as the user's terminal.
+- An RPC handler sees only `client` or `plugin`, and the bb app, the `bb` CLI and every agent shell are all `client`. These RPC methods act for any client: `resolveAsk`, `setLadder`, `defer`, `markSeen`, `adopt`, `newCaptain`, `setIcon`, `routineAction` and `saveRoutine`. Any agent can reach them with `bb plugin rpc call captain <method>`.
+- So an ask's `answeredBy` of `user` means the answer did not come from the CLI in a thread: the banner, the user's terminal, or any client that calls `resolveAsk`. It does not prove the user clicked.
+- Crew on the server's machine can write the Drive by path.
 
 ## Routines
 

@@ -1,6 +1,6 @@
 import { cliCommand } from "@get-bb/plugin-sdk";
 import { CAPTAINS_TAG } from "../../contract/rpc.ts";
-import { callerCaptain } from "../caller.ts";
+import { actingFor } from "../caller.ts";
 import { guard, render, type Item } from "../output.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
 import { refreshIcon } from "../icon.ts";
@@ -23,7 +23,7 @@ export function archiveCommand(deps: CommandDeps) {
             json,
           );
         }
-        const captain = await callerCaptain(deps.bb, deps.registry, ctx, { captain: address });
+        const { captain } = await actingFor(deps, ctx, { captain: address });
         const items = await releaseCrew(deps, captain.threadId);
         if (items.some((item) => !item.ok)) {
           items.push({
