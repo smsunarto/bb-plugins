@@ -45,6 +45,8 @@
   ],
   "dependencies": {
     "@radix-ui/react-label": "^2.1.17",
+    "@radix-ui/react-slot": "^1.5.0",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "tailwind-merge": "^3.7.0",
     "zod": "^4.4.3"
