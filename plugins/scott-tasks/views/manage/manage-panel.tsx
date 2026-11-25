@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Icon } from "@/components/ui/icon";
+import { Item, ItemGroup } from "@/components/ui/item";
 import { ConfirmDialog } from "../../components/confirm-dialog.js";
 import {
   PERMISSION_LABELS,
@@ -163,12 +164,9 @@ function LabelsSection() {
           </SelectGroup>
         </SelectContent>
       </Select>
-      <div className="rounded-md border border-border">
+      <ItemGroup variant="divided">
         {(labels.data ?? []).map((label) => (
-          <div
-            key={label.id}
-            className="border-t border-border-hairline px-3 py-2 first:border-t-0"
-          >
+          <Item key={label.id} size="xs" role="listitem">
             {editingId === label.id ? (
               <LabelEditorRow
                 initialName={label.name}
@@ -187,7 +185,7 @@ function LabelsSection() {
                 }
               />
             ) : (
-              <div className="group flex items-center gap-2">
+              <div className="group flex flex-1 items-center gap-2">
                 <span
                   aria-hidden
                   className="size-2.5 shrink-0 rounded-full"
@@ -214,12 +212,14 @@ function LabelsSection() {
                 </Button>
               </div>
             )}
-          </div>
+          </Item>
         ))}
         {(labels.data ?? []).length === 0 ? (
-          <EmptyState className="mx-3 my-2" message="No labels yet." />
+          <Item size="xs" role="listitem">
+            <EmptyState message="No labels yet." />
+          </Item>
         ) : null}
-      </div>
+      </ItemGroup>
       <LabelEditorRow
         initialName=""
         initialColor={DEFAULT_COLOR}
@@ -408,7 +408,7 @@ function FolderRow({
   };
 
   return (
-    <div className="flex items-center gap-2 border-t border-border-hairline px-3 py-2 first:border-t-0">
+    <Item size="xs" role="listitem">
       <Icon name="Folder" className="size-3.5 shrink-0 text-muted-foreground" />
       {renaming ? (
         <>
@@ -484,7 +484,7 @@ function FolderRow({
           </Button>
         </>
       )}
-    </div>
+    </Item>
   );
 }
 
@@ -532,7 +532,7 @@ function FoldersSection() {
       {folderList.length === 0 ? (
         <EmptyState message="No folders yet — create one from the New project dialog." />
       ) : (
-        <div className="rounded-md border border-border">
+        <ItemGroup variant="divided">
           {folderList.map((folder) => (
             <FolderRow
               key={folder.id}
@@ -555,7 +555,7 @@ function FoldersSection() {
               }}
             />
           ))}
-        </div>
+        </ItemGroup>
       )}
       <FieldError>{error}</FieldError>
       <ConfirmDialog

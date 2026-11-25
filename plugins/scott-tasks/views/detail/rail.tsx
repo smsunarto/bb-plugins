@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Icon } from "@/components/ui/icon";
+import { StatusDot } from "@/components/ui/status-dot";
 import { cn } from "@/lib/utils";
 
 export interface TaskPropertyUpdate {
@@ -631,10 +632,7 @@ export function PropertiesRail({
           <div className="mt-3 flex flex-col gap-1 text-xs">
             {active.map((thread) => (
               <span key={thread.id} className="flex items-center gap-1 font-medium text-success">
-                <span
-                  aria-hidden
-                  className="size-1.5 shrink-0 animate-pulse rounded-full bg-success"
-                />
+                <StatusDot tone="success" size="sm" className="animate-pulse" />
                 <span className="truncate">
                   {thread.presetName} {thread.liveStatus === "starting" ? "starting" : "working"}
                 </span>

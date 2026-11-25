@@ -50,7 +50,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
@@ -548,16 +548,16 @@ export function NewTaskDialog({
                   </Button>
                 ) : null}
                 <Hint label="Attach files">
-                  <Button
+                  <CompactButton
                     variant="ghost"
-                    size="icon"
+                    tone="muted"
+                    size="icon-sm"
                     aria-label="Attach files"
                     disabled={submitting}
-                    className="size-7 text-muted-foreground"
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Icon name="Paperclip" className="size-4" />
-                  </Button>
+                  </CompactButton>
                 </Hint>
                 <input
                   ref={fileInputRef}

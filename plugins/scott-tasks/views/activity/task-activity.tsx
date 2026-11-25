@@ -5,7 +5,7 @@ import AttachmentIcon from "@hugeicons/core-free-icons/AttachmentIcon";
 import File01Icon from "@hugeicons/core-free-icons/File01Icon";
 import Notification02Icon from "@hugeicons/core-free-icons/Notification02Icon";
 import NotificationOff02Icon from "@hugeicons/core-free-icons/NotificationOff02Icon";
-import { Button } from "@/components/ui/button";
+import { CompactButton } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FieldError } from "@/components/ui/field";
@@ -331,26 +331,27 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
             event.target.value = "";
           }}
         />
-        <Button
+        <CompactButton
           type="button"
-          size="icon"
+          size="icon-sm"
           variant="ghost"
+          tone="muted"
           aria-label="Attach file"
-          className="size-7 shrink-0 text-muted-foreground max-md:pointer-coarse:size-11"
+          className="shrink-0 max-md:pointer-coarse:size-11"
           onClick={() => fileInputRef.current?.click()}
         >
           <HugeiconsIcon icon={AttachmentIcon} className="size-3.5" />
-        </Button>
-        <Button
+        </CompactButton>
+        <CompactButton
           type="button"
-          size="icon"
+          size="icon-sm"
           aria-label="Comment"
           disabled={!canSend}
-          className="size-7 shrink-0 rounded-md bg-foreground text-background hover:bg-foreground/90 max-md:pointer-coarse:size-11"
+          className="shrink-0 max-md:pointer-coarse:size-11"
           onClick={() => void send()}
         >
           <HugeiconsIcon icon={ArrowUp02Icon} className="size-3.5" />
-        </Button>
+        </CompactButton>
       </div>
     </div>
   );

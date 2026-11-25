@@ -31,9 +31,10 @@ import {
 import { PriorityIcon, StatusIcon } from "../list/icons.js";
 import { STATUS_LABELS } from "../list/lib.js";
 import { byManualOrder } from "../../shared/sort.js";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
 import { Icon } from "@/components/ui/icon";
+import { StatusDot } from "@/components/ui/status-dot";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -134,7 +135,7 @@ function WorkingAgentsChip({ threads }: { threads: readonly TaskThread[] }) {
   if (threads.length === 0) return null;
   return (
     <span className="flex min-w-0 items-center gap-1 font-medium text-success">
-      <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-success" />
+      <StatusDot tone="success" size="sm" className="animate-pulse" />
       <span className="truncate">
         {threads.length === 1 ? threads[0]!.presetName : `${threads.length} agents`}
       </span>
@@ -502,15 +503,16 @@ export function BoardView({ projectId }: BoardViewProps) {
           <StatusIcon status={status} />
           <span>{STATUS_LABELS[status]}</span>
           <Badge variant="count">{cards.length}</Badge>
-          <Button
+          <CompactButton
             variant="ghost"
-            size="icon"
-            className="ml-auto size-7 text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100 max-md:pointer-coarse:size-11 max-md:pointer-coarse:opacity-100"
+            tone="muted"
+            size="icon-sm"
+            className="ml-auto opacity-0 focus-visible:opacity-100 group-hover:opacity-100 max-md:pointer-coarse:size-11 max-md:pointer-coarse:opacity-100"
             aria-label={`New ${STATUS_LABELS[status]} task`}
             onClick={() => openNewTask({ projectId, status })}
           >
             <Icon name="Plus" className="size-3.5" />
-          </Button>
+          </CompactButton>
         </div>
         <div
           ref={(element) => {

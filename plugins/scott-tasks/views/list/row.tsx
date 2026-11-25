@@ -2,6 +2,7 @@ import { memo, useId, useState } from "react";
 import type { Label, Project, Task, TaskThread } from "../../shared/contract.js";
 import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/ui/icon";
+import { StatusDot } from "@/components/ui/status-dot";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { PriorityIcon } from "./icons.js";
@@ -26,7 +27,7 @@ function ActiveChip({ threads }: { threads: readonly TaskThread[] }) {
       className="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-recessed text-muted-foreground"
     >
       <Icon name="Bot" className="size-3" aria-hidden />
-      <span aria-hidden className="absolute bottom-0 right-0 size-1.5 rounded-full bg-success" />
+      <StatusDot tone="success" size="sm" className="absolute bottom-0 right-0" />
       <span className="sr-only">Active</span>
     </span>
   );
