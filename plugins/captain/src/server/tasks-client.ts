@@ -51,6 +51,7 @@ const taskSchema = z.object({
   id: z.string(),
   key: z.string(),
   title: z.string(),
+  description: z.string().optional(),
   status: z.string(),
   updatedAt: z.string(),
 });
@@ -247,6 +248,9 @@ export function createTasksClient(
     async getTaskByKey(taskKey: string): Promise<TasksTask | null> {
       return (await call("getTaskByKey", { taskKey }, z.object({ task: taskSchema.nullable() })))
         .task;
+    },
+    async getTask(taskId: string): Promise<TasksTask | null> {
+      return (await call("getTask", { taskId }, z.object({ task: taskSchema.nullable() }))).task;
     },
     /** One project's open tasks (not done or canceled), at most `limit`, in Tasks' board order; `search` matches title or description. */
     async listOpenTasks(projectId: string, limit: number, search?: string): Promise<TasksTask[]> {

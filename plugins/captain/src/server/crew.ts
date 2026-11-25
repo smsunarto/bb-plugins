@@ -101,11 +101,15 @@ export function crewOnTask(
   crew: readonly CrewThread[],
   taskKey: string,
   role?: Role,
+  { includeErrored = false }: { includeErrored?: boolean } = {},
 ): (CrewThread & { row: CrewRow })[] {
   return crew
     .flatMap((member) => {
       const row = member.rows.find((entry) => entry.task.key === taskKey);
-      return row === undefined || !LIVE_STATUSES.has(row.liveStatus) ? [] : [{ ...member, row }];
+      if (row === undefined) return [];
+      const resumable =
+        includeErrored && row.liveStatus === "failed" && member.thread.status === "error";
+      return LIVE_STATUSES.has(row.liveStatus) || resumable ? [{ ...member, row }] : [];
     })
     .filter((member) => role === undefined || member.role === role)
     .sort((a, b) => b.row.attachedAt.localeCompare(a.row.attachedAt));

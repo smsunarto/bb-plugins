@@ -16,23 +16,34 @@ import { TasksError, type TasksProject, type TasksTask } from "./tasks-client.ts
 /** How many open tasks each repo offers in the dialog. */
 export const ADOPT_TASKS_PER_REPO = 100;
 
-/** The keys of the tasks Tasks has each thread attached live to. While Tasks does not answer, none. */
+/** The IDs and keys of each thread's live task attachments. */
 async function liveTasks(
   deps: CommandDeps,
   threadIds: readonly string[],
-): Promise<Map<string, Set<string>>> {
-  const live = new Map<string, Set<string>>();
+): Promise<Map<string, Map<string, string>>> {
+  const live = new Map<string, Map<string, string>>();
   if (threadIds.length === 0) return live;
   try {
     for (const row of await deps.tasks.crewSnapshot(threadIds)) {
       if (!LIVE_STATUSES.has(row.liveStatus)) continue;
-      const keys = live.get(row.threadId) ?? new Set();
-      live.set(row.threadId, keys.add(row.task.key.toUpperCase()));
+      const tasks = live.get(row.threadId) ?? new Map();
+      live.set(row.threadId, tasks.set(row.task.id, row.task.key));
     }
   } catch (error) {
     if (!(error instanceof TasksError)) throw error;
   }
   return live;
+}
+
+async function pendingTaskId(
+  deps: CommandDeps,
+  threadId: string,
+  captainId: string,
+): Promise<string | null> {
+  const pending = deps.store.pendingAdoption(threadId, captainId);
+  if (pending === null) return null;
+  // A marker written before task IDs were stored can still resolve through a former key.
+  return pending.taskId ?? (await deps.tasks.getTaskByKey(pending.taskKey))?.id ?? null;
 }
 
 /**
@@ -55,12 +66,19 @@ export async function crewOf(
   }
   const attached = await liveTasks(deps, unrecorded);
   await Promise.all(
-    [...attached.keys()].map(async (id) => {
+    [...attached].map(async ([id, tasks]) => {
       const parent = await deps.bb.sdk.threads
         .get({ threadId: id })
         .then((thread) => thread.parentThreadId ?? null)
         .catch(() => null);
-      crew[id] = deps.registry.get(parent)?.threadId ?? null;
+      const captain = deps.registry.get(parent);
+      if (captain === null) return;
+      const pending = await pendingTaskId(deps, id, captain.threadId).catch((error) => {
+        if (!(error instanceof TasksError)) throw error;
+        return null;
+      });
+      if (pending !== null && tasks.size === 1 && tasks.has(pending)) return;
+      crew[id] = captain.threadId;
     }),
   );
   return crew;
@@ -68,15 +86,14 @@ export async function crewOf(
 
 /**
  * Why the menu leaves a thread out: it is a Captain, or its parent Captain's
- * live crew on a task. A thread live only on `retryOnto`'s task with no role
- * record is an adopt whose attach landed but reported failure, so a retry
- * onto that task finishes it.
+ * live crew on a task. A pending adoption can reopen the dialog. A retry must
+ * target the only attached task, including legacy attempts with no marker.
  */
 async function menuBlocker(
   deps: CommandDeps,
   threadId: string,
   parentId: string | null,
-  retryOnto: () => Promise<string | null> = async () => null,
+  retryOnto?: (live: ReadonlyMap<string, string>) => Promise<string | null>,
 ): Promise<Blocker | null> {
   if (deps.registry.get(threadId) !== null) {
     return { reason: `${threadId} is a Captain`, fix: "pick a thread that is not a Captain" };
@@ -86,8 +103,12 @@ async function menuBlocker(
   if (deps.store.crewRole(threadId)?.captainId !== parent.threadId) {
     const live = (await liveTasks(deps, [threadId])).get(threadId);
     if (live === undefined) return null;
-    const target = await retryOnto();
-    if (target !== null && [...live].every((key) => key === target.toUpperCase())) return null;
+    if (live.size === 1) {
+      const target = await tasksRefusal(() =>
+        retryOnto === undefined ? pendingTaskId(deps, threadId, parent.threadId) : retryOnto(live),
+      );
+      if (target !== null && live.has(target)) return null;
+    }
   }
   return {
     reason: `${threadId} is already crew of the ${parent.name} Captain`,
@@ -184,9 +205,11 @@ export async function adoptFromMenu(
       if (task.kind !== "new") throw new Error("only a new task has a marked task");
       return await markedTask(deps, captain, task.projectKey, task.title, thread.id);
     });
-    const menu = await menuBlocker(deps, thread.id, thread.parentThreadId ?? null, async () =>
-      task.kind === "existing" ? task.key : ((await marked()).earlier?.key ?? null),
-    );
+    const menu = await menuBlocker(deps, thread.id, thread.parentThreadId ?? null, async (live) => {
+      if (task.kind === "new") return (await marked()).earlier?.id ?? null;
+      for (const [id, key] of live) if (key === task.key.toUpperCase()) return id;
+      return (await deps.tasks.getTaskByKey(task.key))?.id ?? null;
+    });
     if (menu !== null) throw new Refusal([menu]);
     const role = ROLE_SPECS[input.role].label;
     let key: string;
@@ -196,7 +219,13 @@ export async function adoptFromMenu(
     } else {
       const blockers = await checkAdoption(deps, captain, role, thread.id);
       if (blockers.length > 0) throw new Refusal(dedupe(blockers));
-      ({ key, created } = await taskFromTitle(deps, await marked(), task.title, thread.id));
+      ({ key, created } = await taskFromTitle(
+        deps,
+        await marked(),
+        task.title,
+        thread.id,
+        captain.threadId,
+      ));
     }
     // One start per task at a time, with dispatch: a second adopt onto the
     // same task and role then sees the first one's thread and is refused.
@@ -236,6 +265,10 @@ export async function adoptFromMenu(
 
 /** What a task made from a thread's title carries, so a retry finds it instead of making another. */
 const adoptMarker = (threadId: string) => `captain-adopt:${threadId}`;
+const ownedAdoptMarker = (threadId: string, captainId: string) =>
+  `${adoptMarker(threadId)}:${captainId}`;
+const hasAdoptMarker = (task: TasksTask, marker: string) =>
+  task.description?.includes(`<!-- ${marker} -->`) === true;
 
 type Marked = { project: TasksProject; earlier: TasksTask | null };
 
@@ -269,15 +302,33 @@ async function markedTask(
       RESUME_CANDIDATES,
       adoptMarker(threadId),
     );
-    // This thread's own row counts only once its role is recorded: an attach
-    // that landed but reported failure leaves a row and no record.
-    const unrecorded = deps.store.crewRole(threadId) === null;
-    for (const task of marked.filter((each) => each.title.trim() === title)) {
+    const pendingId = await pendingTaskId(deps, threadId, captain.threadId);
+    const pending =
+      pendingId === null
+        ? null
+        : (marked.find((task) => task.id === pendingId) ?? (await deps.tasks.getTask(pendingId)));
+    const candidates =
+      pending === null ? marked : [pending, ...marked.filter((task) => task.id !== pendingId)];
+    const prior = deps.store.crewRole(threadId);
+    for (const task of candidates) {
+      const isPending = task.id === pendingId;
+      const ownMarker = hasAdoptMarker(task, ownedAdoptMarker(threadId, captain.threadId));
+      const legacyMarker = hasAdoptMarker(task, adoptMarker(threadId));
+      if (
+        !ownMarker &&
+        !(legacyMarker && (isPending || prior === null || prior.captainId === captain.threadId))
+      )
+        continue;
+      const sameTitle = task.title.trim() === title;
+      const inProject = marked.some(({ id }) => id === task.id);
+      if (!isPending && !sameTitle) continue;
       const threads = await deps.tasks.taskThreads(task.id);
+      if (isPending && threads.some((row) => row.threadId === threadId))
+        return { project, earlier: task };
       const taken = threads.some(
-        (row) => !(unrecorded && row.threadId === threadId) && LIVE_STATUSES.has(row.liveStatus),
+        (row) => row.threadId === threadId || LIVE_STATUSES.has(row.liveStatus),
       );
-      if (!taken) return { project, earlier: task };
+      if (sameTitle && inProject && !taken) return { project, earlier: task };
     }
     return { project, earlier: null };
   });
@@ -289,13 +340,14 @@ async function taskFromTitle(
   { project, earlier }: Marked,
   title: string,
   threadId: string,
+  captainId: string,
 ): Promise<{ key: string; created: boolean }> {
   if (earlier !== null) return { key: earlier.key, created: false };
   const task = await tasksRefusal(() =>
     deps.tasks.createTask({
       projectId: project.id,
       title,
-      description: `Brought in from thread ${threadId} through Adopt into Captain.\n\n<!-- ${adoptMarker(threadId)} -->`,
+      description: `Brought in from thread ${threadId} through Adopt into Captain.\n\n<!-- ${ownedAdoptMarker(threadId, captainId)} -->`,
       status: "todo",
     }),
   );

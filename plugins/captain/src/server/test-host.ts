@@ -403,6 +403,7 @@ export async function captainHost(options: FakeOptions = {}) {
       id: task.id,
       key: task.key,
       title: task.title,
+      description: task.description,
       status: task.status,
       statusChangedAt: task.updatedAt,
       updatedAt: task.updatedAt,
@@ -499,6 +500,10 @@ export async function captainHost(options: FakeOptions = {}) {
         const { presetId: _id, ...patch } = input;
         Object.assign(preset, patch);
         return { preset };
+      }
+      case "getTask": {
+        const task = tasks.tasks.find((entry) => entry.id === input["taskId"]);
+        return { task: task === undefined ? null : snapshotTask(task) };
       }
       case "getTaskByKey": {
         const key = String(input["taskKey"]);
