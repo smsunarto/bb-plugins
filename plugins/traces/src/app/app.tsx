@@ -22,6 +22,7 @@ import { Inspector } from "./inspector.tsx";
 import type { TraceRendererRegistry } from "./renderers.tsx";
 import { Sources } from "./sources.tsx";
 import { TraceToolbar, TraceNotice, ThreadScope } from "./ui-chrome.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./components/ui/dialog.tsx";
 import {
   Select,
@@ -347,7 +348,11 @@ export function TraceWorkbench({
           message={error || status.error?.message || ""}
           retry={() => void status.refetch()}
         />
-        {status.data?.lastError && <div className="tr-notice">{status.data.lastError}</div>}
+        {status.data?.lastError && (
+          <Alert variant="warning" role="none" className="mb-2">
+            <AlertDescription>{status.data.lastError}</AlertDescription>
+          </Alert>
+        )}
         <div className="tr-workspace" ref={workspaceRef}>
           <SessionList
             key={`${hostId}:${provider}:${settledSessions}:${currentOnly}`}
