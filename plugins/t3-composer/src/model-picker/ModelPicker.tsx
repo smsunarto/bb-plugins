@@ -12,6 +12,7 @@ import {
   type ReactNode,
 } from "react";
 import { experimental_ProviderIcon as ProviderIcon } from "@get-bb/plugin-sdk/app";
+import { Button } from "@/components/ui/button";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -577,8 +578,11 @@ function ModelRow(props: {
         <Tooltip>
           <TooltipTrigger asChild>
             {/* Pointer shortcut; keyboard users favorite the highlighted model with Mod+D. */}
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-xs"
+              tone="muted"
               tabIndex={-1}
               aria-hidden
               data-t3-favorite-toggle={item.isFavorite ? "on" : "off"}
@@ -586,7 +590,7 @@ function ModelRow(props: {
                 event.stopPropagation();
                 props.onToggleFavorite();
               }}
-              className="-mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+              className="-mr-1"
             >
               <Icon
                 name="Star"
@@ -597,7 +601,7 @@ function ModelRow(props: {
                     : "opacity-0 group-hover:opacity-100 group-data-[highlighted]:opacity-100 [@media(pointer:coarse)]:opacity-100",
                 )}
               />
-            </button>
+            </Button>
           </TooltipTrigger>
           <TooltipContent side="top">{favoriteLabel}</TooltipContent>
         </Tooltip>
