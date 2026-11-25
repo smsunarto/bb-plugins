@@ -158,11 +158,10 @@
 }
 
 [data-gtd-thread-scroll="compact"] {
-  /* Keep the fade and the final row clear of the footer, including any
-     bottom inset the theme lets this scroller extend into. */
-  --gtd-thread-fade-length: 2rem;
   --gtd-thread-bottom-inset: var(--sidebar-list-bottom-inset, 0px);
-  --gtd-thread-end-padding: calc(var(--gtd-thread-fade-length) + var(--gtd-thread-bottom-inset));
+  /* Leave room to scroll the last row above the floating New pill. */
+  --gtd-thread-end-padding: calc(5rem + var(--gtd-thread-bottom-inset));
+  --gtd-thread-fade-length: 1.5rem;
   overflow-y: auto;
 }
 

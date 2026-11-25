@@ -14,21 +14,6 @@ export function activeSectionFor(thread: PluginSidebarThread): ActiveSection {
   return thread.hasPendingInteraction || !isThreadWorking(thread) ? "next-action" : "waiting";
 }
 
-export interface ProjectScope {
-  /** Project id, or null for "all projects". */
-  id: string | null;
-  name: string;
-}
-
-/** Threads in the chosen scope; every thread when the scope is null. */
-export function filterByProject(
-  threads: readonly PluginSidebarThread[],
-  projectId: string | null,
-): PluginSidebarThread[] {
-  if (projectId === null) return [...threads];
-  return threads.filter((thread) => thread.projectId === projectId);
-}
-
 /**
  * The row that should receive focus when the active thread leaves its section.
  *

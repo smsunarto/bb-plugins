@@ -1081,7 +1081,7 @@ async function captureGtdSidebar(browser: Browser, writeCapture: WriteCapture): 
     await mockAgentation(settingsContext, {});
     const page = await createScreenshotPage(settingsContext, { fixedTime: FIXED_TIME });
     // Not navigate(): /settings swaps the app sidebar for the settings nav, so
-    // the project scope picker it waits for never mounts on this route.
+    // the repository-groups toggle it waits for never mounts on this route.
     await page.goto(appUrl("/settings/appearance"), { waitUntil: "domcontentloaded" });
     const trigger = page.getByRole("button", { name: "Sidebar thread list" });
     await trigger.waitFor({ state: "visible" });

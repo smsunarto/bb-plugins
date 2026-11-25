@@ -6,6 +6,7 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import { ThreadInbox } from "./components/inbox/thread-inbox";
+import { mountNewThreadFabStyle } from "./components/inbox/new-thread-fab-style";
 import { CapyNavigation } from "./components/nav/capy-navigation";
 import { archiveThread, canSettleThread } from "./lib/sidebar-actions-bridge";
 import {
@@ -13,6 +14,7 @@ import {
   type LegacyThreadHeaderActionSlots,
 } from "./components/header/header-settle";
 import { mountHeaderSettleStyle } from "./components/header/header-settle-style";
+import { cancelComposeKeyboardHandoff } from "./lib/compose-keyboard";
 import { mountPhoneDrawer } from "./lib/phone-drawer";
 import { mountPhoneDrawerStyle } from "./lib/phone-drawer-style";
 
@@ -54,6 +56,13 @@ export default definePluginApp((app) => {
     mount: ({ signal }) => mountHeaderSettleStyle(document, signal),
   });
 
+  // On a phone the thread list floats a New thread pill in place of bb's
+  // New thread navigation row.
+  app.contentScripts.register({
+    id: "new-thread-fab-style",
+    mount: ({ signal }) => mountNewThreadFabStyle(document, signal),
+  });
+
   app.slots.commandPaletteAction({
     id: "settle-thread",
     title: "GTD Sidebar: settle thread",
@@ -72,6 +81,7 @@ export default definePluginApp((app) => {
       const disposeEffects = mountPhoneDrawer(document, signal);
       const disposeStyle = mountPhoneDrawerStyle(document, signal);
       return () => {
+        cancelComposeKeyboardHandoff(document);
         disposeEffects();
         disposeStyle();
       };
