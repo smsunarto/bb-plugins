@@ -7,11 +7,12 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { brotliDecompressSync } from "node:zlib";
 import { expect, test } from "vitest";
 import { readPatchFile } from "../core/patch-file.ts";
 import { readStrict } from "../core/patch-strict.ts";
 import { parsePatch } from "./file-cards.tsx";
-import { undrawableFile } from "./patch-file-opener.tsx";
+import { MAX_PATCH_BYTES, NOT_UTF8, readCapped, undrawableFile } from "./patch-file-opener.tsx";
 
 const FIXTURES = join(import.meta.dirname, "../../test/fixtures/patch-file");
 const all = readdirSync(FIXTURES, { recursive: true, encoding: "utf8" }).filter((name) =>
@@ -402,3 +403,30 @@ test("every git show, git format-patch and git diff of 20 commits from this repo
     checkFaithful(readFileSync(join(FIXTURES, name), "utf8"));
   }
 });
+
+test("the review's 302 real patches draw or fall back at the byte decoder", async () => {
+  // The original review bytes, stored as base64 inside Brotli so this also runs in shallow checkouts.
+  const archive = readFileSync(join(FIXTURES, "real/review-corpus.json.br"));
+  const inputs: Record<string, string> = JSON.parse(brotliDecompressSync(archive).toString());
+  const fallback: string[] = [];
+  let draws = 0;
+  for (const [name, base64] of Object.entries(inputs)) {
+    const response = new Response(Buffer.from(base64, "base64"));
+    const decoded = await readCapped(response, MAX_PATCH_BYTES);
+    if (decoded === NOT_UTF8) {
+      fallback.push(name);
+      continue;
+    }
+    if (decoded === null) throw new Error(`${name}: exceeded the byte cap`);
+    const result = readPatchFile(decoded);
+    if (!result.ok) throw new Error(`${name}: ${result.reason}`);
+    expect(undrawableFile(result.read), name).toBeNull();
+    draws++;
+  }
+  expect(draws).toBe(299);
+  expect(fallback.sort()).toEqual([
+    "diff-102f8b2892f8.patch",
+    "mail-102f8b2892f8.patch",
+    "show-102f8b2892f8.patch",
+  ]);
+}, 30_000);

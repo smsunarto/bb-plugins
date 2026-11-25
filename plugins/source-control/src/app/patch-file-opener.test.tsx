@@ -92,6 +92,14 @@ test("the byte cap holds on what is read, with no content-length to trust", asyn
   expect(await readCapped(new Response("é ok"), 16)).toBe("é ok");
 });
 
+test("git format-patch --no-stat draws the commit and its file", async () => {
+  open(readFileSync(join(FIXTURES, "followups/no-stat.patch"), "utf8"));
+  const commit = await screen.findByTestId("sc-patch-commit");
+  expect(commit.textContent).toContain("explain sidebar row stability");
+  expect(commit.textContent).toContain("stable-threads.ts");
+  expect(screen.queryByTestId("sc-patch-file-text")).toBeNull();
+});
+
 test("a multi-commit patch draws a card per file under each commit's subject", async () => {
   const fetch = open(readFileSync(join(FIXTURES, "format-patch-two-commits.patch"), "utf8"));
   expect(fetch).toHaveBeenCalledWith(

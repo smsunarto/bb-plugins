@@ -7,8 +7,8 @@
  * - `git log -p` and `git show`: git's default commit header (`commit`,
  *   Author, Date, the message indented four spaces), then its sections;
  * - `git format-patch`: mails from a `From <sha>` line with From, Date and
- *   Subject, plain 7bit or 8bit text, the message, a `---` line, a
- *   diffstat, then sections and git's signature;
+ *   Subject, plain 7bit or 8bit text, the message, an optional `---`
+ *   and diffstat, then sections and git's signature;
  * - `diff -u` of one or more files, each `---`/`+++` pair maybe after
  *   `diff -r`'s command line.
  *
@@ -234,7 +234,6 @@ class Gate {
     this.at++;
   }
 
-  /** The message up to its `---` line, then the diffstat up to the first file. */
   /** git mailinfo reads From, Date and Subject anywhere in the body's leading block as the author's. */
   private checkOverrides(): void {
     let at = this.at;
@@ -249,27 +248,32 @@ class Gate {
 
   private readMessage(start: number): void {
     this.checkOverrides();
-    // The message runs to the last --- line before the first file: a --- in the prose is a rule.
+    // Find the first file, then look back past the indented diffstat for its separator.
     let end = this.at;
     while (end < this.lines.length && !this.lines[end]!.startsWith("diff --git ")) {
       if (MAIL_START.test(this.lines[end]!) || this.lines[end] === "-- ") break;
       end++;
     }
-    let separator = -1;
-    for (let at = this.at; at < end; at++) if (this.lines[at] === "---") separator = at;
+    let separator = end - 1;
+    while (
+      separator >= this.at &&
+      (this.lines[separator] === "" || this.lines[separator]!.startsWith(" "))
+    )
+      separator--;
+    if (separator < this.at || this.lines[separator] !== "---") separator = -1;
     const message = separator < 0 ? end : separator;
     for (; this.at < message; this.at++)
       if (PATCH_LIKE.test(this.now()!) || this.startsFileHeader())
         this.fail("reads as part of a patch inside the mail's message, before its --- line");
     if (separator < 0) {
-      if (this.now()?.startsWith("diff --git "))
+      if (!this.now()?.startsWith("diff --git "))
+        this.fail("starts a mail with no files, which the diff view can't show", start);
+      // --no-stat leaves a blank line between the message and its first diff.
+      if (this.lines[this.at - 1] !== "")
         this.fail("reads as part of a patch inside the mail's message, before its --- line");
-      this.fail("starts a mail with no files, which the diff view can't show", start);
+      return;
     }
-    this.at++;
-    // The diffstat: indented lines, and blank lines.
-    while (this.now() !== undefined && (this.now() === "" || this.now()!.startsWith(" ")))
-      this.at++;
+    this.at = end;
   }
 
   /** After a mail's last file: `base-commit:` lines, git's signature, then blank lines. */
@@ -407,6 +411,7 @@ class Gate {
 
   private readHunks({ added, deleted }: Header): void {
     let last: { old: number; next: number } | null = null;
+    const eof = { old: false, next: false };
     while (this.now()?.startsWith("@@")) {
       const hunk = HUNK.exec(this.now()!);
       if (!hunk) this.fail("has a hunk header the diff view can't read");
@@ -418,17 +423,21 @@ class Gate {
         this.fail("deletes a file but its hunk writes new lines");
       if (last && (oldStart < last.old || nextStart < last.next))
         this.fail("starts a hunk inside or before the hunk above it");
+      if ((eof.old && oldCount > 0) || (eof.next && nextCount > 0))
+        this.fail("starts a hunk past a no-newline marker on the same side");
       last = { old: oldStart + oldCount, next: nextStart + nextCount };
-      this.readHunkBody(oldCount, nextCount);
+      this.readHunkBody(oldCount, nextCount, eof);
     }
   }
 
-  private readHunkBody(oldCount: number, nextCount: number): void {
+  private readHunkBody(
+    oldCount: number,
+    nextCount: number,
+    eof: { old: boolean; next: boolean },
+  ): void {
     const header = this.at++;
     let old = oldCount;
     let next = nextCount;
-    // A `\` marker says the line above it ends without a newline: it needs a line above it.
-    let marked = true;
     while (old > 0 || next > 0) {
       const line = this.now();
       if (line === undefined) this.fail("ends before the lines its hunk header counts", header);
@@ -441,25 +450,29 @@ class Gate {
           this.fail("is a hunk whose counts run into the next file's --- / +++ header", header);
         old--;
       } else if (line.startsWith("+")) next--;
-      else if (line.startsWith("\\")) {
-        this.readMarker(marked);
-        marked = true;
-        continue;
-      } else this.fail("breaks off the hunk above it");
-      marked = false;
+      else if (line.startsWith("\\"))
+        this.fail("is a no-newline marker with no line above it to mark");
+      else this.fail("breaks off the hunk above it");
       if (old < 0 || next < 0) this.fail("holds more lines than its hunk header counts", header);
       this.at++;
+      if (this.now()?.startsWith("\\")) {
+        const oldSide = !line.startsWith("+");
+        const nextSide = !line.startsWith("-");
+        if ((oldSide && old > 0) || (nextSide && next > 0))
+          this.fail("places a no-newline marker before the last line on its side");
+        this.readMarker();
+        if (oldSide) eof.old = true;
+        if (nextSide) eof.next = true;
+      }
     }
-    if (this.now()?.startsWith("\\")) this.readMarker(marked);
   }
 
   /**
    * A no-newline marker, in any language GNU diff writes it: `\ ` and text,
    * right after the line it marks.
    */
-  private readMarker(marked: boolean): void {
-    if (!this.now()!.startsWith("\\ ")) this.fail("is a \\ line git doesn't write");
-    if (marked) this.fail("is a no-newline marker with no line above it to mark");
+  private readMarker(): void {
+    if (!/^\\ \S/.test(this.now()!)) this.fail("is a \\ line git doesn't write");
     this.at++;
   }
 }

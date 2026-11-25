@@ -1,0 +1,24 @@
+From e630b8952b80e26488552566aba77fa5c612c183 Mon Sep 17 00:00:00 2001
+From: Scott <github@smsunarto.com>
+Date: Tue, 24 Nov 2026 14:26:02 -0800
+Subject: [PATCH] docs(gtd-sidebar): explain sidebar row stability on bb 0.50
+ (#226)
+
+
+diff --git a/plugins/gtd-sidebar/lib/stable-threads.ts b/plugins/gtd-sidebar/lib/stable-threads.ts
+index da5d6b8fb..99beb7621 100644
+--- a/plugins/gtd-sidebar/lib/stable-threads.ts
++++ b/plugins/gtd-sidebar/lib/stable-threads.ts
+@@ -1,8 +1,8 @@
+ /**
+- * bb 0.44 rebuilds every sidebar thread object whenever any thread's title
+- * changes, because its cache is keyed on the shared title-mention resources.
+- * Reusing the previous object for each thread whose data did not change lets
+- * the memoized rows skip, so a rename re-renders one row instead of the list.
++ * bb 0.50 caches sidebar thread objects per entry. useHiddenWorkerActivity
++ * still creates a new object for each thread with a running hidden worker
++ * whenever the sidebar list changes. Reusing the previous object when its
++ * data is equal lets memoized rows skip renders for unrelated renames.
+  * Returns `previous` itself when nothing changed.
+  */
+ export function retainUnchangedThreads<T extends { id: string }>(
