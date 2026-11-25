@@ -5,13 +5,14 @@ import {
   askItem,
   askOrRefuse,
   openAsk,
+  optionLabelBlockers,
   resolveAsk,
 } from "../asks.ts";
 import { actingFor, readCallerFile } from "../caller.ts";
-import { resolveTask, tasksOrRefuse } from "../crew.ts";
-import { guard, Refusal, render, type Blocker } from "../output.ts";
+import { resolveTask, tasksBlocker } from "../crew.ts";
+import { guard, Refusal, render } from "../output.ts";
 import { ASK_KINDS, type AskKind } from "../../contract/queue.ts";
-import type { TasksTask } from "../tasks-client.ts";
+import { TasksError } from "../tasks-client.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
 
 export function askCommand(deps: CommandDeps) {
@@ -84,27 +85,28 @@ export function askCommand(deps: CommandDeps) {
           "--detail-stdin",
         );
         const taskKey = input.options.task?.trim().toUpperCase() || null;
-        const blockers: Blocker[] = askBlockers({
-          kind,
-          taskKey,
-          text: input.positionals.text,
-          detail,
-          options: input.options.option,
-        });
-        let task: TasksTask | null = null;
-        if (taskKey !== null) {
-          const resolved = await tasksOrRefuse(() => resolveTask(deps, captain, taskKey));
-          if ("blocker" in resolved) blockers.push(resolved.blocker);
-          else task = resolved.task;
+        const resolved =
+          taskKey === null
+            ? { task: null }
+            : await resolveTask(deps, captain, taskKey).catch((error: unknown) => {
+                if (error instanceof TasksError) return { blocker: tasksBlocker(error) };
+                throw error;
+              });
+        const task = "task" in resolved ? resolved.task : null;
+        const text = input.positionals.text.trim();
+        const options = input.options.option.map((option) => option.trim());
+        const existing =
+          "task" in resolved
+            ? deps.store.findOpenAsk(captain.threadId, kind, task?.key ?? null, text)
+            : null;
+        const draft = { kind, task, text, detail, options };
+        const blockers = askBlockers({ ...draft, taskKey }, existing?.options);
+        if ("blocker" in resolved) blockers.push(resolved.blocker);
+        if (blockers.length > 0) {
+          if (existing === null) blockers.push(...optionLabelBlockers(options));
+          throw new Refusal(blockers);
         }
-        if (blockers.length > 0) throw new Refusal(blockers);
-        const { item, notes } = await openAsk(deps, captain, {
-          kind,
-          task,
-          text: input.positionals.text,
-          detail,
-          options: input.options.option,
-        });
+        const { item, notes } = await openAsk(deps, captain, draft);
         return render([item], json, notes);
       });
     },

@@ -722,7 +722,7 @@ describe("bb captain ask", () => {
       "ask",
       "x".repeat(81),
       "--option",
-      "Only one",
+      "Only one option",
       "--detail",
       "Blocked on the account.",
       "--json",
@@ -733,6 +733,7 @@ describe("bb captain ask", () => {
       'shorten it, such as "Pick the Unity account for cloud crew"; put the rest in --detail',
       "pass --task <key>",
       "pass --option <recommended> --option <other>",
+      'shorten it to a label, such as "Redis", with no ⭐ or other marker; move the detail into --detail-file',
     ]);
     expect(
       host.server.store.asksOf(host.server.registry.byName("Plugins")?.threadId ?? ""),
@@ -943,6 +944,64 @@ describe("bb captain ask", () => {
     expect(again.stderr).toBe("");
   });
 
+  test("identical legacy options can retry a push, and a refusing rerun skips the column check", async () => {
+    const { host, captainId, as } = await crewHost();
+    const draft = {
+      captainId,
+      taskKey: "BBPLUGINS-1",
+      kind: "decision" as const,
+      text: "Pick the cache backend",
+      detail: "Builds re-download deps.",
+      options: ["Keep\nthe in-memory cache", "Redis"],
+      askedAt: 1_000,
+    };
+    host.server.store.openAsk(draft);
+    const ask = (detail: string, first: string = draft.options[0]!) =>
+      as([
+        "ask",
+        draft.text,
+        "--task",
+        draft.taskKey,
+        "--option",
+        first,
+        "--option",
+        "Redis",
+        "--detail",
+        detail,
+        "--json",
+      ]);
+
+    const identical = await ask(draft.detail);
+    expect(json(identical.stdout).results[0]).toMatchObject({ state: "exists" });
+    expect(host.pushes.filter((push) => push.method === "notifications.send")).toHaveLength(1);
+    const refused = await ask(" ", "Use\nother cache");
+    expect(json(refused.stdout).blockers.map((blocker) => blocker.reason)).toEqual([
+      expect.stringContaining("an ask needs detail"),
+      expect.stringContaining("spans lines"),
+    ]);
+    expect(host.server.store.asksOf(captainId).map((a) => a.options)).toEqual([draft.options]);
+  });
+
+  test("a current task key wins over a former key on an earlier task", async () => {
+    const { host, as } = await crewHost();
+    const former = host.tasks.tasks[0]!;
+    former.formerKeys = ["BBPLUGINS-2"];
+    const opened = await as([
+      "ask",
+      "Pick the cache backend",
+      "--task",
+      "BBPLUGINS-2",
+      "--option",
+      "Redis",
+      "--option",
+      "SQLite",
+      "--detail",
+      "Builds re-download deps.",
+      "--json",
+    ]);
+    expect(json(opened.stdout).results[0]).toMatchObject({ task: "BBPLUGINS-2" });
+  });
+
   test("a long-option rerun that no longer matches its open ask is refused, even when the ask is answered mid-command", async () => {
     const { host, captainId, as } = await crewHost();
     const ask = (...options: string[]) =>
@@ -963,7 +1022,7 @@ describe("bb captain ask", () => {
     ]);
     const after = await ask("x".repeat(70), "Move to Redis!!");
 
-    expect(racing.exitCode === 1 || racing.stdout.includes("a1  exists")).toBe(true);
+    expect(racing.exitCode).toBe(1);
     expect(after.exitCode).toBe(1);
     expect(after.stderr).toContain(`option "${"x".repeat(23)}…" is 70 columns`);
     expect(host.server.store.asksOf(captainId).map((a) => a.id)).toEqual(["a1"]);

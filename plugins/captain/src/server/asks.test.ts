@@ -32,6 +32,12 @@ describe("an ask's option labels", () => {
     ]);
   });
 
+  test("column checks stop at the ninth option", () => {
+    expect(reasons(...Array<string>(8).fill("Keep"), "Ninth is long", "Tenth is long")).toEqual([
+      expect.stringContaining('option "Ninth is long"'),
+    ]);
+  });
+
   test("emoji and wide East Asian characters count 2; combining marks count 0 extra", () => {
     expect(reasons("🚀".repeat(6))).toEqual([]);
     expect(reasons("🚀".repeat(6) + "x")[0]).toContain("is 13 columns");
@@ -61,6 +67,17 @@ describe("an ask's option labels", () => {
       'option "Use \\"Redis\\"\\nfor the cac…" is 100037 columns; an option is ≤12 columns (wide characters count 2), so the buttons fit on one row',
     );
   });
+
+  test("column clipping uses the ellipsis already at the cut", () => {
+    const prefix = `${"x".repeat(22)}…`;
+    expect(reasons(`${prefix}continued`)[0]).toContain(`option "${prefix}" is`);
+  });
+
+  test("the echo escapes terminal and directional controls", () => {
+    expect(reasons("Use\u0085\u009b\u2028\u2029\u061c\u202e\u2066Redis cache")[0]).toContain(
+      'option "Use\\u0085\\u009b\\u2028\\u2029\\u061c\\u202e\\u2066Redis cache"',
+    );
+  });
 });
 
 describe("the rules every option meets, new or rerun", () => {
@@ -75,6 +92,17 @@ describe("the rules every option meets, new or rerun", () => {
     ]);
     expect(JSON.stringify(lineBlockers(stacked)).length).toBeLessThan(500);
     expect(lineBlockers("x".repeat(80))).toEqual([]);
+    expect(lineBlockers("x".repeat(81))[0]?.reason).toContain("is 81 UTF-16 units");
+  });
+
+  test.each([
+    ["keeps a whole code point", "🚀"],
+    ["uses an existing ellipsis", "…"],
+  ])("the unit cut %s", (_rule, suffix) => {
+    const cluster = `a${"\u0301".repeat(62)}`;
+    expect(lineBlockers(`${cluster}${suffix}${"x".repeat(20)}`)[0]?.reason).toContain(
+      `option "${cluster}…" is`,
+    );
   });
 
   test("an option with a line break is refused", () => {

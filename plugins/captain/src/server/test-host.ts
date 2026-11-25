@@ -502,9 +502,9 @@ export async function captainHost(options: FakeOptions = {}) {
       }
       case "getTaskByKey": {
         const key = String(input["taskKey"]);
-        const task = tasks.tasks.find(
-          (entry) => entry.key === key || entry.formerKeys?.includes(key) === true,
-        );
+        const task =
+          tasks.tasks.find((entry) => entry.key === key) ??
+          tasks.tasks.find((entry) => entry.formerKeys?.includes(key) === true);
         return { task: task === undefined ? null : snapshotTask(task) };
       }
       case "listTasks": {
