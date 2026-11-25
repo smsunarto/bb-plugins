@@ -15,6 +15,7 @@ import {
   INFO_WASH,
   TONE_BADGE,
   TONE_DOT,
+  TONE_STATUS_DOT,
   TONE_TEXT,
   type Props,
 } from "../values";
@@ -22,6 +23,7 @@ import { CHART_DRAW_MS, EASE_OUT_EXPO, FADE, RISE, useEntrance, type Entrance } 
 import { Badge as BadgeView } from "@/components/ui/badge";
 import { Progress as ProgressBar } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusDot } from "@/components/ui/status-dot";
 import { WithTooltip } from "./iconButton";
 
 export function Text({ props }: { props: Props }) {
@@ -67,10 +69,7 @@ export function Badge({ props }: { props: Props }) {
   if (inTable) {
     return (
       <span className="flex min-w-0 items-start gap-2 leading-5 text-foreground">
-        <span
-          aria-hidden
-          className={cn("mt-[7px] size-1.5 shrink-0 rounded-full", TONE_DOT[toneName])}
-        />
+        <StatusDot size="sm" tone={TONE_STATUS_DOT[toneName]} className="mt-[7px]" />
         {/* Short statuses ("1-2 days", "+50%") never break mid-value. */}
         <span className={cn("min-w-0", label.length <= 16 && "whitespace-nowrap")}>{label}</span>
       </span>

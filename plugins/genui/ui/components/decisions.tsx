@@ -56,6 +56,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Item, ItemGroup } from "@/components/ui/item";
 import { IconButton, WithTooltip } from "./iconButton";
 
 /** Rows shown before "Show all N". */
@@ -148,9 +149,9 @@ function PlanRow({
   frozen: boolean;
   onToggle: () => void;
 }) {
-  const rise = useEntrance<HTMLLIElement>(RISE);
+  const rise = useEntrance<HTMLDivElement>(RISE);
   return (
-    <li ref={rise} className="flex min-w-0 gap-3 px-3 py-3">
+    <Item ref={rise} role="listitem" size="sm" className="min-w-0 flex-nowrap items-start gap-3">
       <div className="flex shrink-0 items-start gap-2 pt-px">
         <CheckBox
           checked={checked}
@@ -198,7 +199,7 @@ function PlanRow({
           </div>
         )}
       </div>
-    </li>
+    </Item>
   );
 }
 
@@ -280,11 +281,11 @@ export function Plan({ props }: { props: Props }) {
         </>
       }
     >
-      <ol aria-label="Steps" className="m-0 flex min-w-0 list-none flex-col divide-y divide-border/60 p-0">
+      <ItemGroup variant="flush" aria-label="Steps" className="min-w-0">
         {shown.map((step, index) => (
           <PlanRow key={index} step={step} index={index} checked={checked[index]} frozen={frozen} onToggle={() => toggle(index)} />
         ))}
-      </ol>
+      </ItemGroup>
       {shown.length < steps.length ? <ShowAll count={steps.length} noun="steps" onClick={() => setShowAll(true)} /> : null}
       {answered !== null ? (
         // The whole message, wrapped: it is the plan the agent will follow.
