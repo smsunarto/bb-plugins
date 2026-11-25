@@ -21,7 +21,7 @@ import {
   type Placement,
   type WorkspaceValue,
 } from "../core/change.ts";
-import type { ChangeKey } from "../core/ids.ts";
+import { changeKeySchema, type ChangeKey, type Repo } from "../core/ids.ts";
 import { guideSchema, guideStateSchema, type Viewed } from "../core/guide.ts";
 import {
   batchSchema,
@@ -38,7 +38,7 @@ import {
   type ReviewItem,
   type ReviewRun,
 } from "../core/items.ts";
-import { sourceRowsSchema, type SourceRows } from "../core/review.ts";
+import { parseChangeKey, sourceRowsSchema, type SourceRows } from "../core/review.ts";
 import type { ReadAs } from "../contract/host.ts";
 import type { ForgeHost } from "./forge-sites.ts";
 
@@ -594,6 +594,13 @@ export function openStore(bb: BbPluginApi) {
   const getForge = db.prepare<[string], { json: string }>(
     `SELECT json FROM forge_facet WHERE change_key = ?`,
   );
+  const forgeForBranch = db.prepare<
+    [string, string, string, string],
+    { change_key: string; json: string }
+  >(
+    `SELECT change_key, json FROM forge_facet
+     WHERE change_key >= ? AND change_key < ? AND substr(change_key, -length(?)) = ?`,
+  );
   const putForge = db.prepare(
     `INSERT INTO forge_facet (change_key, json) VALUES (?, ?) ON CONFLICT (change_key) DO UPDATE SET json = excluded.json`,
   );
@@ -725,6 +732,23 @@ export function openStore(bb: BbPluginApi) {
       return changed;
     },
     forge,
+    /** A unique cached PR for the repository and branch, preserving its original head owner. */
+    knownPullRequestChange(repo: Repo, branch: string): ChangeKey | null {
+      const prefix = `gh:${repo.owner}/${repo.name}`;
+      const suffix = `:${branch}`;
+      // Bound the index scan to this repository: ";" follows ":" in the key's binary sort order.
+      let match: ChangeKey | null = null;
+      for (const row of forgeForBranch.all(`${prefix}:`, `${prefix};`, suffix, suffix)) {
+        const key = changeKeySchema.safeParse(row.change_key);
+        if (!key.success) continue;
+        const parsedKey = parseChangeKey(key.data);
+        if (parsedKey?.kind !== "gh" || parsedKey.branch !== branch) continue;
+        if (!parsed(forgeFacetSchema, row.json)?.read?.value) continue;
+        if (match) return null;
+        match = key.data;
+      }
+      return match;
+    },
     setForge(key: ChangeKey, facet: Facet<ForgeValue>): boolean {
       const changed = !sameFacet(forge(key), facet);
       putForge.run(key, JSON.stringify(facet));

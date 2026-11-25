@@ -18,7 +18,7 @@
  */
 import { Effect } from "effect";
 import type { ThreadChange } from "../core/change.ts";
-import { changeKeyOf, type ChangeKey, type Repo } from "../core/ids.ts";
+import type { ChangeKey, Repo } from "../core/ids.ts";
 import { parseChangeKey } from "../core/review.ts";
 import { rememberedStatus, threadStatus, type ThreadStatus } from "../core/status.ts";
 import type { ForgeHost } from "./forge-sites.ts";
@@ -60,11 +60,8 @@ export function createRemembered(deps: {
   const recover = Effect.fnUntraced(function* (threadId: string, recorded: RecordedEnvironment) {
     const repo = yield* deps.projectRepo(recorded.projectId);
     if (!repo) return;
-    const key = changeKeyOf(
-      { hostId: recorded.hostId, commonDir: "", branch: recorded.branchName },
-      { repo, headOwner: repo.owner },
-    );
-    if (!store.forge(key).read) return;
+    const key = store.knownPullRequestChange(repo, recorded.branchName);
+    if (!key) return;
     const host = yield* deps.forgeHost(recorded.hostId);
     if (store.rememberChange(threadId, key, host)) deps.announce([threadId]);
   });

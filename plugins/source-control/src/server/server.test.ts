@@ -1580,6 +1580,55 @@ describe("a thread whose worktree is gone", () => {
     ).toMatchObject({ state: "none" });
   });
 
+  test.each([false, true])(
+    "backfills a fork PR only when its repository and branch match uniquely (ambiguous: %s)",
+    async (ambiguous) => {
+      const world = twoHosts();
+      const repo = { owner: "smsunarto", name: "bb-plugins" };
+      const branch = "scott/route-gh";
+      world.projects = [
+        { id: "proj-1", gitRemoteUrl: "https://github.com/smsunarto/bb-plugins.git" },
+      ];
+      world.hosts["host-a"]!.workspace = workspace("/Users/scott/bb-plugins", {
+        github: { repo, headOwner: "contributor" },
+      });
+      world.pullRequests[branch] = [{ ...PR, headRepositoryOwner: { login: "contributor" } }];
+      world.threads["thread-c"] = {
+        hostId: "host-a",
+        path: "/gone",
+        removed: true,
+        branchName: branch,
+      };
+      const { harness } = await start(world);
+      const key = "gh:smsunarto/bb-plugins:contributor:scott/route-gh";
+      await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+      expect(await status(harness, "thread-a")).toMatchObject({
+        key,
+        pullRequest: { number: 482 },
+      });
+      if (ambiguous) {
+        world.pullRequests[branch].push({
+          ...PR,
+          number: 483,
+          url: "https://github.com/smsunarto/bb-plugins/pull/483",
+        });
+        await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+        expect(await status(harness, "thread-b")).toMatchObject({
+          key: KEY,
+          pullRequest: { number: 483 },
+        });
+      }
+      await harness.behavior.callRpc("refreshThread", { threadId: "thread-c" });
+      if (ambiguous) expect(await status(harness, "thread-c")).toEqual({ state: "none" });
+      else
+        expect(await status(harness, "thread-c")).toMatchObject({
+          source: "remembered",
+          key,
+          pullRequest: { number: 482 },
+        });
+    },
+  );
+
   test("another repository's pull request on the same branch name is never taken", async () => {
     const world = twoHosts();
     world.pullRequests["scott/route-gh"] = [
