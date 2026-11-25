@@ -896,18 +896,38 @@
       border-bottom-width: 0;
     }
   }
+  /* GenUI's editable rows, gallery search action, and provenance connector. */
+  @container (width >= 32rem) {
+    :where(.dark) .\@lg\:border-b:not(z) {
+      border-bottom-width: var(--hairline-width);
+    }
+  }
+  @container (width >= 36rem) {
+    :where(.dark) .\@xl\:border:not(z) {
+      border-width: var(--hairline-width);
+    }
+  }
   @container (width >= 42rem) {
+    :where(.dark) .\@2xl\:border-t:not(z) {
+      border-top-width: var(--hairline-width);
+    }
     :where(.dark) .\@2xl\:border-l-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
       border-left-width: 0;
     }
   }
 
   :where(.dark) .not-first\:border-t:not(:first-child):not(z),
+  :where(.dark) .\[\&\:not\(\:first-child\)\]\:border-t:not(:first-child):not(z),
   :where(.dark) .\[\&\>li\+li\]\:border-t > li + li:not(z) {
     border-top-width: var(--hairline-width);
   }
   :where(.dark) .first\:border-l:first-child:not(z) {
     border-left-width: var(--hairline-width);
+  }
+  /* The mobile drawer's unlayered border reset still takes precedence. */
+  :where(.dark) .data-\[side\=left\]\:border-r[data-side="left"]:not(z),
+  :where(.dark) :where(.group)[data-side="left"] .group-data-\[side\=left\]\:border-r:not(z) {
+    border-right-width: var(--hairline-width);
   }
   :where(.dark) .divide-y > div:not(:last-child):not(z),
   :where(.dark) .divide-y > li:not(:last-child):not(z),
@@ -953,7 +973,8 @@
  * or checkbox with a border-border (or /60), input, sidebar, hairline, or seam
  * colour, and a round primary one, such as a radio's circle. bb's Input
  * carries file:border-0, which the variant guard would read as a border
- * variant, so it is named on its own. Only controls: tables,
+ * variant, so it is named on its own. Breakpoint border variants still opt
+ * out, even when the Input carries that file-button class. Only controls: tables,
  * code blocks, message bubbles, toasts, and sheets restyle their own edges, and
  * a ring keyed on a utility class would draw over those rules. Every other
  * border keeps --hairline-width, two device pixels at 3x. --hairline-rings opts
@@ -1020,6 +1041,11 @@
           [class*="focus-visible:border-"],
           [class*="hover:border-"],
           [class*="invalid:border-"],
+          [class*="xs:border"],
+          [class*="sm:border"],
+          [class*="md:border"],
+          [class*="lg:border"],
+          [class*="xl:border"],
           [class*="]:border-"]
         ),
         .border-input[class~="data-[state=checked]:border-foreground"]

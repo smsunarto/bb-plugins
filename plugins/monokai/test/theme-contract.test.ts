@@ -400,10 +400,11 @@ describe("bb Monokai contract audit", () => {
 
   test("moves the outer sidebars on Capy's timing, desktop only", () => {
     const motion = styleRules(theme).filter(
-      ({ selector }) =>
-        selector.includes('[data-side="left"]') ||
-        selector.includes('[id^="thread-detail-timeline-panel"]') ||
-        selector.includes('[id^="thread-detail-secondary-panel"]'),
+      ({ selector, body }) =>
+        /\b(?:transition|animation)(?:-[\w-]+)?:/.test(body) &&
+        (selector.includes('[data-side="left"]') ||
+          selector.includes('[id^="thread-detail-timeline-panel"]') ||
+          selector.includes('[id^="thread-detail-secondary-panel"]')),
     );
     expect(motion.length).toBeGreaterThan(0);
     for (const rule of motion) expect(rule.atRules[0]).toStartWith("@media (min-width: 768px)");
