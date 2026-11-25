@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { Button } from "./components/ui/button.tsx";
+import { Item } from "./components/ui/item.tsx";
+import { Icon } from "./components/ui/icon.tsx";
 
 function Scalar({ value }: { value: unknown }) {
   const [expanded, setExpanded] = useState(false);
@@ -9,9 +12,9 @@ function Scalar({ value }: { value: unknown }) {
     <span className={`tr-json-${kind}`}>
       {long && !expanded ? `${text.slice(0, 2000)}…` : text}
       {long && (
-        <button className="tr-text-button" onClick={() => setExpanded(!expanded)}>
+        <Button variant="link" size="xs" type="button" onClick={() => setExpanded(!expanded)}>
           {expanded ? "Collapse string" : `Show ${text.length.toLocaleString()} characters`}
-        </button>
+        </Button>
       )}
     </span>
   );
@@ -35,24 +38,26 @@ function JsonNode({ value, depth, name }: { value: unknown; depth: number; name?
     : [];
   return (
     <div className="tr-json-node">
-      <button className="tr-json-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
-        {name !== undefined && <span className="tr-json-key">{JSON.stringify(name)}: </span>}
-        <span>{array ? "[" : "{"}</span>
-        <span className="tr-muted">
-          {keys.length} {array ? "items" : "keys"}
-        </span>
-        {!open && <span>{array ? "]" : "}"}</span>}
-      </button>
+      <Item asChild size="row" className="-ms-2 w-fit max-w-full min-w-0 gap-1 font-mono text-xs">
+        <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <Icon name={open ? "ChevronDown" : "ChevronRight"} aria-hidden className="size-3.5" />
+          {name !== undefined && <span className="tr-json-key">{JSON.stringify(name)}: </span>}
+          <span>{array ? "[" : "{"}</span>
+          <span className="tr-muted">
+            {keys.length} {array ? "items" : "keys"}
+          </span>
+          {!open && <span>{array ? "]" : "}"}</span>}
+        </button>
+      </Item>
       {open && (
         <div className="tr-json-children">
           {entries.map(([key, item]) => (
             <JsonNode key={key} value={item} name={key} depth={depth + 1} />
           ))}
           {keys.length > count && (
-            <button className="tr-text-button" onClick={() => setCount(count + 40)}>
+            <Button variant="link" size="xs" type="button" onClick={() => setCount(count + 40)}>
               Show next {Math.min(40, keys.length - count)} of {keys.length - count} remaining
-            </button>
+            </Button>
           )}
           <div>{array ? "]" : "}"}</div>
         </div>

@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import { experimental_ShortcutHint as ShortcutHint } from "@get-bb/plugin-sdk/app";
 import { eventKindSchema, topicSchema } from "../shared/model.ts";
 import type { EventQuery, TraceStatus } from "../shared/schema.ts";
+import { Alert, AlertAction, AlertDescription } from "./components/ui/alert.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Checkbox } from "./components/ui/checkbox.tsx";
 import { Input } from "./components/ui/input.tsx";
@@ -22,12 +23,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip
 export function TraceNotice({ message, retry }: { message: string; retry: () => void }) {
   if (!message) return null;
   return (
-    <div className="tr-notice tr-error" role="alert">
-      {message}
-      <Button variant="outline" size="sm" onClick={retry}>
-        Retry
-      </Button>
-    </div>
+    <Alert variant="destructive" role="alert" className="mb-2">
+      <AlertDescription>{message}</AlertDescription>
+      <AlertAction>
+        <Button variant="outline" size="xs" onClick={retry}>
+          Retry
+        </Button>
+      </AlertAction>
+    </Alert>
   );
 }
 const topicLabels: Record<string, string> = {

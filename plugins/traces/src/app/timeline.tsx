@@ -17,8 +17,10 @@ import {
   actionTone,
   BackButton,
 } from "./controls.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "./components/ui/item.tsx";
 
 const EMPTY_EVENTS: TraceEvent[] = [];
 const symbols: Record<string, string> = {
@@ -155,9 +157,9 @@ export function Timeline({
         </small>
       </div>
       {selected && !onPage && items.length > 0 && (
-        <div className="tr-selection-notice">
-          Inspector selection is outside this page or filter.
-        </div>
+        <Alert role="none" className="mx-2 mt-2 w-auto">
+          <AlertDescription>Inspector selection is outside this page or filter.</AlertDescription>
+        </Alert>
       )}
       {result.isPending ? (
         <Empty heading="Loading events…" />
@@ -166,77 +168,88 @@ export function Timeline({
       ) : items.length === 0 ? (
         <Empty heading="No matching events">Choose another topic or clear the filter.</Empty>
       ) : (
-        <section ref={listRef} tabIndex={-1} className="tr-timeline" aria-label="Trace events">
+        <section
+          ref={listRef}
+          tabIndex={-1}
+          className="tr-timeline flex flex-col gap-0.5 p-1"
+          aria-label="Trace events"
+        >
           {items.map((event, index) => {
             const status = pairStatus(results, event);
             return (
-              <button
-                key={event.id}
-                data-row-index={index}
-                data-kind={event.kind}
-                className="tr-event-row"
-                aria-pressed={selected?.id === event.id}
-                tabIndex={(selectedIndex < 0 ? index === 0 : selectedIndex === index) ? 0 : -1}
-                onKeyDown={(event) => {
-                  const next = moveSelection(event, selectedIndex, items.length);
-                  if (next !== null) {
-                    selectIndex(next);
-                    event.stopPropagation();
-                  }
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    selectIndex(index);
-                    onInspect();
-                  }
-                }}
-                onClick={() => {
-                  onSelect(event);
-                  if (stacked) onInspect();
-                }}
-              >
-                <span
-                  className={`tr-event-symbol${
-                    event.tool?.status === "error" || status === "error" ? " tr-error-symbol" : ""
-                  }`}
-                  aria-hidden="true"
+              <Item asChild size="sm" className="relative flex-nowrap" key={event.id}>
+                <button
+                  type="button"
+                  data-row-index={index}
+                  data-kind={event.kind}
+                  aria-pressed={selected?.id === event.id}
+                  tabIndex={(selectedIndex < 0 ? index === 0 : selectedIndex === index) ? 0 : -1}
+                  onKeyDown={(event) => {
+                    const next = moveSelection(event, selectedIndex, items.length);
+                    if (next !== null) {
+                      selectIndex(next);
+                      event.stopPropagation();
+                    }
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      selectIndex(index);
+                      onInspect();
+                    }
+                  }}
+                  onClick={() => {
+                    onSelect(event);
+                    if (stacked) onInspect();
+                  }}
                 >
-                  {symbols[event.kind] ?? "·"}
-                </span>
-                <span className="tr-event-content">
-                  <span className="tr-event-heading">
-                    <strong>{event.title}</strong>
-                    {status && (
-                      <Badge
-                        variant={status === "error" ? "warning" : "outline"}
-                        className="tr-event-status"
-                      >
-                        {status}
-                      </Badge>
-                    )}
-                    <time title={eventTime(event.timestamp)}>
-                      {elapsedTime(event.timestamp, session.startedAt)}
-                    </time>
-                  </span>
-                  <span className="tr-event-preview">
-                    {event.preview || event.kind.replaceAll("_", " ")}
-                  </span>
-                  <span className="tr-event-tags">
-                    {distinctEvidence(event.evidence)
-                      .slice(0, 3)
-                      .map((evidence) => (
+                  <ItemMedia aria-hidden="true">
+                    <span
+                      className={`tr-event-symbol${
+                        event.tool?.status === "error" || status === "error"
+                          ? " tr-error-symbol"
+                          : ""
+                      }`}
+                    >
+                      {symbols[event.kind] ?? "·"}
+                    </span>
+                  </ItemMedia>
+                  <ItemContent>
+                    <div className="tr-event-heading">
+                      <ItemTitle className="min-w-0">{event.title}</ItemTitle>
+                      {status && (
                         <Badge
-                          key={evidenceLabel(evidence)}
-                          variant={actionTone(evidence.action, "secondary")}
-                          className="tr-tag"
-                          title={evidenceLabel(evidence)}
+                          variant={status === "error" ? "warning" : "outline"}
+                          className="tr-event-status"
                         >
-                          {evidenceTag(evidence)}
+                          {status}
                         </Badge>
-                      ))}
-                  </span>
-                </span>
-                <small className="tr-event-line">L{event.provenance.line}</small>
-              </button>
+                      )}
+                      <time title={eventTime(event.timestamp)}>
+                        {elapsedTime(event.timestamp, session.startedAt)}
+                      </time>
+                    </div>
+                    <ItemDescription>
+                      {event.preview || event.kind.replaceAll("_", " ")}
+                    </ItemDescription>
+                    {event.evidence.length > 0 && (
+                      <span className="tr-event-tags">
+                        {distinctEvidence(event.evidence)
+                          .slice(0, 3)
+                          .map((evidence) => (
+                            <Badge
+                              key={evidenceLabel(evidence)}
+                              variant={actionTone(evidence.action, "secondary")}
+                              className="tr-tag"
+                              title={evidenceLabel(evidence)}
+                            >
+                              {evidenceTag(evidence)}
+                            </Badge>
+                          ))}
+                      </span>
+                    )}
+                  </ItemContent>
+                  <small className="tr-event-line">L{event.provenance.line}</small>
+                </button>
+              </Item>
             );
           })}
         </section>

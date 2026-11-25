@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import type { KeyboardEvent, RefObject } from "react";
 import type { TraceEvidence } from "../shared/model.ts";
+import { Alert, AlertAction, AlertDescription } from "./components/ui/alert.tsx";
 import { Badge, type BadgeProps } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { EmptyStatePanel } from "./components/ui/empty-state.tsx";
@@ -266,6 +267,11 @@ const stateNames: Readonly<Record<EvidenceState, string>> = {
   pending: "Pending",
   unavailable: "Unavailable",
 };
+const stateTones: Readonly<Record<EvidenceState, BadgeProps["variant"]>> = {
+  available: "success",
+  pending: "secondary",
+  unavailable: "warning",
+};
 // A blocked fact warns, a fact the agent acted on reads as accent, and the rest stay quiet.
 export function actionTone(
   action: TraceEvidence["action"],
@@ -290,9 +296,7 @@ export function Evidence({ evidence }: { evidence: readonly TraceEvidence[] }) {
             {group.topic === "mcp" && <span className="tr-evidence-scope">MCP</span>}
             <span>{group.name}</span>
             {group.state && (
-              <span className={`tr-evidence-state tr-evidence-state-${group.state}`}>
-                {stateNames[group.state]}
-              </span>
+              <Badge variant={stateTones[group.state]}>{stateNames[group.state]}</Badge>
             )}
           </h4>
           <div className="tr-evidence-chips">
@@ -329,12 +333,14 @@ export function Empty({ heading, children }: { heading: string; children?: React
 }
 export function QueryError({ error, retry }: { error: Error; retry: () => void }) {
   return (
-    <div className="tr-error" role="alert">
-      <p>{error.message}</p>
-      <Button variant="outline" size="sm" onClick={retry}>
-        Try again
-      </Button>
-    </div>
+    <Alert variant="destructive" role="alert" className="m-3 w-auto">
+      <AlertDescription>{error.message}</AlertDescription>
+      <AlertAction>
+        <Button variant="outline" size="xs" onClick={retry}>
+          Try again
+        </Button>
+      </AlertAction>
+    </Alert>
   );
 }
 export function BackButton({ label, onBack }: { label: string; onBack: () => void }) {
