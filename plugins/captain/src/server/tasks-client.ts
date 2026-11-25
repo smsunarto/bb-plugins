@@ -259,6 +259,7 @@ export function createTasksClient(
         modelId: string;
         reasoningLevel: string;
         serviceTier: string | null;
+        permissionMode?: string;
       },
     ): Promise<TasksPreset> {
       return (

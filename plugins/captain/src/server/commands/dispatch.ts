@@ -14,11 +14,6 @@ import { rungLabel, type LadderRole } from "../../contract/ladder.ts";
 import {
   pickRung,
   readPool,
-  readProviders,
-  rungPermissionMode,
-  rungRefusal,
-  type ProviderViews,
-  type RungChecks,
   roleLadder,
   rungPresetName,
   type PoolView,
@@ -28,6 +23,7 @@ import { recordDispatched } from "../owners.ts";
 import { setPushLevel } from "../push.ts";
 import type { Captain } from "../registry.ts";
 import { isDispatchable, parseRole, ROLE_SPECS, type Role } from "../roles.ts";
+import { readRungChecks, rungRefusal, type RungChecks } from "../rung-checks.ts";
 import { ensureRungPreset, roleContract, spawnCrew } from "../spawn.ts";
 import { TasksError, type TasksPreset, type TasksTask } from "../tasks-client.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
@@ -277,16 +273,14 @@ async function validate(
   let crew: CrewThread[];
   let resolved: ({ task: TasksTask } | { blocker: Blocker })[];
   let pool: PoolView | null = null;
-  let providers: ProviderViews | null = null;
-  // A forced rung and a thread brought in read no pool; only a new thread reads bb's providers.
+  // A forced rung and a thread brought in read no eligibility.
   const readsPool = flags.thread === undefined && forced === undefined;
   try {
-    [presets, crew, resolved, pool, providers] = await Promise.all([
+    [presets, crew, resolved, pool] = await Promise.all([
       deps.tasks.listPresets(),
       readCrew(deps, captain.threadId),
       Promise.all(uniqueKeys.map((key) => resolveTask(deps, captain, key))),
       readsPool ? readPool(deps.bb) : Promise.resolve(null),
-      flags.thread === undefined ? readProviders(deps.bb) : Promise.resolve(null),
     ]);
   } catch (error) {
     if (error instanceof TasksError) return { blockers: [tasksBlocker(error)] };
@@ -310,6 +304,26 @@ async function validate(
 
   const now = deps.now();
   const units: Unit[] = [];
+  // What bb would refuse, per role and task project: a new thread's machine depends on both.
+  const checksFor = new Map<string, Promise<RungChecks>>();
+  const rungChecks = (role: LadderRole, task: TasksTask) => {
+    const bbProjectId =
+      captain.repos.find((repo) => task.key.startsWith(`${repo.tasksProjectKey}-`))?.bbProjectId ??
+      null;
+    const key = `${role}:${bbProjectId}`;
+    let checks = checksFor.get(key);
+    if (checks === undefined) {
+      checks = readRungChecks(deps.bb, {
+        role,
+        ladderLength: roleLadder(deps.store, role).rungs.length,
+        presets,
+        bbProjectId,
+        rungPresetName: (rung) => rungPresetName(role, rung),
+      }).then((read) => read.checks);
+      checksFor.set(key, checks);
+    }
+    return checks;
+  };
   for (const entry of resolved) {
     if (!("task" in entry)) continue;
     for (const role of roles) {
@@ -328,27 +342,27 @@ async function validate(
       }
       const unit = requires(entry.task, role, preset, crew, flags.baseBranch);
       const ladder = roleLadder(deps.store, role as LadderRole).rungs;
-      const checks: RungChecks = {
-        providers,
-        permissionMode: rungPermissionMode(presets, role as LadderRole),
-      };
+      const checks = await rungChecks(role as LadderRole, entry.task);
       const choice = pickRung(ladder, pool, now, { forced, checks });
+      const label = ROLE_SPECS[role].label;
       // A live thread on the task and role reports exists; only a start needs a rung.
       const starts = flags.again || crewOnTask(crew, entry.task.key, role).length === 0;
       // A forced rung skips the pool, not bb: a thread bb would refuse is not started.
       const refusal =
         choice.rung !== null && choice.forced && starts
-          ? rungRefusal(choice.spec, choice.rung, checks)
+          ? rungRefusal(choice.spec, checks(choice.rung))
           : null;
       if (choice.rung !== null && refusal !== null) {
         unit.blockers.push({
-          reason: `rung ${choice.rung} ${rungLabel(choice.spec)}: ${refusal}`,
-          fix: `set the ${ROLE_SPECS[role].label} preset's permission to one ${choice.spec.providerId} takes, or pass another --rung`,
+          reason: `rung ${choice.rung} ${rungLabel(choice.spec)}: ${refusal.reason}`,
+          fix: refusal.fix,
         });
       } else if (choice.rung === null && starts) {
         unit.blockers.push({
-          reason: `no rung of ${ROLE_SPECS[role].label}'s ladder can start now: ${choice.skipped.join("; ")}`,
-          fix: `bb captain dispatch ${entry.task.key} --role ${ROLE_SPECS[role].label} --rung <n> to start on one anyway; bb pool status shows when accounts reset`,
+          reason: `no rung of ${label}'s ladder can start now: ${choice.skipped.join("; ")}`,
+          fix: choice.poolSkipped
+            ? `bb captain dispatch ${entry.task.key} --role ${label} --rung <n> to start on a rung the pool skipped anyway; bb pool status shows when accounts reset`
+            : `fix what each rung names, or add a rung in Captain settings`,
         });
       } else if (choice.rung !== null) unit.choice = choice;
       units.push(unit);
