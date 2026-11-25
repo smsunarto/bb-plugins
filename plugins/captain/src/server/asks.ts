@@ -395,7 +395,7 @@ export async function resolveAsk(
       reason: `${id} was already answered ${JSON.stringify(ask.answer)}`,
       fix:
         ask.kind === "ship"
-          ? `bb captain verdict ${ask.taskKey ?? "<task>"} review passed --head <sha> --ship`
+          ? `once Review has passed: bb captain verdict ${ask.taskKey ?? "<task>"} review passed --head <sha> --ship`
           : "open a new ask with bb captain ask",
     });
   }

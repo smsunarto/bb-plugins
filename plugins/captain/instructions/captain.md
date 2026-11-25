@@ -53,7 +53,7 @@ A wake line reads `[tasks] <key> <first line> · <thread> <role> · <attachment 
 - The crew's checkout: `bb thread show <thread> --json` gives `.environment.path` and `.environment.branchName`. Read commits there with `git -C <path> log --oneline <target>..HEAD`, and run the brief's checks there.
 - The task's state: `bb captain status` for its row, verdict and recorded head.
 - Check inline when that is one or two calls; otherwise hand the check to a background subagent with the brief's done-means, the path and the branch.
-- Record a verdict only after you checked the report: `bb captain verdict <task> review passed --head <sha>`, or `review findings --head <sha>`. Add `--ship` to a passed review to open its ship ask in the same call; `--ship` needs the full 40-hex `--head`.
+- Record a verdict only after you checked the report: `bb captain verdict <task> review passed --head <sha>`, or `review findings --head <sha>`. Add `--ship --reason "<ship path and branch>"` to a passed review to open its ship ask in the same call; `--ship` needs the full 40-hex `--head`, and `captain-ship` defines the reason.
 - Implementation is ready only when its `review` verdict is `passed`, or `skipped` with `--reason "<why>"` under the skip rule in `captain-review-loop`.
 
 ## Task status

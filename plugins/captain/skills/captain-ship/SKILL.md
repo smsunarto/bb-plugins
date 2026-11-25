@@ -47,9 +47,9 @@ The grant covers one change at one full head, once. Before shipping, confirm the
 Any new head needs re-verification and a new ship ask, whatever made it: a fix, a rebase after a rejected push, or another approved change landing first.
 
 1. Have the implementer produce the new head, and re-verify it with the task's Review thread.
-2. Open the new ask with `bb captain verdict <task> review passed --head <new sha> --ship`. That call supersedes the open ask for the old head.
+2. Open the new ask with `bb captain verdict <task> review passed --head <new sha> --ship --reason "<ship path and branch>"`. That call supersedes the open ask for the old head.
 
-The old Merge answer never covers a new head. Open ship asks only through `verdict --ship`, so each ask names its head.
+The old Merge answer never covers a new head. Open ship asks only through `verdict --ship`, so each ask names its head. Every `--ship` passes `--reason` naming the ship path and branch, such as `--reason "Direct ship to main."` or `--reason "Merges PR #12 into main."`, so the ask shows the user what Merge will do.
 
 ### Shipping by PR
 
@@ -64,9 +64,9 @@ The subagent runs these in the checkout it pushes from, and reports each result 
 - Write remote-tracking refs by their full names, `refs/remotes/origin/<target>` and `refs/remotes/origin/<crew-branch>`, never `origin/<name>`. A local tag or branch named `origin/<name>` would otherwise stand in for them.
 - **Stop rule:** any `ambiguous` warning, any exit 128, any other unexpected exit, or an output that differs from what a step requires means stop: report it and ship nothing. Only steps 2 and 4 give exit 1 a meaning.
 
-1. `git fetch --prune origin`, then `git rev-parse --verify "refs/remotes/origin/<target>"` and `git rev-parse --verify "refs/remotes/origin/<crew-branch>"`. A missing target means stop, since the push would create it. A missing crew branch means the implementer pushes it again at the same head; then rerun these checks.
+1. `git fetch --prune origin`, then `git rev-parse --verify "refs/remotes/origin/<target>"`. A missing target means stop, since the push would create it.
 2. **Already landed:** `git merge-base --is-ancestor "<sha>" "refs/remotes/origin/<target>"`. Exit 0 means the head is on the target: report that, and you go to Finish. Exit 1 means continue.
-3. `git rev-parse "refs/remotes/origin/<crew-branch>"` prints exactly the recorded head.
+3. `git rev-parse --verify "refs/remotes/origin/<crew-branch>"` prints exactly the recorded head. A missing crew branch means the implementer pushes it again at the same head; then rerun these checks.
 4. `git merge-base --is-ancestor "refs/remotes/origin/<target>" "<sha>"` exits 0, so the push is a fast-forward. Exit 1 means the target moved: follow New heads.
 5. `git log --oneline "refs/remotes/origin/<target>..<sha>"` lists only this task's commits. They land as they are, with no squash.
 6. `git ls-remote origin "refs/heads/<target>"` prints the same SHA as `git rev-parse "refs/remotes/origin/<target>"`.

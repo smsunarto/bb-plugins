@@ -29,7 +29,7 @@ export function askCommand(deps: CommandDeps) {
       task: {
         type: "string",
         placeholder: "key",
-        description: "The task it blocks; required for decision and ship asks",
+        description: "The task it blocks; required for decision asks",
       },
       option: {
         type: "string",
@@ -59,6 +59,16 @@ export function askCommand(deps: CommandDeps) {
           captain: input.options.captain,
         });
         const kind = input.options.kind as AskKind;
+        if (kind === "ship") {
+          // A ship ask must name the head its review judged, which only verdict records.
+          const key = input.options.task?.trim().toUpperCase() || "<task>";
+          throw new Refusal([
+            {
+              reason: "a ship ask opens only with the review verdict that names its head",
+              fix: `once Review has passed: bb captain verdict ${key} review passed --head <sha> --ship`,
+            },
+          ]);
+        }
         const detail = await textOption(
           deps,
           ctx,
@@ -79,13 +89,6 @@ export function askCommand(deps: CommandDeps) {
           const resolved = await tasksOrRefuse(() => resolveTask(deps, captain, taskKey));
           if ("blocker" in resolved) blockers.push(resolved.blocker);
           else task = resolved.task;
-        }
-        if (kind === "ship") {
-          // A ship ask must name the head its review judged, which only verdict records.
-          blockers.push({
-            reason: "a ship ask opens only with the review verdict that names its head",
-            fix: `bb captain verdict ${taskKey ?? "<task>"} review passed --head <sha> --ship`,
-          });
         }
         if (blockers.length > 0) throw new Refusal(blockers);
         const { item, notes } = await openAsk(deps, captain, {

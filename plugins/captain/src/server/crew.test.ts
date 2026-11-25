@@ -759,7 +759,7 @@ describe("bb captain ask", () => {
       "a ship ask opens only with the review verdict that names its head",
     );
     expect(result.stderr).toContain(
-      "bb captain verdict BBPLUGINS-2 review passed --head <sha> --ship",
+      "once Review has passed: bb captain verdict BBPLUGINS-2 review passed --head <sha> --ship",
     );
     expect(
       host.server.store.asksOf(host.server.registry.byName("Plugins")?.threadId ?? ""),
