@@ -5,10 +5,10 @@ import type { TasksPreset } from "./tasks-client.ts";
 
 /**
  * What bb would refuse when a rung's thread starts, read before Captain asks
- * Tasks to start it: the provider must be available on the machine the
- * thread spawns on, and take the permission mode its preset gives it. ACP
- * agents such as Antigravity take `full` and `accept-edits`, not `auto`.
- * The Account Pooler check lives in `ladder.ts`.
+ * Tasks to start it: the machine the thread spawns on must be connected, and
+ * the provider must be available there and take the permission mode its
+ * preset gives it. ACP agents such as Antigravity take `full` and
+ * `accept-edits`, not `auto`. The Account Pooler check lives in `ladder.ts`.
  */
 
 /** What bb's provider list says about one provider, as eligibility reads it. */
@@ -16,24 +16,27 @@ export type ProviderView = { available: boolean; permissionModes: readonly strin
 /** Each provider bb lists on one machine, by id. */
 export type ProviderViews = ReadonlyMap<string, ProviderView>;
 
+export type Refusal = { reason: string; fix: string };
+
 /** What one rung is checked against. */
 export type RungCheck = {
-  /** Providers on the machine the rung's thread spawns on; null when that machine or its list is unknown. */
+  /** A read this check needs failed or timed out: the presets, the machine list, the project, or the machine's providers. */
+  unread: boolean;
+  /** Why the rung's machine cannot take the thread, whatever its provider. */
+  hostRefusal: Refusal | null;
+  /** Providers on the machine the thread spawns on; null when that machine is unknown or unread. */
   providers: ProviderViews | null;
-  /** The mode the role preset gives the rung's preset; null when the role preset is not read. */
+  /** The mode the role preset gives the rung's preset. */
   permissionMode: string | null;
   /** The role preset that mode comes from, such as `Implement`. */
   presetName: string;
-  /** The machine the providers were read on, for the fix text. */
+  /** The machine the thread spawns on, when known. */
   hostId: string | null;
 };
-/** Each rung's check, by 1-based rung number. */
-export type RungChecks = (rung: number) => RungCheck;
 
-export type Refusal = { reason: string; fix: string };
-
-/** Why bb would refuse to start this rung's thread, or null when nothing stops it. */
+/** Why bb would refuse to start this rung's thread, or null when nothing stops it or it is unread. */
 export function rungRefusal(spec: Rung, check: RungCheck): Refusal | null {
+  if (check.hostRefusal !== null) return check.hostRefusal;
   if (check.providers === null) return null;
   const provider = check.providers.get(spec.providerId);
   const where = check.hostId === null ? "" : ` on ${check.hostId}`;
@@ -55,121 +58,153 @@ export function rungRefusal(spec: Rung, check: RungCheck): Refusal | null {
 
 const DEADLINE_MS = 5_000;
 
-/** bb's providers on one machine, or null when bb does not answer in time. */
-export async function readProviders(
-  bb: Pick<BbPluginApi, "sdk" | "log">,
-  hostId: string,
-): Promise<ProviderViews | null> {
-  try {
-    const providers = await bb.sdk.providers.list({
-      hostId,
-      signal: AbortSignal.timeout(DEADLINE_MS),
-    });
-    return new Map(
-      providers.map((provider) => [
-        provider.id,
-        {
-          available: provider.available,
-          permissionModes: [...provider.capabilities.permissionModes],
-        },
-      ]),
-    );
-  } catch (error) {
-    bb.log.warn(`provider list on ${hostId} not read: ${(error as Error).message}`);
-    return null;
-  }
-}
-
 type Project = Awaited<ReturnType<BbPluginApi["sdk"]["projects"]["get"]>>;
 type Hosts = Awaited<ReturnType<BbPluginApi["sdk"]["hosts"]["list"]>>;
+type PresetFields = Pick<TasksPreset, "machineId" | "environmentKind" | "permissionMode">;
+
+export type RungCheckInput = {
+  role: LadderRole;
+  rung: number;
+  /** Tasks' presets, or null when they could not be read. */
+  presets: readonly TasksPreset[] | null;
+  /** The bb project the task's thread spawns in; null when not known. */
+  bbProjectId: string | null;
+  rungPresetName: (rung: number) => string;
+};
+
+/**
+ * Reads what rung checks need, each at most once for the reader's life (one
+ * dispatch call, or one background pass): the machine list, each project,
+ * and each machine's providers, every read with a deadline. A rung is read
+ * only when asked, so a machine no candidate rung uses is never contacted.
+ */
+export function createCheckReader(bb: Pick<BbPluginApi, "sdk" | "log">) {
+  let hosts: Promise<Hosts | null> | undefined;
+  const projects = new Map<string, Promise<Project | null>>();
+  const lists = new Map<string, Promise<ProviderViews | null>>();
+
+  const read = <T>(what: string, call: (signal: AbortSignal) => Promise<T>) =>
+    call(AbortSignal.timeout(DEADLINE_MS)).catch((error: unknown) => {
+      bb.log.warn(`${what} not read: ${(error as Error).message}`);
+      return null;
+    });
+  const hostList = () =>
+    (hosts ??= read("machine list", (signal) => bb.sdk.hosts.list({ signal })));
+  const project = (projectId: string) => {
+    let entry = projects.get(projectId);
+    if (entry === undefined) {
+      entry = read(`project ${projectId}`, (signal) => bb.sdk.projects.get({ projectId, signal }));
+      projects.set(projectId, entry);
+    }
+    return entry;
+  };
+  const providers = (hostId: string) => {
+    let entry = lists.get(hostId);
+    if (entry === undefined) {
+      entry = read(`provider list on ${hostId}`, async (signal) => {
+        const listed = await bb.sdk.providers.list({ hostId, signal });
+        return new Map(
+          listed.map((provider) => [
+            provider.id,
+            {
+              available: provider.available,
+              permissionModes: [...provider.capabilities.permissionModes],
+            },
+          ]),
+        ) as ProviderViews;
+      });
+      lists.set(hostId, entry);
+    }
+    return entry;
+  };
+
+  return {
+    /**
+     * One rung's check. Its preset is its own `Captain <Role> · <N>` when
+     * that exists, else the one `ensureRungPreset` would copy from the role
+     * preset, or from Captain's role spec when that preset is gone. Its mode
+     * is the role preset's, which `ensureRungPreset` keeps rung presets on.
+     */
+    async rungCheck(input: RungCheckInput): Promise<RungCheck> {
+      const spec = ROLE_SPECS[input.role].preset;
+      const presetName = spec?.name ?? "";
+      const base = { presetName, hostId: null, providers: null, hostRefusal: null };
+      if (input.presets === null) return { ...base, unread: true, permissionMode: null };
+      const named = (name: string) =>
+        input.presets?.find((preset) => preset.name.toLowerCase() === name.toLowerCase());
+      const template: PresetFields = named(presetName) ?? {
+        machineId: null,
+        environmentKind: spec?.environmentKind,
+        permissionMode: spec?.permissionMode,
+      };
+      const preset: PresetFields = named(input.rungPresetName(input.rung)) ?? template;
+      const permissionMode = template.permissionMode ?? spec?.permissionMode ?? null;
+      const unread: RungCheck = { ...base, unread: true, permissionMode };
+
+      const place = await spawnPlace(preset, input.bbProjectId, hostList, project);
+      if (place.kind === "unread") return unread;
+      if (place.kind === "unknown") return { ...base, unread: false, permissionMode };
+      if (place.kind === "refused") {
+        return { ...base, unread: false, permissionMode, hostRefusal: place.refusal };
+      }
+      const list = await providers(place.hostId);
+      if (list === null) return { ...unread, hostId: place.hostId };
+      return { ...base, unread: false, permissionMode, hostId: place.hostId, providers: list };
+    },
+  };
+}
+export type CheckReader = ReturnType<typeof createCheckReader>;
+
+type Place =
+  | { kind: "host"; hostId: string }
+  | { kind: "refused"; refusal: Refusal }
+  | { kind: "unread" }
+  /** Captain cannot tell, such as a personal project's own checkout: nothing is refused. */
+  | { kind: "unknown" };
 
 /**
  * The machine Tasks spawns a preset's thread on, as its delegate decides it:
  * the preset's machine, else the linked project's default source folder on a
- * connected machine, else its first. Null when it cannot be told, such as a
- * personal project's own checkout, or no connected source.
+ * connected machine, else its first. A known machine that is not connected,
+ * or a project with no connected source, is refused: Tasks would refuse it.
  */
-export function spawnHost(
-  preset: Pick<TasksPreset, "machineId" | "environmentKind">,
-  project: Project | null,
-  hosts: Hosts | null,
-): string | null {
-  if (preset.machineId !== null && preset.machineId !== undefined) return preset.machineId;
-  if (project === null || hosts === null) return null;
-  if (preset.environmentKind === "project-default" && project.kind === "personal") return null;
+async function spawnPlace(
+  preset: PresetFields,
+  bbProjectId: string | null,
+  hostList: () => Promise<Hosts | null>,
+  project: (projectId: string) => Promise<Project | null>,
+): Promise<Place> {
+  const machineId = preset.machineId ?? null;
+  if (machineId === null && bbProjectId === null) return { kind: "unknown" };
+  const hosts = await hostList();
+  if (hosts === null) return { kind: "unread" };
   const connected = new Set(
     hosts.filter((host) => host.status === "connected").map((host) => host.id),
   );
-  const sources = project.sources.filter((source) => connected.has(source.hostId));
-  return (sources.find((source) => source.isDefault) ?? sources[0])?.hostId ?? null;
-}
-
-export type ReadChecks = {
-  checks: RungChecks;
-  /** Whether a read the checks need failed: the role preset, or a machine's provider list. */
-  unread: boolean;
-};
-
-/**
- * Each rung's check for one role, task project and ladder. A rung spawns
- * through its own `Captain <Role> · <N>` preset when it exists (its machine),
- * else one copied from the role preset; its permission mode is the role
- * preset's, which `ensureRungPreset` keeps rung presets on. Reads each
- * machine's providers once.
- */
-export async function readRungChecks(
-  bb: Pick<BbPluginApi, "sdk" | "log">,
-  input: {
-    role: LadderRole;
-    ladderLength: number;
-    /** Tasks' presets, or null when they could not be read. */
-    presets: readonly TasksPreset[] | null;
-    /** The bb project the task's thread spawns in; null when not known. */
-    bbProjectId: string | null;
-    rungPresetName: (rung: number) => string;
-  },
-): Promise<ReadChecks> {
-  const presetName = ROLE_SPECS[input.role].preset?.name ?? "";
-  const named = (name: string) =>
-    input.presets?.find((preset) => preset.name.toLowerCase() === name.toLowerCase());
-  const template = named(presetName);
-  const rungs = Array.from({ length: input.ladderLength }, (_, index) => index + 1);
-  const presetOf = (rung: number) => named(input.rungPresetName(rung)) ?? template;
-
-  const needsProject = rungs.some((rung) => {
-    const preset = presetOf(rung);
-    return preset !== undefined && (preset.machineId ?? null) === null;
-  });
-  const [project, hosts] =
-    needsProject && input.bbProjectId !== null
-      ? await Promise.all([
-          bb.sdk.projects.get({ projectId: input.bbProjectId }).catch(() => null),
-          bb.sdk.hosts.list().catch(() => null),
-        ])
-      : [null, null];
-
-  const hostOf = new Map<number, string | null>();
-  for (const rung of rungs) {
-    const preset = presetOf(rung);
-    hostOf.set(rung, preset === undefined ? null : spawnHost(preset, project, hosts));
+  if (machineId !== null) {
+    return connected.has(machineId)
+      ? { kind: "host", hostId: machineId }
+      : {
+          kind: "refused",
+          refusal: {
+            reason: `${machineId} is not connected`,
+            fix: `reconnect ${machineId}, or use another rung`,
+          },
+        };
   }
-  const hostIds = [...new Set([...hostOf.values()].filter((id): id is string => id !== null))];
-  const lists = new Map(
-    await Promise.all(
-      hostIds.map(async (hostId) => [hostId, await readProviders(bb, hostId)] as const),
-    ),
-  );
-  const unread = input.presets === null || [...lists.values()].some((list) => list === null);
+  const found = await project(bbProjectId as string);
+  if (found === null) return { kind: "unread" };
+  if (preset.environmentKind === "project-default" && found.kind === "personal") {
+    return { kind: "unknown" };
+  }
+  const sources = found.sources.filter((source) => connected.has(source.hostId));
+  const source = sources.find((candidate) => candidate.isDefault) ?? sources[0];
+  if (source !== undefined) return { kind: "host", hostId: source.hostId };
   return {
-    unread,
-    checks: (rung) => {
-      const hostId = hostOf.get(rung) ?? null;
-      return {
-        providers: hostId === null ? null : (lists.get(hostId) ?? null),
-        permissionMode: template?.permissionMode ?? null,
-        presetName,
-        hostId,
-      };
+    kind: "refused",
+    refusal: {
+      reason: `no connected machine holds ${found.name}`,
+      fix: `connect a machine with ${found.name}'s checkout`,
     },
   };
 }

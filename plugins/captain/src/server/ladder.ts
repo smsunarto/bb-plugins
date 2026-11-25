@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { ladderSchema, rungLabel, type LadderRole, type Rung } from "../contract/ladder.ts";
 import { ROLE_SPECS } from "./roles.ts";
-import { rungRefusal, type RungCheck, type RungChecks } from "./rung-checks.ts";
+import { rungRefusal, type RungCheck } from "./rung-checks.ts";
 import type { Store } from "./store.ts";
 
 /**
@@ -112,6 +112,11 @@ export function rungEligibility(
 ): Eligibility {
   const refusal = check === undefined ? null : rungRefusal(rung, check);
   if (refusal !== null) return { eligible: false, reason: refusal.reason, kind: "refused" };
+  return poolEligibility(rung, pool, now);
+}
+
+/** Whether the pool has an account it would route this rung's model to now. */
+function poolEligibility(rung: Rung, pool: PoolView | null, now: number): Eligibility {
   const provider = PROVIDER_POOL[rung.providerId];
   if (provider === undefined || pool === null || pool.routing?.[provider] !== true) {
     return { eligible: true };
@@ -149,12 +154,33 @@ export type RungChoice = {
  * The first eligible rung after `after` (0 to start at rung 1), or the forced
  * rung. Null when every remaining rung is ineligible; `skipped` says why.
  */
-export function pickRung(
+export type NoRung = {
+  rung: null;
+  skipped: string[];
+  /** Whether a rung was passed over for the pool, so `--rung` could still start it. */
+  poolSkipped: boolean;
+  /** A candidate rung's check could not be read, and `waitOnUnread` stopped there. */
+  waiting: boolean;
+};
+
+/**
+ * The first eligible rung after `after` (0 to start at rung 1), or the forced
+ * rung, unchecked. Each candidate is checked against the pool first, then
+ * against `check`, which is read only for rungs the pool lets through and
+ * only until one is picked. A candidate whose check is unread passes, unless
+ * `waitOnUnread` stops the pick there.
+ */
+export async function pickRung(
   ladder: readonly Rung[],
   pool: PoolView | null,
   now: number,
-  options: { after?: number; forced?: number; checks?: RungChecks } = {},
-): RungChoice | { rung: null; skipped: string[]; poolSkipped: boolean } {
+  options: {
+    after?: number;
+    forced?: number;
+    check?: (rung: number) => Promise<RungCheck>;
+    waitOnUnread?: boolean;
+  } = {},
+): Promise<RungChoice | NoRung> {
   if (options.forced !== undefined) {
     const spec = ladder[options.forced - 1];
     if (spec === undefined) throw new Error(`no rung ${options.forced}`);
@@ -164,12 +190,17 @@ export function pickRung(
   let poolSkipped = false;
   for (let index = options.after ?? 0; index < ladder.length; index++) {
     const spec = ladder[index] as Rung;
-    const verdict = rungEligibility(spec, pool, now, options.checks?.(index + 1));
+    const fromPool = poolEligibility(spec, pool, now);
+    const check = fromPool.eligible ? await options.check?.(index + 1) : undefined;
+    if (check?.unread === true && options.waitOnUnread === true) {
+      return { rung: null, skipped, poolSkipped, waiting: true };
+    }
+    const verdict = check === undefined ? fromPool : rungEligibility(spec, pool, now, check);
     if (verdict.eligible) return { rung: index + 1, spec, skipped, forced: false };
     if (verdict.kind === "pool") poolSkipped = true;
     skipped.push(`rung ${index + 1} ${rungLabel(spec)}: ${verdict.reason}`);
   }
-  return { rung: null, skipped, poolSkipped };
+  return { rung: null, skipped, poolSkipped, waiting: false };
 }
 
 export const RETRY_PLUGIN_ID = "provider-retry";

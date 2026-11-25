@@ -370,6 +370,10 @@ export async function captainHost(options: FakeOptions = {}) {
   const projectSources = new Map<string, { hostId: string; isDefault: boolean }[]>();
   /** Machines `hosts.list` reports as connected. */
   const connectedHosts = new Set<string>([SERVER_HOST]);
+  /** bb reads that fail while listed: `hosts.list`, `projects.get`. */
+  const sdkFailing = new Set<string>();
+  /** How many times each of those reads ran. */
+  const sdkReads = { hostsList: 0, projectsGet: 0 };
   /** The parent of every `threads.list` read, in order, to count crew polls. */
   const threadLists: (string | undefined)[] = [];
   /** While `gate` is set, Tasks' `crewSnapshot` waits for it. */
@@ -745,11 +749,14 @@ export async function captainHost(options: FakeOptions = {}) {
         },
       },
       hosts: {
-        list: async () =>
-          [SERVER_HOST, "host_mac"].map((id) => ({
+        list: async () => {
+          sdkReads.hostsList += 1;
+          if (sdkFailing.has("hosts.list")) throw new Error("hosts.list timed out");
+          return [SERVER_HOST, "host_mac"].map((id) => ({
             id,
             status: connectedHosts.has(id) ? "connected" : "disconnected",
-          })) as never,
+          })) as never;
+        },
         get: async ({ hostId }) => ({
           ...makeHostResponse({ id: hostId }),
           connectMachineId: null,
@@ -758,12 +765,16 @@ export async function captainHost(options: FakeOptions = {}) {
       },
       projects: {
         list: async () => bbProjects as never,
-        get: async ({ projectId }) =>
-          ({
+        get: async ({ projectId }) => {
+          sdkReads.projectsGet += 1;
+          if (sdkFailing.has("projects.get")) throw new Error("projects.get timed out");
+          return {
             id: projectId,
+            name: projectId,
             kind: "standard",
             sources: projectSources.get(projectId) ?? [{ hostId: SERVER_HOST, isDefault: true }],
-          }) as never,
+          } as never;
+        },
         create: async (args) =>
           ({
             id: "proj_captains",
@@ -1072,6 +1083,8 @@ export async function captainHost(options: FakeOptions = {}) {
     providerList,
     projectSources,
     connectedHosts,
+    sdkFailing,
+    sdkReads,
     crewSnapshotHold,
     interactionReads,
     metadata,

@@ -23,7 +23,7 @@ import { recordDispatched } from "../owners.ts";
 import { setPushLevel } from "../push.ts";
 import type { Captain } from "../registry.ts";
 import { isDispatchable, parseRole, ROLE_SPECS, type Role } from "../roles.ts";
-import { readRungChecks, rungRefusal, type RungChecks } from "../rung-checks.ts";
+import { createCheckReader, rungRefusal } from "../rung-checks.ts";
 import { ensureRungPreset, roleContract, spawnCrew } from "../spawn.ts";
 import { TasksError, type TasksPreset, type TasksTask } from "../tasks-client.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
@@ -304,25 +304,20 @@ async function validate(
 
   const now = deps.now();
   const units: Unit[] = [];
-  // What bb would refuse, per role and task project: a new thread's machine depends on both.
-  const checksFor = new Map<string, Promise<RungChecks>>();
-  const rungChecks = (role: LadderRole, task: TasksTask) => {
+  // One reader per call: each machine, project and provider list is read once, and only for rungs a unit would start on.
+  const reader = createCheckReader(deps.bb);
+  const checkFor = (role: LadderRole, task: TasksTask) => {
     const bbProjectId =
       captain.repos.find((repo) => task.key.startsWith(`${repo.tasksProjectKey}-`))?.bbProjectId ??
       null;
-    const key = `${role}:${bbProjectId}`;
-    let checks = checksFor.get(key);
-    if (checks === undefined) {
-      checks = readRungChecks(deps.bb, {
+    return (rung: number) =>
+      reader.rungCheck({
         role,
-        ladderLength: roleLadder(deps.store, role).rungs.length,
+        rung,
         presets,
         bbProjectId,
-        rungPresetName: (rung) => rungPresetName(role, rung),
-      }).then((read) => read.checks);
-      checksFor.set(key, checks);
-    }
-    return checks;
+        rungPresetName: (n) => rungPresetName(role, n),
+      });
   };
   for (const entry of resolved) {
     if (!("task" in entry)) continue;
@@ -341,30 +336,34 @@ async function validate(
         continue;
       }
       const unit = requires(entry.task, role, preset, crew, flags.baseBranch);
-      const ladder = roleLadder(deps.store, role as LadderRole).rungs;
-      const checks = await rungChecks(role as LadderRole, entry.task);
-      const choice = pickRung(ladder, pool, now, { forced, checks });
-      const label = ROLE_SPECS[role].label;
       // A live thread on the task and role reports exists; only a start needs a rung.
       const starts = flags.again || crewOnTask(crew, entry.task.key, role).length === 0;
+      if (!starts) {
+        units.push(unit);
+        continue;
+      }
+      const ladder = roleLadder(deps.store, role as LadderRole).rungs;
+      const check = checkFor(role as LadderRole, entry.task);
+      const choice = await pickRung(ladder, pool, now, { forced, check });
+      const label = ROLE_SPECS[role].label;
       // A forced rung skips the pool, not bb: a thread bb would refuse is not started.
       const refusal =
-        choice.rung !== null && choice.forced && starts
-          ? rungRefusal(choice.spec, checks(choice.rung))
+        choice.rung !== null && choice.forced
+          ? rungRefusal(choice.spec, await check(choice.rung))
           : null;
       if (choice.rung !== null && refusal !== null) {
         unit.blockers.push({
           reason: `rung ${choice.rung} ${rungLabel(choice.spec)}: ${refusal.reason}`,
           fix: refusal.fix,
         });
-      } else if (choice.rung === null && starts) {
+      } else if (choice.rung === null) {
         unit.blockers.push({
           reason: `no rung of ${label}'s ladder can start now: ${choice.skipped.join("; ")}`,
           fix: choice.poolSkipped
             ? `bb captain dispatch ${entry.task.key} --role ${label} --rung <n> to start on a rung the pool skipped anyway; bb pool status shows when accounts reset`
             : `fix what each rung names, or add a rung in Captain settings`,
         });
-      } else if (choice.rung !== null) unit.choice = choice;
+      } else unit.choice = choice;
       units.push(unit);
     }
   }

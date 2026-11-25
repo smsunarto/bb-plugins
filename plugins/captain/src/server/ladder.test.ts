@@ -247,14 +247,96 @@ describe("rungs on a provider the pool does not route, such as Antigravity", () 
       }),
     ]);
 
-    // A machine that cannot be told, such as a project with no connected source, refuses nothing.
-    if (implement !== undefined) implement.machineId = null;
+    // A known machine that is not connected is refused, as Tasks would refuse it.
+    if (implement !== undefined) implement.machineId = "host_mac";
     host.connectedHosts.delete("host_mac");
+    const asleep = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--json"]);
+    expect(json(asleep.stdout).results[0]?.["blockers"]).toEqual([
+      expect.objectContaining({
+        reason:
+          "no rung of Implement's ladder can start now: rung 1 acp-antigravity gemini-4-neon high: host_mac is not connected",
+      }),
+    ]);
+    if (implement !== undefined) implement.machineId = null;
     host.projectSources.set("proj_plugins", [{ hostId: "host_mac", isDefault: true }]);
+    const noSource = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--json"]);
+    expect(json(noSource.stdout).results[0]?.["blockers"]).toEqual([
+      expect.objectContaining({
+        reason:
+          "no rung of Implement's ladder can start now: rung 1 acp-antigravity gemini-4-neon high: no connected machine holds proj_plugins",
+      }),
+    ]);
+  });
+
+  test("a listed provider that is not available is skipped", async () => {
+    const { host, as } = await ladderHost();
+    host.pool.status = { routing: {}, accounts: [] };
+    await host.harness.behavior.callRpc("setLadder", {
+      role: "implement",
+      rungs: [ANTIGRAVITY, CODEX],
+    });
+    const antigravity = host.providerList.value?.find((p) => p.id === "acp-antigravity");
+    if (antigravity !== undefined) antigravity.available = false;
+
+    const result = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--dry-run"]);
+
+    expect(result.stdout).toContain(
+      `rung 2 codex gpt-6-astra high; skipped rung 1 acp-antigravity gemini-4-neon high: acp-antigravity is not available on ${SERVER_HOST}`,
+    );
+  });
+
+  test("dispatch reads each machine once per call, only for rungs a unit would start on", async () => {
+    const { host, as } = await ladderHost(NONE_READY);
+    host.addTask("BBPLUGINS-2", { title: "Fix the sidebar" });
+    await host.harness.behavior.callRpc("setLadder", {
+      role: "implement",
+      rungs: [
+        { providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high" },
+        ANTIGRAVITY,
+        CODEX,
+      ],
+    });
+    // Rung 1's preset lives on an offline Mac; the pool skips rung 1, so it is never read.
+    host.tasks.presets.push({
+      ...presetNamed(host, "Implement"),
+      id: "preset_rung1",
+      name: "Captain Implement · 1",
+      machineId: "host_mac",
+    } as never);
+    host.connectedHosts.add("host_mac");
+    host.providerList.byHost["host_mac"] = null;
+
+    const first = await as([
+      "dispatch",
+      "BBPLUGINS-1",
+      "BBPLUGINS-2",
+      "--role",
+      "Implement",
+      "--json",
+    ]);
+    expect(json(first.stdout).results.map((entry) => entry["rung"])).toEqual([2, 2]);
+    expect(host.providerList.reads).toEqual([SERVER_HOST]);
+    expect(host.sdkReads).toEqual({ hostsList: 1, projectsGet: 1 });
+
+    // Units that already have a live thread start nothing and read nothing.
     host.providerList.reads.length = 0;
-    const unknown = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--dry-run"]);
-    expect(unknown.stdout).toContain("planned");
+    const again = await as(["dispatch", "BBPLUGINS-1", "BBPLUGINS-2", "--role", "Implement"]);
+    expect(again.stdout).toContain("exists");
     expect(host.providerList.reads).toEqual([]);
+
+    // --rung reads only the forced rung's machine.
+    const forced = await as([
+      "dispatch",
+      "BBPLUGINS-1",
+      "--role",
+      "Implement",
+      "--rung",
+      "3",
+      "--again",
+      "--dry-run",
+    ]);
+    expect(forced.stdout).toContain("planned");
+    expect(host.providerList.reads).toEqual([SERVER_HOST]);
   });
 
   test("a rung preset made while the role preset was auto follows it back to full", async () => {
@@ -697,6 +779,98 @@ describe("rate-limit fallback", () => {
       expect(host.server.store.fallback(failed)).toMatchObject({ toRung: 3 });
       expect(restartedRung(host)).toBe(3);
     }
+  });
+
+  test("waits while a candidate rung's machine or project cannot be read, then restarts", async () => {
+    for (const failing of ["hosts.list", "projects.get"]) {
+      const { host, failed } = await rateLimited(CLAUDE_CAPPED, {
+        ladder: [OPUS, ANTIGRAVITY, CODEX],
+      });
+      setPermission(host, "Implement", "auto");
+      host.sdkFailing.add(failing);
+
+      await host.server.check.pass();
+      expect(host.server.store.fallback(failed)).toBeNull();
+      expect(delegates(host)).toHaveLength(1);
+
+      host.sdkFailing.delete(failing);
+      await host.server.check.pass();
+      expect(host.server.store.fallback(failed)).toMatchObject({ toRung: 3 });
+    }
+  });
+
+  test("a rung pinned to a machine that is not connected is passed over", async () => {
+    const { host, failed } = await rateLimited(CLAUDE_CAPPED, {
+      ladder: [OPUS, ANTIGRAVITY, CODEX],
+    });
+    host.tasks.presets.push({
+      ...presetNamed(host, "Implement"),
+      id: "preset_rung2",
+      name: "Captain Implement · 2",
+      machineId: "host_mac",
+    } as never);
+
+    await host.server.check.pass();
+
+    expect(host.server.store.fallback(failed)).toMatchObject({
+      toRung: 3,
+      skipped: ["rung 2 acp-antigravity gemini-4-neon high: host_mac is not connected"],
+    });
+  });
+
+  test("reads only rungs after the failed one: an offline machine on a used rung blocks nothing", async () => {
+    const used = await rateLimited(CLAUDE_CAPPED, { ladder: [OPUS, CODEX] });
+    const rung1 = presetNamed(used.host, "Captain Implement · 1");
+    if (rung1 !== undefined) rung1.machineId = "host_mac";
+    used.host.connectedHosts.add("host_mac");
+    used.host.providerList.byHost["host_mac"] = null;
+    await used.host.server.check.pass();
+    expect(restartedRung(used.host)).toBe(2);
+    expect(used.host.providerList.reads).not.toContain("host_mac");
+
+    // After the last rung there is nothing to read: the Captain is woken as blocked.
+    const last = await rateLimited(NONE_READY, { rung: "2", ladder: [OPUS, CODEX] });
+    last.host.providerList.value = null;
+    await last.host.server.check.pass();
+    expect(toCaptain(last.host, last.captainId).map((message) => message.text)).toEqual([
+      expect.stringMatching(/^\[captain\] Blocked: /u),
+    ]);
+  });
+
+  test("one pass reads each machine and project once across every failed thread", async () => {
+    const { host, as, failed } = await rateLimited(CLAUDE_CAPPED, {
+      ladder: [OPUS, ANTIGRAVITY, CODEX],
+    });
+    host.addTask("BBPLUGINS-2", { title: "Fix the sidebar" });
+    host.pool.status = ALL_READY;
+    const second = await as(["dispatch", "BBPLUGINS-2", "--role", "Implement", "--json"]);
+    const other = String(json(second.stdout).results[0]?.["thread"]);
+    host.pool.status = CLAUDE_CAPPED;
+    host.updateThread(other, { status: "error", updatedAt: host.now() });
+    host.events.set(other, host.events.get(failed) ?? []);
+    host.retryDecisions.set(other, host.retryDecisions.get(failed));
+    host.providerList.reads.length = 0;
+    host.sdkReads.hostsList = 0;
+    host.sdkReads.projectsGet = 0;
+
+    await host.server.check.pass();
+
+    expect(host.server.store.fallback(failed)).toMatchObject({ toRung: 2 });
+    expect(host.server.store.fallback(other)).toMatchObject({ toRung: 2 });
+    expect(host.providerList.reads).toEqual([SERVER_HOST]);
+    expect(host.sdkReads).toEqual({ hostsList: 1, projectsGet: 1 });
+  });
+
+  test("with the role preset deleted, rungs are checked as Captain's role spec would make them", async () => {
+    const { host, failed } = await rateLimited(CLAUDE_CAPPED, {
+      ladder: [OPUS, ANTIGRAVITY, CODEX],
+    });
+    dropProvider(host, "acp-antigravity");
+    host.tasks.presets = host.tasks.presets.filter((preset) => preset.name !== "Implement");
+
+    await host.server.check.pass();
+
+    expect(host.server.store.fallback(failed)).toMatchObject({ toRung: 3 });
   });
 
   test("reads Tasks' presets once per pass, for both picking the rung and starting it", async () => {

@@ -19,7 +19,7 @@ import {
 } from "./ladder.ts";
 import type { Captain } from "./registry.ts";
 import { ROLE_SPECS } from "./roles.ts";
-import { readRungChecks } from "./rung-checks.ts";
+import { createCheckReader, type CheckReader } from "./rung-checks.ts";
 import { ensureRungPreset, spawnCrew } from "./spawn.ts";
 import { reportedSince } from "./status.ts";
 import { NOTICE, type Fallback } from "./store.ts";
@@ -93,6 +93,8 @@ type Reads = {
   pool: () => Promise<PoolView | null>;
   /** Tasks' presets; rejects when Tasks does not answer. */
   presets: () => Promise<TasksPreset[]>;
+  /** Machines, projects and provider lists, shared by every failed thread in the pass. */
+  checks: CheckReader;
 };
 
 function passReads(deps: CheckDeps): Reads {
@@ -101,6 +103,7 @@ function passReads(deps: CheckDeps): Reads {
   return {
     pool: () => (pool ??= readPool(deps.bb)),
     presets: () => (presets ??= deps.tasks.listPresets()),
+    checks: createCheckReader(deps.bb),
   };
 }
 
@@ -176,9 +179,10 @@ export function isRateLimit(data: unknown): boolean {
 
 /**
  * Record the failed thread's fallback: the next eligible rung, or none. When
- * a read the rung checks need fails, nothing is recorded: the thread stays a
- * candidate and the next pass picks again, so an unread check never pins the
- * fallback to a rung bb would refuse.
+ * a candidate rung's check cannot be read, nothing is recorded: the thread
+ * stays a candidate and the next pass picks again, so an unread check never
+ * pins the fallback to a rung bb would refuse. Rungs at or before `from`, and
+ * past the one picked, are never read.
  */
 async function open(
   deps: CheckDeps,
@@ -193,24 +197,30 @@ async function open(
   const role = crewRole.role as LadderRole;
   const ladder = roleLadder(deps.store, role).rungs;
   const presets = await reads.presets().catch(() => null);
-  const read = await readRungChecks(deps.bb, {
-    role,
-    ladderLength: ladder.length,
-    presets,
-    bbProjectId:
-      captain.repos.find((repo) => row.task.key.startsWith(`${repo.tasksProjectKey}-`))
-        ?.bbProjectId ?? null,
-    rungPresetName: (rung) => rungPresetName(role, rung),
+  const bbProjectId =
+    captain.repos.find((repo) => row.task.key.startsWith(`${repo.tasksProjectKey}-`))
+      ?.bbProjectId ?? null;
+  const from = crewRole.rung ?? rungOfPresetName(row.presetName);
+  const fromSpec = ladder[from - 1];
+  // Only rungs after `from` are read, in order, until one can start.
+  const choice = await pickRung(ladder, await reads.pool(), now, {
+    after: from,
+    waitOnUnread: true,
+    check: (rung) =>
+      reads.checks.rungCheck({
+        role,
+        rung,
+        presets,
+        bbProjectId,
+        rungPresetName: (n) => rungPresetName(role, n),
+      }),
   });
-  if (read.unread) {
+  if (choice.rung === null && choice.waiting) {
     deps.bb.log.warn(
-      `fallback for ${member.thread.id} waits for the next pass: presets or a provider list not read`,
+      `fallback for ${member.thread.id} waits for the next pass: a candidate rung's checks were not read`,
     );
     return;
   }
-  const from = crewRole.rung ?? rungOfPresetName(row.presetName);
-  const fromSpec = ladder[from - 1];
-  const choice = pickRung(ladder, await reads.pool(), now, { after: from, checks: read.checks });
   deps.store.openFallback({
     failedThreadId: member.thread.id,
     captainId: captain.threadId,
