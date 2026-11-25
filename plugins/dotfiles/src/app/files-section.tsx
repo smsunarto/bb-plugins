@@ -10,6 +10,7 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/u
 import { EmptyState } from "@/components/ui/empty-state";
 import { Item, ItemContent, ItemTitle } from "@/components/ui/item";
 import { Icon } from "@/components/ui/icon";
+import { StatusDot } from "@/components/ui/status-dot";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
@@ -258,12 +259,7 @@ function FileRowLabel({ item }: { readonly item: OverviewFile }): ReactElement {
         <ItemTitle>{item.title}</ItemTitle>
       </ItemContent>
       {!item.exists && <Badge variant="danger">missing</Badge>}
-      {item.dirty && (
-        <span
-          className="size-1.5 shrink-0 rounded-full bg-amber-500"
-          aria-label="uncommitted changes"
-        />
-      )}
+      {item.dirty && <StatusDot tone="warning" size="sm" aria-label="uncommitted changes" />}
     </>
   );
 }
