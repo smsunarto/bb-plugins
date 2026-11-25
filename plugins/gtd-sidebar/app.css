@@ -174,8 +174,7 @@
 }
 
 /* Measure the clipped part of a strip ending at the last row plus the
-   footer inset. Cap it to the scrollport so the intersection ratio
-   keeps changing for as long as the clipped depth changes. */
+   footer inset. Cap the fade depth at the scrollport height. */
 [data-gtd-thread-scroll-end] {
   position: absolute;
   bottom: calc(100% - var(--gtd-thread-bottom-inset));

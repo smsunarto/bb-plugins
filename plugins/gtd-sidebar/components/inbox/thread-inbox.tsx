@@ -117,28 +117,44 @@ export function ThreadInbox(props: PluginThreadListProps) {
   );
 }
 
-// A half-pixel step across the usual 32px strip. The observer only reports
-// while the strip crosses the edge or layout moves it.
+// Track layout changes near the edge while the list is at rest.
 const threadFadeThresholds = Array.from({ length: 65 }, (_, index) => index / 64);
 
 function observeThreadScrollFade(end: HTMLDivElement | null) {
   const scroller = end?.closest<HTMLElement>('[data-gtd-thread-scroll="compact"]');
   if (!end || !scroller) return;
-  const observer = new IntersectionObserver(
-    (entries) => {
-      const entry = entries.at(-1);
-      if (!entry?.rootBounds) return;
-      const { bottom, height } = entry.boundingClientRect;
-      const clipped = Math.max(0, bottom - entry.rootBounds.bottom);
-      scroller.style.setProperty("--gtd-thread-fade-depth", `${Math.min(clipped, height)}px`);
-      scroller.toggleAttribute("data-gtd-thread-more-below", clipped > 0);
-    },
-    { root: scroller, threshold: threadFadeThresholds },
-  );
-  observer.observe(end);
+  let frame: number | undefined;
+  let depth: number | undefined;
+  const schedule = () => {
+    if (frame !== undefined) return;
+    frame = requestAnimationFrame(() => {
+      frame = undefined;
+      const { bottom, height } = end.getBoundingClientRect();
+      const clipped = Math.max(0, bottom - scroller.getBoundingClientRect().bottom);
+      const nextDepth = Math.min(clipped, height);
+      if (nextDepth === depth) return;
+      depth = nextDepth;
+      scroller.style.setProperty("--gtd-thread-fade-depth", `${depth}px`);
+      scroller.toggleAttribute("data-gtd-thread-more-below", depth > 0);
+    });
+  };
+  // A scroll jump or resize can leave the intersection ratio unchanged.
+  scroller.addEventListener("scroll", schedule, { passive: true });
+  const resize = new ResizeObserver(schedule);
+  resize.observe(scroller);
+  resize.observe(end);
+  const intersection = new IntersectionObserver(schedule, {
+    root: scroller,
+    threshold: threadFadeThresholds,
+  });
+  intersection.observe(end);
+  schedule();
   return () => {
-    observer.disconnect();
-    observer.takeRecords();
+    scroller.removeEventListener("scroll", schedule);
+    resize.disconnect();
+    intersection.disconnect();
+    intersection.takeRecords();
+    if (frame !== undefined) cancelAnimationFrame(frame);
     scroller.style.removeProperty("--gtd-thread-fade-depth");
     scroller.removeAttribute("data-gtd-thread-more-below");
   };
