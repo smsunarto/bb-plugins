@@ -975,3 +975,78 @@ test.each([
     expect(slot.getByTestId("sc-review-bar-position").textContent).toBe(second);
   },
 );
+test("a pill retry rejection remains visible after a tab change", async () => {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+  const server = reviewServer([finding(1, 2)], { batches: [failedBatch()] });
+  let rejectRequest: (reason: Error) => void = () => {
+    throw Error("no request");
+  };
+  let started = false;
+  const slot = render(
+    {
+      ...server.handlers,
+      sendBatch: () =>
+        new Promise<BatchView>((_, reject) => {
+          started = true;
+          rejectRequest = reject;
+        }),
+    },
+    DETAIL,
+    PhoneReview,
+  );
+  const pill = await slot.findByTestId("sc-review-bar");
+  fireEvent.click(within(pill).getByTestId("sc-batch-retry"));
+  await waitFor(() => expect(started).toBe(true));
+  fireEvent.keyDown(slot.getByRole("tab", { name: "Conversation" }), { key: "Enter" });
+  expect(slot.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe(
+    "true",
+  );
+  await act(async () => rejectRequest(Error("retry disconnected")));
+  await waitFor(() =>
+    expect(within(slot.getByTestId("sc-review-bar")).getByRole("alert").textContent).toContain(
+      "retry disconnected",
+    ),
+  );
+});
+
+test("an in-flight tray send retains its request and error across tabs", async () => {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+  const item = finding(1, 2);
+  const server = reviewServer([item], { selected: [item.id] });
+  const attempts: BatchInput[] = [];
+  let rejectRequest: (reason: Error) => void = () => {
+    throw new Error("Send did not start");
+  };
+  const slot = render(
+    {
+      ...server.handlers,
+      sendBatch: ({ batch }) => {
+        attempts.push(batch);
+        return new Promise<BatchView>((_, reject) => {
+          rejectRequest = reject;
+        });
+      },
+    },
+    DETAIL,
+    PhoneReview,
+  );
+  fireEvent.click(await slot.findByRole("button", { name: "Send 1" }));
+  const initialSubmit = await slot.findByTestId("sc-tray-send");
+  await waitFor(() => expect(initialSubmit.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(initialSubmit);
+  await waitFor(() => expect(attempts).toHaveLength(1));
+
+  fireEvent.keyDown(slot.getByRole("tab", { name: "Conversation" }), { key: "Enter" });
+  expect(slot.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe(
+    "true",
+  );
+  const submit = slot.getByRole("button", { name: "Sending…" });
+  expect(submit.hasAttribute("disabled")).toBe(true);
+  await act(async () => rejectRequest(new Error("send disconnected")));
+  expect((await slot.findByRole("alert")).textContent).toContain("send disconnected");
+
+  fireEvent.click(slot.getByTestId("sc-tray-send"));
+  await waitFor(() => expect(attempts).toHaveLength(2));
+  expect(attempts[1]).toEqual(attempts[0]);
+  await act(async () => rejectRequest(new Error("send disconnected again")));
+});

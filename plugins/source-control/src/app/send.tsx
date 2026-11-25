@@ -564,20 +564,6 @@ function DestinationToggle({
   );
 }
 
-type TrayFacts = {
-  changeKey: ChangeKey;
-  stable: StableReview;
-  destination: Destination;
-  number: number | null;
-  isDraft: boolean;
-  head: string | null;
-  items: readonly ReviewItem[];
-  drafts: readonly Draft[];
-  onExclude: (id: string) => void;
-  onSent: () => void;
-  onClose: () => void;
-};
-
 /** A tray row's text: a button that shows its spot on the diff, or plain text off the review page. */
 function TrayPick({
   spot,
@@ -782,26 +768,20 @@ function trayNote(facts: {
 
 /** "Going to <thread> · Change thread", and the picker it opens. */
 function TrayRecipient({
-  changeKey,
-  agent,
-  number,
+  controls,
   target,
   targets,
   targetsError,
-  destination,
   onRetry,
 }: {
-  changeKey: ChangeKey;
-  agent: boolean;
-  number: number | null;
+  controls: SendControlState;
   target: BatchTarget | null;
   targets: readonly AgentTarget[] | undefined;
   targetsError: string | null;
-  destination: Destination;
   onRetry: () => void;
 }) {
-  const actions = useReviewActions(changeKey);
-  const [picking, setPicking] = useState(false);
+  const { number, destination, actions, picking, setPicking } = controls;
+  const agent = destination === "agent";
   let recipient: ReactNode = "GitHub";
   if (!agent) recipient = number !== null ? `#${number} on GitHub` : "GitHub";
   else if (!target) recipient = "Choosing a thread…";
@@ -924,11 +904,17 @@ function TrayLists({
   );
 }
 
-function Tray(facts: TrayFacts) {
-  const { changeKey, stable, destination, number, head, items, drafts } = facts;
-  const actions = useReviewActions(changeKey);
-  const send = useSend(changeKey);
-  const [error, setError] = useState<string | null>(null);
+function Tray({ controls, isDraft }: { controls: SendControlState; isDraft: boolean }) {
+  const {
+    changeKey,
+    stable,
+    destination,
+    number,
+    items,
+    drafts,
+    actions,
+    submitError: error,
+  } = controls;
   const agent = destination === "agent";
   const targetsQuery = useRpcQuery({
     contract: sourceControlContract,
@@ -941,45 +927,24 @@ function Tray(facts: TrayFacts) {
   const target = agent ? agentTarget(stable.tray.target, targets) : prTarget;
   const onRemoveItem = useCallback((id: string) => actions.setSelected([id], false), [actions]);
   const focus = useContext(FocusContext);
-  const { onClose } = facts;
+  const { setTrayOpen } = controls;
   const onReveal = useMemo(
     () =>
       focus
         ? (spot: Spot) => {
-            onClose();
+            setTrayOpen(false);
             focus.reveal(spot);
           }
         : null,
-    [focus, onClose],
+    [focus, setTrayOpen],
   );
-  const count = items.length + drafts.length;
-  const canSend = count > 0 && target !== null && head !== null && !send.pending;
-  const onSend = async () => {
-    if (!canSend) return;
-    setError(null);
-    try {
-      await send.send({
-        head,
-        itemIds: items.map((item) => item.id),
-        draftIds: drafts.map((draft) => draft.id),
-        destination,
-        target,
-      });
-      facts.onSent();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Couldn't send.");
-    }
-  };
   return (
     <>
       <TrayRecipient
-        changeKey={changeKey}
-        agent={agent}
-        number={number}
+        controls={controls}
         target={target}
         targets={targets}
         targetsError={targetsQuery.error?.message ?? null}
-        destination={destination}
         onRetry={() => void targetsQuery.refetch()}
       />
       <TrayLists
@@ -987,7 +952,7 @@ function Tray(facts: TrayFacts) {
         items={items}
         drafts={drafts}
         onRemoveItem={onRemoveItem}
-        onExclude={facts.onExclude}
+        onExclude={controls.excludeDraft}
         onReveal={onReveal}
       />
       <div className="flex min-w-0 items-center gap-3 border-t border-solid border-border-hairline bg-surface-recessed px-4 py-3">
@@ -999,17 +964,19 @@ function Tray(facts: TrayFacts) {
           data-testid="sc-tray-note"
           role={error ? "alert" : undefined}
         >
-          {trayNote({ error, agent, target, isDraft: facts.isDraft, number })}
+          {trayNote({ error, agent, target, isDraft, number })}
         </span>
         <Button
           size="sm"
           variant="default"
           data-testid="sc-tray-send"
-          disabled={!canSend}
-          onClick={() => void onSend()}
+          disabled={!controls.canSubmit || target === null}
+          onClick={() => {
+            if (target) void controls.submit(target);
+          }}
           className={cx("h-7", PRIMARY)}
         >
-          {sendLabel(send.pending, agent, count)}
+          {sendLabel(controls.pending, agent, controls.count)}
         </Button>
       </div>
     </>
@@ -1020,21 +987,6 @@ function sendLabel(pending: boolean, agent: boolean, count: number): string {
   if (pending) return "Sending…";
   return agent ? `Send ${count}` : `Submit ${count}`;
 }
-
-/** Drafts taken out of the next send, scoped to the open Change across tabs. */
-export function useDraftExclusions() {
-  const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
-  return useMemo(
-    () => ({
-      ids: excluded,
-      exclude: (id: string) => setExcluded((old) => new Set(old).add(id)),
-      reset: () => setExcluded(new Set()),
-    }),
-    [excluded],
-  );
-}
-
-type DraftExclusions = ReturnType<typeof useDraftExclusions>;
 
 /** The checked items and pending drafts a send would carry. */
 function useTraySelection(
@@ -1074,38 +1026,84 @@ function showsPill(batch: BatchView | null, count: number): batch is BatchView {
   return !settled || count === 0;
 }
 
-/**
- * The tabs row's review controls (board A): where the review goes, the sent
- * batch's pill, and the Send button that opens the tray: a Popover, which
- * closes on Escape, a click outside or focus leaving it.
- */
-export const SendControls = memo(function SendControls({
-  changeKey,
-  number,
-  isDraft,
-  head,
-  draftExclusions,
-  size = "row",
-}: {
-  changeKey: ChangeKey;
-  number: number | null;
-  isDraft: boolean;
-  head: string | null;
-  draftExclusions: DraftExclusions;
-  size?: ControlSize;
-}) {
+/** One send session per open Change. The row and sticky bar can remount as the reader moves. */
+export function useSendControls(changeKey: ChangeKey, number: number | null, head: string | null) {
   const { review, stable } = useChangeReview(changeKey);
   const actions = useReviewActions(changeKey);
   const send = useSend(changeKey);
   const [open, setOpen] = useState(false);
-  const onClose = useCallback(() => setOpen(false), []);
+  const [picking, setPicking] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
+  const setTrayOpen = useCallback((next: boolean) => {
+    setOpen(next);
+    if (!next) setPicking(false);
+  }, []);
+  const excludeDraft = useCallback((id: string) => setExcluded((old) => new Set(old).add(id)), []);
   const blocked = githubBlocked(number, review?.forge.problem ?? null);
   const destination: Destination =
     stable.tray.destination === "github" && blocked === null ? "github" : "agent";
-  const { items, drafts } = useTraySelection(stable, destination, draftExclusions.ids);
+  const { items, drafts } = useTraySelection(stable, destination, excluded);
   const batch = latestBatch(stable.batches);
   const commands = useBatchCommands(send, batch);
   const count = items.length + drafts.length;
+  const pending = send.pending || commands.busy;
+  const canSubmit = count > 0 && head !== null && !pending;
+  const submit = async (target: BatchTarget) => {
+    if (!canSubmit) return;
+    setSubmitError(null);
+    try {
+      await send.send({
+        head,
+        itemIds: items.map((item) => item.id),
+        draftIds: drafts.map((draft) => draft.id),
+        destination,
+        target,
+      });
+      setTrayOpen(false);
+      setExcluded(new Set());
+    } catch (reason) {
+      setSubmitError(reason instanceof Error ? reason.message : "Couldn't send.");
+    }
+  };
+  return {
+    changeKey,
+    number,
+    stable,
+    actions,
+    open,
+    setTrayOpen,
+    picking,
+    setPicking,
+    destination,
+    blocked,
+    items,
+    drafts,
+    excludeDraft,
+    batch,
+    commands,
+    count,
+    pending,
+    canSubmit,
+    submit,
+    submitError,
+  };
+}
+
+type SendControlState = ReturnType<typeof useSendControls>;
+
+/** Where the review goes, the batch pill, and the trigger for its send tray. */
+export function SendControls({
+  controls,
+  isDraft,
+  size,
+}: {
+  controls: SendControlState;
+  isDraft: boolean;
+  size: ControlSize;
+}) {
+  const { stable, actions, open, setTrayOpen, blocked, destination, batch, commands, count } =
+    controls;
   const pill = showsPill(batch, count);
   const bar = size === "bar";
   const label = triggerLabel(destination, count, bar);
@@ -1131,8 +1129,9 @@ export const SendControls = memo(function SendControls({
         onChange={(next) => actions.setTray({ destination: next, target: stable.tray.target })}
       />
       {pill ? <BatchPill batch={batch} commands={commands} /> : null}
-      {!pill || count > 0 ? (
-        <Popover open={open} onOpenChange={setOpen}>
+      {/* The pending batch can temporarily remove every selected item from the tray. */}
+      {open || !pill || count > 0 ? (
+        <Popover open={open} onOpenChange={setTrayOpen}>
           <PopoverTrigger asChild>
             <Button
               size="sm"
@@ -1161,22 +1160,7 @@ export const SendControls = memo(function SendControls({
             data-testid="sc-tray"
             className="flex w-[440px] max-w-[calc(100vw-2rem)] flex-col overflow-clip p-0"
           >
-            <Tray
-              changeKey={changeKey}
-              stable={stable}
-              destination={destination}
-              number={number}
-              isDraft={isDraft}
-              head={head}
-              items={items}
-              drafts={drafts}
-              onExclude={draftExclusions.exclude}
-              onSent={() => {
-                setOpen(false);
-                draftExclusions.reset();
-              }}
-              onClose={onClose}
-            />
+            <Tray controls={controls} isDraft={isDraft} />
           </PopoverContent>
         </Popover>
       ) : null}
@@ -1187,4 +1171,4 @@ export const SendControls = memo(function SendControls({
       ) : null}
     </div>
   );
-});
+}

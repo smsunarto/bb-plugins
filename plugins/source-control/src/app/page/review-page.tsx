@@ -35,7 +35,7 @@ import { cx, plural, shortRef } from "../format.ts";
 import { useOpenGuide } from "../guide-data.ts";
 import { MergeButton, mergeTarget, useChangeMerge } from "../merge.tsx";
 import { useChangeReview } from "../review-data.ts";
-import { SendControls, useDraftExclusions } from "../send.tsx";
+import { SendControls, useSendControls } from "../send.tsx";
 import { DETAIL_TONE, ShipPath } from "../status.tsx";
 import { Badge } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
@@ -746,13 +746,13 @@ function ReviewReady({
   detail,
   width,
   focus,
-  draftExclusions,
+  sendControls,
 }: {
   location: Here;
   detail: Ready;
   width: number;
   focus: ReviewFocus;
-  draftExclusions: ReturnType<typeof useDraftExclusions>;
+  sendControls: ReturnType<typeof useSendControls>;
 }) {
   const { key } = location;
   const go = useGo();
@@ -778,24 +778,11 @@ function ReviewReady({
   );
   const send = (
     <SendControls
-      changeKey={key}
-      number={detail.row.number}
+      controls={sendControls}
       isDraft={detail.row.state === "draft"}
-      head={detail.head}
-      draftExclusions={draftExclusions}
+      size={phone ? "bar" : "row"}
     />
   );
-  // On a phone every tab carries the send controls in a bottom bar (board E); the guide draws its own.
-  const barSend = phone ? (
-    <SendControls
-      changeKey={key}
-      number={detail.row.number}
-      isDraft={detail.row.state === "draft"}
-      head={detail.head}
-      draftExclusions={draftExclusions}
-      size="bar"
-    />
-  ) : null;
   return (
     <FocusContext.Provider value={focus}>
       <WrapContext.Provider value={phone}>
@@ -821,7 +808,7 @@ function ReviewReady({
               wide={wide}
               phone={phone}
               now={now}
-              bar={barSend}
+              bar={phone ? send : null}
               onPath={onPath}
               onCommit={onCommit}
             />
@@ -851,7 +838,8 @@ function Review({ location, width }: { location: Here; width: number }) {
   const go = useGo();
   // One per Change (this component is keyed by it): the rail's pick, and the diff that shows it.
   const [focus] = useState(() => new ReviewFocus());
-  const draftExclusions = useDraftExclusions();
+  const ready = detail?.state === "change" ? detail : null;
+  const sendControls = useSendControls(key, ready?.row.number ?? null, ready?.head ?? null);
   // The one place a guide run starts: this page opening the Change, once per mount.
   useOpenGuide(key, detail?.state === "change");
   useLayoutEffect(
@@ -886,7 +874,7 @@ function Review({ location, width }: { location: Here; width: number }) {
       detail={detail}
       width={width}
       focus={focus}
-      draftExclusions={draftExclusions}
+      sendControls={sendControls}
     />
   );
 }
