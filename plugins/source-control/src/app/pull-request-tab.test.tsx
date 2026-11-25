@@ -214,6 +214,12 @@ test("a warm mapping still checks which pull request the Change shows", async ()
   expect((await slot.findByRole("alert")).textContent).toContain("shows #13 now");
   expect(asked).toEqual([]);
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
+  expect(slot.inspection.rpcCalls).toContainEqual(
+    expect.objectContaining({
+      method: "changeDetail",
+      input: { keys: [KEY], prNumber: 12 },
+    }),
+  );
 });
 
 test("a thrown lookup records a temporary miss", async () => {
@@ -311,4 +317,21 @@ test("an in-flight refresh of a cached branch must finish before promotion", asy
   await act(async () => answer(detailShowing(13)));
   expect((await slot.findByRole("alert")).textContent).toContain("shows #13 now");
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("reconnect promotes the Change after a detail RPC error", async () => {
+  const detail = vi
+    .fn((): ChangeDetail => detailShowing(12))
+    .mockImplementationOnce(() => {
+      throw new Error("Disconnected");
+    });
+  const { slot } = render(found, 12, detail);
+  expect((await slot.findByRole("alert")).textContent).toContain("Disconnected");
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+  await act(async () => slot.experimental_invalidateRpc(null, "source-control"));
+  await slot.findByText("Opened in its review tab.");
+  expect(slot.inspection.experimental_panelCalls).toMatchObject([
+    { method: "openTab", options: { params: { key: KEY } } },
+    { method: "closeTab" },
+  ]);
 });

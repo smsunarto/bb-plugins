@@ -221,7 +221,7 @@ export function createReviewChange(deps: {
    * Read the Change's pull request by its key, from wherever an account can
    * see it; with `host`, on the server and that host only.
    */
-  const readForge = (key: ChangeKey, host?: ForgeHost) =>
+  const readForge = (key: ChangeKey, host?: ForgeHost, prNumber?: number) =>
     deps.share(
       `forge:${key}`,
       Effect.gen(function* () {
@@ -234,7 +234,12 @@ export function createReviewChange(deps: {
         const placements = host ? [host] : own ? [own, ...store.checkouts()] : store.checkouts();
         const answer = yield* deps.sites
           .pullRequestVia(
-            { repo, headOwner, branch, ...knownOpen(store.forge(key)) },
+            {
+              repo,
+              headOwner,
+              branch,
+              ...(prNumber === undefined ? knownOpen(store.forge(key)) : { open: prNumber }),
+            },
             placements,
             host ? "only" : "any",
           )
@@ -265,19 +270,28 @@ export function createReviewChange(deps: {
     return last === undefined || deps.now() - last >= forgeInterval(store.forge(key));
   };
 
+  function detailOf(key: ChangeKey): ChangeDetail {
+    return changeDetail(key, {
+      match: localMatch(store, key),
+      forge: store.forge(key),
+      fromInbox: deps.inboxRow(key),
+    });
+  }
+
   return {
     detail(keys: readonly ChangeKey[]): Record<string, ChangeDetail> {
-      return Object.fromEntries(
-        keys.map((key) => [
-          key,
-          changeDetail(key, {
-            match: localMatch(store, key),
-            forge: store.forge(key),
-            fromInbox: deps.inboxRow(key),
-          }),
-        ]),
-      );
+      return Object.fromEntries(keys.map((key) => [key, detailOf(key)]));
     },
+    /** A PR link must get a current forge verdict before it opens the branch. */
+    prLinkDetail: Effect.fnUntraced(function* (key: ChangeKey, prNumber: number) {
+      yield* readForge(key, undefined, prNumber);
+      const forge = store.forge(key);
+      const detail = detailOf(key);
+      // A forge refusal must not let the last-good PR pass validation.
+      const verified: ChangeDetail =
+        forge.problem || !forge.read?.value ? { state: "missing", problem: forge.problem } : detail;
+      return { [key]: verified };
+    }),
     /** Read the Change's pull request now. */
     readForge,
     /** Whether the Change's pull request is due another read. */

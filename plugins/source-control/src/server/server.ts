@@ -293,7 +293,13 @@ function registerRpc(
       inbox: ({ keys }) => changes.review.inbox(keys),
       hostChanges: ({ keys }) => changes.review.hostChanges(keys),
       checkoutHosts: () => changes.review.checkoutHosts(),
-      changeDetail: ({ keys }) => changes.review.detail(keys),
+      changeDetail: ({ keys, prNumber }, context) =>
+        prNumber === undefined
+          ? changes.review.detail(keys)
+          : runtime.run(
+              changes.review.prLinkDetail(keys[0]!, prNumber),
+              context.experimental_signal,
+            ),
       changeFiles: ({ key, revision }, context) =>
         runtime.run(changes.review.files(key, revision), context.experimental_signal),
       changePatches: ({ key, revision, paths }, context) =>

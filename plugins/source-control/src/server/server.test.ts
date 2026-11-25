@@ -3903,3 +3903,42 @@ describe("pull request links", () => {
     expect(world.hostForge).toContain("host-b:prHead");
   });
 });
+
+test("a working server account resolves a PR without asking for thread metadata", async () => {
+  const world = twoHosts();
+  world.pullRequests["scott/route-gh"] = [PR];
+  world.threads["thread-new"] = { ...world.threads["thread-a"]! };
+  const { harness } = await start(world);
+  const lookedUp = vi.fn(() => new Promise(() => {}));
+  harness.sdk.stub("threads.get", lookedUp);
+  const key = "pr:smsunarto/bb-plugins#482";
+  const result = await harness.behavior.callRpc("legacyChange", {
+    keys: [key],
+    threadId: "thread-new",
+  });
+  expect(result).toMatchObject({
+    [key]: { key: "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh", problem: null },
+  });
+  expect(lookedUp).not.toHaveBeenCalled();
+});
+
+test("checking a closed PR number finds its replacement even while branch detail is stale", async () => {
+  const world = twoHosts();
+  const key = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+  world.pullRequests["scott/route-gh"] = [PR];
+  const { harness } = await start(world);
+  await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+  const read = () => harness.behavior.callRpc("changeDetail", { keys: [key] });
+  const newer = { ...PR, number: 483, url: PR.url.replace(/482$/, "483") };
+  world.pullRequests["scott/route-gh"] = [newer, { ...PR, state: "CLOSED" }];
+  expect(await read()).toMatchObject({ [key]: { row: { number: 482 } } });
+  expect(
+    await harness.behavior.callRpc("changeDetail", { keys: [key], prNumber: 482 }),
+  ).toMatchObject({ [key]: { row: { number: 483 } } });
+  expect(await read()).toMatchObject({ [key]: { row: { number: 483 } } });
+  // The original can still open when it is the branch's selected PR.
+  world.pullRequests["scott/route-gh"] = [{ ...PR, state: "CLOSED" }];
+  expect(
+    await harness.behavior.callRpc("changeDetail", { keys: [key], prNumber: 482 }),
+  ).toMatchObject({ [key]: { row: { number: 482 } } });
+});

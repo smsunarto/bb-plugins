@@ -8,11 +8,11 @@
  */
 import {
   experimental_useAppPanel as useAppPanel,
-  experimental_useRpcKeyedQuery as useRpcKeyedQuery,
+  experimental_useRpcQuery as useRpcQuery,
   UrlLink,
   useRpc,
 } from "@get-bb/plugin-sdk/app";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import type { ChangeDetail } from "../core/review.ts";
 import { prKey, prLookup, prUrl, type PrRef } from "../core/watch.ts";
@@ -42,15 +42,14 @@ export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }
   const needsLookup = state.at === "looking" && key === null;
 
   const keys = useMemo(() => (key ? [key] : []), [key]);
-  const { data, error, isFetching, refetchKeys } = useRpcKeyedQuery({
+  const { data, error, isFetching, refetch } = useRpcQuery({
     contract: sourceControlContract,
     method: "changeDetail",
-    keys,
+    input: { keys, prNumber: pr.number },
     enabled: key !== null,
   });
   const [validatedKey, setValidatedKey] = useState<ChangeKey | null>(null);
-  // The SDK may return from refetchKeys while a read already covering this
-  // key is in flight. Its published result is current once that read settles.
+  // Validate by PR number, and wait for the request before using any cached verdict.
   const ready = key !== null && validatedKey === key && !isFetching;
   const detail = ready ? data?.[key] : undefined;
   const reviewProblem = ready ? error?.message : undefined;
@@ -58,21 +57,22 @@ export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }
     if (reviewProblem) return { at: "failed" as const, problem: reviewProblem };
     return detail && detail.state !== "pending" ? judge(detail, pr.number) : null;
   }, [reviewProblem, detail, pr.number]);
-  const phase = verdict ?? state;
+  const [handoff, setHandoff] = useState<Phase | null>(null);
+  const phase = handoff ?? (verdict?.at === "opened" ? state : (verdict ?? state));
 
-  // The shared cache can hold a missing or superseded row. Every attempt
-  // waits for a current read before judging it, then watches for pending detail.
+  // On enable the SDK normally fetches. Force a read only if it kept a cached answer idle.
+  const needsRefetch = useEffectEvent(() => data !== undefined && !isFetching);
   useEffect(() => {
     if (!key) return;
     let live = true;
     void (async () => {
-      await refetchKeys([key]);
+      await (needsRefetch() ? refetch() : undefined);
       if (live) setValidatedKey(key);
     })();
     return () => {
       live = false;
     };
-  }, [key, refetchKeys]);
+  }, [key, refetch]);
 
   // Give the GitHub lookup and the first Change read their own deadlines.
   const looking = phase.at === "looking";
@@ -116,12 +116,18 @@ export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }
 
   useEffect(() => {
     if (!key || !verdict || acted.current) return;
-    acted.current = true;
     if (verdict.at === "failed") return rememberMiss(lookup, threadId, verdict.problem);
     if (verdict.at === "elsewhere")
       return rememberMiss(lookup, threadId, `This branch's review shows #${verdict.number} now.`);
+    acted.current = true;
+
+    const opened = openReview({ key }, { continuation: true });
+    // oxlint-disable-next-line react/set-state-in-effect -- Reflect the panel API's result in the tab.
+    setHandoff(
+      opened ? { at: "opened" } : { at: "failed", problem: "The Review tab couldn't open." },
+    );
+    if (!opened) return;
     rememberChange(lookup, key, threadId);
-    if (!openReview({ key }, { continuation: true })) return;
     const self = panel
       .getTabs()
       .tabs.find(
@@ -141,6 +147,7 @@ export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }
       onRetry={() => {
         acted.current = false;
         setValidatedKey(null);
+        setHandoff(null);
         setPhase({ at: "looking", key: null });
       }}
     />
@@ -214,7 +221,9 @@ function judge(detail: Exclude<ChangeDetail, { state: "pending" }>, number: numb
   if (detail.state === "missing")
     return { at: "failed", problem: "Source Control doesn't know this pull request's branch." };
   const shown = detail.row.number;
-  return shown !== null && shown !== number ? { at: "elsewhere", number: shown } : { at: "opened" };
+  if (shown === null)
+    return { at: "failed", problem: "This branch has no pull request in Review." };
+  return shown !== number ? { at: "elsewhere", number: shown } : { at: "opened" };
 }
 
 function isPrParams(params: unknown, pr: string): boolean {

@@ -629,13 +629,22 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
     read: ReviewRead,
     placements: readonly Placement[],
     scope: "any" | "only" = "any",
+    // A thread PR link resolves its host only if no server account can read it.
+    fallbackHost?: Effect.Effect<Placement | null>,
   ): Effect.Effect<SiteOutcome<ReviewAnswer>> =>
     Effect.gen(function* () {
       if (login === null) {
+        const sources = [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)];
+        if (fallbackHost)
+          sources.push(
+            fallbackHost.pipe(
+              Effect.flatMap((host) => (host ? hostAccesses(host) : Effect.succeed([]))),
+            ),
+          );
         const answer = yield* withinDeadline(
           firstThatSees(
             repoName({ repo }),
-            [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)],
+            sources,
             (access) => reviewAt(access, read),
             { kind: "no-site", host: placements[0]?.hostName ?? SERVER_SITE_NAME },
             (access) =>
