@@ -23,7 +23,7 @@ import { Skeleton } from "../components/ui/skeleton.tsx";
 import { PrMarkdown } from "../pr-markdown.tsx";
 import { GitHubAvatar } from "../review-ui.tsx";
 import { useNow } from "./hooks.ts";
-import { CLEAR_REVIEW_BAR } from "./review-bar.tsx";
+import { ReviewScroller } from "./review-bar.tsx";
 
 // ── code-review's helpers ──────────────────────────────────────────────
 
@@ -420,34 +420,28 @@ export function ConversationView({
   changeKey,
   hasPullRequest,
   lead,
+  bar,
 }: {
   changeKey: ChangeKey;
   hasPullRequest: boolean;
   /** Drawn above the timeline, inside the scrolling column (the rail on a narrow page). */
   lead?: ReactNode;
+  bar?: ReactNode;
 }) {
   return (
-    <div
-      className={cx(
-        "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain",
-        CLEAR_REVIEW_BAR.scroll,
-      )}
+    <ReviewScroller
+      bar={bar}
+      className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain"
+      contentClassName="flex max-w-3xl min-w-0 flex-col gap-4 px-4 pt-4 text-[12px] leading-4 @3xl:px-6"
     >
-      <div
-        className={cx(
-          "flex max-w-3xl min-w-0 flex-col gap-4 px-4 pt-4 text-[12px] leading-4 @3xl:px-6",
-          CLEAR_REVIEW_BAR.contentPb4,
-        )}
-      >
-        {lead}
-        {hasPullRequest ? (
-          <Timeline changeKey={changeKey} />
-        ) : (
-          <p className="m-0 text-[13px] leading-5 text-muted-foreground">
-            This change has no pull request yet. Its conversation starts once it has one.
-          </p>
-        )}
-      </div>
-    </div>
+      {lead}
+      {hasPullRequest ? (
+        <Timeline changeKey={changeKey} />
+      ) : (
+        <p className="m-0 text-[13px] leading-5 text-muted-foreground">
+          This change has no pull request yet. Its conversation starts once it has one.
+        </p>
+      )}
+    </ReviewScroller>
   );
 }

@@ -1098,7 +1098,9 @@ export const SendControls = memo(function SendControls({
         "flex min-w-0 flex-wrap items-center self-center",
         // In the floating bar the pill sizes to its controls and centres a wrapped row; wrapped rows
         // sit 12px apart under a coarse pointer so their 44px hit areas don't overlap.
-        bar ? "justify-center gap-2 pointer-coarse:gap-y-3" : "ms-auto justify-end gap-3 py-1",
+        bar
+          ? "max-w-full shrink-0 justify-center gap-2 pointer-coarse:gap-y-3"
+          : "ms-auto justify-end gap-3 py-1",
       )}
       data-testid="sc-send-controls"
     >

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import MarkdownIt from "markdown-it";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { renderSlot, type PluginRpcTestHandlers } from "@get-bb/plugin-sdk/testing/app";
 import { EMPTY_GUIDE_VIEW, type Guide, type GuideView } from "../../core/guide.ts";
 import { changeKeySchema, guideTag, type ChangeKey } from "../../core/ids.ts";
@@ -259,6 +259,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
 });
 
@@ -436,14 +437,49 @@ function phone() {
   Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
 }
 
-test("the phone's guided screen says the guide is being written and keeps the review bar", async () => {
+test("the phone's guided screen keeps the review bar and its clearance while the guide is written", async () => {
   phone();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class extends ResizeObserver {
+      private readonly callback: ResizeObserverCallback;
+
+      constructor(callback: ResizeObserverCallback) {
+        super(callback);
+        this.callback = callback;
+      }
+      override observe(target: Element, options?: ResizeObserverOptions) {
+        if (options?.box === "border-box") {
+          const size = { blockSize: 116, inlineSize: 390 };
+          this.callback(
+            [
+              {
+                target,
+                borderBoxSize: [size],
+                contentBoxSize: [size],
+                devicePixelContentBoxSize: [size],
+                contentRect: new DOMRect(0, 0, 390, 116),
+              },
+            ],
+            this,
+          );
+        }
+      }
+    },
+  );
   const slot = render(server({ items: [comment("src/b.ts")] }));
   await slot.findByTestId("sc-phone-header");
   const status = await slot.findByTestId("sc-guide-status");
   expect(status.getAttribute("data-phase")).toBe("writing");
   expect(status.textContent).toContain("Files are in path order until then.");
-  const bar = slot.getByTestId("sc-review-bar");
+  const guided = within(slot.getByTestId("sc-guided"));
+  const column = guided.getByTestId("sc-diff-column");
+  const bar = within(column).getByTestId("sc-review-bar");
+  expect(column.style.getPropertyValue("--sc-review-bar-space")).toBe("116px");
+  expect(column.classList.contains("scroll-pb-[var(--sc-review-bar-space,0px)]")).toBe(true);
+  expect(column.firstElementChild?.classList.contains("pb-[var(--sc-review-bar-space,0px)]")).toBe(
+    true,
+  );
   expect(within(bar).getByTestId("sc-send")).toBeTruthy();
   await waitFor(() =>
     expect(within(bar).getByTestId("sc-review-bar-position").textContent).toBe("1 item"),

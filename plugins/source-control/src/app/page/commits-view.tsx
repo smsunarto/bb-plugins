@@ -14,7 +14,7 @@ import { FileRowsSkeleton, PatchesProblem } from "../file-cards.tsx";
 import { absoluteTime, cx, shortAge, shortId } from "../format.ts";
 import { Rail } from "../workspace-lane.tsx";
 import { FilesView } from "./files-view.tsx";
-import { CLEAR_REVIEW_BAR } from "./review-bar.tsx";
+import { ReviewScroller } from "./review-bar.tsx";
 
 /**
  * A commit's own changes as a revision: its parent to itself. The host reads
@@ -184,6 +184,7 @@ export function CommitsView({
   url,
   now,
   lead,
+  bar,
   wide,
   onCommit,
   onPath,
@@ -197,6 +198,7 @@ export function CommitsView({
   url: string | null;
   now: number;
   lead?: ReactNode;
+  bar?: ReactNode;
   wide: boolean;
   onCommit: (commitId: string) => void;
   onPath: (path: string) => void;
@@ -251,6 +253,7 @@ export function CommitsView({
           line={line}
           onPath={onPath}
           showTree={false}
+          bar={bar}
           lead={
             wide ? (
               lead
@@ -266,23 +269,15 @@ export function CommitsView({
       </div>
     );
   return (
-    <div
-      className={cx(
-        "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain",
-        CLEAR_REVIEW_BAR.scroll,
-      )}
+    <ReviewScroller
+      bar={bar}
+      className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain"
+      contentClassName="flex max-w-3xl min-w-0 flex-col gap-4 px-4 pt-4 @3xl:px-6"
     >
-      <div
-        className={cx(
-          "flex max-w-3xl min-w-0 flex-col gap-4 px-4 pt-4 @3xl:px-6",
-          CLEAR_REVIEW_BAR.contentPb4,
-        )}
-      >
-        {lead}
-        {card}
-        {marker}
-        {elsewhere}
-      </div>
-    </div>
+      {lead}
+      {card}
+      {marker}
+      {elsewhere}
+    </ReviewScroller>
   );
 }

@@ -1044,7 +1044,7 @@ export function GuidedView({
 
   return (
     <ColumnContext.Provider value={column}>
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-testid="sc-guided">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="sc-guided">
         <div className="flex min-h-0 min-w-0 flex-1">
           {wide && files ? (
             <Outline
@@ -1057,7 +1057,16 @@ export function GuidedView({
               onFile={pick}
             />
           ) : null}
-          <DiffColumn scroller={scroller}>
+          <DiffColumn
+            scroller={scroller}
+            bar={
+              phone ? (
+                <ReviewBar changeKey={changeKey} order={place}>
+                  {bar}
+                </ReviewBar>
+              ) : null
+            }
+          >
             {/* The Files, Commits and Conversation tabs' padding, at every width. */}
             <div className="flex min-w-0 flex-col gap-4 px-4 py-4 @3xl:px-6">
               {lead}
@@ -1068,11 +1077,6 @@ export function GuidedView({
             </div>
           </DiffColumn>
         </div>
-        {phone ? (
-          <ReviewBar changeKey={changeKey} order={place}>
-            {bar}
-          </ReviewBar>
-        ) : null}
       </div>
     </ColumnContext.Provider>
   );

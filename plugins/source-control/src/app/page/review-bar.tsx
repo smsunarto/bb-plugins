@@ -31,11 +31,43 @@ const SPACE = "--sc-review-bar-space";
  * padding of its own; `contentPb4` replaces `pb-4`, keeping its 16px under
  * the room the bar takes.
  */
-export const CLEAR_REVIEW_BAR = {
+const CLEAR_REVIEW_BAR = {
   scroll: "scroll-pb-[var(--sc-review-bar-space,0px)]",
   content: "pb-[var(--sc-review-bar-space,0px)]",
   contentPb4: "pb-[calc(1rem+var(--sc-review-bar-space,0px))]",
 } as const;
+
+/** Keep the bar in the scroll chain and the content wrapper first for diff virtualization. */
+export function ReviewScroller({
+  bar,
+  children,
+  className,
+  contentClassName,
+  scroller,
+  testId,
+}: {
+  bar?: ReactNode;
+  children: ReactNode;
+  className: string;
+  contentClassName?: string;
+  scroller?: RefObject<HTMLDivElement | null>;
+  testId?: string;
+}) {
+  return (
+    <div ref={scroller} data-testid={testId} className={cx(className, CLEAR_REVIEW_BAR.scroll)}>
+      <div
+        className={cx(
+          contentClassName,
+          contentClassName ? CLEAR_REVIEW_BAR.contentPb4 : CLEAR_REVIEW_BAR.content,
+          !!bar && "min-h-full",
+        )}
+      >
+        {children}
+      </div>
+      {bar}
+    </div>
+  );
+}
 
 /**
  * Sets `--sc-review-bar-space` on the bar's host to the height of `float`,
@@ -89,9 +121,8 @@ function Step({
  * Steps through the open review items in reading order, revealing each in the
  * diff, beside `children`, the send controls.
  *
- * Render it as a child of a `relative` element that also holds the review's
- * scrollers: it floats over that element's bottom edge and sets
- * `--sc-review-bar-space` on it, which the scrollers read through `CLEAR_REVIEW_BAR`.
+ * Render it after the content in ReviewScroller. Its negative margin overlaps
+ * the reserved clearance so the bar does not add a second gap.
  */
 export function ReviewBar({
   changeKey,
@@ -140,16 +171,16 @@ export function ReviewBar({
       // above the home indicator; where it gives no inset (Android, an open keyboard) the pill keeps
       // 1.5rem clear of the screen's rounded corners. Where the page itself runs under the home
       // indicator (--plugin-page-bottom-inset), the pill rises by that too.
-      className="@container pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-3 pt-2 pb-[calc(max(0.75rem,calc(1.5rem-var(--bb-content-bottom-inset,0px)))+var(--plugin-page-bottom-inset,0px))]"
+      className="@container pointer-events-none sticky bottom-0 left-0 z-10 mt-[calc(0px-var(--sc-review-bar-space,0px))] flex justify-center px-3 pt-2 pb-[calc(max(0.75rem,calc(1.5rem-var(--bb-content-bottom-inset,0px)))+var(--plugin-page-bottom-inset,0px))]"
     >
       <div
         data-testid="sc-review-bar"
-        // Sized to its controls: one row where they fit, else the send controls stack under the
-        // pager in a column as wide as the wider of the two. Rows sit 12px apart under a coarse
-        // pointer, so the hit areas above and below the gap don't overlap.
+        // Below the usual row width (389px), stack the groups to keep the pill compact.
+        // At wider sizes, longer send controls can still wrap to their own row.
+        // The 12px coarse-pointer row gap keeps the extended hit areas from overlapping.
         className={cx(
           surface.edge,
-          "pointer-events-auto flex w-fit max-w-full flex-col items-center gap-x-2 gap-y-1.5 rounded-xl bg-popover p-1.5 text-popover-foreground shadow-lg pointer-coarse:gap-y-3 @[30rem]:flex-row @[30rem]:flex-wrap @[30rem]:justify-center",
+          "pointer-events-auto flex w-fit max-w-full flex-col items-center gap-x-2 gap-y-1.5 rounded-xl bg-popover p-1.5 text-popover-foreground shadow-lg pointer-coarse:gap-y-3 @[389px]:flex-row @[389px]:flex-wrap @[389px]:justify-center",
         )}
       >
         {items.length > 0 ? (
