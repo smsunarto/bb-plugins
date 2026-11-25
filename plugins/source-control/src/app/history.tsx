@@ -16,7 +16,9 @@ import { describeProblem } from "../core/change.ts";
 import type { OplogEntry } from "../core/oplog.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { absoluteTime, shortAge, shortId } from "./format.ts";
-import { Button, CompactButton } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader } from "./components/ui/empty.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
 import { Item } from "./components/ui/item.tsx";
 import {
   Collapsible,
@@ -59,9 +61,6 @@ function useAskAgent(): ((text: string) => void) | null {
   return composer.scope.kind === "new-thread" ? null : ask;
 }
 
-/** Its 12px glyph, not the shared Button's 16px. */
-const ICON_BUTTON = "size-6 text-muted-foreground [&_svg]:size-3";
-
 function OperationRow({ entry, path, now }: { entry: OplogEntry; path: string; now: number }) {
   const ask = useAskAgent();
   const title = operationTitle(entry.title);
@@ -99,27 +98,27 @@ function OperationRow({ entry, path, now }: { entry: OplogEntry; path: string; n
           </span>
         </span>
         <Hint label={`Copy snapshot id ${short}`}>
-          <Button
+          <CompactButton
             variant="ghost"
-            size="icon"
-            className={ICON_BUTTON}
+            size="icon-xs"
+            tone="muted"
             aria-label={`Copy snapshot id ${short}`}
             onClick={() => void copyToClipboard({ text: entry.id })}
           >
             <Icon name="Copy" className="size-3" aria-hidden />
-          </Button>
+          </CompactButton>
         </Hint>
         {ask ? (
           <Hint label={`Ask agent to restore snapshot ${short}`}>
-            <Button
+            <CompactButton
               variant="ghost"
-              size="icon"
-              className={ICON_BUTTON}
+              size="icon-xs"
+              tone="muted"
               aria-label={`Ask agent to restore snapshot ${short}`}
               onClick={() => ask(restoreRequest(entry, title, path))}
             >
               <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
-            </Button>
+            </CompactButton>
           </Hint>
         ) : null}
       </Item>
@@ -134,23 +133,36 @@ function Operations({ threadId, path, now }: { threadId: string; path: string; n
     input: { threadId },
   });
   const data = oplog.data;
-  const note = (text: string) => (
-    <p className="m-0 flex flex-wrap items-center gap-2 px-3 py-2 text-[12px] leading-4 text-muted-foreground">
-      {text}
-      {data?.ok === false || oplog.error ? (
+  const failed = (text: string) => (
+    <Empty size="sm">
+      <EmptyHeader>
+        <EmptyDescription>{text}</EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
         <CompactButton size="sm" variant="outline" onClick={() => void oplog.refetch()}>
           Try again
         </CompactButton>
-      ) : null}
-    </p>
+      </EmptyContent>
+    </Empty>
   );
   if (!data)
-    return oplog.error
-      ? note(`History failed to load. ${oplog.error.message}`)
-      : note("Loading operations…");
-  if (!data.ok) return note(`History unavailable. ${describeProblem(data.problem)}`);
-  if (data.value.entries.length === 0)
-    return note("No operations yet. GitButler lists each change it makes to this workspace here.");
+    return oplog.error ? (
+      failed(`History failed to load. ${oplog.error.message}`)
+    ) : (
+      <p className="m-0 px-3 py-2 text-[12px] leading-4 text-muted-foreground">
+        Loading operations…
+      </p>
+    );
+  if (!data.ok) return failed(`History unavailable. ${describeProblem(data.problem)}`);
+  if (data.value.entries.length === 0) {
+    const none = "No operations yet. GitButler lists each change it makes to this workspace here.";
+    // A failed refetch over an empty list still offers Try again.
+    return oplog.error ? (
+      failed(none)
+    ) : (
+      <EmptyState className="mx-3 my-2" messageClassName="m-0" message={none} />
+    );
+  }
   return (
     // Each row draws its own top rule: a divider utility would add a child selector the CSS guard refuses.
     <ol className="m-0 list-none p-0">

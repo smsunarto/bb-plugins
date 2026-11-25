@@ -133,7 +133,7 @@ function LocalWork({
   else
     body = (
       <Quiet testId="sc-card-clean">
-        Nothing left to ship: {where} is clean and this branch has no commits of its own.
+        {`Nothing left to ship: ${where} is clean and this branch has no commits of its own.`}
       </Quiet>
     );
   return (

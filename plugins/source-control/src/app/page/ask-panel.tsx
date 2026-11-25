@@ -27,7 +27,7 @@ import {
 import { sourceControlContract } from "../../contract/rpc.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import type { ChangeDetail } from "../../core/review.ts";
-import { Button } from "../components/ui/button.tsx";
+import { Button, CompactButton } from "../components/ui/button.tsx";
 import { useEscapeLayer } from "../escape.ts";
 import { cx } from "../format.ts";
 import { Hint } from "../ui.tsx";
@@ -168,8 +168,6 @@ type Ready = Extract<ChangeDetail, { state: "change" }>;
  * bucket bb's style recalculation matches against every element.
  */
 const PHONE_CHAT = "[&_div[data-follow-up-composer-footer]]:hidden";
-
-const ICON_BUTTON = "size-6 px-0 text-muted-foreground hover:text-foreground [&_svg]:size-[13px]";
 
 /** Why questions cannot be sent now, or null. */
 function unavailable(detail: Ready | null): string | null {
@@ -343,27 +341,27 @@ function AskPanel({
           {row?.title ?? ""}
         </span>
         <Hint label="Open as full thread">
-          <Button
+          <CompactButton
             variant="ghost"
-            size="icon"
+            size="icon-xs"
+            tone="muted"
             aria-label="Open as full thread"
             disabled={!threadId || full.isPending}
             onClick={() => void openFull()}
-            className={ICON_BUTTON}
           >
             <OpenIcon />
-          </Button>
+          </CompactButton>
         </Hint>
         <Hint label="Close">
-          <Button
+          <CompactButton
             variant="ghost"
-            size="icon"
+            size="icon-xs"
+            tone="muted"
             aria-label="Close"
             onClick={onClose}
-            className={ICON_BUTTON}
           >
             <CloseIcon />
-          </Button>
+          </CompactButton>
         </Hint>
       </div>
       {blocked ? (

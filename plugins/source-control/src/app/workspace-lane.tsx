@@ -139,11 +139,11 @@ function ReviewJump({
   return (
     <div className="flex justify-end border-t border-border-hairline px-3 py-1">
       <Button
-        size="sm"
+        size="xs"
         variant="ghost"
+        tone="muted"
         data-testid="sc-review-jump"
         onClick={() => openReview({ key: changeKey, tab: "commits", commit: commitId, path })}
-        className="h-6 gap-1 px-1 text-[11px] text-muted-foreground max-md:pointer-coarse:px-2"
       >
         Open in Review
       </Button>

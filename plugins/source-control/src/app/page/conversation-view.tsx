@@ -19,6 +19,7 @@ import { PatchesProblem } from "../file-cards.tsx";
 import { absoluteTime, cx, plural, shortId } from "../format.ts";
 import { Badge, type BadgeProps } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
+import { Card, CardContent } from "../components/ui/card.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import { PrMarkdown } from "../pr-markdown.tsx";
 import { GitHubAvatar } from "../review-ui.tsx";
@@ -364,16 +365,18 @@ export function PullRequestDescription({ changeKey }: { changeKey: ChangeKey }) 
     return query.error ? (
       <PatchesProblem text={query.error.message} onRetry={() => void query.refetch()} />
     ) : (
-      <div
+      <Card
+        size="xs"
         aria-busy="true"
         aria-label="Reading the description"
         data-testid="sc-description-loading"
-        className="flex flex-col gap-2 rounded-lg border border-solid border-border p-3"
       >
-        <Skeleton className="h-3 w-1/3" />
-        <Skeleton className="h-3 w-full" />
-        <Skeleton className="h-3 w-2/3" />
-      </div>
+        <CardContent className="flex flex-col gap-2">
+          <Skeleton className="h-3 w-1/3" />
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-2/3" />
+        </CardContent>
+      </Card>
     );
   if (!answer.ok)
     return (

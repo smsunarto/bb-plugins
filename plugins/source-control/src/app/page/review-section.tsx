@@ -46,6 +46,7 @@ import { SLOPCOP_PLUGIN_ID, slopCopContract, slopCopInput } from "../slopcop-con
 import { Badge } from "../components/ui/badge.tsx";
 import { Item } from "../components/ui/item.tsx";
 import { Button } from "../components/ui/button.tsx";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader } from "../components/ui/empty.tsx";
 import { ReasonHint, TEXT_LINK } from "../ui.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import { useNow } from "./hooks.ts";
@@ -487,19 +488,21 @@ function railCounts(fixing: number, rest: readonly ReviewItem[]): string {
 function ReviewUnread({ error, refetch }: { error: string | null; refetch: () => void }) {
   if (error)
     return (
-      <div className="flex flex-wrap items-center gap-2 px-2">
-        <p className="m-0 min-w-0 flex-1 text-[12px] leading-4 text-muted-foreground">
-          Couldn't read the review. {error}
-        </p>
-        <Button
-          variant="link"
-          size="sm"
-          className={cx(TEXT_LINK, "text-[11px] font-medium")}
-          onClick={refetch}
-        >
-          Try again
-        </Button>
-      </div>
+      <Empty size="sm">
+        <EmptyHeader>
+          <EmptyDescription>Couldn't read the review. {error}</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button
+            variant="link"
+            size="sm"
+            className={cx(TEXT_LINK, "text-[11px] font-medium")}
+            onClick={refetch}
+          >
+            Try again
+          </Button>
+        </EmptyContent>
+      </Empty>
     );
   return (
     <div aria-busy="true" aria-label="Reading the review" className="flex flex-col gap-2 px-2 py-1">

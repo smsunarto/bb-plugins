@@ -63,6 +63,13 @@ import { revisionId } from "./patches.ts";
 import { RailSections } from "./rail.tsx";
 import { FocusContext, ReviewFocus } from "./review-focus.ts";
 import { ReviewSection } from "./review-section.tsx";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "../components/ui/empty.tsx";
 import { EmptyState } from "../components/ui/empty-state.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
@@ -425,20 +432,19 @@ function HeaderSkeleton() {
 
 function Missing({ problem }: { problem: Extract<ChangeDetail, { state: "missing" }>["problem"] }) {
   return (
-    <div
-      className={cx("flex flex-col gap-2 py-10", PAD)}
-      data-testid="sc-review-missing"
-      role="alert"
-    >
-      <h1 className="m-0 text-[16px] leading-6 font-semibold text-foreground">
-        bb doesn't know this change
-      </h1>
-      <p className="m-0 max-w-xl text-[13px] leading-5 text-muted-foreground">
-        {problem
-          ? describeProblem(problem)
-          : "No checkout or pull request bb can read has this branch. It may have been deleted, or the link may be from another bb."}
-      </p>
-    </div>
+    <Empty size="sm" data-testid="sc-review-missing" role="alert">
+      <EmptyHeader>
+        {/* EmptyTitle is a div: the h1 keeps the page's heading. */}
+        <EmptyTitle>
+          <h1 className="m-0 [font:inherit]">bb doesn't know this change</h1>
+        </EmptyTitle>
+        <EmptyDescription>
+          {problem
+            ? describeProblem(problem)
+            : "No checkout or pull request bb can read has this branch. It may have been deleted, or the link may be from another bb."}
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
@@ -601,11 +607,17 @@ function TabBody({
       >
         {lead}
         {description}
-        <p className="m-0 text-[13px] leading-5 text-muted-foreground" data-testid="sc-no-revision">
-          {detail.problem
-            ? `${describeProblem(detail.problem)} Files appear once bb can read them.`
-            : "Files appear once bb has read this change's head and base."}
-        </p>
+        {/* EmptyState takes no testid: the wrapper carries it. */}
+        <div data-testid="sc-no-revision">
+          <EmptyState
+            messageClassName="m-0"
+            message={
+              detail.problem
+                ? `${describeProblem(detail.problem)} Files appear once bb can read them.`
+                : "Files appear once bb has read this change's head and base."
+            }
+          />
+        </div>
       </ReviewScroller>
     );
   if (tab === "overview")
@@ -840,16 +852,16 @@ function Review({ location, width }: { location: Here; width: number }) {
   if (!detail || detail.state === "pending") {
     if (query.error && !detail)
       return (
-        <div className={cx("flex flex-col gap-2 py-10", PAD)} role="alert">
-          <p className="m-0 text-[13px] leading-5 text-muted-foreground">
-            Couldn't read this change. {query.error.message}
-          </p>
-          <div>
+        <Empty size="sm" role="alert">
+          <EmptyHeader>
+            <EmptyDescription>Couldn't read this change. {query.error.message}</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
             <CompactButton size="sm" variant="outline" onClick={() => void query.refetch()}>
               Try again
             </CompactButton>
-          </div>
-        </div>
+          </EmptyContent>
+        </Empty>
       );
     return <HeaderSkeleton />;
   }

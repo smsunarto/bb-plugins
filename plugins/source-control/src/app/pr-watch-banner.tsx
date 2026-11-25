@@ -172,21 +172,19 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
         <Hint label="Open on GitHub">
           {/* UrlLink takes no ref: the tooltip anchors on this span. */}
           <span className="inline-flex shrink-0">
-            <UrlLink
-              href={watch.url}
-              className={cx(ACTION, "size-6")}
-              aria-label={`Open ${key} on GitHub`}
-            >
-              <Icon name="ArrowUpRight" className="size-3.5" aria-hidden />
-            </UrlLink>
+            <Button asChild variant="ghost" size="icon-xs" tone="muted">
+              <UrlLink href={watch.url} aria-label={`Open ${key} on GitHub`}>
+                <Icon name="ArrowUpRight" className="size-3" aria-hidden />
+              </UrlLink>
+            </Button>
           </span>
         </Hint>
         <Hint label="Stop watching. The agent is not told.">
           <Button
             type="button"
-            size="sm"
+            size="xs"
             variant="ghost"
-            className="h-6 px-1 text-muted-foreground max-md:pointer-coarse:px-2"
+            tone="muted"
             aria-label={`Unwatch ${key}`}
             {...KEEP_COMPOSER_FOCUS}
             disabled={stop.isPending}

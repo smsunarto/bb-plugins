@@ -25,7 +25,7 @@ import { useEscapeLayer } from "./escape.ts";
 import { useHostGate } from "./host-gate.ts";
 import { cx, plural, squashMessage } from "./format.ts";
 import { Alert, AlertDescription } from "./components/ui/alert.tsx";
-import { Button, CompactButton } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { Pending, ReasonHint } from "./ui.tsx";
 import { Input } from "./components/ui/input.tsx";
 import { Textarea } from "./components/ui/textarea.tsx";
@@ -476,15 +476,15 @@ export function OutcomeLine({
       <AlertDescription className="min-w-0 flex-1">
         {outcome.kind === "conflict" ? CONFLICT_TEXT : outcome.text}
       </AlertDescription>
-      <Button
+      <CompactButton
         variant="ghost"
-        size="icon"
+        size="icon-xs"
+        tone="muted"
         aria-label="Dismiss"
-        className="size-4 rounded-[4px] text-muted-foreground"
         onClick={() => dispatch.dismiss(scope)}
       >
         <Icon name="X" className="size-3" aria-hidden />
-      </Button>
+      </CompactButton>
     </Alert>
   );
 }
@@ -876,10 +876,9 @@ export function PullButton({
   else if (busy && !running) title = "Another action is running";
   return (
     <ReasonHint reason={title} off={busy || gate !== null} className="flex shrink-0">
-      <Button
-        size="sm"
+      <CompactButton
+        size="icon-sm"
         variant="outline"
-        className="size-7 px-0!"
         aria-label={behind > 0 ? `Pull ${plural(behind, "new commit")}` : "Pull"}
         data-host-bound="pull"
         disabled={busy || gate !== null}
@@ -888,7 +887,7 @@ export function PullButton({
         }
       >
         <Pending pending={running} icon="ArrowDown" />
-      </Button>
+      </CompactButton>
     </ReasonHint>
   );
 }

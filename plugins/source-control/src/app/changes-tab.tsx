@@ -38,6 +38,14 @@ import { readSnapshot, writeSnapshot } from "./snapshot.ts";
 import { BotIcon } from "./page/ask-panel.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button, CompactButton } from "./components/ui/button.tsx";
+import { Card, CardContent } from "./components/ui/card.tsx";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "./components/ui/empty.tsx";
 import { EmptyState } from "./components/ui/empty-state.tsx";
 import { FieldError } from "./components/ui/field.tsx";
 import {
@@ -404,17 +412,19 @@ function LoadingBody() {
         <Skeleton className="h-3 w-50 max-w-full" />
       </div>
       <Skeleton className="h-10 w-full rounded-[8px]" />
-      <div className="flex flex-col gap-3 rounded-[8px] border border-border-hairline p-3">
-        <Skeleton className="h-3 w-30" />
-        <div className="flex items-center gap-2">
-          <Skeleton className="size-4" />
-          <Skeleton className="h-3 w-52 max-w-full" />
-        </div>
-        <div className="flex items-center gap-2">
-          <Skeleton className="size-4" />
-          <Skeleton className="h-3 w-42 max-w-full" />
-        </div>
-      </div>
+      <Card size="xs">
+        <CardContent className="flex flex-col gap-3">
+          <Skeleton className="h-3 w-30" />
+          <div className="flex items-center gap-2">
+            <Skeleton className="size-4" />
+            <Skeleton className="h-3 w-52 max-w-full" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="size-4" />
+            <Skeleton className="h-3 w-42 max-w-full" />
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -521,24 +531,18 @@ function FailedBody({
   const detail = "detail" in problem ? problem.detail : null;
   const noBut = problem.kind === "tool-missing" && problem.tool === "but";
   return (
-    <div
-      data-testid="sc-failed"
-      role="alert"
-      className="flex flex-col gap-3 px-3 max-md:px-4 @md:px-4 py-8"
-    >
-      <div className="flex items-center gap-2">
-        <span className="size-2 shrink-0 rounded-full bg-destructive" aria-hidden />
-        <span className="text-[14px] leading-5 font-semibold text-foreground">
+    <Empty size="sm" data-testid="sc-failed" role="alert">
+      <EmptyHeader>
+        <EmptyTitle className="flex items-center gap-2">
+          <span className="size-2 shrink-0 rounded-full bg-destructive" aria-hidden />
           Couldn't read this checkout
-        </span>
-      </div>
-      <p className="m-0 text-[13px] leading-5 text-muted-foreground">{describeProblem(problem)}</p>
-      {detail ? (
-        <p className="m-0 font-mono text-[12px] leading-5 break-words text-muted-foreground">
-          {detail}
-        </p>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2 pt-1">
+        </EmptyTitle>
+        <EmptyDescription>{describeProblem(problem)}</EmptyDescription>
+        {detail ? (
+          <EmptyDescription className="font-mono break-words">{detail}</EmptyDescription>
+        ) : null}
+      </EmptyHeader>
+      <EmptyContent className="flex-row flex-wrap justify-center">
         {problem.kind === "tool-missing" ? <AskToFix threadId={threadId} /> : null}
         <CompactButton size="sm" variant="outline" onClick={onRetry} disabled={retrying}>
           {retrying ? "Trying…" : "Try again"}
@@ -548,8 +552,8 @@ function FailedBody({
             Read as plain git
           </CompactButton>
         ) : null}
-      </div>
-    </div>
+      </EmptyContent>
+    </Empty>
   );
 }
 

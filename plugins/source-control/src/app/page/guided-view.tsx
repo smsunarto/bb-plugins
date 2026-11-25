@@ -41,6 +41,7 @@ import { sourceControlContract } from "../../contract/rpc.ts";
 import { FileRowsSkeleton, FileStatus, PatchesProblem } from "../file-cards.tsx";
 import { Badge } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
+import { Card, CardContent, CardHeader } from "../components/ui/card.tsx";
 import { surface } from "../components/ui/surface.ts";
 import { cx, plural } from "../format.ts";
 import { useGuide, useRewriteGuide, type GuideRead, type Rewrite } from "../guide-data.ts";
@@ -333,16 +334,19 @@ function Sparkle() {
 /** "Summary · written by bb" (board A). */
 function SummaryCard({ summary }: { summary: string }) {
   return (
-    <section
-      aria-label="Summary"
-      data-testid="sc-guide-summary"
-      className="flex min-w-0 flex-col gap-2 rounded-[8px] border border-solid border-border bg-surface-recessed p-3"
-    >
-      <div className="flex items-center gap-2">
-        <Sparkle />
-        <h2 className={LABEL}>Summary · written by bb</h2>
-      </div>
-      <p className="m-0 text-[13px] leading-5 whitespace-pre-line text-foreground">{summary}</p>
+    // Card is a div: the section keeps the landmark.
+    <section aria-label="Summary" data-testid="sc-guide-summary" className="min-w-0">
+      <Card size="xs">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Sparkle />
+            <h2 className={LABEL}>Summary · written by bb</h2>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="m-0 text-[13px] leading-5 whitespace-pre-line text-foreground">{summary}</p>
+        </CardContent>
+      </Card>
     </section>
   );
 }

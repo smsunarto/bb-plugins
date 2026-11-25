@@ -12,6 +12,7 @@ import {
   useRealtimeConnectionState,
 } from "@get-bb/plugin-sdk/app";
 import { useMemo, useRef, useState, type ReactNode } from "react";
+import { EmptyState } from "./components/ui/empty-state.tsx";
 import { describeProblem } from "../core/change.ts";
 import { canShip, hasWork, summarize } from "../core/status.ts";
 import type { ChangeKey } from "../core/ids.ts";
@@ -66,11 +67,12 @@ export function ShipButton({ ship }: { ship: ReturnType<typeof useShipThread> })
   );
 }
 
-export function Quiet({ children, testId }: { children: ReactNode; testId: string }) {
+export function Quiet({ children, testId }: { children: string; testId: string }) {
+  // EmptyState takes no testid: the wrapper carries it.
   return (
-    <span data-testid={testId} className="text-[12px] leading-4 text-muted-foreground">
-      {children}
-    </span>
+    <div data-testid={testId}>
+      <EmptyState messageClassName="m-0" message={children} />
+    </div>
   );
 }
 

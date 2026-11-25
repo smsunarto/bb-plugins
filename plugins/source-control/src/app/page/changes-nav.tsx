@@ -571,12 +571,10 @@ function LoadingRows() {
 
 function EmptyText({ children }: { children: string }) {
   return (
-    <p
-      className="m-0 px-4 py-6 text-[12px] leading-5 text-muted-foreground"
-      data-testid="sc-nav-empty"
-    >
-      {children}
-    </p>
+    // EmptyState takes no testid: the wrapper carries it.
+    <div data-testid="sc-nav-empty">
+      <EmptyState className="mx-4 my-6" messageClassName="m-0" message={children} />
+    </div>
   );
 }
 
