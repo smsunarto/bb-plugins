@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+import { Alert, AlertDescription } from "../../../components/ui/alert.tsx";
 import { Button } from "../../../components/ui/button.tsx";
 import { queryKey, useRpcMutation } from "../../app/rpc.ts";
 import type { PublishOutcome } from "../contract.ts";
@@ -22,39 +23,43 @@ export function PublishNotices({
   const shown = publish.data ?? outcome;
   if (!shown.ok) {
     return (
-      <div className="pe-notice pe-notice-row" data-tone="bad" role="alert">
-        <span>
+      <Alert variant="destructive" role="alert">
+        <AlertDescription>
           {verb ? `${verb}, but publishing did not finish` : "Publishing did not finish"}:{" "}
           {shown.error}
-        </span>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={publish.isPending}
-          onClick={() => publish.mutate(null)}
-        >
-          {publish.isPending ? "Publishing…" : "Retry publish"}
-        </Button>
-      </div>
+        </AlertDescription>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={publish.isPending}
+            onClick={() => publish.mutate(null)}
+          >
+            {publish.isPending ? "Publishing…" : "Retry publish"}
+          </Button>
+        </div>
+      </Alert>
     );
   }
   return (
     <>
       {verb !== null && shown.problems.length === 0 && (
-        <output className="pe-notice" data-tone="good">
-          {verb}. Agents get it in their next session.
+        <output>
+          <Alert variant="success" role="none">
+            <AlertDescription>{verb}. Agents get it in their next session.</AlertDescription>
+          </Alert>
         </output>
       )}
       {shown.problems.map((problem) => (
-        <p key={problem} className="pe-notice" data-tone="bad">
-          {problem}
-        </p>
+        <Alert key={problem} variant="destructive" role="none">
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
       ))}
       {shown.warnings.map((warning) => (
-        <p key={warning} className="pe-notice" data-tone="warn">
-          {warning}
-        </p>
+        <Alert key={warning} variant="warning" role="none">
+          <AlertDescription>{warning}</AlertDescription>
+        </Alert>
       ))}
     </>
   );

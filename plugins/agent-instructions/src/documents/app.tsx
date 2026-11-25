@@ -6,12 +6,15 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
+import { Alert, AlertDescription } from "../../components/ui/alert.tsx";
 import { Button } from "../../components/ui/button.tsx";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "../../components/ui/collapsible.tsx";
+import { EmptyState } from "../../components/ui/empty-state.tsx";
+import { FieldError } from "../../components/ui/field.tsx";
 import { Input } from "../../components/ui/input.tsx";
 import { Label } from "../../components/ui/label.tsx";
 import {
@@ -199,11 +202,7 @@ function SourceControls({
           </Select>
         </div>
       )}
-      {configure.isError && (
-        <p role="alert" className="w-full text-sm text-destructive">
-          {configure.error.message}
-        </p>
-      )}
+      {configure.isError && <FieldError className="w-full">{configure.error.message}</FieldError>}
     </div>
   );
 }
@@ -221,11 +220,15 @@ function DocumentEditor({ file, online }: { file: DocumentFile; online: boolean 
     );
   if (read.isError)
     return (
-      <div className="p-4 text-sm">
-        <p role="alert">{read.error.message}</p>
-        <Button size="sm" variant="outline" onClick={() => void read.refetch()}>
-          Retry file
-        </Button>
+      <div className="p-4">
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{read.error.message}</AlertDescription>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => void read.refetch()}>
+              Retry file
+            </Button>
+          </div>
+        </Alert>
       </div>
     );
   return (
@@ -344,18 +347,20 @@ function SaveNotice({
 }) {
   if (error)
     return (
-      <p role="alert" className="text-sm text-destructive">
-        {error}
-      </p>
+      <Alert variant="destructive" role="alert">
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
     );
   if (!conflict) return null;
   return (
-    <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-destructive">
-      File changed on disk. Your draft is kept.
-      <Button size="sm" variant="outline" onClick={reload}>
-        Discard draft and reload
-      </Button>
-    </div>
+    <Alert variant="destructive" role="alert">
+      <AlertDescription>File changed on disk. Your draft is kept.</AlertDescription>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={reload}>
+          Discard draft and reload
+        </Button>
+      </div>
+    </Alert>
   );
 }
 function GlobalApply({ file, disabled }: { file: DocumentFile; disabled: boolean }) {
@@ -392,11 +397,7 @@ function GlobalApply({ file, disabled }: { file: DocumentFile; disabled: boolean
               : "Refresh installed skills"}
         </Button>
       </div>
-      {apply.isError && (
-        <p role="alert" className="text-sm text-destructive">
-          {apply.error.message}
-        </p>
-      )}
+      {apply.isError && <FieldError>{apply.error.message}</FieldError>}
       {apply.data && (
         <Collapsible>
           <CollapsibleTrigger asChild>
@@ -477,9 +478,10 @@ function DocumentsBody({
         </output>
       )}
       {!source ? (
-        <p className="p-4 text-sm text-muted-foreground">
-          Choose a source project and checkout to edit its instructions and skills.
-        </p>
+        <EmptyState
+          className="m-4"
+          message="Choose a source project and checkout to edit its instructions and skills."
+        />
       ) : list || home ? (
         <DocumentList
           key={JSON.stringify(source)}
@@ -492,8 +494,8 @@ function DocumentsBody({
           <DocumentEditor key={identity(file)} file={file} online={!!connected} />
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-          Choose an instruction, skill, or reference file in the sidebar.
+        <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+          <EmptyState message="Choose an instruction, skill, or reference file in the sidebar." />
         </div>
       )}
     </div>
@@ -545,14 +547,14 @@ function DocumentList({
         onChange={(event) => setQuery(event.target.value)}
       />
       {files.isError && (
-        <div>
-          <p role="alert" className="text-sm text-destructive">
-            {files.error.message}
-          </p>
-          <Button size="sm" variant="outline" onClick={() => void files.refetch()}>
-            Retry files
-          </Button>
-        </div>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{files.error.message}</AlertDescription>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => void files.refetch()}>
+              Retry files
+            </Button>
+          </div>
+        </Alert>
       )}
       {incomplete && (
         <output className="text-xs text-muted-foreground">
@@ -560,9 +562,9 @@ function DocumentList({
         </output>
       )}
       {files.data?.warnings.map((warning) => (
-        <p key={warning} role="alert" className="break-words text-xs text-muted-foreground">
-          {warning}
-        </p>
+        <Alert key={warning} variant="warning" role="alert">
+          <AlertDescription className="break-words">{warning}</AlertDescription>
+        </Alert>
       ))}
       <nav aria-label="Instruction and skill files" className="flex min-h-0 flex-1 flex-col">
         {!files.data && !files.isError && (
@@ -572,7 +574,7 @@ function DocumentList({
         )}
         <DocumentTree paths={paths} selectedPath={selectedPath} filtering={!!query} onOpen={open} />
         {files.data && paths.length === 0 && (
-          <p className="p-2 text-sm text-muted-foreground">No matching files.</p>
+          <EmptyState className="m-2" message="No matching files." />
         )}
       </nav>
       <div className="shrink-0 border-t border-border pt-2">

@@ -12,7 +12,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "../../../components/ui/alert-dialog.tsx";
+import { Alert, AlertDescription } from "../../../components/ui/alert.tsx";
 import { Button, buttonVariants } from "../../../components/ui/button.tsx";
+import { EmptyState } from "../../../components/ui/empty-state.tsx";
 import { Input } from "../../../components/ui/input.tsx";
 import { Label } from "../../../components/ui/label.tsx";
 import { Skeleton } from "../../../components/ui/skeleton.tsx";
@@ -53,8 +55,10 @@ function Overview({ listing }: { listing: CatalogListing }) {
         </div>
       </header>
       {message?.lines.map((line) => (
-        <output key={line} className="pe-notice" data-tone={message.tone}>
-          {line}
+        <output key={line}>
+          <Alert variant={message.tone === "good" ? "success" : "warning"} role="none">
+            <AlertDescription>{line}</AlertDescription>
+          </Alert>
         </output>
       ))}
       <p className="pe-meta pe-wrap">
@@ -63,9 +67,11 @@ function Overview({ listing }: { listing: CatalogListing }) {
         doc, rule, or skill in the sidebar to edit it.
       </p>
       {listing.published === null ? (
-        <p className="pe-notice" data-tone="warn">
-          Not published since bb started. Publishing runs at startup and after each change.
-        </p>
+        <Alert variant="warning" role="none">
+          <AlertDescription>
+            Not published since bb started. Publishing runs at startup and after each change.
+          </AlertDescription>
+        </Alert>
       ) : (
         <PublishNotices outcome={listing.published} verb={null} />
       )}
@@ -404,35 +410,47 @@ function StateNotices(props: {
   return (
     <>
       {!f.enabled && (
-        <p className="pe-notice">Off: agents do not get {skill ? "this skill" : "this text"}.</p>
+        <Alert role="none">
+          <AlertDescription>
+            Off: agents do not get {skill ? "this skill" : "this text"}.
+          </AlertDescription>
+        </Alert>
       )}
       {skill?.owner !== undefined && skill !== null && (
-        <p className="pe-notice" data-tone="warn">
-          bb also delivers a skill named {skill.skill.name} from {skill.owner}. Agents see only one
-          of them.
-        </p>
+        <Alert variant="warning" role="none">
+          <AlertDescription>
+            bb also delivers a skill named {skill.skill.name} from {skill.owner}. Agents see only
+            one of them.
+          </AlertDescription>
+        </Alert>
       )}
       {skill?.trouble && (
-        <p className="pe-notice" data-tone="bad">
-          {skill.trouble}
-        </p>
+        <Alert variant="destructive" role="none">
+          <AlertDescription>{skill.trouble}</AlertDescription>
+        </Alert>
       )}
       {file.content === null && (
-        <p className="pe-notice">
-          This file is not editable text ({file.size.toLocaleString()} bytes). It is published as it
-          is.
-        </p>
+        <Alert role="none">
+          <AlertDescription>
+            This file is not editable text ({file.size.toLocaleString()} bytes). It is published as
+            it is.
+          </AlertDescription>
+        </Alert>
       )}
       {file.content !== null && file.sha256 === null && (
-        <p className="pe-notice">
-          New file. Save to add it to {f.name}.
-          {skill && SCRIPT.test(skill.path) && " Start it with #! to make it executable."}
-        </p>
+        <Alert role="none">
+          <AlertDescription>
+            New file. Save to add it to {f.name}.
+            {skill && SCRIPT.test(skill.path) && " Start it with #! to make it executable."}
+          </AlertDescription>
+        </Alert>
       )}
       {f.origin.kind === "imported" && changed && (
-        <p className="pe-notice">
-          Imported from {f.origin.from}. Saving makes it yours: later imports keep your version.
-        </p>
+        <Alert role="none">
+          <AlertDescription>
+            Imported from {f.origin.from}. Saving makes it yours: later imports keep your version.
+          </AlertDescription>
+        </Alert>
       )}
     </>
   );
@@ -460,48 +478,52 @@ function ResultNotices(props: {
   return (
     <>
       {moved && (
-        <div className="pe-notice pe-notice-row" data-tone="warn" role="alert">
-          <span>
+        <Alert variant="warning" role="alert">
+          <AlertDescription>
             {file.sha256 === null ? "This file was deleted" : "This file changed"} in bb after you
             started editing.
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => updateDraft(open.key, () => undefined)}
-          >
-            Discard mine
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={change.isPending}
-            onClick={onOverwrite}
-          >
-            Overwrite with mine
-          </Button>
-        </div>
+          </AlertDescription>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => updateDraft(open.key, () => undefined)}
+            >
+              Discard mine
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={change.isPending}
+              onClick={onOverwrite}
+            >
+              Overwrite with mine
+            </Button>
+          </div>
+        </Alert>
       )}
       {failed.length > 0 && !(result?.outcome === "conflict" && moved) && (
-        <div className="pe-notice" data-tone="bad" role="alert">
-          {failed.map((error) => (
-            <p key={error}>{error}</p>
-          ))}
-        </div>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>
+            {failed.map((error) => (
+              <p key={error}>{error}</p>
+            ))}
+          </AlertDescription>
+        </Alert>
       )}
       {change.isError && (
-        <p className="pe-notice" data-tone="bad" role="alert">
-          {change.error.message}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{change.error.message}</AlertDescription>
+        </Alert>
       )}
       {result?.outcome === "saved" && fresh && (
         <>
           {result.warnings.map((warning) => (
-            <p key={warning} className="pe-notice" data-tone="warn">
-              {warning}
-            </p>
+            <Alert key={warning} variant="warning" role="none">
+              <AlertDescription>{warning}</AlertDescription>
+            </Alert>
           ))}
           <PublishNotices
             key={result.published.at}
@@ -651,9 +673,9 @@ function CatalogEditor({ subject }: { subject: EditorSubject }) {
   if (!open.loaded.data) {
     return (
       <div className="pe-editor">
-        <p className="pe-notice" data-tone="bad" role="alert">
-          {open.loaded.error?.message}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{open.loaded.error?.message}</AlertDescription>
+        </Alert>
       </div>
     );
   }
@@ -738,9 +760,9 @@ function CatalogPageBody({ subPath }: { subPath: string }) {
       <main className="pe-panel">
         {listing.isError ? (
           <div className="pe-editor">
-            <p className="pe-notice" data-tone="bad" role="alert">
-              {listing.error.message}
-            </p>
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{listing.error.message}</AlertDescription>
+            </Alert>
           </div>
         ) : (
           <div className="pe-editor" aria-busy="true">
@@ -787,7 +809,9 @@ function CatalogPageBody({ subPath }: { subPath: string }) {
 function Missing({ what }: { what: string }) {
   return (
     <div className="pe-editor pe-empty">
-      {what} is not in the catalog. It may have been deleted; check Recently deleted in the sidebar.
+      <EmptyState
+        message={`${what} is not in the catalog. It may have been deleted; check Recently deleted in the sidebar.`}
+      />
     </div>
   );
 }
