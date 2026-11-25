@@ -197,23 +197,31 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
       // failed write replaces it with the error.
       snooze: (threadId, snoozedUntil) => {
         const toastId = `snooze-${threadId}`;
-        toast(`Snoozed until ${formatWakeTime(snoozedUntil, new Date())}`, {
-          id: toastId,
-          action: { label: "Undo", onClick: () => unsnooze(threadId) },
-        });
         // A refusal (a thread that stays open) writes nothing: the refreshed
         // read drops the prediction, and the reason takes the place of
         // "Snoozed until". Sonner merges an update into the toast it
         // replaces, so the Undo is cleared explicitly.
         const fail = (message: string) => toast.error(message, { id: toastId, action: undefined });
-        void (async () => {
+        const snoozed = (async () => {
           try {
             const answer = await write(threadId, snoozedUntil);
-            if (!answer.ok) fail(answer.reason ?? "Couldn’t snooze the thread.");
+            if (answer.ok) return true;
+            fail(answer.reason ?? "Couldn’t snooze the thread.");
           } catch (error: unknown) {
             fail(error instanceof Error ? error.message : "Couldn’t snooze the thread.");
           }
+          return false;
         })();
+        toast(`Snoozed until ${formatWakeTime(snoozedUntil, new Date())}`, {
+          id: toastId,
+          action: {
+            label: "Undo",
+            onClick: async () => {
+              // A refused snooze can leave previously snoozed family members in place.
+              if (await snoozed) unsnooze(threadId);
+            },
+          },
+        });
       },
     };
   }, [drawn, now, shelvesReady, write]);

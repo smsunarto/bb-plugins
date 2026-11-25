@@ -863,6 +863,64 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
       );
     });
 
+    it.each([true, false])("handles early Undo after snooze returns ok=%s", async (ok) => {
+      const until = snoozeUntilTomorrow(new Date());
+      const child = { ...thread("child"), parentThreadId: "t" };
+      const childSnooze = { threadId: child.id, snoozedUntil: until, snoozedAt: Date.now() };
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      function FamilyProbe() {
+        const lifecycle = useLifecycle([thread("t"), child]);
+        return createElement(
+          Fragment,
+          null,
+          createElement("span", { role: "status" }, lifecycle.shelfFor(child)),
+          createElement(
+            "button",
+            { type: "button", onClick: () => lifecycle.snooze("t", until) },
+            "Snooze",
+          ),
+          createElement(Toaster),
+        );
+      }
+
+      const slot = renderSlot(
+        { component: FamilyProbe },
+        {},
+        {
+          rpc: {
+            listLifecycle: () => ({ rows: [childSnooze] }),
+            snooze: async () => {
+              await pending;
+              return ok
+                ? { ok: true, rows: [childSnooze] }
+                : { ok: false, reason: "Couldn’t look up the thread origin", rows: [childSnooze] };
+            },
+            unsnooze: () => ({ ok: true, rows: [] }),
+          } as never,
+        },
+      );
+      const wakeCalls = () =>
+        slot.inspection.rpcCalls.filter(({ method }) => method === "unsnooze");
+      await flush();
+      fireEvent.click(slot.getByRole("button", { name: "Snooze" }));
+      await settle();
+
+      fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+      await settle();
+      assert.equal(wakeCalls().length, 0);
+
+      finish();
+      await settle();
+      assert.equal(wakeCalls().length, ok ? 1 : 0);
+      if (!ok) {
+        assert.equal(slot.getByRole("status").textContent, "snoozed");
+        assert.deepEqual(toastTitles(), ["Couldn’t look up the thread origin"]);
+      }
+    });
+
     // A refused snooze (a Captain stays open) writes nothing: the toast says
     // why, with no Undo, and the thread stays on the active shelf.
     it("rolls back a refused snooze and shows the reason", async () => {
