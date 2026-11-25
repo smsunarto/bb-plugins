@@ -24,10 +24,11 @@ import { Checkbox } from "../review-ui.tsx";
 import { MERGED_BADGE, ReasonHint } from "../ui.tsx";
 import { Badge, type BadgeProps } from "../components/ui/badge.tsx";
 import { cn } from "../lib/utils.ts";
-import { Button } from "../components/ui/button.tsx";
+import { Button, CompactButton } from "../components/ui/button.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import type { Go } from "./hooks.ts";
 import { CheckIcon, Chevron, StackIcon } from "./icons.tsx";
+import { EmptyState } from "../components/ui/empty-state.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
 type StackEntry = NonNullable<Ready["stack"]>[number];
@@ -218,7 +219,9 @@ function passedLine(passed: readonly CheckRow[]): string {
   return `${first!.name}, ${second!.name} and ${passed.length - 2} more`;
 }
 
-const RAIL_NOTE = "m-0 px-2 text-[12px] leading-4 text-muted-foreground";
+function RailNote({ message }: { message: string }) {
+  return <EmptyState className="mx-2" messageClassName="m-0" message={message} />;
+}
 
 function FixButton({ count, onFix }: { count: number; onFix: () => void }) {
   const tooMany = count > MAX_FIX_CHECKS;
@@ -227,17 +230,17 @@ function FixButton({ count, onFix }: { count: number; onFix: () => void }) {
   else if (tooMany) reason = `Fix takes up to ${MAX_FIX_CHECKS} checks at a time`;
   return (
     <ReasonHint reason={reason} off={count === 0 || tooMany} className="flex px-2 pb-1">
-      <Button
+      <CompactButton
         size="sm"
         variant="outline"
-        className="h-7 min-w-0 flex-1"
+        className="min-w-0 flex-1"
         data-testid="sc-fix-checks"
         disabled={count === 0 || tooMany}
         onClick={onFix}
       >
         <Icon name="Toolbox" className="size-3.5 shrink-0" aria-hidden />
         {count > 1 ? `Fix ${count} checks` : "Fix"}
-      </Button>
+      </CompactButton>
     </ReasonHint>
   );
 }
@@ -257,7 +260,7 @@ function CheckList({
   // Every failure starts selected, including ones that fail later, so the reader's choice is what they left out.
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
   const [fix, setFix] = useState<FixTarget | null>(null);
-  if (value.rows.length === 0) return <p className={RAIL_NOTE}>No checks on this head.</p>;
+  if (value.rows.length === 0) return <RailNote message="No checks on this head." />;
   const attention = value.rows.filter((row) => !settled(row));
   const passed = value.rows.filter(settled);
   const shown = expanded ? [...attention, ...passed] : attention;
@@ -334,13 +337,12 @@ function ChecksSection({
   const facet = query.data?.[changeKey];
   const value = facet?.read?.value ?? null;
   let body;
-  if (!hasPullRequest)
-    body = <p className={RAIL_NOTE}>Checks run once the branch has a pull request.</p>;
+  if (!hasPullRequest) body = <RailNote message="Checks run once the branch has a pull request." />;
   else if (facet?.read)
     body = value ? (
       <CheckList changeKey={changeKey} value={value} problem={facet.problem} now={now} />
     ) : null;
-  else if (facet?.problem) body = <p className={RAIL_NOTE}>{describeProblem(facet.problem)}</p>;
+  else if (facet?.problem) body = <RailNote message={describeProblem(facet.problem)} />;
   else
     body = (
       <div aria-busy="true" aria-label="Reading checks" className="flex flex-col gap-2 px-2 py-1">

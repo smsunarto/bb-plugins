@@ -42,6 +42,8 @@ import {
 import { cn } from "./lib/utils.ts";
 import { Hint, MERGED_BADGE, SectionLabel } from "./ui.tsx";
 import { Button } from "./components/ui/button.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
+import { Separator } from "./components/ui/separator.tsx";
 
 export const CARD =
   "min-w-0 overflow-hidden rounded-[8px] border border-border-hairline bg-surface-recessed";
@@ -184,9 +186,11 @@ function CommitFiles({
     );
   if (changes.length === 0)
     return (
-      <p className="m-0 px-3 py-2 text-[12px] leading-4 text-muted-foreground">
-        This commit records no file contents. Merges and empty commits look like this.
-      </p>
+      <EmptyState
+        className="mx-3 my-2"
+        messageClassName="m-0"
+        message="This commit records no file contents. Merges and empty commits look like this."
+      />
     );
   const open = expanded === null ? undefined : files?.find((file) => file.path === expanded);
   return (
@@ -348,7 +352,7 @@ function OpenCommit({
           <CommitFiles threadId={threadId} commitId={commitId} reviewKey={reviewKey} />
         </div>
       </div>
-      {last ? null : <div className="ms-10 border-b border-border-hairline" />}
+      {last ? null : <Separator className="ms-10 w-auto" />}
     </>
   );
 }

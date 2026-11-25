@@ -24,7 +24,7 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { useEscapeLayer } from "./escape.ts";
 import { useHostGate } from "./host-gate.ts";
 import { cx, plural, squashMessage } from "./format.ts";
-import { Button } from "./components/ui/button.tsx";
+import { Button, CompactButton } from "./components/ui/button.tsx";
 import { Pending, ReasonHint } from "./ui.tsx";
 import { Input } from "./components/ui/input.tsx";
 import { Textarea } from "./components/ui/textarea.tsx";
@@ -222,9 +222,8 @@ export function Confirm({
       {children}
       {/* One unit, so a long prompt never wraps Cancel apart from its answer. */}
       <div className="ms-auto flex shrink-0 gap-2">
-        <Button
+        <CompactButton
           size="sm"
-          className="h-7"
           variant="ghost"
           disabled={pending}
           aria-describedby={promptId}
@@ -234,11 +233,10 @@ export function Confirm({
           onClick={onCancel}
         >
           Cancel
-        </Button>
+        </CompactButton>
         <ReasonHint reason={blocked} className="flex">
-          <Button
+          <CompactButton
             size="sm"
-            className="h-7"
             variant={tone === "destructive" ? "destructive" : "default"}
             disabled={pending || blocked !== null}
             aria-describedby={promptId}
@@ -246,7 +244,7 @@ export function Confirm({
           >
             <Pending pending={pending} />
             {label}
-          </Button>
+          </CompactButton>
         </ReasonHint>
       </div>
     </div>
@@ -807,9 +805,8 @@ function ActionRow({
     // A disabled button takes no hover, so the row says why its buttons are off.
     <ReasonHint reason={blocked} className="flex min-w-0 flex-wrap items-center gap-2">
       {available.push === "none" ? null : (
-        <Button
+        <CompactButton
           size="sm"
-          className="h-7"
           variant="outline"
           disabled={busy}
           data-host-bound="push"
@@ -818,12 +815,11 @@ function ActionRow({
         >
           <Pending pending={running === "push"} icon="ArrowUp" />
           {pushLabel}
-        </Button>
+        </CompactButton>
       )}
       {available.land ? (
-        <Button
+        <CompactButton
           size="sm"
-          className="h-7"
           variant="outline"
           disabled={busy}
           data-host-bound="land"
@@ -832,13 +828,13 @@ function ActionRow({
         >
           <Pending pending={running === "land"} icon="ArrowDown" />
           Land
-        </Button>
+        </CompactButton>
       ) : null}
       {prAction}
-      <Button
+      <CompactButton
         size="sm"
         variant="ghost"
-        className="h-7 ms-auto shrink-0 text-muted-foreground"
+        className="ms-auto shrink-0 text-muted-foreground"
         disabled={busy}
         data-host-bound="rename"
         aria-label={`Rename ${branch.name}`}
@@ -846,12 +842,12 @@ function ActionRow({
       >
         <Pending pending={running === "rename"} icon="Edit" />
         Rename
-      </Button>
+      </CompactButton>
       {/* Apart from the rest and quiet, so it is never the button a hand drifts to. */}
-      <Button
+      <CompactButton
         size="sm"
         variant="ghost"
-        className="h-7 shrink-0 text-muted-foreground enabled:hover:text-destructive"
+        className="shrink-0 text-muted-foreground enabled:hover:text-destructive"
         disabled={busy}
         data-host-bound="delete"
         aria-label={`Delete ${branch.name}`}
@@ -859,7 +855,7 @@ function ActionRow({
       >
         <Pending pending={running === "delete"} icon="Trash2" />
         Delete
-      </Button>
+      </CompactButton>
     </ReasonHint>
   );
 }

@@ -29,6 +29,7 @@ import {
   CollapsibleTrigger,
 } from "./components/ui/collapsible.tsx";
 import { Hint, KEEP_COMPOSER_FOCUS } from "./ui.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
 
 const NO_WATCHES: PrWatchView[] = [];
 
@@ -230,9 +231,11 @@ function WatchDetails({ watch }: { watch: PrWatchView }) {
         </p>
       ) : null}
       {checks.length === 0 ? (
-        <p className="m-0 px-2 py-1 text-[11px] text-muted-foreground">
-          No checks reported for this commit yet.
-        </p>
+        <EmptyState
+          className="mx-2 my-1"
+          messageClassName="m-0"
+          message="No checks reported for this commit yet."
+        />
       ) : (
         <ul
           className="m-0 mt-1 flex max-h-56 list-none flex-col gap-px overflow-y-auto p-0"

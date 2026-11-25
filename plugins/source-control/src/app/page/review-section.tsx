@@ -43,6 +43,7 @@ import {
 } from "../review-ui.tsx";
 import { BatchBanner } from "../send.tsx";
 import { SLOPCOP_PLUGIN_ID, slopCopContract, slopCopInput } from "../slopcop-contract.ts";
+import { Badge } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { ReasonHint, TEXT_LINK } from "../ui.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
@@ -270,7 +271,7 @@ function GroupHeader({
       <span className="shrink-0 text-[12px] leading-4 font-semibold whitespace-pre text-muted-foreground">
         {group.label}
       </span>
-      <span className="text-[12px] leading-4 text-(--tertiary-foreground)">{count}</span>
+      <Badge variant="count">{count}</Badge>
       <span className="min-w-0 flex-1" />
       {children}
     </div>
@@ -537,11 +538,11 @@ function SelectionBar({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 px-2 pt-2">
       <Button
-        size="sm"
+        size="xs"
         variant="default"
         data-testid="sc-review-select-all"
         onClick={onClick}
-        className="h-6 px-2 font-semibold whitespace-pre"
+        className="whitespace-pre"
       >
         {allChosen ? "Clear selection" : "Select all"}
       </Button>

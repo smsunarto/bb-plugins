@@ -233,12 +233,12 @@ function FirstQuestion({
         />
         <div className="flex items-center justify-end">
           <Button
-            size="sm"
+            size="icon-xs"
             variant="default"
             aria-label="Send question"
             disabled={!canSend}
             onClick={submit}
-            className="size-6 rounded-full px-0 disabled:opacity-40"
+            className="rounded-full disabled:opacity-40"
           >
             <SendIcon />
           </Button>

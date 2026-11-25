@@ -24,7 +24,7 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { guardCodeSwipe } from "./code-swipe.ts";
 // workaround:source-control/shadow-code-sidebar-swipe end
 import { cx } from "./format.ts";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 
 type ChangeKind = FileChange["kind"];
@@ -262,9 +262,9 @@ export function PatchesProblem({ text, onRetry }: { text: string; onRetry: () =>
       <span className="min-w-0 grow basis-40 text-[12px] leading-4 text-muted-foreground">
         {text}
       </span>
-      <Button size="sm" className="h-7" variant="ghost" onClick={onRetry}>
+      <CompactButton size="sm" variant="ghost" onClick={onRetry}>
         Try again
-      </Button>
+      </CompactButton>
     </div>
   );
 }

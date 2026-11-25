@@ -39,6 +39,7 @@ import type { ReviewItem } from "../../core/items.ts";
 import type { ChangeFile, ReviewRevision } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { FileRowsSkeleton, FileStatus, PatchesProblem } from "../file-cards.tsx";
+import { Badge } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { surface } from "../components/ui/surface.ts";
 import { cx, plural } from "../format.ts";
@@ -63,6 +64,7 @@ import {
 import { usePatchStore } from "./patches.ts";
 import { ReviewBar } from "./review-bar.tsx";
 import { useListWindow } from "./use-window.ts";
+import { EmptyState } from "../components/ui/empty-state.tsx";
 
 const LABEL =
   "m-0 text-[11px] leading-4 font-normal tracking-[0.06em] text-(--tertiary-foreground) uppercase";
@@ -632,10 +634,10 @@ const OutlineRow = memo(function OutlineRow({
             </span>
           </Hint>
         ) : (
-          <span className="shrink-0 text-[12px] leading-5 text-(--tertiary-foreground)">
+          <Badge variant="count">
             {files}
             <span className="sr-only"> files</span>
-          </span>
+          </Badge>
         )}
       </button>
       {children}
@@ -913,9 +915,11 @@ function FilesState({
     );
   if (!answer.ok) return <PatchesProblem text={describeProblem(answer.problem)} onRetry={retry} />;
   return (
-    <p className="m-0 py-6 text-[13px] leading-5 text-muted-foreground">
-      This change has no file changes.
-    </p>
+    <EmptyState
+      className="my-6"
+      messageClassName="m-0"
+      message="This change has no file changes."
+    />
   );
 }
 

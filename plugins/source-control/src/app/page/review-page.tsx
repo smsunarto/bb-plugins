@@ -38,7 +38,8 @@ import { useChangeReview } from "../review-data.ts";
 import { SendControls, useSendControls } from "../send.tsx";
 import { DETAIL_TONE, ShipPath } from "../status.tsx";
 import { Badge } from "../components/ui/badge.tsx";
-import { Button } from "../components/ui/button.tsx";
+import { Button, CompactButton } from "../components/ui/button.tsx";
+import { Separator } from "../components/ui/separator.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,6 +63,7 @@ import { revisionId } from "./patches.ts";
 import { RailSections } from "./rail.tsx";
 import { FocusContext, ReviewFocus } from "./review-focus.ts";
 import { ReviewSection } from "./review-section.tsx";
+import { EmptyState } from "../components/ui/empty-state.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
 
@@ -191,20 +193,20 @@ function AskButton({ compact }: { compact?: boolean }) {
   if (!ask) return null;
   return (
     <Hint label={compact ? "Ask agent" : null}>
-      <Button
-        size="sm"
+      <CompactButton
+        size={compact ? "sm" : "default"}
         variant="outline"
         data-testid="sc-ask-agent"
         aria-label={compact ? "Ask agent" : undefined}
         onClick={(event) => ask({ trigger: event.currentTarget })}
         className={cx(
-          "border-border bg-surface-raised hover:bg-surface-recessed",
-          compact ? "size-7 px-0" : "h-8 gap-2 px-3 text-[13px] leading-5",
+          "bg-surface-raised hover:bg-surface-recessed",
+          compact ? "w-7 px-0" : "gap-2",
         )}
       >
         <BotIcon />
         {compact ? null : "Ask agent"}
-      </Button>
+      </CompactButton>
     </Hint>
   );
 }
@@ -215,16 +217,7 @@ function PageMerge({ detail, compact }: { detail: Ready; compact?: boolean }) {
   const target = mergeTarget(detail);
   if (!target) return null;
   return (
-    <MergeButton
-      submit={submit}
-      target={target}
-      className={
-        compact
-          ? "h-7 px-2 text-[12px] font-semibold max-md:pointer-coarse:px-3"
-          : "h-8 px-3 text-[13px] font-semibold"
-      }
-      label="Merge"
-    />
+    <MergeButton submit={submit} target={target} size={compact ? "sm" : "default"} label="Merge" />
   );
 }
 
@@ -387,9 +380,7 @@ function ReviewTabs({
             className="cursor-pointer gap-2 rounded-none border-b-2 border-solid border-b-transparent px-0 py-2 text-[13px] leading-5 font-normal hover:text-foreground data-[state=active]:border-b-foreground data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:shadow-none"
           >
             {tab.label}
-            {tab.count !== null ? (
-              <span className="font-normal text-(--tertiary-foreground)">{tab.count}</span>
-            ) : null}
+            {tab.count !== null ? <Badge variant="count">{tab.count}</Badge> : null}
           </TabsTrigger>
         ))}
       </TabsList>
@@ -684,7 +675,7 @@ function TabControls({
   return (
     <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-3">
       {progress}
-      {progress ? <span aria-hidden className="h-4 w-px shrink-0 bg-border" /> : null}
+      {progress ? <Separator orientation="vertical" className="h-4 self-center" /> : null}
       {send}
     </div>
   );
@@ -854,14 +845,9 @@ function Review({ location, width }: { location: Here; width: number }) {
             Couldn't read this change. {query.error.message}
           </p>
           <div>
-            <Button
-              size="sm"
-              className="h-7"
-              variant="outline"
-              onClick={() => void query.refetch()}
-            >
+            <CompactButton size="sm" variant="outline" onClick={() => void query.refetch()}>
               Try again
-            </Button>
+            </CompactButton>
           </div>
         </div>
       );
@@ -882,9 +868,11 @@ function Review({ location, width }: { location: Here; width: number }) {
 function NoSelection() {
   return (
     <div className="flex flex-1 items-center justify-center p-8" data-testid="sc-review-empty">
-      <p className="m-0 max-w-sm text-center text-[13px] leading-5 text-muted-foreground">
-        Pick a change from the list to review its files and commits.
-      </p>
+      <EmptyState
+        className="max-w-sm"
+        messageClassName="m-0 text-center"
+        message="Pick a change from the list to review its files and commits."
+      />
     </div>
   );
 }

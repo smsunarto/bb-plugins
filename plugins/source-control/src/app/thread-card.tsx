@@ -18,7 +18,7 @@ import type { ChangeKey } from "../core/ids.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { CardNote, CardSkeleton, ChangeCard, useSeen } from "./chat-card.tsx";
 import { cx } from "./format.ts";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { CARD_ACTION_CLASS, Pending } from "./ui.tsx";
 
 /**
@@ -51,17 +51,17 @@ export type ThreadShip = {
 
 export function ShipButton({ ship }: { ship: ReturnType<typeof useShipThread> }) {
   return (
-    <Button
+    <CompactButton
       size="sm"
       variant="default"
       data-testid="sc-card-ship"
       disabled={ship.pending}
       onClick={() => void ship.send()}
-      className={cx(CARD_ACTION_CLASS, "gap-2 px-3 font-semibold")}
+      className={cx(CARD_ACTION_CLASS, "gap-2")}
     >
       <Pending pending={ship.pending} icon="Sent" />
       Ship it
-    </Button>
+    </CompactButton>
   );
 }
 
@@ -177,9 +177,9 @@ export function ThreadCard({ threadId }: { threadId: string }) {
           Couldn't read this thread's changes. {query.error.message}
         </p>
         <div>
-          <Button size="sm" className="h-7" variant="outline" onClick={() => void query.refetch()}>
+          <CompactButton size="sm" variant="outline" onClick={() => void query.refetch()}>
             Try again
-          </Button>
+          </CompactButton>
         </div>
       </CardNote>
     );

@@ -26,7 +26,7 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
 import { useOpenReview } from "./open-review.ts";
 import { StateBadge } from "./page/rail.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import {
   Collapsible,
   CollapsibleContent,
@@ -34,6 +34,7 @@ import {
 } from "./components/ui/collapsible.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { DISCLOSURE, DisclosureChevron, Pending } from "./ui.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
 
 type Checkout = { path: string; repo: string | null };
 type Host = { hostId: string; name: string; checkouts: Checkout[] };
@@ -136,9 +137,8 @@ function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Check
           </code>
         </span>
         <span className="flex shrink-0 gap-1">
-          <Button
+          <CompactButton
             size="sm"
-            className="h-7"
             variant="ghost"
             disabled={opening !== null}
             aria-busy={opening === "open"}
@@ -147,10 +147,9 @@ function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Check
           >
             <Pending pending={opening === "open"} />
             Open checkout
-          </Button>
-          <Button
+          </CompactButton>
+          <CompactButton
             size="sm"
-            className="h-7"
             variant="outline"
             disabled={opening !== null}
             aria-busy={opening === "chat"}
@@ -159,7 +158,7 @@ function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Check
           >
             <Pending pending={opening === "chat"} icon="MessageSquarePlus" />
             New chat
-          </Button>
+          </CompactButton>
         </span>
       </div>
       {reason ? (
@@ -234,9 +233,11 @@ function HostSection({
             ))}
           </ul>
         ) : (
-          <p className="m-0 px-3 pb-2 text-[11px] leading-4 text-muted-foreground">
-            No checkout of {repo} here.
-          </p>
+          <EmptyState
+            className="mx-3 mb-2"
+            messageClassName="m-0"
+            message={`No checkout of ${repo} here.`}
+          />
         )
       ) : source?.problem ? null : (
         <div className="px-3 pb-2" aria-busy="true" aria-label={`Reading ${host.name}`}>
@@ -285,9 +286,11 @@ function Hosts({
     );
   if (hosts.length === 0)
     return (
-      <p className="m-0 px-3 py-2 text-[12px] leading-4 text-muted-foreground">
-        bb knows no checkout on another machine.
-      </p>
+      <EmptyState
+        className="mx-3 my-2"
+        messageClassName="m-0"
+        message="bb knows no checkout on another machine."
+      />
     );
   return (
     <div className="flex min-w-0 flex-col">

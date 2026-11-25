@@ -38,7 +38,8 @@ import {
   type StableReview,
 } from "./review-model.ts";
 import { PriorityChip, RunGlyph } from "./review-ui.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { Button, CompactButton } from "./components/ui/button.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover.tsx";
@@ -311,29 +312,29 @@ export const BatchBanner = memo(function BatchBanner({
   let action: ReactNode = null;
   if (batch.phase === "fixing")
     action = (
-      <Button
+      <CompactButton
         variant="outline"
         size="sm"
-        className="h-7 shrink-0"
+        className="shrink-0"
         disabled={commands.busy}
         onClick={commands.stop}
         data-testid="sc-batch-stop"
       >
         {commands.busy ? "Stopping…" : "Stop agent"}
-      </Button>
+      </CompactButton>
     );
   else if (batch.phase === "queued" || batch.phase === "failed")
     action = (
-      <Button
+      <CompactButton
         variant="outline"
         size="sm"
-        className="h-7 shrink-0"
+        className="shrink-0"
         disabled={commands.busy}
         onClick={commands.retry}
         data-testid="sc-batch-retry"
       >
         Retry
-      </Button>
+      </CompactButton>
     );
   else if (batch.phase === "posted" && batch.url)
     action = (
@@ -345,9 +346,9 @@ export const BatchBanner = memo(function BatchBanner({
     );
   else if ((batch.phase === "verify" || batch.phase === "stopped") && commands.openThread)
     action = (
-      <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={commands.openThread}>
+      <CompactButton variant="outline" size="sm" className="shrink-0" onClick={commands.openThread}>
         Open thread
-      </Button>
+      </CompactButton>
     );
   const bad = batch.phase === "queued" || batch.phase === "failed";
   const oneLine = batch.phase === "sending" || batch.phase === "fixing";
@@ -855,9 +856,11 @@ function TrayLists({
   const byId = useMemo(() => new Map(stable.items.map((item) => [item.id, item])), [stable.items]);
   if (items.length + drafts.length === 0)
     return (
-      <p className="m-0 px-4 py-3 text-[12px] leading-4 text-muted-foreground">
-        Nothing to send yet. Check findings in the review, or leave a comment on a line.
-      </p>
+      <EmptyState
+        className="mx-4 my-3"
+        messageClassName="m-0"
+        message="Nothing to send yet. Check findings in the review, or leave a comment on a line."
+      />
     );
   return (
     <>

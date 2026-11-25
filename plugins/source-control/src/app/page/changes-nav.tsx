@@ -27,6 +27,8 @@ import { Skeleton } from "../components/ui/skeleton.tsx";
 import { GitHubAvatar } from "../review-ui.tsx";
 import { Badge } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
+import { EmptyState } from "../components/ui/empty-state.tsx";
+import { Separator } from "../components/ui/separator.tsx";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group.tsx";
 import { TEXT_LINK } from "../ui.tsx";
 import { useGo, useNow } from "./hooks.ts";
@@ -256,7 +258,7 @@ const ItemView = memo(function ItemView({ item, ...props }: ItemProps) {
         <h3 className="m-0 shrink-0 truncate text-[11px] leading-4 font-medium text-(--tertiary-foreground)">
           {item.repo}
         </h3>
-        <span aria-hidden className="h-px min-w-4 flex-1 bg-border" />
+        <Separator className="min-w-4 flex-1" />
       </div>
     );
   if (item.kind === "stack")
@@ -564,9 +566,11 @@ function notListing(sources: ChangeSources, count: number, filter: Filter) {
   if (!page) {
     if (!sources.sourcesError) return <LoadingRows />;
     return (
-      <p className="m-0 px-4 py-6 text-[12px] leading-5 text-muted-foreground">
-        Couldn't ask the bb server what to list. {sources.sourcesError}
-      </p>
+      <EmptyState
+        className="mx-4 my-6"
+        messageClassName="m-0"
+        message={`Couldn't ask the bb server what to list. ${sources.sourcesError}`}
+      />
     );
   }
   if (page.hosts.length === 0 && page.accounts.length === 0)

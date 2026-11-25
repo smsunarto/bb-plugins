@@ -10,6 +10,7 @@ import { cx } from "./format.ts";
 import { cn } from "./lib/utils.ts";
 import { Avatar, AvatarFallback, AvatarImage } from "./components/ui/avatar.tsx";
 import { Badge } from "./components/ui/badge.tsx";
+import { Label } from "./components/ui/label.tsx";
 
 /** shadcn's Checkbox with its label: `label` names it when no visible `children` follow the mark. */
 export function Checkbox({
@@ -29,7 +30,7 @@ export function Checkbox({
   children?: ReactNode;
 }) {
   return (
-    <label className={cx("relative flex shrink-0 cursor-pointer items-center", className)}>
+    <Label className={cx("relative flex shrink-0 cursor-pointer items-center", className)}>
       <UiCheckbox
         checked={checked}
         aria-label={children ? undefined : label}
@@ -38,7 +39,7 @@ export function Checkbox({
         className="size-4 data-[state=checked]:border-transparent data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
       />
       {children}
-    </label>
+    </Label>
   );
 }
 

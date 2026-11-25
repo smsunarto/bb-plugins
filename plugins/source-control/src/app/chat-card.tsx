@@ -38,9 +38,10 @@ import { OwnChangeCard, ThreadCard, type ThreadShip } from "./thread-card.tsx";
 import { CheckoutCard } from "./checkout-card.tsx";
 import { checkoutAttributes } from "../core/checkout-work.ts";
 import { Badge } from "./components/ui/badge.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { CARD_ACTION_CLASS, Pending } from "./ui.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
 
@@ -90,20 +91,16 @@ function ChecksChip({ rows }: { rows: readonly CheckRow[] }) {
   const failed = rows.filter((row) => row.outcome === "failed").length;
   const running = rows.filter((row) => row.outcome === "pending").length;
   if (rows.length === 0) return null;
-  const [text, tone, dot] =
+  const [text, variant, dot] =
     failed > 0
-      ? [`${failed} Failed`, "text-destructive-text", "bg-destructive"]
+      ? ([`${failed} Failed`, "danger", "bg-destructive"] as const)
       : running > 0
-        ? [`${running} Running`, "text-warning", "bg-warning"]
-        : ["Passed", "text-success-foreground", "bg-success"];
+        ? ([`${running} Running`, "warning", "bg-warning"] as const)
+        : (["Passed", "success", "bg-success"] as const);
   return (
-    <Badge
-      variant="outline"
-      className="h-5 gap-1 rounded-full px-2 py-0"
-      data-testid="sc-card-checks"
-    >
+    <Badge variant={variant} data-testid="sc-card-checks">
       <span aria-hidden className={cx("size-1.5 shrink-0 rounded-full", dot)} />
-      <span className={cx("text-[11px] leading-4 font-medium whitespace-pre", tone)}>{text}</span>
+      <span className="whitespace-pre">{text}</span>
     </Badge>
   );
 }
@@ -304,14 +301,14 @@ function ReadyCard({
         </div>
       ) : null}
       <div className="flex min-w-0 flex-wrap gap-2 px-3 pt-1 pb-3">
-        <Button
+        <CompactButton
           size="sm"
           variant="default"
           onClick={() => openReview({ key })}
-          className={cx(CARD_ACTION_CLASS, "gap-2 px-3")}
+          className={cx(CARD_ACTION_CLASS, "gap-2")}
         >
           Open review
-        </Button>
+        </CompactButton>
         {thread?.button}
         {!grouped && readyToMerge(detail) ? (
           <CardMerge detail={detail} />
@@ -319,16 +316,16 @@ function ReadyCard({
           <CardMergeProgress detail={detail} />
         )}
         {hasItems ? (
-          <Button
+          <CompactButton
             size="sm"
             variant="default"
             data-testid="sc-card-fix"
             disabled={fix.count === 0 || fix.pending || detail.head === null}
             onClick={fix.fix}
-            className={cx(CARD_ACTION_CLASS, "px-3 font-semibold")}
+            className={CARD_ACTION_CLASS}
           >
             {fixLabel(fix)}
-          </Button>
+          </CompactButton>
         ) : null}
       </div>
       {thread?.sent ? (
@@ -377,14 +374,9 @@ export function ChangeCard({
             Couldn't read this change. {query.error.message}
           </p>
           <div>
-            <Button
-              size="sm"
-              className="h-7"
-              variant="outline"
-              onClick={() => void query.refetch()}
-            >
+            <CompactButton size="sm" variant="outline" onClick={() => void query.refetch()}>
               Try again
-            </Button>
+            </CompactButton>
           </div>
         </CardNote>
       ) : (
@@ -393,11 +385,14 @@ export function ChangeCard({
   else if (detail.state === "missing")
     body = (
       <CardNote testId="sc-card-missing">
-        <p className="m-0 text-[13px] leading-5 text-muted-foreground">
-          {detail.problem
-            ? describeProblem(detail.problem)
-            : "bb doesn't know this change. Its branch may have been deleted."}
-        </p>
+        <EmptyState
+          messageClassName="m-0"
+          message={
+            detail.problem
+              ? describeProblem(detail.problem)
+              : "bb doesn't know this change. Its branch may have been deleted."
+          }
+        />
       </CardNote>
     );
   else

@@ -35,7 +35,7 @@ import {
   type PrRef,
 } from "../core/watch.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { Button } from "./components/ui/button.tsx";
+import { Button, CompactButton } from "./components/ui/button.tsx";
 
 /** bb's own Archive, which the sidebar calls Settle. */
 const ARCHIVE_KEYS = ["bb--core/archive"];
@@ -297,15 +297,15 @@ function SettleButton({ threadId }: { threadId: string }) {
     return <ArchiveButton target={target} onDone={() => setAsked((n) => n + 1)} />;
   const settled = target !== null;
   return (
-    <Button
+    <CompactButton
       size="sm"
       variant="outline"
-      className="h-7 w-full gap-1 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
+      className="w-full gap-1 max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
       disabled
     >
       {settled ? "Settled" : "Settle thread"}
       {settled ? <Icon name="Check" className="size-3" aria-hidden /> : null}
-    </Button>
+    </CompactButton>
   );
 }
 
@@ -314,16 +314,16 @@ function StaysOpenButton() {
   const reasonId = useId();
   return (
     <div className="flex flex-col gap-1">
-      <Button
+      <CompactButton
         size="sm"
         variant="outline"
         data-testid="sc-landed-settle"
         aria-describedby={reasonId}
-        className="h-7 w-full gap-1 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
+        className="w-full gap-1 max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
         disabled
       >
         Settle thread
-      </Button>
+      </CompactButton>
       <p id={reasonId} className="text-center text-[11px] text-muted-foreground">
         {LONG_LIVED_REASON}
       </p>
@@ -341,11 +341,11 @@ function ArchiveButton({
   const [entry] = useThreadActions(target, { keys: ARCHIVE_KEYS });
   const [running, setRunning] = useState(false);
   return (
-    <Button
+    <CompactButton
       size="sm"
       variant="default"
       data-testid="sc-landed-settle"
-      className="h-7 w-full gap-1 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
+      className="w-full gap-1 max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
       disabled={!entry || entry.action.disabled === true || running}
       onClick={() => {
         if (!entry) return;
@@ -362,7 +362,7 @@ function ArchiveButton({
     >
       Settle thread
       <Icon name="Check" className="size-3" aria-hidden />
-    </Button>
+    </CompactButton>
   );
 }
 

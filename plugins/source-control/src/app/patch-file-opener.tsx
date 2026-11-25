@@ -29,7 +29,7 @@ import {
   type PatchFileCommit,
   type PatchFileEntry,
 } from "../core/patch-file.ts";
-import { Button } from "./components/ui/button.tsx";
+import { Button, CompactButton } from "./components/ui/button.tsx";
 import { FileRowsSkeleton, parsePatch } from "./file-cards.tsx";
 import { plural, shortId } from "./format.ts";
 import { PHONE, useWidth } from "./page/hooks.ts";
@@ -435,15 +435,15 @@ const TOOL = "h-7 shrink-0 px-2 text-[12px] max-md:pointer-coarse:min-h-11";
 
 function TextButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <Button
+    <CompactButton
       size="sm"
       variant="ghost"
       data-testid="sc-patch-file-mode"
-      className={TOOL}
+      className="shrink-0 max-md:pointer-coarse:min-h-11"
       onClick={onClick}
     >
       {label}
-    </Button>
+    </CompactButton>
   );
 }
 

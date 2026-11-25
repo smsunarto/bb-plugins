@@ -16,7 +16,7 @@ import { describeProblem } from "../core/change.ts";
 import type { OplogEntry } from "../core/oplog.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { absoluteTime, shortAge, shortId } from "./format.ts";
-import { Button } from "./components/ui/button.tsx";
+import { Button, CompactButton } from "./components/ui/button.tsx";
 import {
   Collapsible,
   CollapsibleContent,
@@ -129,9 +129,9 @@ function Operations({ threadId, path, now }: { threadId: string; path: string; n
     <p className="m-0 flex flex-wrap items-center gap-2 px-3 py-2 text-[12px] leading-4 text-muted-foreground">
       {text}
       {data?.ok === false || oplog.error ? (
-        <Button size="sm" className="h-7" variant="outline" onClick={() => void oplog.refetch()}>
+        <CompactButton size="sm" variant="outline" onClick={() => void oplog.refetch()}>
           Try again
-        </Button>
+        </CompactButton>
       ) : null}
     </p>
   );

@@ -150,11 +150,11 @@ function Composer({
           Cancel
         </Button>
         <Button
-          size="sm"
+          size="xs"
           variant={primary ? "default" : "outline"}
           disabled={!body || saving}
           onClick={submit}
-          className={cx("h-6 px-3 font-semibold", !primary && "border-border")}
+          className={cx(!primary && "border-border")}
         >
           {saving ? "Saving…" : submitLabel}
         </Button>

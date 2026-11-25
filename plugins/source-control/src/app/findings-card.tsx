@@ -22,7 +22,7 @@ import {
 import { Checkbox, FixingMark, PriorityChip } from "./review-ui.tsx";
 import { Hint, TEXT_LINK } from "./ui.tsx";
 import { BatchLine, useFixSelected, type FixSelected } from "./send.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { Button, CompactButton } from "./components/ui/button.tsx";
 
 /** How many lines a card shows before "Show all N". Board B shows four and says no more. */
 export const CARD_ROWS = 5;
@@ -215,30 +215,29 @@ export const FindingsCard = memo(function FindingsCard({
         </div>
       ) : null}
       <div className="flex min-w-0 flex-wrap items-center gap-2 border-t border-solid border-border-hairline bg-surface-recessed px-3 py-2">
-        <Button
+        <CompactButton
           size="sm"
           variant="outline"
           data-testid="sc-fix-selected"
           disabled={fix.count === 0 || fix.pending || head === null}
           onClick={fix.fix}
-          className="h-7 px-3 font-semibold"
         >
           {fixLabel(fix)}
-        </Button>
+        </CompactButton>
         {fix.error ? (
           <span role="alert" className="min-w-0 truncate text-[12px] leading-4 text-warning">
             {fix.error}
           </span>
         ) : null}
         <span className="min-w-0 flex-1" />
-        <Button
+        <CompactButton
           size="sm"
           variant="outline"
           onClick={() => openReview({ key: changeKey })}
-          className="h-7 gap-1 px-3 font-normal"
+          className="gap-1"
         >
           Open review
-        </Button>
+        </CompactButton>
       </div>
     </section>
   );

@@ -25,7 +25,7 @@ import {
 } from "./chat-card.tsx";
 import { plural } from "./format.ts";
 import { Quiet, ShipButton, threadShip, useShipThread } from "./thread-card.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { StateBadge } from "./page/rail.tsx";
 
 /** A branch with commits that no listed checkout or pull request has: what it is, where, and Ship it. */
@@ -106,9 +106,9 @@ function Unread({
           Couldn't read this checkout. {error.message}
         </p>
         <div>
-          <Button size="sm" className="h-7" variant="outline" onClick={retry}>
+          <CompactButton size="sm" variant="outline" onClick={retry}>
             Try again
-          </Button>
+          </CompactButton>
         </div>
       </CardNote>
     );

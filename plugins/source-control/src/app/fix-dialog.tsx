@@ -28,7 +28,7 @@ import { useEscapeLayer, useFocusContainment } from "./escape.ts";
 import { usePortalScopeProps } from "./lib/portal-scope.ts";
 import { useResponsiveOverlayBehavior } from "./components/ui/responsive-overlay.tsx";
 import { cx } from "./format.ts";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { Spinner } from "./components/ui/spinner.tsx";
 
@@ -60,9 +60,9 @@ function FixComposer({ target, onClose }: { target: FixTarget; onClose: () => vo
         <p className="m-0 min-w-0 flex-1 text-[12px] leading-4 text-destructive-text">
           Could not prepare the fix. {prompt.error.message}
         </p>
-        <Button size="sm" className="h-7" variant="outline" onClick={() => void prompt.refetch()}>
+        <CompactButton size="sm" variant="outline" onClick={() => void prompt.refetch()}>
           Try again
-        </Button>
+        </CompactButton>
       </div>
     ) : (
       <output className="flex flex-col gap-2 text-[12px] leading-4" aria-busy="true">

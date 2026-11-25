@@ -10,7 +10,7 @@ import { useEscapeLayer } from "./escape.ts";
 import { useHostGate } from "./host-gate.ts";
 import { plural } from "./format.ts";
 import type { Dispatch } from "./branch-actions.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import {
   Select,
   SelectContent,
@@ -150,19 +150,12 @@ export function CommitControl({
         {more > 0 ? `; ${plural(more, "more file")} stay uncommitted.` : "."}
       </p>
       <div className="flex min-w-0 flex-wrap justify-end gap-2">
-        <Button
-          size="sm"
-          className="h-7"
-          type="button"
-          variant="outline"
-          onClick={() => setOpen(false)}
-        >
+        <CompactButton size="sm" type="button" variant="outline" onClick={() => setOpen(false)}>
           Cancel
-        </Button>
+        </CompactButton>
         <ReasonHint reason={gate}>
-          <Button
+          <CompactButton
             size="sm"
-            className="h-7"
             type="submit"
             variant="default"
             data-host-bound="commit"
@@ -170,7 +163,7 @@ export function CommitControl({
             disabled={!canSend}
           >
             Commit
-          </Button>
+          </CompactButton>
         </ReasonHint>
       </div>
     </form>
@@ -196,9 +189,8 @@ function CommitOpener({
   return (
     <div className="flex min-w-0 border-t border-border-hairline px-3 py-2">
       <ReasonHint reason={gate}>
-        <Button
+        <CompactButton
           size="sm"
-          className="h-7"
           variant="outline"
           ref={opener}
           disabled={off}
@@ -209,7 +201,7 @@ function CommitOpener({
         >
           <Pending pending={pending} icon="Check" />
           Commit
-        </Button>
+        </CompactButton>
       </ReasonHint>
     </div>
   );
