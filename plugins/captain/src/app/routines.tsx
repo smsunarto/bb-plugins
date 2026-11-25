@@ -711,12 +711,7 @@ function RoutineDetails({
         </div>
       )}
       {test === null ? null : (
-        <TestOutcome
-          captainId={captainId}
-          routineId={routine.id}
-          test={test}
-          runs={runs.data?.runs}
-        />
+        <TestOutcome captainId={captainId} routineId={routine.id} test={test} visible={visible} />
       )}
     </>
   );
@@ -784,15 +779,21 @@ function TestOutcome({
   captainId,
   routineId,
   test,
-  runs,
+  visible,
 }: {
   captainId: string;
   routineId: string;
   test: RoutineTest;
-  runs: RoutineRun[] | undefined;
+  visible: boolean;
 }) {
   const { runId, outcome } = test;
-  const match = outcome === null ? runs?.find((each) => each.automationRunId === runId) : undefined;
+  const result = useRpcQuery({
+    contract: captainContract,
+    method: "routineRun",
+    input: { captainId, routineId, runId },
+    enabled: visible && outcome === null,
+  }).data?.run;
+  const match = result?.automationRunId === runId ? result : undefined;
   useEffect(() => {
     const tests = uiStates.get(captainId)?.tests;
     const current = tests?.[routineId];

@@ -536,6 +536,18 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
       const routine = owned(captainId, routineId);
       return { runs: deps.store.routineRuns(routine.id, limit ?? ROUTINE_RUNS_SHOWN) };
     },
+    routineRun: ({
+      captainId,
+      routineId,
+      runId,
+    }: {
+      captainId: string;
+      routineId: string;
+      runId: string;
+    }) => {
+      const routine = owned(captainId, routineId);
+      return { run: deps.store.routineTestResult(routine.id, runId) };
+    },
     routineAction: async ({
       captainId,
       routineId,
@@ -582,8 +594,12 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
           rememberWrite(created);
           return { ok: true, routine: created };
         }
-        const before = owned(captainId, routineId);
-        const updated = await deps.routines.update(before, changes(before, draft), updatedAt);
+        const routine = owned(captainId, routineId);
+        const updated = await deps.routines.update(
+          routine,
+          (committed) => changes(committed, draft),
+          updatedAt,
+        );
         rememberWrite(updated);
         return { ok: true, routine: updated };
       } catch (error) {
@@ -609,7 +625,7 @@ function changes(before: Routine, draft: RoutineDraft): Partial<RoutineFields> {
   return {
     ...(draft.name.trim() === before.name ? {} : { name: draft.name }),
     ...(draft.instruction.trim() === before.instruction ? {} : { instruction: draft.instruction }),
-    ...(sameSchedule ? {} : { schedule: draft.schedule as RoutineFields["schedule"] }),
+    ...(sameSchedule ? {} : { schedule: draft.schedule }),
   };
 }
 

@@ -636,6 +636,48 @@ describe("deletes, names and maintenance limits", () => {
     expect(host.queued.get(captainId)).toHaveLength(1);
   });
 
+  test("a disposed lookup cannot clear a replacement generation's send guard", async () => {
+    const host = await captainHost({ threadDeadlineMs: 1_000 });
+    const { captainId, owner, routines } = await ownerOf(host);
+    const created = await routines.create(owner, SWEEP);
+    const call = { automationId: created.automationId!, runId: null };
+    host.busy.add(captainId);
+    const lookup = deferred();
+    const send = deferred();
+    const before = host.harness.inspection.sdk.callsTo("threads.get").length;
+    host.threadHolds.get = lookup.promise;
+    const oldFire = routines.fire(created.id, call).catch((error: unknown) => error);
+    try {
+      await waitFor(() => host.harness.inspection.sdk.callsTo("threads.get").length > before);
+      host.threadHolds.get = null;
+      await host.reload(async () => {});
+      host.threadHolds.send = send.promise;
+      const newFire = host.server.routines.fire(created.id, call).catch((error: unknown) => error);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      lookup.resolve();
+      const refusal = await oldFire;
+      await host.reload();
+      expect(await host.server.routines.fire(created.id, call)).toMatchObject({
+        state: "skipped",
+        run: { reason: "previous delivery in flight" },
+      });
+      expect(refusal).toBeInstanceOf(Refusal);
+      expect(refusal).toMatchObject({ message: expect.stringMatching(/reloaded/u) });
+      send.resolve();
+      expect(await newFire).toMatchObject({ state: "queued" });
+      expect(host.queued.get(captainId)).toHaveLength(1);
+      expect(
+        host.server.store
+          .routineRuns(created.id)
+          .map((run) => run.status)
+          .sort(),
+      ).toEqual(["queued", "skipped"]);
+    } finally {
+      lookup.resolve();
+      send.resolve();
+    }
+  });
+
   test.each(["delete", "reschedule"] as const)(
     "settling a late send after %s cannot change the current routine's completion",
     async (mutation) => {

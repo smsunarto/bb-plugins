@@ -1230,6 +1230,17 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         .map(toRoutineRun);
     },
 
+    /** Look up a Test by Automations ID within the routine's retained history. */
+    routineTestResult(routineId: string, runId: string): RoutineRun | null {
+      const row = db
+        .prepare<[string, string], RoutineRunRecord>(
+          `SELECT * FROM routine_runs WHERE routine_id = ? AND automation_run_id = ?
+           AND trigger = 'test' ORDER BY at DESC, id DESC LIMIT 1`,
+        )
+        .get(routineId, runId);
+      return row === undefined ? null : toRoutineRun(row);
+    },
+
     /** A test run Captain started, so its fire is told apart from a scheduled one. */
     addTestRun(runId: string, routineId: string, at: number): void {
       db.prepare(

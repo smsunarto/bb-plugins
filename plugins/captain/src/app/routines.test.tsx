@@ -60,6 +60,7 @@ function render(
   state: {
     routines: RoutineRow[];
     runs?: RoutineRun[];
+    testRuns?: RoutineRun[];
     save?: (input: Record<string, unknown>) => SaveRoutineResult | Promise<SaveRoutineResult>;
     /** routineAction refuses with this message. */
     refuse?: string;
@@ -78,6 +79,14 @@ function render(
       drive: () => ({ total: 0, truncated: false, files: [], folder: null }),
       routines: () => ({ routines: state.routines, serverTimezone: "UTC" }),
       routineRuns: (input: unknown) => (log("routineRuns", input), { runs: state.runs ?? [] }),
+      routineRun: (input: { runId: string }) => {
+        log("routineRun", input);
+        return {
+          run:
+            (state.testRuns ?? state.runs)?.find((run) => run.automationRunId === input.runId) ??
+            null,
+        };
+      },
       routineAction: (input: { routineId: string; action: string }) => {
         log("routineAction", input);
         if (state.refuse !== undefined) throw new Error(state.refuse);
@@ -257,6 +266,41 @@ test("a Test keeps its observed outcome after newer runs replace its history row
   fireEvent.click(toggle);
   fireEvent.click(toggle);
   await within(section).findByText(/^Test sent/u);
+});
+
+test("reopening Routines finds the requested Test outside the visible history", async () => {
+  const captainId = nextCaptain();
+  const { calls, routinesSection, state } = render(captainId, { routines: [routine()] });
+  const section = await routinesSection();
+  fireEvent.click(await within(section).findByRole("button", { name: /Stalled crew sweep/u }));
+  fireEvent.click(await within(section).findByRole("button", { name: "Test" }));
+  await within(section).findByText(/^Test requested/u);
+  const toggle = within(section).getByRole("button", { name: /^Routines/u });
+  fireEvent.click(toggle);
+  expect(within(section).queryByTestId("captain-routine-test")).toBeNull();
+  const completed: RoutineRun = {
+    id: 1,
+    routineId: "r1",
+    trigger: "test",
+    status: "sent",
+    reason: null,
+    at: REQUESTED,
+    automationRunId: "arun_1",
+  };
+  state.runs = Array.from({ length: 5 }, (_, index) => ({
+    ...completed,
+    id: index + 2,
+    at: REQUESTED + index + 1,
+    automationRunId: `arun_${index + 2}`,
+    status: "skipped",
+  }));
+  state.testRuns = [completed, ...state.runs];
+  fireEvent.click(toggle);
+  await within(section).findByText(/^Test sent/u);
+  expect(calls).toContainEqual({
+    method: "routineRun",
+    input: { captainId, routineId: "r1", runId: "arun_1" },
+  });
 });
 
 test("Delete asks first, then removes the routine", async () => {

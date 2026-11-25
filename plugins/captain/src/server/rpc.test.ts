@@ -483,6 +483,12 @@ describe("the Overview's routines", () => {
         automationRunId: test.runId,
       }),
     ]);
+    expect(await rpc("routineRun", { captainId, routineId: "r1", runId: test.runId })).toEqual({
+      run: (await runs())[0],
+    });
+    expect(await rpc("routineRun", { captainId, routineId: "r1", runId: "arun_missing" })).toEqual({
+      run: null,
+    });
     await rpc("routineAction", { captainId, routineId: "r1", action: "delete" });
     expect(await list()).toEqual([]);
     expect(host.automations.rows.size).toBe(0);
@@ -540,6 +546,67 @@ describe("the Overview's routines", () => {
     await expect(first).resolves.toMatchObject({ ok: true });
     await expect(second).resolves.toMatchObject({ ok: false, stale: true });
     expect([...host.automations.rows.values()][0]?.trigger).toMatchObject({ cron: "0 16 * * 5" });
+  });
+
+  test("a queued rename uses the committed name after a failed reservation rolls back", async () => {
+    const { host, captainId, rpc, save } = await routinesHost();
+    const created = await save(SWEEP);
+    if (!created.ok || created.routine === undefined) throw new Error("create refused");
+    const updatedAt = created.routine.updatedAt;
+    const held = deferred();
+    host.automations.gate = { until: held.promise, methods: new Set(["automations_update"]) };
+    host.automations.failNext.add("automations_update");
+    const rename = () =>
+      rpc("saveRoutine", {
+        captainId,
+        routineId: "r1",
+        updatedAt,
+        routine: { ...SWEEP, name: "Renamed" },
+      });
+    const first = rename();
+    await vi.waitFor(() => expect(host.automations.inFlight).toBe(1));
+    expect(host.server.store.routine("r1")?.name).toBe("Renamed");
+    const second = rename();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    host.automations.gate = null;
+    held.resolve();
+    await expect(first).resolves.toMatchObject({ ok: false, stale: false });
+    await expect(second).resolves.toMatchObject({ ok: true, routine: { name: "Renamed" } });
+    expect([...host.automations.rows.values()][0]?.name).toContain("Renamed");
+  });
+
+  test("a cold Active sample cannot publish after a successful CLI pause", async () => {
+    const { host, captainId, list } = await routinesHost();
+    const captain = host.server.store.captain(captainId)!;
+    await host.server.routines.create(captain, SWEEP);
+    const old = deferred();
+    const followup = deferred();
+    let reads = 0;
+    const call = host.automations.call;
+    host.automations.call = async (method, input) => {
+      const read = method === "automations_get" ? ++reads : 0;
+      const result = await call(method, input);
+      if (read === 1) await old.promise;
+      if (read >= 3) await followup.promise;
+      return result;
+    };
+    try {
+      expect((await list())[0]?.scheduleLoading).toBe(true);
+      const pause = await host.harness.behavior.runCli(["routine", "pause", "r1"], {
+        threadId: captainId,
+      });
+      expect(pause.exitCode).toBe(0);
+      expect([...host.automations.rows.values()][0]?.enabled).toBe(false);
+      await list();
+      old.resolve();
+      await vi.waitFor(() => expect(reads).toBeGreaterThanOrEqual(3));
+      expect((await list())[0]?.automation?.enabled).not.toBe(true);
+      followup.resolve();
+      await vi.waitFor(async () => expect((await list())[0]?.automation?.enabled).toBe(false));
+    } finally {
+      old.resolve();
+      followup.resolve();
+    }
   });
 
   test("a delayed Active read cannot overwrite a newer pause", async () => {

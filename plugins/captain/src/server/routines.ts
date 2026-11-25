@@ -67,6 +67,8 @@ export type FireResult = { state: "sent" | "queued" | "skipped"; run: RoutineRun
 
 export type Routines = ReturnType<typeof createRoutines>;
 
+type RoutinePatch = Partial<z.input<typeof routineFieldsSchema>>;
+
 export class StaleRoutine extends Refusal {
   constructor() {
     super([
@@ -129,8 +131,15 @@ export function createRoutines(deps: RoutinesDeps) {
   // A live upgrade can inherit this process state from an older generation.
   const waiting = (deliveryState.waiting ??= []);
   const changed = (captainId: string) => bb.rpc.experimental_invalidate([routinesTag(captainId)]);
+  let disposed = false;
   const forgetDeliveryState = () => {
-    if (delivering.size === 0 && recorders.size === 0) deliveries.delete(dataDir);
+    if (
+      deliveries.get(dataDir) === deliveryState &&
+      delivering.size === 0 &&
+      recorders.size === 0
+    ) {
+      deliveries.delete(dataDir);
+    }
   };
   const persistDelivery: RecordDelivery = ({ routine, run }, status, reason) => {
     const latest = store.routine(routine.id);
@@ -144,6 +153,7 @@ export function createRoutines(deps: RoutinesDeps) {
   };
   recorders.add(persistDelivery);
   bb.onDispose(() => {
+    disposed = true;
     recorders.delete(persistDelivery);
     forgetDeliveryState();
   });
@@ -167,6 +177,17 @@ export function createRoutines(deps: RoutinesDeps) {
         }
       });
     });
+  }
+
+  function requireActiveGeneration(): void {
+    if (disposed) {
+      throw new Refusal([
+        {
+          reason: "Captain was reloaded before the operation finished",
+          fix: "the next run tries again",
+        },
+      ]);
+    }
   }
 
   /** Captains being removed: a create queued behind the removal is refused. */
@@ -390,13 +411,14 @@ export function createRoutines(deps: RoutinesDeps) {
    */
   async function update(
     routine: Routine,
-    patch: Partial<z.input<typeof routineFieldsSchema>>,
+    patchFrom: RoutinePatch | ((committed: Routine) => RoutinePatch),
     expectedUpdatedAt?: number,
   ): Promise<RoutineView> {
     return serial(`routine:${routine.id}`, async () => {
       const before = current(routine.id);
       if (expectedUpdatedAt !== undefined && before.updatedAt !== expectedUpdatedAt)
         throw new StaleRoutine();
+      const patch = typeof patchFrom === "function" ? patchFrom(before) : patchFrom;
       const fields = parseFields(
         {
           name: patch.name ?? before.name,
@@ -458,6 +480,7 @@ export function createRoutines(deps: RoutinesDeps) {
     action: RoutineAction,
   ): Promise<{ view: RoutineView | null; runId: string | null }> {
     return serial(`routine:${routine.id}`, async () => {
+      requireActiveGeneration();
       const latest = current(routine.id);
       const owner = ownerOf(latest);
       if (action === "delete") {
@@ -472,14 +495,21 @@ export function createRoutines(deps: RoutinesDeps) {
         else if (action === "resume") await automations.resume(found);
         else {
           runId = (await automations.run(found)).run.id;
+          requireActiveGeneration();
           // Durable, so a reload before the script's fire still finds it.
           store.addTestRun(runId, latest.id, deps.now());
         }
       } catch (error) {
         throw automationsRefused(error);
       }
+      requireActiveGeneration();
+      // A CLI toggle also supersedes any schedule snapshot the Overview read before it.
+      const saved =
+        action === "run"
+          ? latest
+          : store.updateRoutine(latest.id, {}, Math.max(deps.now(), latest.updatedAt + 1));
       changed(owner.threadId);
-      return { view: await view(latest), runId };
+      return { view: await view(saved), runId };
     });
   }
 
@@ -505,6 +535,7 @@ export function createRoutines(deps: RoutinesDeps) {
     call: { automationId: string; runId: string | null },
   ): Promise<FireResult> {
     return serial(`routine:${routineId}`, async () => {
+      requireActiveGeneration();
       const routine = store.routine(routineId);
       if (routine === null) {
         throw new Refusal([
@@ -540,11 +571,13 @@ export function createRoutines(deps: RoutinesDeps) {
         bb.sdk.threads.get({ threadId: routine.captainId }),
         "reading the Captain",
       ).catch((error: unknown) => {
+        requireActiveGeneration();
         if (isMissing(error)) return null;
         // Recorded, so a spent one-shot shows as missed with this reason.
         record(delivery, "failed", message(error));
         throw error;
       });
+      requireActiveGeneration();
       if (captainRow === null || thread === null || thread.deletedAt != null) {
         record(delivery, "failed", "Captain deleted");
         void removeCaptain(routine.captainId).catch((error: unknown) =>
@@ -558,6 +591,7 @@ export function createRoutines(deps: RoutinesDeps) {
         record(delivery, "failed", "Captain archived");
         // Inside this routine's lock: pause this one directly, the others after.
         await pauseOne(routine);
+        requireActiveGeneration();
         void pauseCaptain(routine.captainId, routine.id);
         throw new Refusal([
           {
@@ -585,23 +619,26 @@ export function createRoutines(deps: RoutinesDeps) {
         forgetDeliveryState();
       };
       delivering.add(routine.id);
-      const queued = await alreadyQueued(routine).catch((error: unknown) => {
+      let queued: Awaited<ReturnType<typeof alreadyQueued>>;
+      try {
+        queued = await alreadyQueued(routine);
+        requireActiveGeneration();
+      } catch (error) {
         release();
         throw error;
-      });
+      }
       if (queued !== false) {
         release();
         const reason = queued === "unreadable" ? "queue unreadable" : "previous run still queued";
         return { state: "skipped", run: record(delivery, "skipped", reason) };
       }
-      const outcome = Promise.resolve()
-        .then(() =>
-          bb.sdk.threads.send({
-            threadId: routine.captainId,
-            mode: "queue-if-active",
-            input: [{ type: "text", text, mentions: [] }],
-          }),
-        )
+      const send = async () =>
+        bb.sdk.threads.send({
+          threadId: routine.captainId,
+          mode: "queue-if-active",
+          input: [{ type: "text", text, mentions: [] }],
+        });
+      const outcome = send()
         .then(
           (result) => ({
             status: result.delivery === "queued" ? ("queued" as const) : ("sent" as const),
