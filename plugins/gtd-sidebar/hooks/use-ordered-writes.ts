@@ -12,7 +12,7 @@ export interface OrderedWrites<Entry, Result> {
   write(entry: Entry): Promise<Result>;
   /** Writes not answered yet, sent or waiting their turn, oldest first. */
   unsettled: readonly Entry[];
-  /** The newest successful answer. */
+  /** The newest successful answer. A skipped write returns undefined. */
   answer: Result | undefined;
 }
 
@@ -34,15 +34,12 @@ export function useOrderedWrites<Entry, Result>(
     const box = { entry };
     setQueue((current) => ({ ...current, unsettled: [...current.unsettled, box] }));
     const result = tail.current.then(() => sendLatest(entry));
-    const settle = (answer?: { value: Result }) =>
+    const settle = (answer?: Result) =>
       setQueue((current) => ({
         unsettled: current.unsettled.filter((other) => other !== box),
-        answer: answer === undefined ? current.answer : answer.value,
+        answer: answer === undefined ? current.answer : answer,
       }));
-    tail.current = result.then(
-      (value) => settle({ value }),
-      () => settle(),
-    );
+    tail.current = result.then(settle, () => settle());
     return result;
   });
   const unsettled = useMemo(() => queue.unsettled.map(({ entry }) => entry), [queue.unsettled]);

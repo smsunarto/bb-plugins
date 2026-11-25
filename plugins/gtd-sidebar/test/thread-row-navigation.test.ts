@@ -639,10 +639,22 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     dom.window.close();
   });
 
-  it("tapers the compact scroll fade to the amount of content clipped at the edge", () => {
-    const OriginalObserver = globalThis.IntersectionObserver;
-    let placeContentEnd: ((bottom: number) => void) | undefined;
-    globalThis.IntersectionObserver = class extends OriginalObserver {
+  it("tracks clipped pixels on compact list layout, scroll jumps and resize", async () => {
+    const OriginalIntersectionObserver = globalThis.IntersectionObserver;
+    const OriginalResizeObserver = globalThis.ResizeObserver;
+    let refreshIntersection: (() => void) | undefined;
+    let refreshSize: (() => void) | undefined;
+    let height = 200;
+    let stripHeight = 32;
+    let stripBottom = 190;
+    const viewport = () => new DOMRect(0, 0, 320, height);
+    const strip = () => new DOMRect(0, stripBottom - stripHeight, 1, stripHeight);
+    const nextFrame = () =>
+      act(async () => {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
+
+    globalThis.IntersectionObserver = class extends OriginalIntersectionObserver {
       constructor(
         private readonly notify: IntersectionObserverCallback,
         private readonly options?: IntersectionObserverInit,
@@ -652,22 +664,26 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
       override observe(target: Element) {
         if (!target.hasAttribute("data-gtd-thread-scroll-end")) return;
-        const clearance = target.parentElement;
-        assert.ok(clearance && clearance.hasAttribute("data-gtd-thread-scroll-clearance"));
-        assert.equal(this.options?.root, clearance.parentElement);
-        const viewport = new DOMRect(0, 0, 320, 200);
-        placeContentEnd = (bottom) => {
-          const rect = new DOMRect(0, bottom - 32, 1, 32);
-          const intersectionHeight = Math.max(0, Math.min(rect.height, viewport.bottom - rect.top));
+        const scroller = target.closest('[data-gtd-thread-scroll="compact"]');
+        assert.ok(scroller);
+        assert.equal(this.options?.root, scroller);
+        target.getBoundingClientRect = strip;
+        scroller.getBoundingClientRect = viewport;
+        refreshIntersection = () => {
+          const rect = strip();
+          const intersectionHeight = Math.max(
+            0,
+            Math.min(rect.bottom, height) - Math.max(rect.top, 0),
+          );
           this.notify(
             [
               {
                 target,
-                isIntersecting: rect.top <= viewport.bottom,
-                intersectionRatio: intersectionHeight / rect.height,
+                isIntersecting: intersectionHeight > 0,
+                intersectionRatio: intersectionHeight / stripHeight,
                 boundingClientRect: rect,
                 intersectionRect: new DOMRect(0, rect.top, 1, intersectionHeight),
-                rootBounds: viewport,
+                rootBounds: viewport(),
                 time: 0,
               },
             ],
@@ -676,33 +692,65 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         };
       }
     };
+    globalThis.ResizeObserver = class extends OriginalResizeObserver {
+      constructor(private readonly notify: ResizeObserverCallback) {
+        super(notify);
+      }
+
+      override observe(target: Element) {
+        if (target.matches('[data-gtd-thread-scroll="compact"]')) {
+          refreshSize = () => this.notify([], this);
+        }
+      }
+    };
     try {
       const view = mount(hostState([thread("a")]), { isCompactViewport: true });
       const list = view.slot.container.querySelector<HTMLElement>("[data-gtd-thread-scroll]");
-      assert.ok(list && placeContentEnd);
+      assert.ok(list && refreshIntersection);
       const hasFade = () => list.hasAttribute("data-gtd-thread-more-below");
       const depth = () => list.style.getPropertyValue("--gtd-thread-fade-depth");
-      placeContentEnd(190);
+      const moveEnd = async (bottom: number) => {
+        stripBottom = bottom;
+        refreshIntersection?.();
+        await nextFrame();
+      };
+      await moveEnd(190);
       assert.equal(hasFade(), false, "the rows fit before the footer clearance");
-      placeContentEnd(245);
+      await moveEnd(245);
       assert.equal(depth(), "32px", "a long list uses the full fade");
-      placeContentEnd(216);
+      await moveEnd(216);
       assert.equal(depth(), "16px", "the fade shrinks as the last row comes into view");
-      placeContentEnd(201);
-      assert.equal(hasFade(), true, "the list extends past the viewport");
+      await moveEnd(201);
+      assert.equal(hasFade(), true);
       assert.equal(depth(), "1px", "one clipped pixel fades only that pixel");
-      placeContentEnd(200);
+      await moveEnd(200);
       assert.equal(hasFade(), false, "the fade clears when the last row reaches the edge");
-      placeContentEnd(196);
-      assert.equal(hasFade(), false, "the last row fits four pixels above the edge");
-      placeContentEnd(201);
-      assert.equal(hasFade(), true, "scrolling up brings the fade back");
+
+      height = stripHeight = 11;
+      list.scrollTop = 104;
+      await moveEnd(16);
+      assert.equal(depth(), "5px");
+      // Before and after the 10px jump, 6px of the strip is visible.
+      list.scrollTop = 114;
+      stripBottom = 6;
+      fireEvent.scroll(list);
+      await nextFrame();
+      assert.equal(hasFade(), false, "one scroll jump clears the fade at unchanged ratio");
+
+      await moveEnd(50);
+      assert.equal(depth(), "11px");
+      // The strip is fully below the port both before and after this resize.
+      height = stripHeight = 22;
+      refreshSize?.();
+      await nextFrame();
+      assert.equal(depth(), "22px", "the full fade grows even with no intersection");
       view.updateInbox({ isCompactViewport: false });
       assert.equal(hasFade(), false, "desktop clears the compact fade");
       assert.equal(depth(), "", "desktop clears the compact depth");
     } finally {
       cleanup();
-      globalThis.IntersectionObserver = OriginalObserver;
+      globalThis.IntersectionObserver = OriginalIntersectionObserver;
+      globalThis.ResizeObserver = OriginalResizeObserver;
     }
   });
 

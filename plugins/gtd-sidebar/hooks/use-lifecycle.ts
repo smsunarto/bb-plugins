@@ -26,10 +26,18 @@ import { usePaintGate } from "./use-paint-gate";
 
 const LIFECYCLE_READ = {};
 
+interface SnoozeRequest {
+  superseded: boolean;
+}
+
+type LifecycleAction =
+  | { kind: "snooze"; snoozedUntil: number; request: SnoozeRequest }
+  | { kind: "wake" }
+  | { kind: "undo"; canWake: () => Promise<boolean> };
+
 interface LifecycleWrite {
   threadId: string;
-  /** null wakes the family. */
-  snoozedUntil: number | null;
+  action: LifecycleAction;
   prediction: LifecyclePrediction;
 }
 
@@ -70,11 +78,11 @@ export interface LifecycleApi {
  * move its row without waiting for an unrelated re-render, and re-reading the
  * clock during render would make the classification unstable.
  *
- * Snooze and wake draw on the click: the family comes from `threads`, the
- * sidebar's own roster. Writes go out one at a time in click order, so an
- * Undo always lands after its snooze; each draws here until it answers, and
- * bb's prediction then holds it until a read taken after the write lands. A
- * failed write drops it. Before the first read lands, writes draw over the
+ * Snooze and explicit wake draw on the click using the sidebar's roster.
+ * Writes go out one at a time in click order. A toast Undo waits in that
+ * queue and only predicts a wake when BB sends it. BB's prediction holds
+ * the write until a read taken after it lands. A failed write drops it.
+ * Before the first read lands, writes draw over the
  * rows the newest write answered with. The backend's database stays the
  * record.
  */
@@ -111,22 +119,25 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
     optimistic,
   });
 
-  const writes = useOrderedWrites(({ threadId, snoozedUntil, prediction }: LifecycleWrite) => {
+  const writes = useOrderedWrites(async ({ threadId, action, prediction }: LifecycleWrite) => {
+    if (action.kind === "undo" && !(await action.canWake())) return;
     nextPrediction.current = prediction;
     try {
-      return snoozedUntil === null
-        ? wakeWrite.mutate({ threadId })
-        : snoozeWrite.mutate({ threadId, snoozedUntil });
+      return action.kind === "snooze"
+        ? snoozeWrite.mutate({ threadId, snoozedUntil: action.snoozedUntil })
+        : wakeWrite.mutate({ threadId });
     } finally {
       nextPrediction.current = null;
     }
   });
+  const latestSnoozeByThread = useRef(new Map<string, SnoozeRequest>());
   const base = data?.rows ?? writes.answer?.rows;
   // bb keeps an unchanged read's rows, so a refresh that changes nothing
   // leaves the map, and the sidebar's partition, alone.
   const drawn = useMemo(() => {
     const rows = writes.unsettled.reduce<readonly ThreadLifecycleRow[]>(
-      (current, { prediction }) => predictLifecycleRows(current, prediction),
+      (current, { action, prediction }) =>
+        action.kind === "undo" ? current : predictLifecycleRows(current, prediction),
       base ?? [],
     );
     return new Map(rows.map((row) => [row.threadId, row]));
@@ -155,32 +166,40 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
     return () => clearTimeout(timer);
   }, [now, drawn]);
 
-  const write = useCommittedEvent((threadId: string, snoozedUntil: number | null) => {
+  const write = useCommittedEvent((threadId: string, action: LifecycleAction) => {
     const threadIds = rosterFamilyIds(threads, threadId);
+    if (action.kind === "snooze") {
+      // A newer snooze supersedes an Undo for any overlapping family.
+      for (const id of threadIds) {
+        const previous = latestSnoozeByThread.current.get(id);
+        if (previous) previous.superseded = true;
+        latestSnoozeByThread.current.set(id, action.request);
+      }
+    }
     const family = new Set(threadIds);
     const prediction: LifecyclePrediction = {
       threadIds,
       // Never earlier than the family's latest attention: bb stamps that on
       // its own clock, and a snooze that predates it wakes at once.
       snooze:
-        snoozedUntil === null
-          ? null
-          : {
-              snoozedUntil,
+        action.kind === "snooze"
+          ? {
+              snoozedUntil: action.snoozedUntil,
               snoozedAt: Math.max(
                 Date.now(),
                 ...threads
                   .filter((thread) => family.has(thread.id))
                   .map((thread) => thread.latestAttentionAt),
               ),
-            },
+            }
+          : null,
     };
-    return writes.write({ threadId, snoozedUntil, prediction });
+    return writes.write({ threadId, action, prediction });
   });
 
   return useMemo<LifecycleApi>(() => {
-    const unsnooze = (threadId: string) => {
-      write(threadId, null).catch((error: unknown) => {
+    const wake = (threadId: string, action: Exclude<LifecycleAction, { kind: "snooze" }>) => {
+      write(threadId, action).catch((error: unknown) => {
         toast.error(error instanceof Error ? error.message : "Couldn’t wake the thread.");
       });
     };
@@ -190,30 +209,40 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
       canPark: (thread) => canPark(signalsFor(thread)),
       wakeAtFor: (thread) => drawn.get(thread.id)?.snoozedUntil ?? null,
       snoozedAtFor: (thread) => drawn.get(thread.id)?.snoozedAt ?? null,
-      unsnooze,
+      unsnooze: (threadId) => wake(threadId, { kind: "wake" }),
       // A snooze fires on pointerdown and folds the row into a closed shelf,
       // so the toast is what tells the user where it went. One id per thread:
       // a second snooze replaces the toast instead of stacking another, and a
       // failed write replaces it with the error.
       snooze: (threadId, snoozedUntil) => {
+        const request: SnoozeRequest = { superseded: false };
         const toastId = `snooze-${threadId}`;
-        toast(`Snoozed until ${formatWakeTime(snoozedUntil, new Date())}`, {
-          id: toastId,
-          action: { label: "Undo", onClick: () => unsnooze(threadId) },
-        });
         // A refusal (a thread that stays open) writes nothing: the refreshed
         // read drops the prediction, and the reason takes the place of
         // "Snoozed until". Sonner merges an update into the toast it
         // replaces, so the Undo is cleared explicitly.
         const fail = (message: string) => toast.error(message, { id: toastId, action: undefined });
-        void (async () => {
+        const snoozed = (async () => {
           try {
-            const answer = await write(threadId, snoozedUntil);
-            if (!answer.ok) fail(answer.reason ?? "Couldn’t snooze the thread.");
+            const answer = await write(threadId, { kind: "snooze", snoozedUntil, request });
+            if (answer?.ok) return true;
+            fail(answer?.reason ?? "Couldn’t snooze the thread.");
           } catch (error: unknown) {
             fail(error instanceof Error ? error.message : "Couldn’t snooze the thread.");
           }
+          return false;
         })();
+        toast(`Snoozed until ${formatWakeTime(snoozedUntil, new Date())}`, {
+          id: toastId,
+          action: {
+            label: "Undo",
+            onClick: () =>
+              wake(threadId, {
+                kind: "undo",
+                canWake: async () => (await snoozed) && !request.superseded,
+              }),
+          },
+        });
       },
     };
   }, [drawn, now, shelvesReady, write]);
