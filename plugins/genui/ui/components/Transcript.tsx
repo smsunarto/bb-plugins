@@ -7,6 +7,7 @@
 // screen render, so an hour-long recording costs what a minute does. Untimed
 // input reads as aligned text instead.
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
@@ -40,6 +41,7 @@ import { Frame, Heading, Quiet, Segmented } from "./perfKit";
 import { IconButton, WithTooltip } from "./iconButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Item, ItemGroup } from "@/components/ui/item";
 
 type View = "timeline" | "text";
 
@@ -510,18 +512,22 @@ function Summary({ analysis, span }: { analysis: Analysis; span: number }) {
         title={title}
         meta={`${comparisons.length} transcripts against ${reference.name} · ${facts.join(" · ")}`}
       />
-      <ul className="m-0 flex list-none flex-col p-0" aria-label="Error rate per transcript">
-        {comparisons.map((comparison) => {
-          const track = analysis.tracks[comparison.track];
-          return (
-            <li key={comparison.track} className="flex min-w-0 items-baseline gap-2 border-b border-border/40 py-1 text-xs leading-5 last:border-b-0">
-              <span className="min-w-0 flex-[0_1_auto] truncate font-medium text-foreground">{track.name}</span>
-              <span className="shrink-0 tabular-nums text-foreground">{comparison.wer === null ? "—" : formatWer(comparison.wer)}</span>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">{countsText(comparison.counts)}</span>
-            </li>
-          );
-        })}
-      </ul>
+      <ItemGroup asChild variant="flush" className="m-0 list-none p-0">
+        <ul aria-label="Error rate per transcript">
+          {comparisons.map((comparison) => {
+            const track = analysis.tracks[comparison.track];
+            return (
+              <Item key={comparison.track} asChild size="inline" className="min-w-0 flex-nowrap items-baseline gap-2 text-xs leading-5">
+                <li>
+                  <span className="min-w-0 flex-[0_1_auto] truncate font-medium text-foreground">{track.name}</span>
+                  <span className="shrink-0 tabular-nums text-foreground">{comparison.wer === null ? "—" : formatWer(comparison.wer)}</span>
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">{countsText(comparison.counts)}</span>
+                </li>
+              </Item>
+            );
+          })}
+        </ul>
+      </ItemGroup>
     </>
   );
 }
@@ -670,7 +676,7 @@ function Controls({
       ) : null}
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {view === "timeline" ? (
-          <div className="flex items-center" role="group" aria-label="Zoom">
+          <ButtonGroup aria-label="Zoom">
             <IconButton label="Zoom out" disabled={zoomAt <= 0} onClick={() => onZoom(ZOOM_STEPS[Math.max(0, zoomAt - 1)])}>
               <Icon name="ZoomOut" aria-hidden className="size-3.5" />
             </IconButton>
@@ -681,7 +687,7 @@ function Controls({
             >
               <Icon name="ZoomIn" aria-hidden className="size-3.5" />
             </IconButton>
-          </div>
+          </ButtonGroup>
         ) : null}
         {timed ? <Segmented label="View" value={view} options={VIEWS} onChange={onView} /> : null}
       </div>

@@ -12,7 +12,7 @@ import { describeProblem, type Target } from "../core/change.ts";
 import { BASE_HISTORY_MAX, BASE_HISTORY_PAGE, type BaseCommit } from "../core/history.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { absoluteTime, shortAge, shortId } from "./format.ts";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import {
   Collapsible,
   CollapsibleContent,
@@ -20,6 +20,8 @@ import {
 } from "./components/ui/collapsible.tsx";
 import { DISCLOSURE, DisclosureChevron } from "./ui.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
+import { Item } from "./components/ui/item.tsx";
 
 /**
  * How many commits to list. The window belongs to the base it was opened on:
@@ -36,28 +38,30 @@ function useHistoryWindow(from: string) {
 function CommitRow({ commit, now }: { commit: BaseCommit; now: number }) {
   return (
     <li
-      className="flex min-w-0 items-center gap-2 border-t border-border-hairline px-3 py-1 min-h-7 first:border-t-0"
+      className="min-w-0 border-t border-border-hairline px-1 first:border-t-0"
       data-testid="sc-base-commit"
     >
-      <span
-        className="min-w-0 flex-1 truncate text-[12px] leading-4 text-foreground"
-        title={commit.subject}
-      >
-        {commit.subject || "(no message)"}
-      </span>
-      <code
-        className="shrink-0 font-mono text-[11px] leading-4 text-muted-foreground"
-        translate="no"
-      >
-        {shortId(commit.id)}
-      </code>
-      <time
-        className="shrink-0 text-[11px] leading-4 text-muted-foreground tabular-nums"
-        dateTime={commit.createdAt}
-        title={absoluteTime(commit.createdAt)}
-      >
-        {shortAge(commit.createdAt, now)}
-      </time>
+      <Item size="row" className="min-w-0">
+        <span
+          className="min-w-0 flex-1 truncate text-[12px] leading-4 text-foreground"
+          title={commit.subject}
+        >
+          {commit.subject || "(no message)"}
+        </span>
+        <code
+          className="shrink-0 font-mono text-[11px] leading-4 text-muted-foreground"
+          translate="no"
+        >
+          {shortId(commit.id)}
+        </code>
+        <time
+          className="shrink-0 text-[11px] leading-4 text-muted-foreground tabular-nums"
+          dateTime={commit.createdAt}
+          title={absoluteTime(commit.createdAt)}
+        >
+          {shortAge(commit.createdAt, now)}
+        </time>
+      </Item>
     </li>
   );
 }
@@ -82,9 +86,9 @@ function History({ threadId, from, now }: { threadId: string; from: string; now:
         <p className="m-0 min-w-0 flex-1 text-[12px] leading-4 text-muted-foreground">
           History unavailable. {describeProblem(answer.problem)}
         </p>
-        <Button size="sm" className="h-7" variant="outline" onClick={() => void query.refetch()}>
+        <CompactButton size="sm" variant="outline" onClick={() => void query.refetch()}>
           Try again
-        </Button>
+        </CompactButton>
       </div>
     );
   if (!commits)
@@ -93,9 +97,9 @@ function History({ threadId, from, now }: { threadId: string; from: string; now:
         <p className="m-0 min-w-0 flex-1 text-[12px] leading-4 text-muted-foreground">
           History failed to load. {query.error.message}
         </p>
-        <Button size="sm" className="h-7" variant="outline" onClick={() => void query.refetch()}>
+        <CompactButton size="sm" variant="outline" onClick={() => void query.refetch()}>
           Try again
-        </Button>
+        </CompactButton>
       </div>
     ) : (
       <div className="flex flex-col gap-2 px-3 py-2" aria-busy="true" aria-label="Loading history">
@@ -108,9 +112,11 @@ function History({ threadId, from, now }: { threadId: string; from: string; now:
   return (
     <>
       {commits.length === 0 ? (
-        <p className="m-0 px-3 py-2 text-[12px] leading-4 text-muted-foreground">
-          Nothing before the common base.
-        </p>
+        <EmptyState
+          className="mx-3 my-2"
+          messageClassName="m-0"
+          message="Nothing before the common base."
+        />
       ) : (
         <ul className="m-0 list-none p-0" aria-label="Before the common base">
           {commits.map((commit) => (
@@ -120,16 +126,15 @@ function History({ threadId, from, now }: { threadId: string; from: string; now:
       )}
       {more || (fresh === null && commits.length > 0) ? (
         <div className="border-t border-border-hairline px-3 py-2">
-          <Button
+          <CompactButton
             size="sm"
-            className="h-7"
             variant="outline"
             disabled={fresh === null}
             aria-busy={fresh === null}
             onClick={grow}
           >
             Show earlier commits
-          </Button>
+          </CompactButton>
         </div>
       ) : null}
     </>

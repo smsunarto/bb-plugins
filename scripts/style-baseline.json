@@ -85,26 +85,6 @@
     "source": "overlay-trigger.ts"
   },
   {
-    "file": "plugins/genui/components/ui/hooks/use-compact-viewport.tsx",
-    "rule": "registry-drift",
-    "source": "hooks/use-compact-viewport.tsx"
-  },
-  {
-    "file": "plugins/genui/components/ui/hooks/use-media-query.ts",
-    "rule": "registry-drift",
-    "source": "hooks/use-media-query.ts"
-  },
-  {
-    "file": "plugins/genui/components/ui/overlay-trigger.ts",
-    "rule": "registry-drift",
-    "source": "overlay-trigger.ts"
-  },
-  {
-    "file": "plugins/genui/components/ui/tooltip.tsx",
-    "rule": "registry-drift",
-    "source": "tooltip.tsx"
-  },
-  {
     "file": "plugins/genui/ui/components/Acceptance.tsx",
     "rule": "arbitrary-edge",
     "source": "claimed: \"border border-[color-mix(in_oklch,var(--color-timeline-accent,var(--primary))_45%,transparent)]\","

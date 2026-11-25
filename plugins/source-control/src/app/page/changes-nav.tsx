@@ -27,6 +27,9 @@ import { Skeleton } from "../components/ui/skeleton.tsx";
 import { GitHubAvatar } from "../review-ui.tsx";
 import { Badge } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
+import { EmptyState } from "../components/ui/empty-state.tsx";
+import { Item } from "../components/ui/item.tsx";
+import { Separator } from "../components/ui/separator.tsx";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group.tsx";
 import { TEXT_LINK } from "../ui.tsx";
 import { useGo, useNow } from "./hooks.ts";
@@ -175,64 +178,67 @@ const ChangeRowView = memo(function ChangeRowView({
     </>
   ) : null;
   return (
-    <button
-      type="button"
-      data-testid="sc-nav-row"
-      data-key={row.key}
-      aria-current={selected ? "page" : undefined}
-      onClick={() => onSelect(row.key)}
-      className={cx(
-        "flex h-14 w-full min-w-0 cursor-pointer flex-col justify-center gap-1 rounded-lg border-0 bg-transparent px-2 py-1 text-start transition-colors duration-150 hover:bg-border-hairline focus-visible:-outline-offset-2 motion-reduce:transition-none",
-        selected && "bg-border-hairline",
-      )}
-    >
-      <span className="flex w-full min-w-0 shrink-0 items-start gap-2">
-        <span className="flex h-5 w-4 shrink-0 items-center justify-center">
-          <StateIcon state={row.state} phone={phone} />
-        </span>
-        {/* A phone gives the title the whole width; its number moves to the line below. */}
-        {phone ? null : <RowNumber number={row.number} className="leading-5" />}
-        <span
-          title={row.title}
-          className="min-w-0 flex-1 truncate text-[13px] leading-5 font-semibold text-foreground"
-        >
-          {row.title}
-        </span>
-        {age ? (
-          <span className="shrink-0 text-[12px] leading-5 text-(--tertiary-foreground)">{age}</span>
-        ) : null}
-      </span>
-      {/* Two 20px lines and the gap sit centred in the 56px row, 4px short of filling it: a squeezed line would clip its chips' borders. */}
-      <span className="flex h-5 w-full min-w-0 shrink-0 items-center gap-2 overflow-hidden ps-6">
-        {phone ? (
-          <>
-            <RowNumber number={row.number} className="leading-4" />
-            <span className={cx("min-w-0 shrink truncate text-[12px] leading-4", LINE_TONE[tone])}>
-              {row.line}
+    // The window sizes this row at 56px under any pointer: h-14 holds above the row's 44px coarse minimum.
+    <Item asChild size="row" className="h-14 min-w-0 cursor-pointer flex-col justify-center gap-1">
+      <button
+        type="button"
+        data-testid="sc-nav-row"
+        data-key={row.key}
+        aria-current={selected ? "page" : undefined}
+        onClick={() => onSelect(row.key)}
+      >
+        <span className="flex w-full min-w-0 shrink-0 items-start gap-2">
+          <span className="flex h-5 w-4 shrink-0 items-center justify-center">
+            <StateIcon state={row.state} phone={phone} />
+          </span>
+          {/* A phone gives the title the whole width; its number moves to the line below. */}
+          {phone ? null : <RowNumber number={row.number} className="leading-5" />}
+          <span
+            title={row.title}
+            className="min-w-0 flex-1 truncate text-[13px] leading-5 font-semibold text-foreground"
+          >
+            {row.title}
+          </span>
+          {age ? (
+            <span className="shrink-0 text-[12px] leading-5 text-(--tertiary-foreground)">
+              {age}
             </span>
-            {author}
-            {hosts.map((name) => (
-              <HostChip key={name} name={name} phone />
-            ))}
-          </>
-        ) : (
-          <>
-            {author}
-            <span className="flex h-5 min-w-0 shrink overflow-hidden">
-              <Chips chips={row.chips} />
-            </span>
-            {hosts.length > 0 ? (
-              // Status chips keep their room; a host chip that no longer fits wraps out of sight whole.
-              <span className="flex h-5 min-w-0 shrink-[100] flex-wrap gap-2 overflow-hidden">
-                {hosts.map((name) => (
-                  <HostChip key={name} name={name} phone={false} />
-                ))}
+          ) : null}
+        </span>
+        {/* Two 20px lines and the gap sit centred in the 56px row, 4px short of filling it: a squeezed line would clip its chips' borders. */}
+        <span className="flex h-5 w-full min-w-0 shrink-0 items-center gap-2 overflow-hidden ps-6">
+          {phone ? (
+            <>
+              <RowNumber number={row.number} className="leading-4" />
+              <span
+                className={cx("min-w-0 shrink truncate text-[12px] leading-4", LINE_TONE[tone])}
+              >
+                {row.line}
               </span>
-            ) : null}
-          </>
-        )}
-      </span>
-    </button>
+              {author}
+              {hosts.map((name) => (
+                <HostChip key={name} name={name} phone />
+              ))}
+            </>
+          ) : (
+            <>
+              {author}
+              <span className="flex h-5 min-w-0 shrink overflow-hidden">
+                <Chips chips={row.chips} />
+              </span>
+              {hosts.length > 0 ? (
+                // Status chips keep their room; a host chip that no longer fits wraps out of sight whole.
+                <span className="flex h-5 min-w-0 shrink-[100] flex-wrap gap-2 overflow-hidden">
+                  {hosts.map((name) => (
+                    <HostChip key={name} name={name} phone={false} />
+                  ))}
+                </span>
+              ) : null}
+            </>
+          )}
+        </span>
+      </button>
+    </Item>
   );
 });
 
@@ -256,7 +262,7 @@ const ItemView = memo(function ItemView({ item, ...props }: ItemProps) {
         <h3 className="m-0 shrink-0 truncate text-[11px] leading-4 font-medium text-(--tertiary-foreground)">
           {item.repo}
         </h3>
-        <span aria-hidden className="h-px min-w-4 flex-1 bg-border" />
+        <Separator className="min-w-4 flex-1" />
       </div>
     );
   if (item.kind === "stack")
@@ -415,21 +421,30 @@ function SourceLine({
   const where = state.kind === "host" ? state.name : `GitHub (${state.name})`;
   if (state.status === "pending")
     return (
-      <li
-        className="flex items-center gap-2"
+      <Item
+        asChild
+        size="row"
+        className="min-w-0"
         data-testid="sc-source-pending"
         data-source={state.id}
       >
-        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
-        <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-(--tertiary-foreground)">
-          Still reading {where}
-        </span>
-        {state.kind === "host" ? (
-          <Button variant="link" size="sm" onClick={() => stopHost(state.id)} className={TEXT_LINK}>
-            Stop
-          </Button>
-        ) : null}
-      </li>
+        <li>
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
+          <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-(--tertiary-foreground)">
+            Still reading {where}
+          </span>
+          {state.kind === "host" ? (
+            <Button
+              variant="link"
+              size="sm"
+              onClick={() => stopHost(state.id)}
+              className={TEXT_LINK}
+            >
+              Stop
+            </Button>
+          ) : null}
+        </li>
+      </Item>
     );
   const problem = state.problem ? describeProblem(state.problem) : "";
   // One line per source: the full problem waits in the tooltip, so two
@@ -444,25 +459,33 @@ function SourceLine({
   const retry = () =>
     state.kind === "host" ? sources.refetchHost(state.id) : sources.refetchAccount(state.id);
   return (
-    <li className="flex items-center gap-2" data-testid="sc-source-problem" data-source={state.id}>
-      <span
-        aria-hidden
-        className={cx(
-          "size-1.5 shrink-0 rounded-full",
-          state.status === "failed" ? "bg-destructive" : "bg-warning",
-        )}
-      />
-      <span
-        title={problem || undefined}
-        className="min-w-0 flex-1 truncate text-[12px] leading-4 text-(--tertiary-foreground)"
-      >
-        {label}
-        {problem ? <span className="sr-only">. {problem}</span> : null}
-      </span>
-      <Button variant="link" size="sm" onClick={retry} className={TEXT_LINK}>
-        Retry
-      </Button>
-    </li>
+    <Item
+      asChild
+      size="row"
+      className="min-w-0"
+      data-testid="sc-source-problem"
+      data-source={state.id}
+    >
+      <li>
+        <span
+          aria-hidden
+          className={cx(
+            "size-1.5 shrink-0 rounded-full",
+            state.status === "failed" ? "bg-destructive" : "bg-warning",
+          )}
+        />
+        <span
+          title={problem || undefined}
+          className="min-w-0 flex-1 truncate text-[12px] leading-4 text-(--tertiary-foreground)"
+        >
+          {label}
+          {problem ? <span className="sr-only">. {problem}</span> : null}
+        </span>
+        <Button variant="link" size="sm" onClick={retry} className={TEXT_LINK}>
+          Retry
+        </Button>
+      </li>
+    </Item>
   );
 }
 
@@ -491,32 +514,37 @@ function SourcesFooter({
     // pads its lines clear of the indicator.
     <ul
       className={cx(
-        "m-0 flex shrink-0 list-none flex-col gap-2 border-t border-solid border-border-hairline px-4 pt-3",
+        "m-0 flex shrink-0 list-none flex-col border-t border-solid border-border-hairline px-2 pt-2",
         phone
-          ? "bg-background pb-[calc(0.75rem+var(--plugin-page-bottom-inset,0px))]"
+          ? "bg-background pb-[calc(0.5rem+var(--plugin-page-bottom-inset,0px))]"
           : drawer
-            ? "bg-sidebar pb-[calc(0.75rem+var(--sidebar-list-bottom-inset,0px))]"
-            : "sticky bottom-0 bg-sidebar pb-3",
+            ? "bg-sidebar pb-[calc(0.5rem+var(--sidebar-list-bottom-inset,0px))]"
+            : "sticky bottom-0 bg-sidebar pb-2",
       )}
     >
       {shown.map((state) => (
         <SourceLine key={`${state.kind}:${state.id}`} state={state} now={now} sources={sources} />
       ))}
       {sources.stopped.map((host) => (
-        <li key={host.hostId} className="flex items-center gap-2">
-          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-(--tertiary-foreground)" />
-          <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-(--tertiary-foreground)">
-            Not reading {host.name}
-          </span>
-          <Button
-            variant="link"
-            size="sm"
-            onClick={() => resumeHost(host.hostId)}
-            className={TEXT_LINK}
-          >
-            Read again
-          </Button>
-        </li>
+        <Item asChild size="row" className="min-w-0" key={host.hostId}>
+          <li>
+            <span
+              aria-hidden
+              className="size-1.5 shrink-0 rounded-full bg-(--tertiary-foreground)"
+            />
+            <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-(--tertiary-foreground)">
+              Not reading {host.name}
+            </span>
+            <Button
+              variant="link"
+              size="sm"
+              onClick={() => resumeHost(host.hostId)}
+              className={TEXT_LINK}
+            >
+              Read again
+            </Button>
+          </li>
+        </Item>
       ))}
     </ul>
   );
@@ -543,12 +571,10 @@ function LoadingRows() {
 
 function EmptyText({ children }: { children: string }) {
   return (
-    <p
-      className="m-0 px-4 py-6 text-[12px] leading-5 text-muted-foreground"
-      data-testid="sc-nav-empty"
-    >
-      {children}
-    </p>
+    // EmptyState takes no testid: the wrapper carries it.
+    <div data-testid="sc-nav-empty">
+      <EmptyState className="mx-4 my-6" messageClassName="m-0" message={children} />
+    </div>
   );
 }
 
@@ -564,9 +590,11 @@ function notListing(sources: ChangeSources, count: number, filter: Filter) {
   if (!page) {
     if (!sources.sourcesError) return <LoadingRows />;
     return (
-      <p className="m-0 px-4 py-6 text-[12px] leading-5 text-muted-foreground">
-        Couldn't ask the bb server what to list. {sources.sourcesError}
-      </p>
+      <EmptyState
+        className="mx-4 my-6"
+        messageClassName="m-0"
+        message={`Couldn't ask the bb server what to list. ${sources.sourcesError}`}
+      />
     );
   }
   if (page.hosts.length === 0 && page.accounts.length === 0)

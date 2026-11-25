@@ -498,6 +498,7 @@ const darkExpected = declarationMap({
   "--control-background": roleValues["layer.subtle"],
   "--control-primary": roleValues["layer.selected"],
   "--control-primary-hover": roleValues["layer.active"],
+  "--control-primary-foreground": "var(--foreground)",
   "--surface-recessed": roleValues["layer.subtle"],
   "--surface-recessed-solid": roleValues["solid.recessed"],
   "--surface-recessed-soft-solid": roleValues["solid.recessed"],

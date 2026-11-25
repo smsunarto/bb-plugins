@@ -11,9 +11,10 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { FENCE_LANGUAGES, SlotFence } from "./ui/SlotFence";
 import { GalleryPanel } from "./ui/GalleryPanel";
 import { UiDirective } from "./ui/UiDirective";
+import { withPortalMotion } from "./ui/portal-motion";
 
 export default definePluginApp((app) => {
-  app.slots.experimental_codeFenceRenderer({ id: "genui", languages: FENCE_LANGUAGES, component: SlotFence });
-  app.slots.messageDirective({ id: "ui", component: UiDirective });
-  app.slots.navPanel({ id: "gallery", title: "Gen-UI Gallery", icon: "genui/plugin", path: "gallery", component: GalleryPanel });
+  app.slots.experimental_codeFenceRenderer({ id: "genui", languages: FENCE_LANGUAGES, component: withPortalMotion(SlotFence) });
+  app.slots.messageDirective({ id: "ui", component: withPortalMotion(UiDirective) });
+  app.slots.navPanel({ id: "gallery", title: "Gen-UI Gallery", icon: "genui/plugin", path: "gallery", component: withPortalMotion(GalleryPanel) });
 });

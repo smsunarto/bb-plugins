@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "separator",
+  "type": "registry:ui",
+  "description": "Separator, re-exported from @bb-plugins/ui.",
+  "files": [
+    {
+      "path": "registry/components/ui/separator.tsx",
+      "content": "export { Separator, type SeparatorProps } from \"@bb-plugins/ui/separator\";\n",
+      "type": "registry:ui"
+    }
+  ]
+}

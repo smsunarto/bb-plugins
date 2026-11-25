@@ -1,9 +1,18 @@
 import { MarkdownEditor } from "@bb-plugins/markdown-editor";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Alert, AlertDescription } from "../../components/ui/alert.tsx";
 import { Badge } from "../../components/ui/badge.tsx";
-import { Button } from "../../components/ui/button.tsx";
+import { Button, CompactButton } from "../../components/ui/button.tsx";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "../../components/ui/collapsible.tsx";
+import { EmptyState } from "../../components/ui/empty-state.tsx";
+import { FieldError } from "../../components/ui/field.tsx";
 import { Input } from "../../components/ui/input.tsx";
+import { Item, ItemContent, ItemTitle } from "../../components/ui/item.tsx";
 import { Label } from "../../components/ui/label.tsx";
 import { Skeleton } from "../../components/ui/skeleton.tsx";
 import { Switch } from "../../components/ui/switch.tsx";
@@ -165,8 +174,10 @@ export function RuleCard({
     if (selected) card.current?.scrollIntoView?.({ block: "nearest" });
   }, [selected]);
   return (
-    <div
+    <Collapsible
       ref={card}
+      open={open}
+      onOpenChange={setOpen}
       data-rule={rule.id}
       aria-current={selected || undefined}
       className={`flex flex-col gap-3 rounded-lg border p-3 ${selected ? "border-primary" : "border-border"} ${rule.enabled ? "" : "opacity-60"}`}
@@ -185,39 +196,39 @@ export function RuleCard({
           className="h-7 min-w-0 flex-1 border-transparent bg-transparent px-1 text-sm font-medium shadow-none hover:border-input"
           onChange={(event) => onChange({ ...rule, name: event.target.value })}
         />
-        <Button
-          size="sm"
+        <CollapsibleTrigger asChild>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 max-w-[50%] gap-1 px-2 text-xs text-muted-foreground"
+            aria-label={`Scope: ${scopeSummary(rule.when, targets)}`}
+          >
+            <Icon name="Filter" className="size-3.5 shrink-0" aria-hidden />
+            <span className="truncate">{scopeSummary(rule.when, targets)}</span>
+            <Icon
+              name="ChevronDown"
+              className={`size-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+              aria-hidden
+            />
+          </Button>
+        </CollapsibleTrigger>
+        <CompactButton
+          size="icon-sm"
           variant="ghost"
-          className="h-7 max-w-[50%] gap-1 px-2 text-xs text-muted-foreground"
-          aria-expanded={open}
-          aria-label={`Scope: ${scopeSummary(rule.when, targets)}`}
-          onClick={() => setOpen(!open)}
-        >
-          <Icon name="Filter" className="size-3.5 shrink-0" aria-hidden />
-          <span className="truncate">{scopeSummary(rule.when, targets)}</span>
-          <Icon
-            name="ChevronDown"
-            className={`size-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
-            aria-hidden
-          />
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="size-7 p-0 text-muted-foreground hover:text-destructive"
+          tone="danger"
           aria-label={`Delete ${label}`}
           onClick={onDelete}
         >
           <Icon name="Trash2" className="size-3.5" aria-hidden />
-        </Button>
+        </CompactButton>
       </div>
-      {open && (
+      <CollapsibleContent>
         <ScopeEditor
           when={rule.when}
           targets={targets}
           onChange={(when) => onChange({ ...rule, when })}
         />
-      )}
+      </CollapsibleContent>
       <MarkdownEditor
         aria-label={`${label} instructions`}
         value={rule.instructions}
@@ -226,7 +237,7 @@ export function RuleCard({
         className="min-h-24 resize-y bg-background text-sm"
         onChange={(instructions) => onChange({ ...rule, instructions })}
       />
-    </div>
+    </Collapsible>
   );
 }
 
@@ -297,9 +308,7 @@ function RulesEditor({
   return (
     <div className="space-y-3">
       {draft.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          No rules yet. A rule with no scope applies to every agent.
-        </p>
+        <EmptyState message="No rules yet. A rule with no scope applies to every agent." />
       )}
       {draft.map((rule) => (
         <RuleCard
@@ -315,18 +324,17 @@ function RulesEditor({
         />
       ))}
       {conflict !== null && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 p-3 text-xs"
-        >
-          <span className="flex-1">Rules changed elsewhere since this page loaded.</span>
-          <Button size="sm" variant="outline" onClick={takeTheirs}>
-            Discard my edits
-          </Button>
-          <Button size="sm" variant="outline" onClick={keepMine}>
-            Overwrite with mine
-          </Button>
-        </div>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>Rules changed elsewhere since this page loaded.</AlertDescription>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={takeTheirs}>
+              Discard my edits
+            </Button>
+            <Button size="sm" variant="outline" onClick={keepMine}>
+              Overwrite with mine
+            </Button>
+          </div>
+        </Alert>
       )}
       <div className="flex min-h-8 items-center justify-between gap-4">
         <Button size="sm" variant="outline" className="gap-1" onClick={addRule}>
@@ -334,9 +342,7 @@ function RulesEditor({
           Add rule
         </Button>
         {error !== null ? (
-          <span className="text-xs text-destructive" role="alert">
-            {error}
-          </span>
+          <FieldError>{error}</FieldError>
         ) : (
           conflict === null && <output className="text-xs text-muted-foreground">{status}</output>
         )}
@@ -351,9 +357,9 @@ function Loaded({ selected }: { selected: string | null }) {
   const targets = useRpcQuery("targets", null);
   if (rules.isError || targets.isError) {
     return (
-      <p className="text-xs text-destructive" role="alert">
-        {(rules.error ?? targets.error)?.message}
-      </p>
+      <Alert variant="destructive" role="alert">
+        <AlertDescription>{(rules.error ?? targets.error)?.message}</AlertDescription>
+      </Alert>
     );
   }
   if (!rules.data || !targets.data) {
@@ -389,9 +395,9 @@ export function RulesSection({ subPath }: { subPath: string }) {
       {rules.data ? (
         <RuleRows server={rules.data} selected={parseRulesRoute(subPath)?.rule ?? null} />
       ) : rules.isError ? (
-        <p className="pe-meta pe-wrap" data-tone="bad" role="alert">
-          {rules.error.message}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{rules.error.message}</AlertDescription>
+        </Alert>
       ) : (
         <Skeleton className="m-2 h-3 w-3/5" />
       )}
@@ -410,31 +416,40 @@ function RuleRows({ server, selected }: { server: RulesState; selected: string |
       {draft.map((rule) => {
         const scope = scopeSummary(rule.when, targets);
         return (
-          <button
-            key={rule.id}
-            type="button"
-            className="pe-row"
-            aria-current={rule.id === selected || undefined}
-            title={scope}
-            onClick={() => navigate.toPluginPanel("instructions", { subPath: ruleRoute(rule.id) })}
-          >
-            <span className="pe-row-label">{rule.name.trim() || "Untitled rule"}</span>
-            {!rule.enabled && (
-              <Badge variant="outline" className="py-0">
-                off
-              </Badge>
-            )}
-            {scope !== "Always" && (
-              <Badge variant="secondary" className="block min-w-0 max-w-[55%] shrink truncate py-0">
-                {scope}
-              </Badge>
-            )}
-          </button>
+          <Item key={rule.id} asChild size="row" className="relative">
+            <button
+              type="button"
+              aria-current={rule.id === selected || undefined}
+              title={scope}
+              onClick={() =>
+                navigate.toPluginPanel("instructions", { subPath: ruleRoute(rule.id) })
+              }
+            >
+              <ItemContent>
+                <ItemTitle>{rule.name.trim() || "Untitled rule"}</ItemTitle>
+              </ItemContent>
+              {!rule.enabled && (
+                <Badge variant="outline" className="py-0">
+                  off
+                </Badge>
+              )}
+              {scope !== "Always" && (
+                <Badge
+                  variant="secondary"
+                  className="block min-w-0 max-w-[55%] shrink truncate py-0"
+                >
+                  {scope}
+                </Badge>
+              )}
+            </button>
+          </Item>
         );
       })}
-      <button type="button" className="pe-row pe-add" onClick={addRule}>
-        <span className="pe-row-label">+ New rule</span>
-      </button>
+      <Item asChild size="row">
+        <button type="button" onClick={addRule}>
+          <ItemTitle>+ New rule</ItemTitle>
+        </button>
+      </Item>
     </>
   );
 }

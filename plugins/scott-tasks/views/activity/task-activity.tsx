@@ -5,7 +5,10 @@ import AttachmentIcon from "@hugeicons/core-free-icons/AttachmentIcon";
 import File01Icon from "@hugeicons/core-free-icons/File01Icon";
 import Notification02Icon from "@hugeicons/core-free-icons/Notification02Icon";
 import NotificationOff02Icon from "@hugeicons/core-free-icons/NotificationOff02Icon";
-import { Button } from "@/components/ui/button";
+import { CompactButton } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FieldError } from "@/components/ui/field";
 import { Toggle } from "@/components/ui/toggle";
 import { Hint } from "../../components/hint.js";
 import { cn } from "@/lib/utils";
@@ -308,7 +311,9 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
           ))}
         </div>
       ) : null}
-      {error ? <div className="mt-2 text-xs text-destructive">{error}</div> : null}
+      <FieldError role="none" className="mt-2">
+        {error}
+      </FieldError>
       <div className="mt-2 flex items-center gap-2">
         <AgentNotificationControl
           target={notificationTarget}
@@ -326,26 +331,27 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
             event.target.value = "";
           }}
         />
-        <Button
+        <CompactButton
           type="button"
-          size="icon"
+          size="icon-sm"
           variant="ghost"
+          tone="muted"
           aria-label="Attach file"
-          className="size-7 shrink-0 text-muted-foreground max-md:pointer-coarse:size-11"
+          className="shrink-0 max-md:pointer-coarse:size-11"
           onClick={() => fileInputRef.current?.click()}
         >
           <HugeiconsIcon icon={AttachmentIcon} className="size-3.5" />
-        </Button>
-        <Button
+        </CompactButton>
+        <CompactButton
           type="button"
-          size="icon"
+          size="icon-sm"
           aria-label="Comment"
           disabled={!canSend}
-          className="size-7 shrink-0 rounded-md bg-foreground text-background hover:bg-foreground/90 max-md:pointer-coarse:size-11"
+          className="shrink-0 max-md:pointer-coarse:size-11"
           onClick={() => void send()}
         >
           <HugeiconsIcon icon={ArrowUp02Icon} className="size-3.5" />
-        </Button>
+        </CompactButton>
       </div>
     </div>
   );
@@ -407,7 +413,7 @@ export function TaskActivity({ taskId }: TaskActivityProps) {
 
   return (
     <section aria-label="Activity">
-      <div className="mt-6 border-t border-border-hairline" />
+      <Separator className="mt-6" />
       <h2 className="pb-3 pt-4 text-sm font-semibold">Activity</h2>
       <div
         className={cn(
@@ -420,7 +426,7 @@ export function TaskActivity({ taskId }: TaskActivityProps) {
           <div className="text-xs text-destructive">{errorMessage(feed.error)}</div>
         ) : null}
         {comments.length === 0 && !feed.isLoading && !feed.error ? (
-          <div className="text-xs text-muted-foreground">No activity yet.</div>
+          <EmptyState message="No activity yet." />
         ) : null}
         {comments.map((comment) =>
           comment.source.kind === "system" ? (

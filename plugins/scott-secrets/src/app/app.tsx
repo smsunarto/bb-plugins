@@ -12,15 +12,21 @@ import {
   sudoRequestPayloadSchema,
 } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
-import { Input } from "./components/ui/input.tsx";
-import { Label } from "./components/ui/label.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
+import { Field, FieldDescription, FieldError, FieldLabel } from "./components/ui/field.tsx";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "./components/ui/input-group.tsx";
 
 type Busy = "submit" | "cancel" | null;
 
 function InvalidRequest({ cancel, what }: { cancel: () => Promise<void>; what: string }) {
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">This {what} request is invalid.</p>
+      <EmptyState message={`This ${what} request is invalid.`} />
       <Button variant="outline" onClick={() => void cancel().catch(() => {})}>
         Cancel
       </Button>
@@ -29,14 +35,7 @@ function InvalidRequest({ cancel, what }: { cancel: () => Promise<void>; what: s
 }
 
 function ErrorLine({ children }: { children: ReactNode }) {
-  return (
-    <p
-      className="rounded-md border border-surface-destructive-border bg-surface-destructive px-2 py-1 text-xs text-destructive-text"
-      aria-live="polite"
-    >
-      {children}
-    </p>
-  );
+  return <FieldError aria-live="polite">{children}</FieldError>;
 }
 
 function Actions({
@@ -83,8 +82,8 @@ function SecretField(props: {
 }) {
   const [visible, setVisible] = useState(false);
   return (
-    <div className="relative">
-      <Input
+    <InputGroup>
+      <InputGroupInput
         id={props.id}
         name={props.name}
         type={visible ? "text" : "password"}
@@ -96,24 +95,23 @@ function SecretField(props: {
         value={props.value}
         onChange={(event) => props.onChange(event.target.value)}
         disabled={props.disabled}
-        className="bg-card pr-16 font-mono"
+        className="font-mono"
       />
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        className="absolute right-1 top-1/2 h-7 -translate-y-1/2 px-2 text-xs text-muted-foreground"
-        aria-label={`${visible ? "Hide" : "Show"} ${props.name}`}
-        aria-pressed={visible}
-        // The press leaves focus in the field, so a phone keeps its keyboard up.
-        onPointerDown={(event) => event.preventDefault()}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => setVisible((shown) => !shown)}
-        disabled={props.disabled}
-      >
-        {visible ? "Hide" : "Show"}
-      </Button>
-    </div>
+      <InputGroupAddon align="inline-end">
+        <InputGroupButton
+          type="button"
+          aria-label={`${visible ? "Hide" : "Show"} ${props.name}`}
+          aria-pressed={visible}
+          // The press leaves focus in the field, so a phone keeps its keyboard up.
+          onPointerDown={(event) => event.preventDefault()}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => setVisible((shown) => !shown)}
+          disabled={props.disabled}
+        >
+          {visible ? "Hide" : "Show"}
+        </InputGroupButton>
+      </InputGroupAddon>
+    </InputGroup>
   );
 }
 
@@ -179,19 +177,11 @@ function SecretRequestForm({ interaction, submit, cancel }: PluginPendingInterac
         {request.fields.map((field) => {
           const id = `secret-${interaction.id}-${field.name}`;
           return (
-            <div key={field.name} className="flex min-w-0 flex-col gap-1">
-              <div className="flex flex-col gap-1">
-                <Label
-                  htmlFor={id}
-                  className="font-mono text-xs font-semibold leading-normal"
-                  translate="no"
-                >
-                  {field.name}
-                </Label>
-                {field.description ? (
-                  <p className="text-xs leading-snug text-muted-foreground">{field.description}</p>
-                ) : null}
-              </div>
+            <Field key={field.name} className="min-w-0 gap-1">
+              <FieldLabel htmlFor={id} className="font-mono" translate="no">
+                {field.name}
+              </FieldLabel>
+              {field.description ? <FieldDescription>{field.description}</FieldDescription> : null}
               <SecretField
                 id={id}
                 name={field.name}
@@ -199,7 +189,7 @@ function SecretRequestForm({ interaction, submit, cancel }: PluginPendingInterac
                 disabled={busy !== null}
                 onChange={(value) => setValues((current) => ({ ...current, [field.name]: value }))}
               />
-            </div>
+            </Field>
           );
         })}
       </div>
@@ -275,10 +265,8 @@ function SudoRequestForm({ interaction, submit, cancel }: PluginPendingInteracti
           on <span className="font-medium text-foreground">{request.host}</span>.
         </p>
       </div>
-      <div className="flex min-w-0 flex-col gap-1">
-        <Label htmlFor={passwordId} className="text-xs font-semibold leading-normal">
-          sudo password
-        </Label>
+      <Field className="min-w-0 gap-1">
+        <FieldLabel htmlFor={passwordId}>sudo password</FieldLabel>
         <SecretField
           id={passwordId}
           name="sudo password"
@@ -286,11 +274,11 @@ function SudoRequestForm({ interaction, submit, cancel }: PluginPendingInteracti
           disabled={busy !== null}
           onChange={setPassword}
         />
-        <p className="text-xs leading-snug text-muted-foreground">
+        <FieldDescription>
           Kept only in memory on {request.host}, for this thread only, for {request.cacheMinutes}{" "}
           min. Until then, this thread runs sudo commands without asking again.
-        </p>
-      </div>
+        </FieldDescription>
+      </Field>
       {error ? <ErrorLine>{error}</ErrorLine> : null}
       <Actions
         busy={busy}

@@ -29,7 +29,7 @@ import { ConfirmDialog } from "../../components/confirm-dialog.js";
 import { useTasksRpc } from "../../shell/data.js";
 import { useTasksUi } from "../../shell/ui-store.js";
 import { badgeVariants } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
 import { Hint } from "../../components/hint.js";
 import {
   DropdownMenu,
@@ -39,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
+import { StatusDot } from "@/components/ui/status-dot";
 import { cn } from "@/lib/utils";
 
 const CHECK_TONE: Record<ThreadPullRequestInfo["checks"][number]["id"], string> = {
@@ -199,7 +200,7 @@ function ThreadCard({
       <div className="wrap-anywhere text-sm font-medium">{thread.title}</div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
         <span className={cn("flex shrink-0 items-center gap-1 font-medium", meta.textClassName)}>
-          <span aria-hidden className={cn("size-1.5 rounded-full", meta.dotClassName)} />
+          <StatusDot tone={meta.dotTone} pulse={meta.pulse} size="sm" />
           {meta.label}
         </span>
         <span>
@@ -224,16 +225,17 @@ function ThreadCard({
           <Icon name="ArrowUpRight" className="size-3" />
         </Button>
         <Hint label="Detach from task">
-          <Button
+          <CompactButton
             variant="ghost"
-            size="icon"
+            tone="muted"
+            size="icon-sm"
             aria-label={`Detach ${thread.title}`}
             disabled={busy}
-            className="ml-auto size-7 shrink-0 text-muted-foreground max-md:pointer-coarse:size-11"
+            className="ml-auto shrink-0 max-md:pointer-coarse:size-11"
             onClick={onDetach}
           >
             <Icon name="X" className="size-3" />
-          </Button>
+          </CompactButton>
         </Hint>
       </div>
     </div>

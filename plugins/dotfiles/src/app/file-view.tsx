@@ -1,5 +1,7 @@
 import { useDeferredValue, useMemo, useState } from "react";
 import type { ReactElement } from "react";
+import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { buildDiff } from "./diff.ts";
@@ -29,11 +31,15 @@ export function FileView({ host, path }: FileViewProps): ReactElement {
   }
   if (editor.status === "error") {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="text-sm text-destructive">{editor.message}</p>
-        <Button variant="outline" onClick={editor.retry}>
-          Retry
-        </Button>
+      <div className="flex flex-1 items-center justify-center p-6">
+        <Alert variant="destructive" role="none" className="max-w-md">
+          <AlertDescription>{editor.message}</AlertDescription>
+          <AlertAction>
+            <Button size="sm" variant="outline" onClick={editor.retry}>
+              Retry
+            </Button>
+          </AlertAction>
+        </Alert>
       </div>
     );
   }
@@ -45,6 +51,13 @@ function saveStatusLabel(editor: ReadyFileEditor): string {
   if (editor.saving) return "Saving…";
   if (editor.dirty) return "Unsaved changes";
   return "Saved";
+}
+
+function saveStatusVariant(editor: ReadyFileEditor): BadgeProps["variant"] {
+  if (editor.conflict) return "danger";
+  if (editor.saving) return "secondary";
+  if (editor.dirty) return "warning";
+  return "secondary";
 }
 
 function ReadyFileView({
@@ -97,9 +110,9 @@ function ReadyFileView({
           <Button size="sm" variant="outline" onClick={editor.reload} disabled={editor.saving}>
             Reload
           </Button>
-          <span aria-live="polite" className="text-xs text-muted-foreground">
+          <Badge aria-live="polite" variant={saveStatusVariant(editor)}>
             {saveStatusLabel(editor)}
-          </span>
+          </Badge>
         </div>
       </div>
 

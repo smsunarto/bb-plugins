@@ -33,8 +33,9 @@ import { PropertiesRail, type TaskPropertyUpdate } from "./rail.js";
 import { ThreadsSection } from "./threads.js";
 import { DetailToasts, useDetailToasts } from "./toast.js";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Item, ItemGroup } from "@/components/ui/item";
 import { Hint } from "../../components/hint.js";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -124,50 +125,52 @@ function SubTasksSection({
 
   return (
     <section ref={ref} className="mt-5">
-      {subtasks.map((subtask) => (
-        <button
-          key={subtask.id}
-          type="button"
-          className="flex h-8 w-full items-center gap-2 border-b border-border-hairline text-left text-sm hover:bg-state-hover"
-          title={STATUS_LABELS[subtask.status]}
-          onClick={() => navigation.go({ kind: "task", taskKey: subtask.key })}
-        >
-          <StatusIcon status={subtask.status} />
-          <span className="shrink-0 text-xs text-muted-foreground">{subtask.key}</span>
-          <span className="min-w-0 truncate">{subtask.title}</span>
-        </button>
-      ))}
-      {adding ? (
-        <div className="flex h-8 items-center gap-2 border-b border-border-hairline">
-          <StatusIcon status="todo" className="opacity-60" />
-          <input
-            autoFocus
-            value={title}
-            placeholder={`Sub-task of ${task.key}…`}
-            className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            onChange={(event) => setTitle(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void submit();
-              if (event.key === "Escape") {
-                setAdding(false);
-                setTitle("");
-              }
-            }}
-            onBlur={() => {
-              if (!title.trim()) setAdding(false);
-            }}
-          />
-        </div>
-      ) : null}
-      <Button
+      <ItemGroup variant="flush" role="none">
+        {subtasks.map((subtask) => (
+          <Item key={subtask.id} asChild size="row">
+            <button
+              type="button"
+              title={STATUS_LABELS[subtask.status]}
+              onClick={() => navigation.go({ kind: "task", taskKey: subtask.key })}
+            >
+              <StatusIcon status={subtask.status} />
+              <span className="shrink-0 text-xs text-muted-foreground">{subtask.key}</span>
+              <span className="min-w-0 truncate">{subtask.title}</span>
+            </button>
+          </Item>
+        ))}
+        {adding ? (
+          <Item size="row">
+            <StatusIcon status="todo" className="opacity-60" />
+            <input
+              autoFocus
+              value={title}
+              placeholder={`Sub-task of ${task.key}…`}
+              className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              onChange={(event) => setTitle(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void submit();
+                if (event.key === "Escape") {
+                  setAdding(false);
+                  setTitle("");
+                }
+              }}
+              onBlur={() => {
+                if (!title.trim()) setAdding(false);
+              }}
+            />
+          </Item>
+        ) : null}
+      </ItemGroup>
+      <CompactButton
         variant="ghost"
         size="sm"
-        className="-ml-2 h-7 gap-1 px-2 text-muted-foreground"
+        className="gap-1 text-muted-foreground"
         onClick={() => setAdding(true)}
       >
         <Icon name="Plus" className="size-3" />
         Add sub-task
-      </Button>
+      </CompactButton>
     </section>
   );
 }

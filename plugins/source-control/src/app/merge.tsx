@@ -16,6 +16,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ComponentProps,
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
@@ -24,7 +25,7 @@ import type { ChangeKey } from "../core/ids.ts";
 import { parseChangeKey, type ChangeDetail } from "../core/review.ts";
 import type { MergeMethod } from "../core/merge.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { Button, type ButtonProps } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import {
   Dialog,
   DialogContent,
@@ -296,6 +297,7 @@ export function MergeButton({
   submit,
   label = "Merge",
   variant = "outline",
+  size = "sm",
   className,
   testId = "sc-merge",
   disabled,
@@ -303,7 +305,9 @@ export function MergeButton({
   target: MergeTarget;
   submit: SubmitMerge;
   label?: ReactNode;
-  variant?: ButtonProps["variant"];
+  variant?: ComponentProps<typeof CompactButton>["variant"];
+  /** `sm` is 28px, `default` 32px. */
+  size?: ComponentProps<typeof CompactButton>["size"];
   className?: string;
   testId?: string;
   disabled?: boolean;
@@ -315,11 +319,11 @@ export function MergeButton({
   const busy = phase !== "idle";
   return (
     <>
-      <Button
-        size="sm"
+      <CompactButton
+        size={size}
         ref={trigger}
         variant={variant}
-        className={cn("h-7", busy && "cursor-default opacity-70", className)}
+        className={cn(busy && "cursor-default opacity-70", className)}
         data-testid={testId}
         data-phase={phase}
         disabled={disabled}
@@ -333,7 +337,7 @@ export function MergeButton({
       >
         <Pending pending={phase === "merging"} icon={phase === "merged" ? "Check" : "GitMerge"} />
         {phase === "merging" ? "Merging…" : phase === "merged" ? "Merged" : label}
-      </Button>
+      </CompactButton>
       {open ? (
         <MergeDialog
           target={open}
@@ -380,10 +384,10 @@ export function MergeDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button size="sm" className="h-7" variant="outline" onClick={onClose}>
+          <CompactButton size="sm" variant="outline" onClick={onClose}>
             Cancel
-          </Button>
-          <Button
+          </CompactButton>
+          <CompactButton
             size="sm"
             variant="default"
             data-testid="sc-merge-confirm"
@@ -391,10 +395,9 @@ export function MergeDialog({
               onConfirm();
               onClose();
             }}
-            className="h-7"
           >
             Squash and merge
-          </Button>
+          </CompactButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

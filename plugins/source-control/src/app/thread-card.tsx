@@ -12,14 +12,16 @@ import {
   useRealtimeConnectionState,
 } from "@get-bb/plugin-sdk/app";
 import { useMemo, useRef, useState, type ReactNode } from "react";
+import { EmptyState } from "./components/ui/empty-state.tsx";
 import { describeProblem } from "../core/change.ts";
 import { canShip, hasWork, summarize } from "../core/status.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { CardNote, CardSkeleton, ChangeCard, useSeen } from "./chat-card.tsx";
 import { cx } from "./format.ts";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { CARD_ACTION_CLASS, Pending } from "./ui.tsx";
+import { AlertDescription } from "./components/ui/alert.tsx";
 
 /**
  * Ship it: one message asking the thread's agent to commit and publish its
@@ -51,25 +53,26 @@ export type ThreadShip = {
 
 export function ShipButton({ ship }: { ship: ReturnType<typeof useShipThread> }) {
   return (
-    <Button
+    <CompactButton
       size="sm"
       variant="default"
       data-testid="sc-card-ship"
       disabled={ship.pending}
       onClick={() => void ship.send()}
-      className={cx(CARD_ACTION_CLASS, "gap-2 px-3 font-semibold")}
+      className={cx(CARD_ACTION_CLASS, "gap-2")}
     >
       <Pending pending={ship.pending} icon="Sent" />
       Ship it
-    </Button>
+    </CompactButton>
   );
 }
 
-export function Quiet({ children, testId }: { children: ReactNode; testId: string }) {
+export function Quiet({ children, testId }: { children: string; testId: string }) {
+  // EmptyState takes no testid: the wrapper carries it.
   return (
-    <span data-testid={testId} className="text-[12px] leading-4 text-muted-foreground">
-      {children}
-    </span>
+    <div data-testid={testId}>
+      <EmptyState messageClassName="m-0" message={children} />
+    </div>
   );
 }
 
@@ -165,21 +168,21 @@ export function ThreadCard({ threadId }: { threadId: string }) {
   else if (row?.state === "checkout" && row.local.problem)
     body = (
       <CardNote testId="sc-card-failed">
-        <p role="alert" className="m-0 text-[13px] leading-5 text-muted-foreground">
+        <AlertDescription>
           {connection === "connected" ? describeProblem(row.local.problem) : "Offline."}
-        </p>
+        </AlertDescription>
       </CardNote>
     );
   else if (query.error && !row)
     body = (
       <CardNote testId="sc-card-failed">
-        <p role="alert" className="m-0 text-[13px] leading-5 text-muted-foreground">
+        <AlertDescription>
           Couldn't read this thread's changes. {query.error.message}
-        </p>
+        </AlertDescription>
         <div>
-          <Button size="sm" className="h-7" variant="outline" onClick={() => void query.refetch()}>
+          <CompactButton size="sm" variant="outline" onClick={() => void query.refetch()}>
             Try again
-          </Button>
+          </CompactButton>
         </div>
       </CardNote>
     );

@@ -10,7 +10,7 @@ import { useEscapeLayer } from "./escape.ts";
 import { useHostGate } from "./host-gate.ts";
 import { plural } from "./format.ts";
 import type { Dispatch } from "./branch-actions.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import {
   Select,
   SelectContent,
@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "./components/ui/select.tsx";
 import { Textarea } from "./components/ui/textarea.tsx";
-import { Label } from "./components/ui/label.tsx";
+import { Field, FieldDescription, FieldLabel } from "./components/ui/field.tsx";
 import { Pending, ReasonHint } from "./ui.tsx";
 
 /**
@@ -108,21 +108,18 @@ export function CommitControl({
         if (canSend) send();
       }}
     >
-      <Label
-        htmlFor={`${id}-message`}
-        className="text-[12px] leading-4 font-normal text-muted-foreground"
-      >
-        Commit message
-      </Label>
-      <Textarea
-        id={`${id}-message`}
-        data-testid="sc-commit-message"
-        ref={field}
-        rows={3}
-        value={message}
-        onChange={(event) => setMessage(event.target.value)}
-        className="min-h-0 w-full min-w-0 resize-y border-border-hairline bg-background px-2 py-1 text-[12px] leading-normal"
-      />
+      <Field className="gap-2">
+        <FieldLabel htmlFor={`${id}-message`}>Commit message</FieldLabel>
+        <Textarea
+          id={`${id}-message`}
+          data-testid="sc-commit-message"
+          ref={field}
+          rows={3}
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          className="min-h-0 w-full min-w-0 resize-y border-border-hairline bg-background px-2 py-1 text-[12px] leading-normal"
+        />
+      </Field>
       {branches.length > 1 ? (
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] leading-4 text-muted-foreground">
           <span id={`${id}-branch`}>Onto</span>
@@ -144,25 +141,18 @@ export function CommitControl({
           </Select>
         </div>
       ) : null}
-      <p className="m-0 text-[12px] leading-4 text-muted-foreground">
+      <FieldDescription className="m-0">
         Commits the {plural(changes.length, "file")} listed onto{" "}
         <span className="font-mono text-foreground">{branch.name}</span>
         {more > 0 ? `; ${plural(more, "more file")} stay uncommitted.` : "."}
-      </p>
+      </FieldDescription>
       <div className="flex min-w-0 flex-wrap justify-end gap-2">
-        <Button
-          size="sm"
-          className="h-7"
-          type="button"
-          variant="outline"
-          onClick={() => setOpen(false)}
-        >
+        <CompactButton size="sm" type="button" variant="outline" onClick={() => setOpen(false)}>
           Cancel
-        </Button>
+        </CompactButton>
         <ReasonHint reason={gate}>
-          <Button
+          <CompactButton
             size="sm"
-            className="h-7"
             type="submit"
             variant="default"
             data-host-bound="commit"
@@ -170,7 +160,7 @@ export function CommitControl({
             disabled={!canSend}
           >
             Commit
-          </Button>
+          </CompactButton>
         </ReasonHint>
       </div>
     </form>
@@ -196,9 +186,8 @@ function CommitOpener({
   return (
     <div className="flex min-w-0 border-t border-border-hairline px-3 py-2">
       <ReasonHint reason={gate}>
-        <Button
+        <CompactButton
           size="sm"
-          className="h-7"
           variant="outline"
           ref={opener}
           disabled={off}
@@ -209,7 +198,7 @@ function CommitOpener({
         >
           <Pending pending={pending} icon="Check" />
           Commit
-        </Button>
+        </CompactButton>
       </ReasonHint>
     </div>
   );

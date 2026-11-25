@@ -16,6 +16,7 @@ import {
   getOverlayTriggerClassName,
   preventOverlayTriggerSelection,
 } from "./overlay-trigger.js";
+import { useCloseWhenAnchorDetaches } from "./overlay-anchor.js";
 import { usePointerCoarse } from "./hooks/use-pointer-coarse.js";
 
 const ResponsivePopoverContext = React.createContext<ResponsiveOverlayContextValue>({
@@ -55,6 +56,7 @@ const PopoverTrigger = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Trigger>
 >(({ asChild, children, className, ...props }, ref) => {
   const { isCompactViewport, open, onOpenChange } = useResponsivePopover();
+  const anchorRef = useCloseWhenAnchorDetaches(ref, open && !isCompactViewport, onOpenChange);
 
   if (isCompactViewport) {
     return (
@@ -74,7 +76,7 @@ const PopoverTrigger = React.forwardRef<
 
   return (
     <PopoverPrimitive.Trigger
-      ref={ref}
+      ref={anchorRef}
       asChild={asChild}
       className={getOverlayTriggerClassName(className)}
       onMouseDown={(event) => {
@@ -143,13 +145,13 @@ const PopoverContent = React.forwardRef<
           closeOnBackdropClick={dismissOnOutsideInteraction}
           contentClassName={mobileClassName}
           onContentAnimationEnd={onMobileContentAnimationEnd}
+          onEscapeKeyDown={props.onEscapeKeyDown}
+          onPointerDownOutside={props.onPointerDownOutside}
+          onInteractOutside={onInteractOutside}
         >
           <div
             ref={ref}
-            className={cn(
-              "overflow-y-auto px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]",
-              className,
-            )}
+            className={cn("overflow-y-auto px-4 pt-2 pb-4", className)}
             {...domProps}
             style={{ ...style, ...COMPACT_SHEET_CONTENT_STYLE }}
           >
@@ -171,7 +173,7 @@ const PopoverContent = React.forwardRef<
             if (!isPointerCoarse) onOpenAutoFocus?.(event);
           }}
           className={cn(
-            "z-50 w-96 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+            "z-50 w-72 rounded-md bg-popover p-4 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
             className,
           )}
           {...props}
@@ -192,14 +194,15 @@ const PopoverAnchor = React.forwardRef<
   React.ComponentRef<typeof PopoverPrimitive.Anchor>,
   React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Anchor>
 >(({ children, ...props }, ref) => {
-  const { isCompactViewport } = useResponsivePopover();
+  const { isCompactViewport, open, onOpenChange } = useResponsivePopover();
+  const anchorRef = useCloseWhenAnchorDetaches(ref, open && !isCompactViewport, onOpenChange);
 
   if (isCompactViewport) {
     return <>{children}</>;
   }
 
   return (
-    <PopoverPrimitive.Anchor ref={ref} {...props}>
+    <PopoverPrimitive.Anchor ref={anchorRef} {...props}>
       {children}
     </PopoverPrimitive.Anchor>
   );

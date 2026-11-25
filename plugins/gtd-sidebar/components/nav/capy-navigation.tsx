@@ -26,7 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import { Icon } from "../ui/icon";
+import { Icon } from "../hugeicon";
 import { MenuSurface } from "../inbox/menu-surface";
 import { markScrolled, revealFocusedRow, useNavScroll } from "./nav-scroll";
 

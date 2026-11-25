@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "spinner",
+  "type": "registry:ui",
+  "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+  "files": [
+    {
+      "path": "registry/components/ui/spinner.tsx",
+      "content": "import { experimental_Icon as Icon } from \"@get-bb/plugin-sdk/app\";\nimport { cn } from \"../../lib/utils\";\n\n/** shadcn's Spinner, drawn with bb's icon. Decorative: the busy control says what is loading. */\nfunction Spinner({ className }: { className?: string }) {\n  return (\n    <Icon\n      name=\"Spinner\"\n      className={cn(\"size-3.5 shrink-0 animate-spin motion-reduce:animate-none\", className)}\n      aria-hidden\n    />\n  );\n}\n\nexport { Spinner };\n",
+      "type": "registry:ui"
+    }
+  ]
+}

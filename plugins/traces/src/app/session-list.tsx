@@ -3,6 +3,9 @@ import type { RefObject } from "react";
 import type { TraceSession } from "../shared/model.ts";
 import { useRpcQuery } from "./rpc.ts";
 import { Empty, Pages, QueryError, moveSelection, providerLabel, shortDate } from "./controls.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
+import { Badge } from "./components/ui/badge.tsx";
+import { Item, ItemContent, ItemTitle } from "./components/ui/item.tsx";
 const EMPTY_SESSIONS: TraceSession[] = [];
 
 export function SessionList({
@@ -60,14 +63,16 @@ export function SessionList({
   return (
     <div className="tr-list-column">
       <div className="tr-column-heading">
-        <span>Sessions</span>
-        <small>
+        <span className="tr-column-label">Sessions</span>
+        <Badge variant="count">
           {items.length}
           {result.data?.nextCursor ? "+" : ""}
-        </small>
+        </Badge>
       </div>
       {selected && selectedIndex < 0 && items.length > 0 && (
-        <div className="tr-selection-notice">Current session is on another page.</div>
+        <Alert role="none" className="mx-2 mt-2 w-auto">
+          <AlertDescription>Current session is on another page.</AlertDescription>
+        </Alert>
       )}
       {result.isPending ? (
         <Empty heading="Loading sessions…" />
@@ -79,49 +84,52 @@ export function SessionList({
         <section
           ref={listRef}
           tabIndex={-1}
-          className="tr-session-list"
+          className="tr-session-list flex flex-col gap-0.5 p-1"
           aria-label="Trace sessions"
         >
           {items.map((session, index) => (
-            <button
-              key={session.id}
-              id={`tr-session-${session.id}`}
-              data-row-index={index}
-              aria-pressed={selected?.id === session.id}
-              tabIndex={(selectedIndex < 0 ? index === 0 : selectedIndex === index) ? 0 : -1}
-              className="tr-session-row"
-              onKeyDown={(event) => {
-                const next = moveSelection(event, selectedIndex, items.length);
-                if (next !== null) {
-                  selectIndex(next);
-                  event.stopPropagation();
-                }
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  selectIndex(index);
-                  onOpen();
-                }
-              }}
-              onClick={() => {
-                onSelect(session);
-                if (stacked) onOpen();
-              }}
-            >
-              <span className="tr-session-title">{session.title}</span>
-              <span className="tr-row-meta">
-                <span>{providerLabel(session.provider)}</span>
-                <span>{session.cwd?.split("/").findLast(Boolean) ?? "No workspace"}</span>
-              </span>
-              <span className="tr-row-meta">
-                <time>{shortDate(session.updatedAt)}</time>
-                <span>{session.eventCount.toLocaleString()} events</span>
-              </span>
-              {session.errorCount > 0 && (
-                <small className="tr-row-error">
-                  {session.errorCount} {session.errorCount === 1 ? "error" : "errors"}
-                </small>
-              )}
-            </button>
+            <Item asChild size="sm" key={session.id}>
+              <button
+                type="button"
+                id={`tr-session-${session.id}`}
+                data-row-index={index}
+                aria-pressed={selected?.id === session.id}
+                tabIndex={(selectedIndex < 0 ? index === 0 : selectedIndex === index) ? 0 : -1}
+                onKeyDown={(event) => {
+                  const next = moveSelection(event, selectedIndex, items.length);
+                  if (next !== null) {
+                    selectIndex(next);
+                    event.stopPropagation();
+                  }
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    selectIndex(index);
+                    onOpen();
+                  }
+                }}
+                onClick={() => {
+                  onSelect(session);
+                  if (stacked) onOpen();
+                }}
+              >
+                <ItemContent>
+                  <ItemTitle>{session.title}</ItemTitle>
+                  <span className="tr-row-meta">
+                    <span>{providerLabel(session.provider)}</span>
+                    <span>{session.cwd?.split("/").findLast(Boolean) ?? "No workspace"}</span>
+                  </span>
+                  <span className="tr-row-meta">
+                    <time>{shortDate(session.updatedAt)}</time>
+                    <span>{session.eventCount.toLocaleString()} events</span>
+                  </span>
+                  {session.errorCount > 0 && (
+                    <Badge variant="danger">
+                      {session.errorCount} {session.errorCount === 1 ? "error" : "errors"}
+                    </Badge>
+                  )}
+                </ItemContent>
+              </button>
+            </Item>
           ))}
         </section>
       )}

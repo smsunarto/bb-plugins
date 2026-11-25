@@ -1,0 +1,956 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "bb-plugins",
+  "homepage": "https://github.com/smsunarto/bb-plugins",
+  "items": [
+    {
+      "name": "bb-vega",
+      "type": "registry:base",
+      "title": "bb Vega",
+      "description": "The shadcn preset b5JNZnXf8 (Vega, neutral, small radius, Inter, Lucide, sky charts) that this kit is based on, for projects outside bb such as a preview app: `bunx shadcn@latest init @bb-plugins/bb-vega`.",
+      "config": {
+        "style": "radix-vega",
+        "iconLibrary": "lucide",
+        "menuColor": "default-translucent",
+        "menuAccent": "subtle",
+        "tailwind": {
+          "baseColor": "neutral"
+        }
+      },
+      "cssVars": {
+        "theme": {
+          "font-sans": "'Inter Variable', sans-serif",
+          "font-heading": "var(--font-sans)"
+        },
+        "light": {
+          "radius": "0.45rem",
+          "background": "oklch(1 0 0)",
+          "foreground": "oklch(0.145 0 0)",
+          "card": "oklch(1 0 0)",
+          "card-foreground": "oklch(0.145 0 0)",
+          "popover": "oklch(1 0 0)",
+          "popover-foreground": "oklch(0.145 0 0)",
+          "primary": "oklch(0.205 0 0)",
+          "primary-foreground": "oklch(0.985 0 0)",
+          "secondary": "oklch(0.97 0 0)",
+          "secondary-foreground": "oklch(0.205 0 0)",
+          "muted": "oklch(0.97 0 0)",
+          "muted-foreground": "oklch(0.556 0 0)",
+          "accent": "oklch(0.97 0 0)",
+          "accent-foreground": "oklch(0.205 0 0)",
+          "destructive": "oklch(0.577 0.245 27.325)",
+          "border": "oklch(0.922 0 0)",
+          "input": "oklch(0.922 0 0)",
+          "ring": "oklch(0.708 0 0)",
+          "chart-1": "oklch(0.828 0.111 230.318)",
+          "chart-2": "oklch(0.685 0.169 237.323)",
+          "chart-3": "oklch(0.588 0.158 241.966)",
+          "chart-4": "oklch(0.5 0.134 242.749)",
+          "chart-5": "oklch(0.443 0.11 240.79)"
+        },
+        "dark": {
+          "background": "oklch(0.145 0 0)",
+          "foreground": "oklch(0.985 0 0)",
+          "card": "oklch(0.205 0 0)",
+          "card-foreground": "oklch(0.985 0 0)",
+          "popover": "oklch(0.205 0 0)",
+          "popover-foreground": "oklch(0.985 0 0)",
+          "primary": "oklch(0.922 0 0)",
+          "primary-foreground": "oklch(0.205 0 0)",
+          "secondary": "oklch(0.269 0 0)",
+          "secondary-foreground": "oklch(0.985 0 0)",
+          "muted": "oklch(0.269 0 0)",
+          "muted-foreground": "oklch(0.708 0 0)",
+          "accent": "oklch(0.269 0 0)",
+          "accent-foreground": "oklch(0.985 0 0)",
+          "destructive": "oklch(0.704 0.191 22.216)",
+          "border": "oklch(1 0 0 / 10%)",
+          "input": "oklch(1 0 0 / 15%)",
+          "ring": "oklch(0.556 0 0)",
+          "chart-1": "oklch(0.828 0.111 230.318)",
+          "chart-2": "oklch(0.685 0.169 237.323)",
+          "chart-3": "oklch(0.588 0.158 241.966)",
+          "chart-4": "oklch(0.5 0.134 242.749)",
+          "chart-5": "oklch(0.443 0.11 240.79)"
+        }
+      },
+      "meta": {
+        "preset": "b5JNZnXf8",
+        "font": "inter",
+        "fontHeading": "inherit",
+        "chartColor": "sky",
+        "radius": "small",
+        "menuAccent": "subtle",
+        "menuColor": "default-translucent"
+      },
+      "docs": "Not for a bb plugin: the host theme (plugins/monokai) owns these tokens, a plugin's components.json has no CSS file for them, and the radix-vega style would make bare `shadcn add` names fetch official Vega components."
+    },
+    {
+      "name": "utils",
+      "type": "registry:lib",
+      "description": "cn(), re-exported from @bb-plugins/ui so every plugin shares one copy.",
+      "files": [
+        {
+          "path": "registry/lib/utils.ts",
+          "type": "registry:lib"
+        }
+      ]
+    },
+    {
+      "name": "motion",
+      "type": "registry:ui",
+      "description": "Shared hover transitions, re-exported from @bb-plugins/ui.",
+      "files": [
+        {
+          "path": "registry/components/ui/motion.ts",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "button",
+      "type": "registry:ui",
+      "description": "Button and CompactButton, re-exported from @bb-plugins/ui.",
+      "files": [
+        {
+          "path": "registry/components/ui/button.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "input",
+      "type": "registry:ui",
+      "description": "Input, re-exported from @bb-plugins/ui.",
+      "files": [
+        {
+          "path": "registry/components/ui/input.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "textarea",
+      "type": "registry:ui",
+      "description": "Textarea, re-exported from @bb-plugins/ui.",
+      "files": [
+        {
+          "path": "registry/components/ui/textarea.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "card",
+      "type": "registry:ui",
+      "description": "Card, re-exported from @bb-plugins/ui.",
+      "files": [
+        {
+          "path": "registry/components/ui/card.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "separator",
+      "type": "registry:ui",
+      "description": "Separator, re-exported from @bb-plugins/ui.",
+      "files": [
+        {
+          "path": "registry/components/ui/separator.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "badge",
+      "type": "registry:ui",
+      "description": "Badge with status tones, re-exported from @bb-plugins/ui.",
+      "files": [
+        {
+          "path": "registry/components/ui/badge.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "table",
+      "type": "registry:ui",
+      "description": "Table, re-exported from @bb-plugins/ui.",
+      "files": [
+        {
+          "path": "registry/components/ui/table.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "surface",
+      "type": "registry:ui",
+      "description": "Shared edge and surface classes, re-exported from @bb-plugins/ui.",
+      "files": [
+        {
+          "path": "registry/components/ui/surface.ts",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "use-media-query",
+      "type": "registry:hook",
+      "files": [
+        {
+          "path": "registry/components/ui/hooks/use-media-query.ts",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "use-compact-viewport",
+      "type": "registry:hook",
+      "registryDependencies": [
+        "@bb-plugins/use-media-query"
+      ],
+      "files": [
+        {
+          "path": "registry/components/ui/hooks/use-compact-viewport.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "use-pointer-coarse",
+      "type": "registry:hook",
+      "registryDependencies": [
+        "@bb-plugins/use-media-query"
+      ],
+      "files": [
+        {
+          "path": "registry/components/ui/hooks/use-pointer-coarse.ts",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "coarse-pointer-sizing",
+      "type": "registry:ui",
+      "description": "44px touch-target classes for coarse pointers.",
+      "files": [
+        {
+          "path": "registry/components/ui/coarse-pointer-sizing.ts",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "overlay-trigger",
+      "type": "registry:ui",
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/overlay-trigger.ts",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "toggle",
+      "type": "registry:ui",
+      "description": "Toggle whose on-state uses --state-active, distinct from the hover tint.",
+      "dependencies": [
+        "@radix-ui/react-toggle",
+        "class-variance-authority"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/motion"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/toggle.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "toggle-group",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-toggle-group",
+        "class-variance-authority"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/toggle"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/toggle-group.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "tooltip",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-tooltip"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/overlay-trigger",
+        "@bb-plugins/portal-scope"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/tooltip.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "dialog",
+      "type": "registry:ui",
+      "description": "Dialog that becomes a bottom sheet on compact viewports.",
+      "dependencies": [
+        "@radix-ui/react-dialog",
+        "@radix-ui/react-slot"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/icon",
+        "@bb-plugins/overlay-trigger",
+        "@bb-plugins/portal-scope",
+        "@bb-plugins/responsive-overlay",
+        "@bb-plugins/use-browser-dimming-modal"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/dialog.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "alert-dialog",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-alert-dialog"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/portal-scope"
+      ],
+      "docs": "Imports the plugin's `button` and `utils` from @bb-plugins/ui; add @bb-plugins/button and @bb-plugins/utils only to a plugin that lacks them, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/alert-dialog.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "drawer",
+      "type": "registry:ui",
+      "dependencies": [
+        "vaul"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/overlay-trigger",
+        "@bb-plugins/portal-scope"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/drawer.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "avatar",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-avatar"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/avatar.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "breadcrumb",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-slot"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/icon"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/breadcrumb.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "checkbox",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-checkbox"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/icon",
+        "@bb-plugins/motion"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/checkbox.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "chrome-style-tokens",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "registry/components/ui/chrome-style-tokens.ts",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "collapsible",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-collapsible"
+      ],
+      "files": [
+        {
+          "path": "registry/components/ui/collapsible.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "command",
+      "type": "registry:ui",
+      "dependencies": [
+        "cmdk"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/icon"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/command.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "context-menu",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-context-menu"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/coarse-pointer-sizing",
+        "@bb-plugins/icon",
+        "@bb-plugins/menu-item-hover",
+        "@bb-plugins/motion",
+        "@bb-plugins/portal-scope"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/context-menu.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "delayed-loading",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "registry/components/ui/delayed-loading.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "dropdown-menu",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-dropdown-menu",
+        "@radix-ui/react-slot"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/coarse-pointer-sizing",
+        "@bb-plugins/icon",
+        "@bb-plugins/menu-item-hover",
+        "@bb-plugins/motion",
+        "@bb-plugins/overlay-anchor",
+        "@bb-plugins/overlay-trigger",
+        "@bb-plugins/portal-scope",
+        "@bb-plugins/responsive-overlay"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/dropdown-menu.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "empty-state",
+      "type": "registry:ui",
+      "registryDependencies": [
+        "@bb-plugins/icon"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/empty-state.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "icon",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "registry/components/ui/icon.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "label",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-label"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/label.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "menu-item-hover",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "registry/components/ui/menu-item-hover.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "overlay-anchor",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "registry/components/ui/overlay-anchor.ts",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "pill",
+      "type": "registry:ui",
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/pill.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "popover",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-popover"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/overlay-anchor",
+        "@bb-plugins/overlay-trigger",
+        "@bb-plugins/portal-scope",
+        "@bb-plugins/responsive-overlay",
+        "@bb-plugins/use-pointer-coarse"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/popover.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "progress",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-progress"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/progress.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "radio-group",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-radio-group"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/radio-group.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "resource-toolbar",
+      "type": "registry:ui",
+      "registryDependencies": [
+        "@bb-plugins/dropdown-menu",
+        "@bb-plugins/icon",
+        "@bb-plugins/tooltip"
+      ],
+      "docs": "Imports the plugin's `button` and `utils` from @bb-plugins/ui; add @bb-plugins/button and @bb-plugins/utils only to a plugin that lacks them, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/resource/toolbar.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "responsive-overlay",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-slot"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/overlay-trigger",
+        "@bb-plugins/portal-scope",
+        "@bb-plugins/use-compact-viewport",
+        "@bb-plugins/use-pointer-coarse"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/responsive-overlay.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "select",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-select"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/coarse-pointer-sizing",
+        "@bb-plugins/icon",
+        "@bb-plugins/motion",
+        "@bb-plugins/overlay-anchor",
+        "@bb-plugins/overlay-trigger",
+        "@bb-plugins/portal-scope",
+        "@bb-plugins/responsive-overlay"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/select.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "skeleton",
+      "type": "registry:ui",
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/skeleton.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "slider",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-slider"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/slider.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "spinner",
+      "type": "registry:ui",
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/spinner.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "switch",
+      "type": "registry:ui",
+      "registryDependencies": [
+        "@bb-plugins/motion"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/switch.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "tabs",
+      "type": "registry:ui",
+      "dependencies": [
+        "@radix-ui/react-tabs"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/tabs.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "truncate-start",
+      "type": "registry:ui",
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/truncate-start.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "video-thumbnail",
+      "type": "registry:ui",
+      "registryDependencies": [
+        "@bb-plugins/icon",
+        "@bb-plugins/video"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/video-thumbnail.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "video",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "registry/components/ui/video.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "use-browser-dimming-modal",
+      "type": "registry:hook",
+      "files": [
+        {
+          "path": "registry/hooks/useBrowserDimmingModal.ts",
+          "type": "registry:hook"
+        }
+      ]
+    },
+    {
+      "name": "portal-scope",
+      "type": "registry:lib",
+      "files": [
+        {
+          "path": "registry/lib/portal-scope.ts",
+          "type": "registry:lib"
+        }
+      ]
+    },
+    {
+      "name": "shared-resize-observer",
+      "type": "registry:lib",
+      "files": [
+        {
+          "path": "registry/lib/shared-resize-observer.ts",
+          "type": "registry:lib"
+        }
+      ]
+    },
+    {
+      "name": "item",
+      "type": "registry:ui",
+      "description": "Vega list item: rows with media, title, description and actions; `row` size for dense lists and trees.",
+      "dependencies": [
+        "@radix-ui/react-slot",
+        "class-variance-authority"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/motion",
+        "@bb-plugins/separator"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/item.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "kbd",
+      "type": "registry:ui",
+      "description": "Vega keyboard key and key group.",
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/kbd.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "input-group",
+      "type": "registry:ui",
+      "description": "Vega input group: an input or textarea with inline or block addons, text and buttons inside one field edge.",
+      "dependencies": [
+        "class-variance-authority"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/input",
+        "@bb-plugins/textarea"
+      ],
+      "docs": "Imports the plugin's `Button` and `utils` from @bb-plugins/ui; add @bb-plugins/button or @bb-plugins/utils only to a plugin that lacks it.",
+      "files": [
+        {
+          "path": "registry/components/ui/input-group.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "button-group",
+      "type": "registry:ui",
+      "description": "Vega button group: joins adjacent buttons, selects and inputs into one control.",
+      "dependencies": [
+        "@radix-ui/react-slot",
+        "class-variance-authority"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/separator"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/button-group.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "alert",
+      "type": "registry:ui",
+      "description": "Vega alert: a callout with an icon, title, description and optional action. Pass role=\"status\" for non-urgent notices.",
+      "dependencies": [
+        "class-variance-authority"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/alert.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "field",
+      "type": "registry:ui",
+      "description": "Vega field: label, control, description and error laid out together; FieldSet and FieldGroup for forms.",
+      "dependencies": [
+        "class-variance-authority"
+      ],
+      "registryDependencies": [
+        "@bb-plugins/label",
+        "@bb-plugins/separator"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/field.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "empty",
+      "type": "registry:ui",
+      "description": "Vega empty state: media, title, description and actions; `sm` size for panels.",
+      "dependencies": [
+        "class-variance-authority"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/empty.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "status-dot",
+      "type": "registry:ui",
+      "description": "A small status dot in neutral, primary, success, warning, destructive or info tone.",
+      "dependencies": [
+        "class-variance-authority"
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+      "files": [
+        {
+          "path": "registry/components/ui/status-dot.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    }
+  ]
+}

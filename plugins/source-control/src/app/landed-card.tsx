@@ -35,7 +35,9 @@ import {
   type PrRef,
 } from "../core/watch.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { Button } from "./components/ui/button.tsx";
+import { Button, CompactButton } from "./components/ui/button.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
+import { Item } from "./components/ui/item.tsx";
 
 /** bb's own Archive, which the sidebar calls Settle. */
 const ARCHIVE_KEYS = ["bb--core/archive"];
@@ -146,7 +148,7 @@ function LandedCard({ target, threadId }: { target: LandedListed; threadId: stri
           </h3>
         </div>
       </div>
-      <ul className="m-0 list-none px-3 py-2">
+      <ul className="m-0 list-none px-1 py-2">
         {target.prs.map((ref) => (
           <PrRow
             key={prKey(ref)}
@@ -164,17 +166,19 @@ function LandedCard({ target, threadId }: { target: LandedListed; threadId: stri
         ))}
       </ul>
       {read.state === "failed" ? (
-        <div role="alert" className="px-3 py-2 text-[11px] text-destructive-text">
-          {read.message}{" "}
-          <Button
-            variant="link"
-            size="sm"
-            className="h-auto p-0 text-[11px] underline"
-            onClick={retry}
-          >
-            Retry
-          </Button>
-        </div>
+        <Alert variant="destructive" className="mx-3 my-2 w-auto">
+          <AlertDescription>
+            {read.message}{" "}
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-[11px] underline"
+              onClick={retry}
+            >
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
       ) : null}
       <div className="px-3 pt-1 pb-3">
         <SettleButton threadId={threadId} />
@@ -201,23 +205,21 @@ function PrRow({
   const label = read?.title ?? prKey(refValue);
   return (
     <li>
-      <PullRequestLink
-        threadId={threadId}
-        href={read?.url ?? prUrl(refValue)}
-        className="flex min-w-0 items-center gap-2 py-1 text-foreground no-underline"
-      >
-        <Icon
-          name={read ? PR_ICONS[read.state] : "GitPullRequest"}
-          className={`size-3 shrink-0 ${read?.state === "merged" ? "text-success" : "text-muted-foreground"}`}
-          aria-label={read?.state ?? "pull request"}
-        />
-        <span className="min-w-0 flex-1 truncate" title={label}>
-          {label}
-        </span>
-        <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
-          #{refValue.number}
-        </span>
-      </PullRequestLink>
+      <Item asChild size="row" className="min-w-0 no-underline">
+        <PullRequestLink threadId={threadId} href={read?.url ?? prUrl(refValue)}>
+          <Icon
+            name={read ? PR_ICONS[read.state] : "GitPullRequest"}
+            className={`size-3 shrink-0 ${read?.state === "merged" ? "text-success" : "text-muted-foreground"}`}
+            aria-label={read?.state ?? "pull request"}
+          />
+          <span className="min-w-0 flex-1 truncate" title={label}>
+            {label}
+          </span>
+          <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+            #{refValue.number}
+          </span>
+        </PullRequestLink>
+      </Item>
     </li>
   );
 }
@@ -226,27 +228,28 @@ function CommitRow({ refValue, read }: { refValue: CommitRef; read?: Landed["com
   const label = read?.headline ?? commitKey(refValue);
   return (
     <li>
-      <UrlLink
-        href={
-          read?.url ??
-          `https://github.com/${refValue.owner}/${refValue.repo}/commit/${refValue.sha}`
-        }
-        className="flex min-w-0 items-center gap-2 py-1 text-foreground no-underline"
-      >
-        <Icon
-          name="GitBranch"
-          className={`size-3 shrink-0 ${read?.landed ? "text-success" : "text-muted-foreground"}`}
-          aria-label={
-            read ? (read.landed ? `on ${read.branch}` : `not on ${read.branch}`) : "commit"
+      <Item asChild size="row" className="min-w-0 no-underline">
+        <UrlLink
+          href={
+            read?.url ??
+            `https://github.com/${refValue.owner}/${refValue.repo}/commit/${refValue.sha}`
           }
-        />
-        <span className="min-w-0 flex-1 truncate" title={label}>
-          {label}
-        </span>
-        <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-          {(read?.ref.sha ?? refValue.sha).slice(0, 7)}
-        </span>
-      </UrlLink>
+        >
+          <Icon
+            name="GitBranch"
+            className={`size-3 shrink-0 ${read?.landed ? "text-success" : "text-muted-foreground"}`}
+            aria-label={
+              read ? (read.landed ? `on ${read.branch}` : `not on ${read.branch}`) : "commit"
+            }
+          />
+          <span className="min-w-0 flex-1 truncate" title={label}>
+            {label}
+          </span>
+          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+            {(read?.ref.sha ?? refValue.sha).slice(0, 7)}
+          </span>
+        </UrlLink>
+      </Item>
     </li>
   );
 }
@@ -297,15 +300,15 @@ function SettleButton({ threadId }: { threadId: string }) {
     return <ArchiveButton target={target} onDone={() => setAsked((n) => n + 1)} />;
   const settled = target !== null;
   return (
-    <Button
+    <CompactButton
       size="sm"
       variant="outline"
-      className="h-7 w-full gap-1 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
+      className="w-full gap-1 max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
       disabled
     >
       {settled ? "Settled" : "Settle thread"}
       {settled ? <Icon name="Check" className="size-3" aria-hidden /> : null}
-    </Button>
+    </CompactButton>
   );
 }
 
@@ -314,16 +317,16 @@ function StaysOpenButton() {
   const reasonId = useId();
   return (
     <div className="flex flex-col gap-1">
-      <Button
+      <CompactButton
         size="sm"
         variant="outline"
         data-testid="sc-landed-settle"
         aria-describedby={reasonId}
-        className="h-7 w-full gap-1 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
+        className="w-full gap-1 max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
         disabled
       >
         Settle thread
-      </Button>
+      </CompactButton>
       <p id={reasonId} className="text-center text-[11px] text-muted-foreground">
         {LONG_LIVED_REASON}
       </p>
@@ -341,11 +344,11 @@ function ArchiveButton({
   const [entry] = useThreadActions(target, { keys: ARCHIVE_KEYS });
   const [running, setRunning] = useState(false);
   return (
-    <Button
+    <CompactButton
       size="sm"
       variant="default"
       data-testid="sc-landed-settle"
-      className="h-7 w-full gap-1 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
+      className="w-full gap-1 max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
       disabled={!entry || entry.action.disabled === true || running}
       onClick={() => {
         if (!entry) return;
@@ -362,7 +365,7 @@ function ArchiveButton({
     >
       Settle thread
       <Icon name="Check" className="size-3" aria-hidden />
-    </Button>
+    </CompactButton>
   );
 }
 

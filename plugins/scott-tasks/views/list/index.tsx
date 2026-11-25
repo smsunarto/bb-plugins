@@ -14,9 +14,11 @@ import type { TaskScope } from "../../shell/routes.js";
 import { useTasksUi } from "../../shell/ui-store.js";
 import { hasOpenOverlay } from "../../shell/keyboard.js";
 import { ViewEmptyState } from "../../components/empty-state.js";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Button, CompactButton } from "@/components/ui/button";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
 import { Icon } from "@/components/ui/icon";
+import { Item, ItemGroup } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   DropdownMenu,
@@ -89,14 +91,16 @@ function LoadingRows() {
     <DelayedLoading>
       <div className="px-4 pt-3">
         <Skeleton className="mb-3 h-4 w-28" />
-        {Array.from({ length: 7 }, (_, index) => (
-          <div key={index} className="flex h-9 items-center gap-2 border-b border-border-hairline">
-            <Skeleton className="size-3.5 rounded-full" />
-            <Skeleton className="h-3 w-12" />
-            <Skeleton className="size-3.5 rounded-full" />
-            <Skeleton className="h-3 w-3/5" />
-          </div>
-        ))}
+        <ItemGroup variant="flush" role="none">
+          {Array.from({ length: 7 }, (_, index) => (
+            <Item key={index} size="row" className="h-9">
+              <Skeleton className="size-3.5 rounded-full" />
+              <Skeleton className="h-3 w-12" />
+              <Skeleton className="size-3.5 rounded-full" />
+              <Skeleton className="h-3 w-3/5" />
+            </Item>
+          ))}
+        </ItemGroup>
       </div>
     </DelayedLoading>
   );
@@ -521,20 +525,19 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
               />
               <StatusIcon status={group.status} />
               {STATUS_LABELS[group.status]}
-              <span className="font-normal tabular-nums text-muted-foreground">
-                {group.tasks.length}
-              </span>
+              <Badge variant="count">{group.tasks.length}</Badge>
             </Button>
-            <Button
+            <CompactButton
               type="button"
               variant="ghost"
-              size="icon"
-              className="size-7 text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100 max-md:pointer-coarse:size-11 max-md:pointer-coarse:opacity-100"
+              tone="muted"
+              size="icon-sm"
+              className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100 max-md:pointer-coarse:size-11 max-md:pointer-coarse:opacity-100"
               aria-label={`New ${STATUS_LABELS[group.status]} task`}
               onClick={() => openNewTask({ projectId, status: group.status })}
             >
               <Icon name="Plus" className="size-3.5" />
-            </Button>
+            </CompactButton>
           </div>
           <div id={listId} hidden={isCollapsed}>
             {!isCollapsed ? (

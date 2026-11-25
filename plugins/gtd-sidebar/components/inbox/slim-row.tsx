@@ -4,7 +4,7 @@ import {
   useSidebarThreadShortcut,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
-import { Icon } from "../ui/icon";
+import { Icon } from "../hugeicon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { openMenuFromKeyboard } from "./menu-surface";

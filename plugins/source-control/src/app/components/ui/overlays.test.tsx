@@ -10,8 +10,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "./dropdown-menu.tsx";
+import { CompactViewportOverrideProvider } from "./hooks/use-compact-viewport.tsx";
 
 beforeAll(() => {
   installTestPluginRuntime();
@@ -81,4 +84,31 @@ test("Escape closes the innermost overlay first, and bb never sees it", () => {
   expect(view.queryByRole("dialog")).toBeNull();
   expect(bb).not.toHaveBeenCalled();
   document.removeEventListener("keydown", leave);
+});
+
+test("a phone's menu sheet lists radio items, and a tap picks one and closes", () => {
+  const picked = vi.fn();
+  const closed = vi.fn();
+  const view = render(
+    <CompactViewportOverrideProvider isCompactViewport>
+      <div data-bb-plugin="source-control">
+        {/* jsdom cannot open the vaul sheet, so the group renders under the
+            compact menu root it reads, without the sheet around it. */}
+        <DropdownMenu open onOpenChange={closed}>
+          <DropdownMenuRadioGroup value="all" onValueChange={picked}>
+            <DropdownMenuRadioItem value="all">All accounts</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="octocat">octocat</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenu>
+      </div>
+    </CompactViewportOverrideProvider>,
+  );
+  const items = view.getAllByRole("menuitemradio");
+  expect(items.map((item) => [item.textContent, item.getAttribute("aria-checked")])).toEqual([
+    ["All accounts", "true"],
+    ["octocat", "false"],
+  ]);
+  fireEvent.click(items[1]!);
+  expect(picked).toHaveBeenCalledWith("octocat");
+  expect(closed).toHaveBeenCalledWith(false);
 });

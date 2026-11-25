@@ -7,6 +7,7 @@ import { useContext, useEffect, useId, useState, type ReactNode } from "react";
 import { Markdown } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { Button as BaseButton } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
@@ -55,6 +56,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Item, ItemGroup } from "@/components/ui/item";
 import { IconButton, WithTooltip } from "./iconButton";
 
 /** Rows shown before "Show all N". */
@@ -149,55 +151,57 @@ function PlanRow({
 }) {
   const rise = useEntrance<HTMLLIElement>(RISE);
   return (
-    <li ref={rise} className="flex min-w-0 gap-3 px-3 py-3">
-      <div className="flex shrink-0 items-start gap-2 pt-px">
-        <CheckBox
-          checked={checked}
-          disabled={frozen}
-          label={`Step ${index + 1}: ${step.title}`}
-          onToggle={onToggle}
-        />
-        <span aria-hidden className="w-4 text-right text-xs leading-5 tabular-nums text-muted-foreground">
-          {index + 1}
-        </span>
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span
-            className={cn(
-              "min-w-0 flex-1 basis-48 text-sm font-medium leading-5 [overflow-wrap:anywhere]",
-              checked ? "text-foreground" : "text-muted-foreground line-through decoration-muted-foreground/60",
-            )}
-          >
-            {step.title}
-          </span>
-          <span className="flex shrink-0 items-center gap-1">
-            {step.optional ? <Pill tone="neutral">Optional</Pill> : null}
-            {step.risk === null ? null : <Pill tone={RISK_TONE[step.risk]}>{RISK_LABEL[step.risk]}</Pill>}
-            {step.estimate === null ? null : (
-              <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs leading-5 tabular-nums text-muted-foreground">
-                <Icon name="Clock" aria-hidden className="size-3" />
-                <span className="sr-only">Estimate </span>
-                {step.amount === null ? step.estimate : formatQuantity(step.amount)}
-              </span>
-            )}
+    <Item asChild size="sm" className="min-w-0 flex-nowrap items-start gap-3">
+      <li ref={rise}>
+        <div className="flex shrink-0 items-start gap-2 pt-px">
+          <CheckBox
+            checked={checked}
+            disabled={frozen}
+            label={`Step ${index + 1}: ${step.title}`}
+            onToggle={onToggle}
+          />
+          <span aria-hidden className="w-4 text-right text-xs leading-5 tabular-nums text-muted-foreground">
+            {index + 1}
           </span>
         </div>
-        {step.detail === null ? null : (
-          <Markdown
-            content={step.detail}
-            className={cn("min-w-0 text-xs leading-5 text-muted-foreground [&_p]:m-0", !checked && "opacity-70")}
-          />
-        )}
-        {step.files.length === 0 ? null : (
-          <div className="flex min-w-0 flex-wrap gap-1 pt-1">
-            {step.files.map((file, fileIndex) => (
-              <FileChip key={fileIndex} file={file} />
-            ))}
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span
+              className={cn(
+                "min-w-0 flex-1 basis-48 text-sm font-medium leading-5 [overflow-wrap:anywhere]",
+                checked ? "text-foreground" : "text-muted-foreground line-through decoration-muted-foreground/60",
+              )}
+            >
+              {step.title}
+            </span>
+            <span className="flex shrink-0 items-center gap-1">
+              {step.optional ? <Pill tone="neutral">Optional</Pill> : null}
+              {step.risk === null ? null : <Pill tone={RISK_TONE[step.risk]}>{RISK_LABEL[step.risk]}</Pill>}
+              {step.estimate === null ? null : (
+                <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs leading-5 tabular-nums text-muted-foreground">
+                  <Icon name="Clock" aria-hidden className="size-3" />
+                  <span className="sr-only">Estimate </span>
+                  {step.amount === null ? step.estimate : formatQuantity(step.amount)}
+                </span>
+              )}
+            </span>
           </div>
-        )}
-      </div>
-    </li>
+          {step.detail === null ? null : (
+            <Markdown
+              content={step.detail}
+              className={cn("min-w-0 text-xs leading-5 text-muted-foreground [&_p]:m-0", !checked && "opacity-70")}
+            />
+          )}
+          {step.files.length === 0 ? null : (
+            <div className="flex min-w-0 flex-wrap gap-1 pt-1">
+              {step.files.map((file, fileIndex) => (
+                <FileChip key={fileIndex} file={file} />
+              ))}
+            </div>
+          )}
+        </div>
+      </li>
+    </Item>
   );
 }
 
@@ -279,11 +283,13 @@ export function Plan({ props }: { props: Props }) {
         </>
       }
     >
-      <ol aria-label="Steps" className="m-0 flex min-w-0 list-none flex-col divide-y divide-border/60 p-0">
-        {shown.map((step, index) => (
-          <PlanRow key={index} step={step} index={index} checked={checked[index]} frozen={frozen} onToggle={() => toggle(index)} />
-        ))}
-      </ol>
+      <ItemGroup asChild variant="flush" className="m-0 min-w-0 list-none p-0">
+        <ol aria-label="Steps">
+          {shown.map((step, index) => (
+            <PlanRow key={index} step={step} index={index} checked={checked[index]} frozen={frozen} onToggle={() => toggle(index)} />
+          ))}
+        </ol>
+      </ItemGroup>
       {shown.length < steps.length ? <ShowAll count={steps.length} noun="steps" onClick={() => setShowAll(true)} /> : null}
       {answered !== null ? (
         // The whole message, wrapped: it is the plan the agent will follow.
@@ -626,12 +632,13 @@ export function Decision({ props }: { props: Props }) {
                     {entry.index === leader && !tiedLead ? <Pill tone="info">Leads</Pill> : null}
                     <span className="text-[15px] font-semibold tabular-nums text-foreground">{formatNumber(entry.total)}</span>
                   </div>
-                  <div aria-hidden className="h-1 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-[var(--color-timeline-accent,var(--primary))] transition-[width] duration-300 motion-reduce:transition-none"
-                      style={{ width: `${(entry.total / model.scale) * 100}%` }}
-                    />
-                  </div>
+                  <Progress
+                    aria-hidden
+                    value={entry.total}
+                    max={model.scale}
+                    className="h-1"
+                    indicatorClassName="bg-[var(--color-timeline-accent,var(--primary))]"
+                  />
                   <dl className="m-0 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1">
                     {model.criteria.map((criterion, index) => (
                       <div key={index} className="contents">

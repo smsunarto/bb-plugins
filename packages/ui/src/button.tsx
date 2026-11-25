@@ -15,13 +15,22 @@ const buttonVariants = cva(styles["button"] + " " + styles["motion"], {
       secondary: styles["secondary"],
       ghost: styles["ghost"],
       link: styles["link"],
+      plain: styles["plain"],
     },
     size: {
       default: styles["size-default"],
+      xs: styles["size-xs"],
       sm: styles["size-sm"],
       lg: styles["size-lg"],
       icon: styles["size-icon"],
+      "icon-xs": styles["size-icon-xs"],
+      "icon-sm": styles["size-icon-sm"],
+      "icon-lg": styles["size-icon-lg"],
     },
+    // `muted` gives a ghost button muted ink until hover or open; `danger` turns a quiet button
+    // destructive on hover. `round` makes the button a pill or circle.
+    tone: { default: "", muted: styles["muted"], danger: styles["danger"] },
+    shape: { default: "", round: styles["round"] },
   },
   defaultVariants: { variant: "default", size: "default" },
 });
@@ -40,7 +49,7 @@ export interface ButtonProps
 }
 function createButton(profile: string, roles: boolean) {
   const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-    ({ className, variant, size, asChild = false, ...props }, ref) => {
+    ({ className, variant, size, tone, shape, asChild = false, ...props }, ref) => {
       const Comp = asChild ? Slot : "button";
       return (
         <Comp
@@ -48,7 +57,7 @@ function createButton(profile: string, roles: boolean) {
           data-bb-control={
             roles ? controlRole(buttonRole[variant ?? "default"], className) : undefined
           }
-          className={cn(buttonVariants({ variant, size }), profile, className)}
+          className={cn(buttonVariants({ variant, size, tone, shape }), profile, className)}
           ref={ref}
           {...props}
         />
@@ -82,20 +91,33 @@ const compactVariants = cva(styles["button"] + " " + styles["motion"] + " " + st
       outline: styles["outline"],
       ghost: styles["ghost"],
       destructive: styles["destructive"],
+      plain: styles["plain"],
     },
-    size: { default: styles["size-default"], sm: styles["size-sm"], xs: styles["size-xs"] },
+    size: {
+      default: styles["size-default"],
+      sm: styles["size-sm"],
+      xs: styles["size-xs"],
+      icon: styles["size-icon"],
+      "icon-sm": styles["size-icon-sm"],
+      "icon-xs": styles["size-icon-xs"],
+      "icon-2xs": styles["size-icon-xxs"],
+    },
+    // `muted` gives a ghost button muted ink until hover or open; `danger` turns a quiet button
+    // destructive on hover. `round` makes the button a pill or circle.
+    tone: { default: "", muted: styles["muted"], danger: styles["danger"] },
+    shape: { default: "", round: styles["round"] },
   },
   defaultVariants: { variant: "default", size: "default" },
 });
 export interface CompactButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof compactVariants> {}
 export const CompactButton = React.forwardRef<HTMLButtonElement, CompactButtonProps>(
-  ({ className, variant, size, type = "button", ...props }, ref) => (
+  ({ className, variant, size, tone, shape, type = "button", ...props }, ref) => (
     <button
       ref={ref}
       type={type}
       data-bb-control={controlRole(compactRole[variant ?? "default"], className)}
-      className={cn(compactVariants({ variant, size }), className)}
+      className={cn(compactVariants({ variant, size, tone, shape }), className)}
       {...props}
     />
   ),

@@ -6,6 +6,7 @@ import { memo, useEffect, useId, useRef, useState, type ReactNode, type RefObjec
 import { experimental_ProviderIcon as ProviderIcon, useSdk } from "@get-bb/plugin-sdk/app";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { Icon } from "@/components/ui/icon";
 import { ResponsiveDrawerShell } from "@/components/ui/responsive-overlay";
@@ -315,9 +316,13 @@ function EnvironmentSection(props: {
   if (!host || !choices) body = <RowPlaceholders count={2} />;
   else if (choices.length === 0) {
     body = (
-      <p className="px-3 py-2 text-sm text-muted-foreground">
-        {offline ? "This machine is offline." : "This project has no environment on this machine."}
-      </p>
+      <EmptyState
+        message={
+          offline ? "This machine is offline." : "This project has no environment on this machine."
+        }
+        className="mx-3 my-2"
+        messageClassName="text-sm"
+      />
     );
   } else {
     body = choices.map((choice) => (

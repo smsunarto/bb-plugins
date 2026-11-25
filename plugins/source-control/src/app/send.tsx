@@ -38,7 +38,11 @@ import {
   type StableReview,
 } from "./review-model.ts";
 import { PriorityChip, RunGlyph } from "./review-ui.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { Button, CompactButton } from "./components/ui/button.tsx";
+import { Alert } from "./components/ui/alert.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
+import { FieldError } from "./components/ui/field.tsx";
+import { Item } from "./components/ui/item.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover.tsx";
@@ -311,29 +315,29 @@ export const BatchBanner = memo(function BatchBanner({
   let action: ReactNode = null;
   if (batch.phase === "fixing")
     action = (
-      <Button
+      <CompactButton
         variant="outline"
         size="sm"
-        className="h-7 shrink-0"
+        className="shrink-0"
         disabled={commands.busy}
         onClick={commands.stop}
         data-testid="sc-batch-stop"
       >
         {commands.busy ? "Stopping…" : "Stop agent"}
-      </Button>
+      </CompactButton>
     );
   else if (batch.phase === "queued" || batch.phase === "failed")
     action = (
-      <Button
+      <CompactButton
         variant="outline"
         size="sm"
-        className="h-7 shrink-0"
+        className="shrink-0"
         disabled={commands.busy}
         onClick={commands.retry}
         data-testid="sc-batch-retry"
       >
         Retry
-      </Button>
+      </CompactButton>
     );
   else if (batch.phase === "posted" && batch.url)
     action = (
@@ -345,15 +349,16 @@ export const BatchBanner = memo(function BatchBanner({
     );
   else if ((batch.phase === "verify" || batch.phase === "stopped") && commands.openThread)
     action = (
-      <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={commands.openThread}>
+      <CompactButton variant="outline" size="sm" className="shrink-0" onClick={commands.openThread}>
         Open thread
-      </Button>
+      </CompactButton>
     );
   const bad = batch.phase === "queued" || batch.phase === "failed";
   const oneLine = batch.phase === "sending" || batch.phase === "fixing";
   return (
-    <div
-      className="flex min-w-0 flex-col gap-1 rounded-[8px] border border-solid border-border-hairline bg-surface-recessed p-3"
+    <Alert
+      role="none"
+      className="flex min-w-0 flex-col gap-1"
       data-testid="sc-batch-banner"
       data-phase={batch.phase}
     >
@@ -375,12 +380,8 @@ export const BatchBanner = memo(function BatchBanner({
         </span>
         {action}
       </div>
-      {commands.error ? (
-        <span role="alert" className="text-[12px] leading-4 text-warning">
-          {commands.error}
-        </span>
-      ) : null}
-    </div>
+      {commands.error ? <FieldError>{commands.error}</FieldError> : null}
+    </Alert>
   );
 });
 
@@ -603,27 +604,35 @@ const TrayItem = memo(function TrayItem({
 }) {
   const title = itemTitle(item);
   return (
-    <li
-      className="flex h-8 min-w-0 shrink-0 items-center gap-2"
+    <Item
+      asChild
+      size="row"
+      className="h-8 min-w-0 shrink-0"
       data-testid="sc-tray-item"
       data-item={item.id}
     >
-      {item.priority !== null ? <PriorityChip priority={item.priority} /> : null}
-      <TrayPick spot={item} onReveal={onReveal} className="flex min-w-0 flex-1 items-center gap-2">
-        <span
-          className="min-w-0 flex-1 truncate text-[13px] leading-5 text-foreground group-hover/pick:underline"
-          title={title}
+      <li>
+        {item.priority !== null ? <PriorityChip priority={item.priority} /> : null}
+        <TrayPick
+          spot={item}
+          onReveal={onReveal}
+          className="flex min-w-0 flex-1 items-center gap-2"
         >
-          {title}
-        </span>
-        <span className="shrink-0 text-[12px] leading-4 text-(--tertiary-foreground)">
-          {placeLabel(item.anchor)}
-        </span>
-      </TrayPick>
-      <Button variant="link" size="sm" className={TEXT_LINK} onClick={() => onRemove(item.id)}>
-        Remove
-      </Button>
-    </li>
+          <span
+            className="min-w-0 flex-1 truncate text-[13px] leading-5 text-foreground group-hover/pick:underline"
+            title={title}
+          >
+            {title}
+          </span>
+          <span className="shrink-0 text-[12px] leading-4 text-(--tertiary-foreground)">
+            {placeLabel(item.anchor)}
+          </span>
+        </TrayPick>
+        <Button variant="link" size="sm" className={TEXT_LINK} onClick={() => onRemove(item.id)}>
+          Remove
+        </Button>
+      </li>
+    </Item>
   );
 });
 
@@ -642,26 +651,30 @@ const TrayDraft = memo(function TrayDraft({
   onReveal: ((spot: Spot) => void) | null;
 }) {
   return (
-    <li
-      className="flex min-w-0 items-start gap-2 py-1"
+    <Item
+      asChild
+      size="row"
+      className="min-w-0 items-start"
       data-testid="sc-tray-draft"
       data-draft={draft.id}
     >
-      <TrayPick spot={spot} onReveal={onReveal} className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="line-clamp-2 text-[13px] leading-5 text-foreground [overflow-wrap:anywhere] group-hover/pick:underline">
-          {draft.body}
-        </span>
-        <span className="truncate text-[12px] leading-4 text-(--tertiary-foreground)">{on}</span>
-      </TrayPick>
-      <Button
-        variant="link"
-        size="sm"
-        className={cx(TEXT_LINK, "leading-5")}
-        onClick={() => onRemove(draft.id)}
-      >
-        Remove
-      </Button>
-    </li>
+      <li>
+        <TrayPick spot={spot} onReveal={onReveal} className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="line-clamp-2 text-[13px] leading-5 text-foreground [overflow-wrap:anywhere] group-hover/pick:underline">
+            {draft.body}
+          </span>
+          <span className="truncate text-[12px] leading-4 text-(--tertiary-foreground)">{on}</span>
+        </TrayPick>
+        <Button
+          variant="link"
+          size="sm"
+          className={cx(TEXT_LINK, "leading-5")}
+          onClick={() => onRemove(draft.id)}
+        >
+          Remove
+        </Button>
+      </li>
+    </Item>
   );
 });
 
@@ -676,8 +689,6 @@ function TargetPicker({
   onPick: (target: BatchTarget) => void;
   onRetry: () => void;
 }) {
-  const row =
-    "flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 rounded-[6px] border-0 bg-transparent px-2 text-start text-[12px] leading-4 text-foreground hover:bg-surface-raised";
   return (
     <div
       className="flex flex-col gap-1 border-b border-solid border-border-hairline px-2 py-2"
@@ -707,36 +718,38 @@ function TargetPicker({
         <ul className="m-0 flex max-h-48 list-none flex-col overflow-y-auto p-0">
           {targets.map((target) => (
             <li key={target.threadId}>
-              <button
-                type="button"
-                className={row}
-                onClick={() => onPick({ kind: "thread", threadId: target.threadId })}
-              >
-                <Robot size={12} />
-                <span className="min-w-0 flex-1 truncate">
-                  <ThreadName threadId={target.threadId} title={target.title} />
-                </span>
-                {target.onChange ? (
-                  <span className="shrink-0 text-[11px] leading-4 text-(--tertiary-foreground)">
-                    On this branch
+              <Item asChild size="row" className="h-8 min-w-0 cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => onPick({ kind: "thread", threadId: target.threadId })}
+                >
+                  <Robot size={12} />
+                  <span className="min-w-0 flex-1 truncate">
+                    <ThreadName threadId={target.threadId} title={target.title} />
                   </span>
-                ) : null}
-              </button>
+                  {target.onChange ? (
+                    <span className="shrink-0 text-[11px] leading-4 text-(--tertiary-foreground)">
+                      On this branch
+                    </span>
+                  ) : null}
+                </button>
+              </Item>
             </li>
           ))}
         </ul>
       )}
-      <button
-        type="button"
-        className={row}
-        data-testid="sc-tray-new-thread"
-        onClick={() => onPick({ kind: "new-thread" })}
-      >
-        <span aria-hidden className="w-3 shrink-0 text-center">
-          +
-        </span>
-        New thread in this project
-      </button>
+      <Item asChild size="row" className="h-8 min-w-0 cursor-pointer">
+        <button
+          type="button"
+          data-testid="sc-tray-new-thread"
+          onClick={() => onPick({ kind: "new-thread" })}
+        >
+          <span aria-hidden className="w-3 shrink-0 text-center">
+            +
+          </span>
+          New thread in this project
+        </button>
+      </Item>
     </div>
   );
 }
@@ -855,9 +868,11 @@ function TrayLists({
   const byId = useMemo(() => new Map(stable.items.map((item) => [item.id, item])), [stable.items]);
   if (items.length + drafts.length === 0)
     return (
-      <p className="m-0 px-4 py-3 text-[12px] leading-4 text-muted-foreground">
-        Nothing to send yet. Check findings in the review, or leave a comment on a line.
-      </p>
+      <EmptyState
+        className="mx-4 my-3"
+        messageClassName="m-0"
+        message="Nothing to send yet. Check findings in the review, or leave a comment on a line."
+      />
     );
   return (
     <>
@@ -866,7 +881,7 @@ function TrayLists({
           <div className="pb-1">
             <h3 className={SECTION_LABEL}>Findings to fix · {items.length}</h3>
           </div>
-          <ul className="m-0 flex max-h-64 list-none flex-col overflow-y-auto p-0">
+          <ul className="m-0 -mx-2 flex max-h-64 list-none flex-col overflow-y-auto p-0">
             {items.map((item) => (
               <TrayItem key={item.id} item={item} onRemove={onRemoveItem} onReveal={onReveal} />
             ))}
@@ -883,7 +898,7 @@ function TrayLists({
           <div className="pb-1">
             <h3 className={SECTION_LABEL}>Your comments · {drafts.length}</h3>
           </div>
-          <ul className="m-0 flex max-h-56 list-none flex-col overflow-y-auto p-0">
+          <ul className="m-0 -mx-2 flex max-h-56 list-none flex-col overflow-y-auto p-0">
             {drafts.map((draft) => {
               const answers = draft.replyTo ? byId.get(draft.replyTo) : undefined;
               return (
@@ -1165,9 +1180,7 @@ export function SendControls({
         </Popover>
       ) : null}
       {commands.error ? (
-        <span role="alert" className="min-w-0 truncate text-[12px] leading-4 text-warning">
-          {commands.error}
-        </span>
+        <FieldError className="min-w-0 truncate">{commands.error}</FieldError>
       ) : null}
     </div>
   );

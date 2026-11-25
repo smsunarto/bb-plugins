@@ -37,7 +37,17 @@ import { plural, shortRef } from "./format.ts";
 import { readSnapshot, writeSnapshot } from "./snapshot.ts";
 import { BotIcon } from "./page/ask-panel.tsx";
 import { Badge } from "./components/ui/badge.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { Button, CompactButton } from "./components/ui/button.tsx";
+import { Card, CardContent } from "./components/ui/card.tsx";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "./components/ui/empty.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
+import { FieldError } from "./components/ui/field.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -165,9 +175,11 @@ const ChangesView = memo(function ChangesView({
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
           {view.kind === "loading" ? <LoadingBody /> : null}
           {view.kind === "none" ? (
-            <p className="m-0 px-3 max-md:px-4 @md:px-4 py-8 text-[13px] leading-5 text-muted-foreground">
-              {view.reason}
-            </p>
+            <EmptyState
+              className="mx-3 my-8 max-md:mx-4 @md:mx-4"
+              messageClassName="m-0"
+              message={view.reason}
+            />
           ) : null}
           {view.kind === "failed" ? (
             <FailedBody
@@ -340,11 +352,14 @@ function ReadyBody({
           />
         ))}
         {workspace.stacks.length === 0 ? (
-          <p className="m-0 text-[12px] leading-4 text-muted-foreground">
-            {native
-              ? "This checkout has a detached HEAD, so there is no branch to show."
-              : "No branches are applied in this GitButler workspace."}
-          </p>
+          <EmptyState
+            messageClassName="m-0"
+            message={
+              native
+                ? "This checkout has a detached HEAD, so there is no branch to show."
+                : "No branches are applied in this GitButler workspace."
+            }
+          />
         ) : null}
         {workspace.target?.base ? (
           <BaseCard
@@ -397,17 +412,19 @@ function LoadingBody() {
         <Skeleton className="h-3 w-50 max-w-full" />
       </div>
       <Skeleton className="h-10 w-full rounded-[8px]" />
-      <div className="flex flex-col gap-3 rounded-[8px] border border-border-hairline p-3">
-        <Skeleton className="h-3 w-30" />
-        <div className="flex items-center gap-2">
-          <Skeleton className="size-4" />
-          <Skeleton className="h-3 w-52 max-w-full" />
-        </div>
-        <div className="flex items-center gap-2">
-          <Skeleton className="size-4" />
-          <Skeleton className="h-3 w-42 max-w-full" />
-        </div>
-      </div>
+      <Card size="xs">
+        <CardContent className="flex flex-col gap-3">
+          <Skeleton className="h-3 w-30" />
+          <div className="flex items-center gap-2">
+            <Skeleton className="size-4" />
+            <Skeleton className="h-3 w-52 max-w-full" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="size-4" />
+            <Skeleton className="h-3 w-42 max-w-full" />
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -435,25 +452,13 @@ function StaleBanner({
       <span className="min-w-0 grow basis-40 text-[12px] leading-4 text-muted-foreground">
         {describeProblem(problem)} This is what bb last read.
       </span>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-7 font-semibold"
-        onClick={onRetry}
-        disabled={retrying}
-      >
+      <CompactButton size="sm" variant="ghost" onClick={onRetry} disabled={retrying}>
         {retrying ? "Trying…" : "Try again"}
-      </Button>
+      </CompactButton>
       {noBut ? (
-        <Button
-          size="sm"
-          className="h-7"
-          variant="ghost"
-          onClick={onReadAsGit}
-          disabled={switching}
-        >
+        <CompactButton size="sm" variant="ghost" onClick={onReadAsGit} disabled={switching}>
           Read as plain git
-        </Button>
+        </CompactButton>
       ) : null}
     </output>
   );
@@ -468,9 +473,9 @@ function ReadAsGitNote({ onRestore, switching }: { onRestore(): void; switching:
       <span className="min-w-0 grow basis-40 text-[12px] leading-4 text-muted-foreground">
         This GitButler workspace is read as plain git.
       </span>
-      <Button size="sm" className="h-7" variant="ghost" onClick={onRestore} disabled={switching}>
+      <CompactButton size="sm" variant="ghost" onClick={onRestore} disabled={switching}>
         Read as GitButler
-      </Button>
+      </CompactButton>
     </div>
   );
 }
@@ -492,22 +497,18 @@ function AskToFix({ threadId }: { threadId: string }) {
   };
   return (
     <>
-      <Button
+      <CompactButton
         size="sm"
         variant="default"
         data-testid="sc-ask-to-fix"
-        className="h-7 bg-(--primary) font-semibold text-primary-foreground enabled:hover:bg-(--primary) enabled:hover:opacity-90"
+        className="bg-(--primary) text-primary-foreground enabled:hover:bg-(--primary) enabled:hover:opacity-90"
         onClick={() => void onClick()}
         disabled={mutation.isPending}
       >
         {mutation.isPending ? <Pending pending /> : <BotIcon size={13} />}
         Ask agent to fix
-      </Button>
-      {error ? (
-        <span role="alert" className="basis-full text-[12px] leading-4 text-warning">
-          {error}
-        </span>
-      ) : null}
+      </CompactButton>
+      {error ? <FieldError className="basis-full">{error}</FieldError> : null}
     </>
   );
 }
@@ -530,41 +531,29 @@ function FailedBody({
   const detail = "detail" in problem ? problem.detail : null;
   const noBut = problem.kind === "tool-missing" && problem.tool === "but";
   return (
-    <div
-      data-testid="sc-failed"
-      role="alert"
-      className="flex flex-col gap-3 px-3 max-md:px-4 @md:px-4 py-8"
-    >
-      <div className="flex items-center gap-2">
-        <span className="size-2 shrink-0 rounded-full bg-destructive" aria-hidden />
-        <span className="text-[14px] leading-5 font-semibold text-foreground">
+    <Empty size="sm" data-testid="sc-failed" role="alert">
+      <EmptyHeader>
+        <EmptyTitle className="flex items-center gap-2">
+          <span className="size-2 shrink-0 rounded-full bg-destructive" aria-hidden />
           Couldn't read this checkout
-        </span>
-      </div>
-      <p className="m-0 text-[13px] leading-5 text-muted-foreground">{describeProblem(problem)}</p>
-      {detail ? (
-        <p className="m-0 font-mono text-[12px] leading-5 break-words text-muted-foreground">
-          {detail}
-        </p>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2 pt-1">
-        {problem.kind === "tool-missing" ? <AskToFix threadId={threadId} /> : null}
-        <Button size="sm" className="h-7" variant="outline" onClick={onRetry} disabled={retrying}>
-          {retrying ? "Trying…" : "Try again"}
-        </Button>
-        {noBut ? (
-          <Button
-            size="sm"
-            className="h-7"
-            variant="outline"
-            onClick={onReadAsGit}
-            disabled={switching}
-          >
-            Read as plain git
-          </Button>
+        </EmptyTitle>
+        <EmptyDescription>{describeProblem(problem)}</EmptyDescription>
+        {detail ? (
+          <EmptyDescription className="font-mono break-words">{detail}</EmptyDescription>
         ) : null}
-      </div>
-    </div>
+      </EmptyHeader>
+      <EmptyContent className="flex-row flex-wrap justify-center">
+        {problem.kind === "tool-missing" ? <AskToFix threadId={threadId} /> : null}
+        <CompactButton size="sm" variant="outline" onClick={onRetry} disabled={retrying}>
+          {retrying ? "Trying…" : "Try again"}
+        </CompactButton>
+        {noBut ? (
+          <CompactButton size="sm" variant="outline" onClick={onReadAsGit} disabled={switching}>
+            Read as plain git
+          </CompactButton>
+        ) : null}
+      </EmptyContent>
+    </Empty>
   );
 }
 

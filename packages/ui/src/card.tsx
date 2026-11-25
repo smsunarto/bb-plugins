@@ -13,7 +13,23 @@ function part(name: string, style: string) {
   return Part;
 }
 
-export const Card = part("card", styles["card"]);
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  /** `sm` is Vega's small card (1rem); `xs` packs dense tiles at 0.75rem; `flush` drops the
+   * padding and gap for rows that run edge to edge. */
+  size?: "default" | "sm" | "xs" | "flush";
+}
+export const Card = React.forwardRef<HTMLDivElement, CardProps>(
+  ({ className, size = "default", ...props }, ref) => (
+    <div
+      ref={ref}
+      data-slot="card"
+      data-size={size}
+      className={cn(styles["card"], className)}
+      {...props}
+    />
+  ),
+);
+Card.displayName = "card";
 export const CardHeader = part("card-header", styles["card-header"]);
 export const CardTitle = part("card-title", styles["card-title"]);
 export const CardDescription = part("card-description", styles["card-description"]);

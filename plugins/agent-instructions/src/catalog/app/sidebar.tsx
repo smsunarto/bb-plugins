@@ -1,8 +1,13 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { memo, useLayoutEffect, useRef, useState } from "react";
+import { Alert, AlertDescription } from "../../../components/ui/alert.tsx";
 import { Badge } from "../../../components/ui/badge.tsx";
 import { Button } from "../../../components/ui/button.tsx";
+import { Card, CardContent } from "../../../components/ui/card.tsx";
+import { EmptyState } from "../../../components/ui/empty-state.tsx";
+import { FieldError } from "../../../components/ui/field.tsx";
 import { Input } from "../../../components/ui/input.tsx";
+import { Item, ItemActions, ItemContent, ItemTitle } from "../../../components/ui/item.tsx";
 import { Skeleton } from "../../../components/ui/skeleton.tsx";
 import { TooltipProvider } from "../../../components/ui/tooltip.tsx";
 import { Hint, UnsavedDot } from "../../app/hint.tsx";
@@ -122,22 +127,27 @@ const CatalogSkillGroup = memo(function CatalogSkillGroup(props: {
   if (selectedPath !== null && !known.has(selectedPath) && !extra.includes(selectedPath))
     extra.push(selectedPath);
   const row = (path: string, isNew: boolean) => (
-    <button
-      key={path}
-      type="button"
-      className="pe-row"
-      data-nested
-      aria-current={path === selectedPath || undefined}
-      onClick={() => onSelect({ skill: skill.name, path })}
-    >
-      <span className="pe-row-label">{path}</span>
-      {isNew && (
-        <Badge variant="secondary" className="py-0">
-          new
-        </Badge>
-      )}
-      {pending.includes(path) && <UnsavedDot />}
-    </button>
+    <Item key={path} asChild size="row" className="relative">
+      <button
+        type="button"
+        aria-current={path === selectedPath || undefined}
+        onClick={() => onSelect({ skill: skill.name, path })}
+      >
+        <ItemContent>
+          <ItemTitle>{path}</ItemTitle>
+        </ItemContent>
+        {(isNew || pending.includes(path)) && (
+          <ItemActions className="gap-1">
+            {isNew && (
+              <Badge variant="secondary" className="py-0">
+                new
+              </Badge>
+            )}
+            {pending.includes(path) && <UnsavedDot />}
+          </ItemActions>
+        )}
+      </button>
+    </Item>
   );
   return (
     <details ref={disclosure} className="pe-skill" data-skill={skill.name}>
@@ -173,8 +183,10 @@ const CatalogSkillGroup = memo(function CatalogSkillGroup(props: {
           </span>
         </summary>
       </Hint>
-      {skill.files.map((file) => row(file.path, false))}
-      {extra.map((path) => row(path, true))}
+      <div className="ps-3">
+        {skill.files.map((file) => row(file.path, false))}
+        {extra.map((path) => row(path, true))}
+      </div>
     </details>
   );
 });
@@ -191,9 +203,11 @@ function InlineForm(props: {
   const [open, setOpen] = useState(false);
   if (!open) {
     return (
-      <button type="button" className="pe-row pe-add" onClick={() => setOpen(true)}>
-        <span className="pe-row-label">+ {props.label}</span>
-      </button>
+      <Item asChild size="row">
+        <button type="button" onClick={() => setOpen(true)}>
+          <ItemTitle>+ {props.label}</ItemTitle>
+        </button>
+      </Item>
     );
   }
   return <InlineFormFields {...props} onClose={() => setOpen(false)} />;
@@ -211,52 +225,56 @@ function InlineFormFields(props: {
   const [busy, setBusy] = useState(false);
   const first = useFocusOnMount<HTMLInputElement>();
   return (
-    <form
-      className="pe-inline-form"
-      aria-label={props.label}
-      onSubmit={async (event) => {
-        event.preventDefault();
-        setBusy(true);
-        try {
-          const failed = await props.onSubmit(values);
-          if (failed === null) props.onClose();
-          else setErrors(failed);
-        } catch (error) {
-          setErrors([(error as Error).message]);
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      {props.fields.map((field, index) => (
-        <Input
-          key={field.name}
-          ref={index === 0 ? first : undefined}
-          className="h-8"
-          aria-label={field.label}
-          placeholder={field.placeholder}
-          maxLength={field.maxLength}
-          value={values[field.name] ?? ""}
-          onChange={(event) => setValues({ ...values, [field.name]: event.target.value })}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") props.onClose();
+    <Card size="xs" className="my-1">
+      <CardContent>
+        <form
+          className="flex flex-col gap-2"
+          aria-label={props.label}
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setBusy(true);
+            try {
+              const failed = await props.onSubmit(values);
+              if (failed === null) props.onClose();
+              else setErrors(failed);
+            } catch (error) {
+              setErrors([(error as Error).message]);
+            } finally {
+              setBusy(false);
+            }
           }}
-        />
-      ))}
-      {errors.map((error) => (
-        <p key={error} className="pe-meta pe-wrap" data-tone="bad" role="alert">
-          {error}
-        </p>
-      ))}
-      <div className="pe-actions">
-        <Button type="button" variant="ghost" size="sm" onClick={props.onClose}>
-          Cancel
-        </Button>
-        <Button type="submit" size="sm" disabled={busy}>
-          {busy ? "Creating…" : props.submit}
-        </Button>
-      </div>
-    </form>
+        >
+          {props.fields.map((field, index) => (
+            <Input
+              key={field.name}
+              ref={index === 0 ? first : undefined}
+              className="h-8"
+              aria-label={field.label}
+              placeholder={field.placeholder}
+              maxLength={field.maxLength}
+              value={values[field.name] ?? ""}
+              onChange={(event) => setValues({ ...values, [field.name]: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") props.onClose();
+              }}
+            />
+          ))}
+          {errors.map((error) => (
+            <FieldError key={error} className="break-words">
+              {error}
+            </FieldError>
+          ))}
+          <div className="pe-actions justify-end">
+            <Button type="button" variant="ghost" size="sm" onClick={props.onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={busy}>
+              {busy ? "Creating…" : props.submit}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -266,67 +284,71 @@ function DeletedRow({ entry }: { entry: Deleted }) {
   const failed = change.data && change.data.outcome !== "saved" ? errorsOf(change.data) : [];
   const ref = { kind: entry.kind, key: entry.key };
   return (
-    <div className="pe-deleted">
-      <div className="pe-status-row">
-        <span className="pe-row-label">{entry.name}</span>
-        <Badge variant="outline" className="py-0">
-          {entry.kind}
-        </Badge>
-        {confirm ? (
-          <>
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-xs text-destructive"
-              disabled={change.isPending}
-              onClick={() => change.mutate({ op: "forget", ...ref })}
-            >
-              Remove for good
-            </Button>
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-xs"
-              onClick={() => setConfirm(false)}
-            >
-              Keep
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-xs"
-              disabled={change.isPending}
-              onClick={() => change.mutate({ op: "restore", ...ref })}
-            >
-              Restore
-            </Button>
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-xs"
-              onClick={() => setConfirm(true)}
-            >
-              Remove
-            </Button>
-          </>
-        )}
-      </div>
+    <div>
+      <Item size="row">
+        <ItemContent>
+          <ItemTitle>{entry.name}</ItemTitle>
+        </ItemContent>
+        <ItemActions className="gap-2">
+          <Badge variant="outline" className="py-0">
+            {entry.kind}
+          </Badge>
+          {confirm ? (
+            <>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs text-destructive"
+                disabled={change.isPending}
+                onClick={() => change.mutate({ op: "forget", ...ref })}
+              >
+                Remove for good
+              </Button>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs"
+                onClick={() => setConfirm(false)}
+              >
+                Keep
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs"
+                disabled={change.isPending}
+                onClick={() => change.mutate({ op: "restore", ...ref })}
+              >
+                Restore
+              </Button>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs"
+                onClick={() => setConfirm(true)}
+              >
+                Remove
+              </Button>
+            </>
+          )}
+        </ItemActions>
+      </Item>
       {confirm && (
-        <p className="pe-meta pe-wrap">
+        <p className="pe-meta pe-wrap px-2 pb-1">
           This drops the saved copy. A dotfiles import adds it again if its source still exists.
         </p>
       )}
       {[...failed, ...(change.error ? [change.error.message] : [])].map((error) => (
-        <p key={error} className="pe-meta pe-wrap" data-tone="bad" role="alert">
-          {error}
-        </p>
+        <div key={error} className="px-2 pb-1">
+          <FieldError className="break-words">{error}</FieldError>
+        </div>
       ))}
     </div>
   );
@@ -373,25 +395,31 @@ function CatalogNav(props: { listing: CatalogListing; subPath: string; filterTex
         {docs.map((doc) => {
           const entry = { doc: doc.id };
           return (
-            <button
-              key={doc.id}
-              type="button"
-              className="pe-row"
-              aria-current={sameSelection(selection, entry) || undefined}
-              onClick={() => go(entry)}
-            >
-              <span className="pe-row-label">{doc.name}</span>
-              {!doc.enabled && (
-                <Badge variant="outline" className="py-0">
-                  off
-                </Badge>
-              )}
-              {dirty.has(draftKey(entry)) && <UnsavedDot />}
-            </button>
+            <Item key={doc.id} asChild size="row" className="relative">
+              <button
+                type="button"
+                aria-current={sameSelection(selection, entry) || undefined}
+                onClick={() => go(entry)}
+              >
+                <ItemContent>
+                  <ItemTitle>{doc.name}</ItemTitle>
+                </ItemContent>
+                {(!doc.enabled || dirty.has(draftKey(entry))) && (
+                  <ItemActions className="gap-1">
+                    {!doc.enabled && (
+                      <Badge variant="outline" className="py-0">
+                        off
+                      </Badge>
+                    )}
+                    {dirty.has(draftKey(entry)) && <UnsavedDot />}
+                  </ItemActions>
+                )}
+              </button>
+            </Item>
           );
         })}
         {listing.docs.length === 0 && (
-          <p className="pe-meta pe-hint">No global instructions yet.</p>
+          <EmptyState className="mx-2 my-1" message="No global instructions yet." />
         )}
         <InlineForm
           label="New doc"
@@ -425,7 +453,7 @@ function CatalogNav(props: { listing: CatalogListing; subPath: string; filterTex
           />
         ))}
         {filter !== "" && skills.length === 0 && docs.length === 0 && (
-          <p className="pe-meta pe-hint">Nothing matches “{filterText.trim()}”.</p>
+          <EmptyState className="mx-2 my-1" message={`Nothing matches “${filterText.trim()}”.`} />
         )}
         <InlineForm
           label="New skill"
@@ -467,9 +495,9 @@ function CatalogTabBody({ subPath }: { subPath: string }) {
       <div className="pe-panel pe-sidebar">
         {listing.isError ? (
           <div className="pe-tab-state">
-            <p className="pe-notice" data-tone="bad" role="alert">
-              {listing.error.message}
-            </p>
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{listing.error.message}</AlertDescription>
+            </Alert>
           </div>
         ) : (
           <>

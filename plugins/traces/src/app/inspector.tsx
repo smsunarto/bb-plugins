@@ -8,12 +8,16 @@ import type { TraceRendererRegistry } from "./renderers.tsx";
 import { JsonView } from "./json-view.tsx";
 import { decodeRawPage } from "./raw-text.ts";
 import { experimental_ShortcutHint as ShortcutHint } from "@get-bb/plugin-sdk/app";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
+import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "./components/ui/collapsible.tsx";
+import { Icon } from "./components/ui/icon.tsx";
+import { Item, ItemActions, ItemContent, ItemTitle } from "./components/ui/item.tsx";
 import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group.tsx";
 
 function RawRecord({ hostId, eventId }: { hostId: string; eventId: string }) {
@@ -30,8 +34,12 @@ function RawRecord({ hostId, eventId }: { hostId: string; eventId: string }) {
   const data = result.data;
   if (data.state !== "available")
     return (
-      <output className="tr-notice">
-        {data.message ?? `Source ${data.state}. Refresh the index to continue.`}
+      <output className="mb-2 block">
+        <Alert variant="warning" role="none">
+          <AlertDescription>
+            {data.message ?? `Source ${data.state}. Refresh the index to continue.`}
+          </AlertDescription>
+        </Alert>
       </output>
     );
   const text = decodeRawPage(data.base64, data.offset, data.nextOffset === null);
@@ -143,7 +151,7 @@ export function Inspector({
     <section className="tr-inspector" ref={inspectorRef} tabIndex={-1} aria-label="Event inspector">
       <div className="tr-column-heading">
         {onBack && <BackButton label="Back to timeline" onBack={onBack} />}
-        <span>Inspector</span>
+        <span className="tr-column-label">Inspector</span>
         <ViewSwitcher available={hasFormattedView} raw={raw} onRaw={onRaw} />
       </div>
       <div className="tr-inspector-scroll">
@@ -151,7 +159,11 @@ export function Inspector({
           <span className="tr-eyebrow">{event.role ?? event.kind.replaceAll("_", " ")}</span>
           <div className="tr-inspector-headline">
             <h2>{event.title}</h2>
-            {event.tool && <span className="tr-title-chip">{event.tool.name}</span>}
+            {event.tool && (
+              <Badge variant="outline" className="max-w-full">
+                <code className="truncate">{event.tool.name}</code>
+              </Badge>
+            )}
           </div>
           <div className="tr-inspector-meta">{event.tool ? event.tool.status : event.template}</div>
         </div>
@@ -165,14 +177,20 @@ export function Inspector({
         ) : data ? (
           <>
             {data.sourceState !== "available" && (
-              <output className="tr-notice">
-                {data.message ?? `Source ${data.sourceState}. Refresh the index to continue.`}
+              <output className="mb-2 block">
+                <Alert variant="warning" role="none">
+                  <AlertDescription>
+                    {data.message ?? `Source ${data.sourceState}. Refresh the index to continue.`}
+                  </AlertDescription>
+                </Alert>
               </output>
             )}
             {data.bodyTruncated && (
-              <div className="tr-notice">
-                Preview shortened. Open raw to inspect the complete source record.
-              </div>
+              <Alert variant="warning" role="none" className="mb-2">
+                <AlertDescription>
+                  Preview shortened. Open raw to inspect the complete source record.
+                </AlertDescription>
+              </Alert>
             )}
             {data.body &&
               createElement(renderers.resolve(event.template), {
@@ -185,18 +203,31 @@ export function Inspector({
               <div className="tr-detail-section">
                 <h3>Related events</h3>
                 {data.related.map((related) => (
-                  <button className="tr-related" key={related.id} onClick={() => onSelect(related)}>
-                    {related.kind === "tool_result" ? "↙" : "↗"} {related.title}
-                    <small>L{related.provenance.line}</small>
-                  </button>
+                  <Item asChild variant="outline" size="row" className="mb-1" key={related.id}>
+                    {/* The label is the title inside ItemTitle, deeper than the rule looks. */}
+                    {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+                    <button type="button" onClick={() => onSelect(related)}>
+                      <ItemContent>
+                        <ItemTitle>
+                          {related.kind === "tool_result" ? "↙" : "↗"} {related.title}
+                        </ItemTitle>
+                      </ItemContent>
+                      <ItemActions>
+                        <small className="text-muted-foreground">L{related.provenance.line}</small>
+                      </ItemActions>
+                    </button>
+                  </Item>
                 ))}
               </div>
             )}
           </>
         ) : null}
         <Collapsible className="tr-provenance">
-          <CollapsibleTrigger className="tr-disclosure">
-            Source · line {event.provenance.line}
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="xs" className="group max-w-full min-w-0">
+              <Icon name="ChevronRight" aria-hidden className="group-data-[state=open]:rotate-90" />
+              Source · line {event.provenance.line}
+            </Button>
           </CollapsibleTrigger>
           <CollapsibleContent asChild>
             <dl>

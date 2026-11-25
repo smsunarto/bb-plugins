@@ -1,8 +1,6 @@
 .pe-panel {
   --pe-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   --pe-hairline: var(--border-hairline, var(--border));
-  --pe-recessed: var(--surface-recessed, var(--muted));
-  --pe-good: var(--success, var(--foreground));
   --pe-warn: var(--warning, var(--foreground));
   --pe-bad: var(--destructive-text, var(--destructive));
   display: flex;
@@ -39,50 +37,6 @@
 .pe-group + .pe-group {
   margin-top: 4px;
 }
-.pe-plugin,
-.pe-row {
-  /* Contains the sr-only "Unsaved" text, so it cannot add scroll area to the list. */
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.pe-plugin {
-  justify-content: space-between;
-  min-height: 32px;
-  padding: 4px 8px;
-}
-.pe-plugin[aria-expanded="true"] .pe-plugin-name {
-  font-weight: 600;
-}
-.pe-row {
-  padding: 4px 8px;
-  color: var(--muted-foreground);
-}
-.pe-row[data-nested] {
-  padding-left: 20px;
-}
-.pe-plugin:hover,
-.pe-row:hover {
-  background: var(--state-hover, var(--accent));
-}
-.pe-row[aria-current] {
-  background: var(--accent);
-  color: var(--foreground);
-}
-.pe-plugin:focus-visible,
-.pe-row:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
-}
 .pe-row-label {
   min-width: 0;
   flex: 1;
@@ -110,13 +64,6 @@
 }
 .pe-meta[data-tone="bad"] {
   color: var(--pe-bad);
-}
-.pe-dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--primary);
 }
 .pe-editor {
   overflow-y: auto;
@@ -149,25 +96,6 @@
   display: flex;
   flex: none;
   gap: 8px;
-}
-.pe-notice {
-  padding: 8px 12px;
-  border: 1px solid var(--pe-hairline);
-  border-radius: 6px;
-  background: var(--pe-recessed);
-  color: var(--muted-foreground);
-  line-height: 1.5;
-}
-.pe-notice[data-tone="good"] {
-  color: var(--pe-good);
-}
-.pe-notice[data-tone="warn"] {
-  color: var(--pe-warn);
-}
-.pe-notice[data-tone="bad"] {
-  border-color: var(--surface-destructive-border, var(--pe-hairline));
-  background: var(--surface-destructive, var(--pe-recessed));
-  color: var(--pe-bad);
 }
 .pe-textarea,
 .pe-readonly {
@@ -217,10 +145,6 @@
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
-.pe-skill-summary .pe-dot {
-  display: inline-block;
-  margin-left: 4px;
-}
 
 /* Catalog editor (Global tab). */
 .pe-summary-line {
@@ -230,9 +154,6 @@
   width: calc(100% - 16px);
   vertical-align: middle;
 }
-.pe-skill-summary .pe-summary-line .pe-dot {
-  margin-left: 0;
-}
 .pe-status {
   display: flex;
   flex-direction: column;
@@ -240,15 +161,11 @@
   padding: 12px 16px 8px;
 }
 .pe-status-row,
-.pe-notice-row,
 .pe-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-.pe-notice-row > span {
-  flex: 1 1 200px;
 }
 .pe-head-title {
   min-width: 0;
@@ -285,42 +202,8 @@ form.pe-actions {
 .pe-section:first-child > .pe-label {
   padding-top: 4px;
 }
-.pe-hint {
-  padding: 4px 8px;
-  white-space: normal;
-}
-.pe-add {
-  color: var(--subtle-foreground, var(--muted-foreground));
-}
-.pe-inline-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 4px 0;
-  padding: 8px;
-  border: 1px solid var(--pe-hairline);
-  border-radius: 6px;
-}
-.pe-inline-form .pe-actions {
-  justify-content: flex-end;
-}
-.pe-deleted {
-  padding: 4px 8px;
-}
-.pe-deleted .pe-row-label {
-  color: var(--muted-foreground);
-}
-/* A plugin row is a finger target at every width. */
-@media (pointer: coarse) {
-  .pe-plugin {
-    min-height: 36px;
-  }
-}
-/* A finger needs a 36px target, and iOS zooms into a field under 16px. */
+/* iOS zooms into a field under 16px. */
 @media (max-width: 767px) and (pointer: coarse) {
-  .pe-row {
-    min-height: 36px;
-  }
   .pe-textarea {
     font-size: 16px;
   }

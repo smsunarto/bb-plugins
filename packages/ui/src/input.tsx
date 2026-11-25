@@ -9,6 +9,7 @@ function createInput(profile: string, role: ControlRole | undefined) {
       <input
         type={type}
         autoComplete="off"
+        data-slot="input"
         data-bb-control={controlRole(role, className)}
         className={cn(styles["input"] + " " + styles["motion"], profile, className)}
         ref={ref}

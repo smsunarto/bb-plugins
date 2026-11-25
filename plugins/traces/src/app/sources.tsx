@@ -14,7 +14,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./components/ui/dialog.tsx";
+import { Field, FieldError, FieldLabel } from "./components/ui/field.tsx";
 import { Input } from "./components/ui/input.tsx";
+import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "./components/ui/item.tsx";
 import { Label } from "./components/ui/label.tsx";
 import {
   Select,
@@ -98,8 +100,13 @@ export function Sources({
             const id = `${formId}-${root.provider}:${root.path}`;
             const state = current?.state;
             return (
-              <div className="tr-source" key={`${root.provider}:${root.path}`}>
-                <div className="tr-source-head">
+              <Item
+                variant="outline"
+                size="sm"
+                className="my-3"
+                key={`${root.provider}:${root.path}`}
+              >
+                <ItemMedia>
                   <Checkbox
                     id={id}
                     checked={root.enabled}
@@ -111,31 +118,35 @@ export function Sources({
                       )
                     }
                   />
-                  <Label htmlFor={id}>{providerLabel(root.provider)}</Label>
-                  <Badge
-                    variant={state === "missing" || state === "error" ? "warning" : "outline"}
-                    className="ml-auto"
-                  >
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>
+                    <Label htmlFor={id}>{providerLabel(root.provider)}</Label>
+                  </ItemTitle>
+                  <code className="text-xs break-all">{root.path}</code>
+                  {current?.message && (
+                    <small className="text-xs text-muted-foreground">{current.message}</small>
+                  )}
+                </ItemContent>
+                <ItemActions>
+                  <Badge variant={state === "missing" || state === "error" ? "warning" : "outline"}>
                     {state ?? "New"}
                   </Badge>
-                </div>
-                <code>{root.path}</code>
-                {current?.message && <small>{current.message}</small>}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="self-start"
-                  onClick={() => setRoots(roots.filter((item) => item !== root))}
-                >
-                  Remove source
-                </Button>
-              </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setRoots(roots.filter((item) => item !== root))}
+                  >
+                    Remove source
+                  </Button>
+                </ItemActions>
+              </Item>
             );
           })}
         </div>
         <form onSubmit={add} className="tr-source-add">
-          <div className="tr-source-field">
-            <Label htmlFor={`${formId}-provider`}>Provider</Label>
+          <Field className="flex-1 gap-1">
+            <FieldLabel htmlFor={`${formId}-provider`}>Provider</FieldLabel>
             <Select value={provider} onValueChange={setProvider}>
               <SelectTrigger id={`${formId}-provider`}>
                 <SelectValue />
@@ -150,9 +161,9 @@ export function Sources({
                 </SelectGroup>
               </SelectContent>
             </Select>
-          </div>
-          <div className="tr-source-field tr-source-path">
-            <Label htmlFor={`${formId}-path`}>Folder or JSONL file</Label>
+          </Field>
+          <Field className="min-w-60 flex-1 gap-1">
+            <FieldLabel htmlFor={`${formId}-path`}>Folder or JSONL file</FieldLabel>
             <Input
               id={`${formId}-path`}
               value={path}
@@ -160,16 +171,12 @@ export function Sources({
               placeholder="/absolute/path/to/sessions"
               required
             />
-          </div>
+          </Field>
           <Button type="submit" variant="outline" disabled={roots.length >= 32}>
             Add source
           </Button>
         </form>
-        {error && (
-          <p className="tr-error" role="alert">
-            {error}
-          </p>
-        )}
+        <FieldError>{error}</FieldError>
         <DialogFooter className="items-center">
           <span className="tr-index-count">
             {status.sessions.toLocaleString()} sessions · {status.events.toLocaleString()} events

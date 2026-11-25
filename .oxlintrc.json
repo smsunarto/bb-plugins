@@ -56,7 +56,11 @@
       }
     },
     {
-      "files": ["plugins/*/components/ui/**", "plugins/*/src/app/components/ui/**"],
+      "files": [
+        "plugins/*/components/ui/**",
+        "plugins/*/src/app/components/ui/**",
+        "packages/ui/registry/**"
+      ],
       "rules": {
         "jsx-a11y/prefer-tag-over-role": "off",
         "jsx-a11y/interactive-supports-focus": "off",

@@ -1,7 +1,6 @@
-// Vendored from get-bb/bb packages/plugin-registry/r/shared-resize-observer.json at
-// 2d04779a1 (#7635); the @bb registry this plugin pins (desktop-v0.49.0) predates it.
-// Swap for `shadcn add @bb/shared-resize-observer` once the pin includes it.
 import { flushSync } from "react-dom";
+
+// From get-bb/bb packages/plugin-registry (shared-resize-observer, #7635).
 
 export interface SharedResizePhases<T> {
   read: (entry: ResizeObserverEntry | undefined) => T;

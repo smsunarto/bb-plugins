@@ -9,7 +9,7 @@ import {
   ContextMenuTrigger,
 } from "../ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
-import { Icon, type IconName } from "../ui/icon";
+import { Icon, type IconName } from "../hugeicon";
 import { cn } from "../../lib/utils";
 import { FadingText } from "./thread-details";
 import { MenuSurface, openMenuFromKeyboard } from "./menu-surface";

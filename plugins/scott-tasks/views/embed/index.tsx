@@ -5,7 +5,9 @@ import type {
 } from "@get-bb/plugin-sdk";
 import { experimental_useAppPanel, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Task } from "../../shared/contract.js";
@@ -61,8 +63,8 @@ function OpenInTasksButton({ label, subPath }: { label: string; subPath?: string
   const navigate = useBbNavigate();
   return (
     <Button
-      className="relative z-10 size-8 shrink-0"
-      size="icon"
+      className="relative z-10 shrink-0"
+      size="icon-sm"
       variant="ghost"
       aria-label={label}
       onClick={() => navigate.toPluginPanel(PANEL_PATH, subPath === undefined ? {} : { subPath })}
@@ -124,9 +126,9 @@ function TaskDirectiveCardContent({ attributes }: PluginMessageDirectiveProps) {
 
   if (!validKey) {
     return (
-      <div className="my-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-        Invalid task link. Expected a task key like TSK-4.
-      </div>
+      <Alert variant="destructive" role="none" className="my-3">
+        <AlertDescription>Invalid task link. Expected a task key like TSK-4.</AlertDescription>
+      </Alert>
     );
   }
 
@@ -235,9 +237,7 @@ function TaskEmbedPanelContent({ params }: ExperimentalThreadActionTabProps) {
   const taskKey = isRecord(params) && typeof params.taskKey === "string" ? params.taskKey : null;
   if (taskKey === null || !TASK_KEY_PATTERN.test(taskKey.trim())) {
     return (
-      <div className="p-3 text-sm text-muted-foreground">
-        Open a task card from a message to view it here.
-      </div>
+      <EmptyState className="m-3" message="Open a task card from a message to view it here." />
     );
   }
   return (

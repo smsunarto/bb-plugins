@@ -17,6 +17,7 @@ import {
   type SourceFile,
   type SourceLanguage,
 } from "./FrameFooter";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { RenderNodes } from "./render";
 import { useReservedHeight } from "./reservedHeight";
 import { AnswersContext, UiRuntimeContext, type Answers, type UiRuntime } from "./runtime";
@@ -406,16 +407,13 @@ export function RenderFailure({
 }) {
   return (
     <Frame source={source} diagnostics={diagnostics} gallery={gallery}>
-      <div
-        role="alert"
-        className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3 text-xs"
-      >
-        <p className="mb-1 font-medium text-destructive">This UI couldn't be rendered</p>
+      <Alert variant="destructive" className="text-xs">
+        <AlertTitle className="mb-1">This UI couldn't be rendered</AlertTitle>
         {/* Local (bb-plugins): bounded so a long failure scrolls inside the card instead of filling a phone screen. */}
-        <div className="max-h-48 overflow-y-auto">
+        <AlertDescription className="max-h-48 overflow-y-auto">
           <DiagnosticList diagnostics={diagnostics} />
-        </div>
-      </div>
+        </AlertDescription>
+      </Alert>
     </Frame>
   );
 }

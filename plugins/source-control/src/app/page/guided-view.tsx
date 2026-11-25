@@ -39,7 +39,9 @@ import type { ReviewItem } from "../../core/items.ts";
 import type { ChangeFile, ReviewRevision } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { FileRowsSkeleton, FileStatus, PatchesProblem } from "../file-cards.tsx";
+import { Badge } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
+import { Card, CardContent, CardHeader } from "../components/ui/card.tsx";
 import { surface } from "../components/ui/surface.ts";
 import { cx, plural } from "../format.ts";
 import { useGuide, useRewriteGuide, type GuideRead, type Rewrite } from "../guide-data.ts";
@@ -63,6 +65,8 @@ import {
 import { usePatchStore } from "./patches.ts";
 import { ReviewBar } from "./review-bar.tsx";
 import { useListWindow } from "./use-window.ts";
+import { EmptyState } from "../components/ui/empty-state.tsx";
+import { FieldError } from "../components/ui/field.tsx";
 
 const LABEL =
   "m-0 text-[11px] leading-4 font-normal tracking-[0.06em] text-(--tertiary-foreground) uppercase";
@@ -277,9 +281,7 @@ function GuideStatus({
           {rewrite.pending ? "Starting…" : status.label}
         </Button>
         {rewrite.error ? (
-          <span role="alert" className="min-w-0 basis-full text-[12px] leading-4 text-warning">
-            {rewrite.error}
-          </span>
+          <FieldError className="min-w-0 basis-full">{rewrite.error}</FieldError>
         ) : null}
       </section>
     );
@@ -310,11 +312,7 @@ function GuideStatus({
           {rewrite.pending ? "Starting…" : status.label}
         </Button>
       ) : null}
-      {rewrite.error ? (
-        <span role="alert" className="min-w-0 text-[12px] leading-4 text-warning">
-          {rewrite.error}
-        </span>
-      ) : null}
+      {rewrite.error ? <FieldError className="min-w-0">{rewrite.error}</FieldError> : null}
     </div>
   );
 }
@@ -336,16 +334,19 @@ function Sparkle() {
 /** "Summary · written by bb" (board A). */
 function SummaryCard({ summary }: { summary: string }) {
   return (
-    <section
-      aria-label="Summary"
-      data-testid="sc-guide-summary"
-      className="flex min-w-0 flex-col gap-2 rounded-[8px] border border-solid border-border bg-surface-recessed p-3"
-    >
-      <div className="flex items-center gap-2">
-        <Sparkle />
-        <h2 className={LABEL}>Summary · written by bb</h2>
-      </div>
-      <p className="m-0 text-[13px] leading-5 whitespace-pre-line text-foreground">{summary}</p>
+    // Card is a div: the section keeps the landmark.
+    <section aria-label="Summary" data-testid="sc-guide-summary" className="min-w-0">
+      <Card size="xs">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Sparkle />
+            <h2 className={LABEL}>Summary · written by bb</h2>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="m-0 text-[13px] leading-5 whitespace-pre-line text-foreground">{summary}</p>
+        </CardContent>
+      </Card>
     </section>
   );
 }
@@ -632,10 +633,10 @@ const OutlineRow = memo(function OutlineRow({
             </span>
           </Hint>
         ) : (
-          <span className="shrink-0 text-[12px] leading-5 text-(--tertiary-foreground)">
+          <Badge variant="count">
             {files}
             <span className="sr-only"> files</span>
-          </span>
+          </Badge>
         )}
       </button>
       {children}
@@ -913,9 +914,11 @@ function FilesState({
     );
   if (!answer.ok) return <PatchesProblem text={describeProblem(answer.problem)} onRetry={retry} />;
   return (
-    <p className="m-0 py-6 text-[13px] leading-5 text-muted-foreground">
-      This change has no file changes.
-    </p>
+    <EmptyState
+      className="my-6"
+      messageClassName="m-0"
+      message="This change has no file changes."
+    />
   );
 }
 

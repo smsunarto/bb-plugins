@@ -45,6 +45,7 @@ import {
   useProjectQuery,
   useVisible,
 } from "./projectKit";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { WithTooltip } from "./iconButton";
 
@@ -287,8 +288,10 @@ function PendingCard({ pending, now, onOpen }: { pending: PendingAsk; now: numbe
       {pending.options.length === 0 ? null : (
         <ul aria-label="Options" className="m-0 mt-1 flex min-w-0 list-none flex-wrap gap-1 p-0">
           {pending.options.map((option, index) => (
-            <li key={index} className="max-w-full truncate rounded border border-border bg-background px-1 text-[11px] leading-[18px] text-muted-foreground">
-              {option}
+            <li key={index} className="flex min-w-0 max-w-full">
+              <Badge variant="outline" size="sm" className="min-w-0 max-w-full shrink">
+                <span className="truncate">{option}</span>
+              </Badge>
             </li>
           ))}
         </ul>

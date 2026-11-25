@@ -11,6 +11,7 @@ import {
 import { useMemo } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import { Button } from "./components/ui/button.tsx";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader } from "./components/ui/empty.tsx";
 import { reviewTabParams, setPlace, useOpenReview, useTabPlace } from "./open-review.ts";
 import { RevealRequestContext, ReviewHostContext, type ReviewHost } from "./page/hooks.ts";
 import { PanelReview } from "./page/review-page.tsx";
@@ -48,22 +49,27 @@ function ChangeReview({ threadId, changeKey }: { threadId: string; changeKey: Ch
 function NoChange() {
   const panel = useAppPanel();
   return (
-    <div
+    <Empty
+      size="sm"
       data-bb-plugin="source-control"
       data-testid="sc-review-tab-empty"
-      className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center"
+      className="h-full"
     >
-      <p className="m-0 max-w-sm text-[13px] leading-5 text-muted-foreground">
-        Open a change's review from its card in the chat or from the Source Control tab.
-      </p>
-      <Button
-        size="sm"
-        variant="outline"
-        className="pointer-coarse:h-11"
-        onClick={() => panel.openTab({ tab: SOURCE_CONTROL_TAB })}
-      >
-        Open Source Control
-      </Button>
-    </div>
+      <EmptyHeader>
+        <EmptyDescription>
+          Open a change's review from its card in the chat or from the Source Control tab.
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button
+          size="sm"
+          variant="outline"
+          className="pointer-coarse:h-11"
+          onClick={() => panel.openTab({ tab: SOURCE_CONTROL_TAB })}
+        >
+          Open Source Control
+        </Button>
+      </EmptyContent>
+    </Empty>
   );
 }

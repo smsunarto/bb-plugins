@@ -1,0 +1,12 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "video",
+  "type": "registry:ui",
+  "files": [
+    {
+      "path": "registry/components/ui/video.tsx",
+      "content": "import { useEffect, useRef, type VideoHTMLAttributes } from \"react\";\n\nexport function Video({ src, ...props }: VideoHTMLAttributes<HTMLVideoElement> & { src: string }) {\n  const ref = useRef<HTMLVideoElement>(null);\n  useEffect(() => {\n    const video = ref.current;\n    if (!video) return;\n    video.src = src;\n    return () => {\n      video.removeAttribute(\"src\");\n      video.load();\n    };\n  }, [src]);\n  // Attachment previews play the user's own uploads, which carry no caption track.\n  // oxlint-disable-next-line jsx-a11y/media-has-caption\n  return <video {...props} ref={ref} />;\n}\n",
+      "type": "registry:ui"
+    }
+  ]
+}

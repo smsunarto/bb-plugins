@@ -3,11 +3,15 @@ import { Markdown } from "@get-bb/plugin-sdk/app";
 import type { TraceBody, TraceEvent } from "../shared/model.ts";
 import { scanInstructions } from "../shared/providers/common.ts";
 import { JsonView } from "./json-view.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Card, CardContent } from "./components/ui/card.tsx";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "./components/ui/collapsible.tsx";
+import { Icon } from "./components/ui/icon.tsx";
 
 export interface TraceRendererProps {
   event: TraceEvent;
@@ -125,8 +129,13 @@ function InstructionsRenderer({ body, related, onRaw }: TraceRendererProps) {
       <ContextHeading body={body} />
       {scan.preamble && <Text text={scan.preamble} markdown={markdown} />}
       {scan.sections.map((section) => (
-        <Collapsible className="tr-detail-section tr-instruction" key={section.label} defaultOpen>
-          <CollapsibleTrigger className="tr-disclosure">{section.label}</CollapsibleTrigger>
+        <Collapsible className="tr-detail-section" key={section.label} defaultOpen>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="xs" className="group mb-2 max-w-full min-w-0">
+              <Icon name="ChevronRight" aria-hidden className="group-data-[state=open]:rotate-90" />
+              {section.label}
+            </Button>
+          </CollapsibleTrigger>
           <CollapsibleContent>
             <Text text={section.content} markdown={markdown} />
           </CollapsibleContent>
@@ -205,9 +214,11 @@ function PatchRenderer({ body, related, onRaw }: TraceRendererProps) {
         ))}
       </pre>
       {lines.length === 2000 && (
-        <p className="tr-notice">
-          Preview limited to 2,000 lines. Open raw for the complete record.
-        </p>
+        <Alert variant="warning" role="none" className="mt-2">
+          <AlertDescription>
+            Preview limited to 2,000 lines. Open raw for the complete record.
+          </AlertDescription>
+        </Alert>
       )}
       <ToolOutput body={body} related={related} />
     </>
@@ -242,28 +253,28 @@ function SubagentRenderer({ body, related, onRaw }: TraceRendererProps) {
     </>
   );
 }
+function UsageTile({ term, value }: { term: string; value: string }) {
+  return (
+    <Card size="xs">
+      <CardContent>
+        <dl>
+          <dt>{term}</dt>
+          <dd>{value}</dd>
+        </dl>
+      </CardContent>
+    </Card>
+  );
+}
 function UsageRenderer({ event, body, related, onRaw }: TraceRendererProps) {
   return (
     <>
       {event.usage && (
-        <dl className="tr-usage">
-          <div>
-            <dt>Input</dt>
-            <dd>{event.usage.input?.toLocaleString() ?? "Not recorded"}</dd>
-          </div>
-          <div>
-            <dt>Output</dt>
-            <dd>{event.usage.output?.toLocaleString() ?? "Not recorded"}</dd>
-          </div>
-          <div>
-            <dt>Cached</dt>
-            <dd>{event.usage.cached?.toLocaleString() ?? "Not recorded"}</dd>
-          </div>
-          <div>
-            <dt>Scope</dt>
-            <dd>{event.usage.scope}</dd>
-          </div>
-        </dl>
+        <div className="tr-usage">
+          <UsageTile term="Input" value={event.usage.input?.toLocaleString() ?? "Not recorded"} />
+          <UsageTile term="Output" value={event.usage.output?.toLocaleString() ?? "Not recorded"} />
+          <UsageTile term="Cached" value={event.usage.cached?.toLocaleString() ?? "Not recorded"} />
+          <UsageTile term="Scope" value={event.usage.scope} />
+        </div>
       )}
       <GenericRenderer body={body} related={related} onRaw={onRaw} />
     </>

@@ -21,8 +21,18 @@ import {
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemGroup,
+  ItemMedia,
+  ItemSeparator,
+} from "@/components/ui/item";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { cn } from "@/lib/utils";
 import { Icon } from "@bb-plugins/icons";
@@ -298,8 +308,9 @@ function useComposerContextSlot(anchor: RefObject<HTMLElement | null>): HTMLElem
 }
 
 // The host mounts each action in a 36px-high cell that clips overflow, so the
-// button keeps one height on every pointer and leaves room for its focus ring.
-const ACTION_BUTTON_CLASS = "mx-px h-8 shrink-0 px-2";
+// button keeps the 32px small size on every pointer and leaves room for its
+// focus ring.
+const ACTION_BUTTON_CLASS = "mx-px shrink-0";
 
 // Matches the composer's attachment chips: a 32px pill with a hairline edge.
 const CHIP_CLASS =
@@ -394,6 +405,7 @@ function AnnotationsAction({
         <Button
           type="button"
           variant="ghost"
+          size={asChip ? undefined : "sm"}
           data-agentation-staging-action=""
           aria-label={label}
           onPointerEnter={hoverOpen}
@@ -411,7 +423,8 @@ function AnnotationsAction({
               ? cn(CHIP_CLASS, "data-[state=open]:bg-state-active")
               : cn(
                   ACTION_BUTTON_CLASS,
-                  "gap-1 text-muted-foreground data-[state=open]:bg-state-active data-[state=open]:text-foreground",
+                  // The kit's ghost has no muted resting tone; its open state paints the fill.
+                  "text-muted-foreground data-[state=open]:text-foreground",
                 ),
           )}
         >
@@ -423,7 +436,7 @@ function AnnotationsAction({
           {asChip ? (
             <span aria-hidden="true">{label}</span>
           ) : (
-            <span className="text-xs font-medium tabular-nums">{count}</span>
+            <Badge variant="count">{count}</Badge>
           )}
         </Button>
       </PopoverTrigger>
@@ -485,11 +498,10 @@ function AnnotationsActionContent({
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 min-h-10 px-3 py-1">
         <p className="truncate text-xs font-medium text-muted-foreground">{label}</p>
         <div className="flex min-w-0 flex-wrap items-center gap-1">
-          <Button
+          <CompactButton
             type="button"
             size="sm"
             variant="ghost"
-            className="h-7 px-2"
             disabled={isMutating}
             onClick={() => {
               onMention(rows);
@@ -498,11 +510,10 @@ function AnnotationsActionContent({
           >
             <Icon name="AtSign" aria-hidden="true" />
             Mention all
-          </Button>
-          <Button
+          </CompactButton>
+          <CompactButton
             type="button"
             size="sm"
-            className="h-7 px-2"
             disabled={isMutating}
             onClick={() =>
               onSend(
@@ -513,12 +524,11 @@ function AnnotationsActionContent({
           >
             <Icon name="ArrowUp" aria-hidden="true" />
             {action?.kind === "send" && action.id === null ? "Sending…" : "Send all"}
-          </Button>
-          <Button
-            type="button"
-            size="icon"
+          </CompactButton>
+          <CompactButton
+            size="icon-sm"
             variant="ghost"
-            className="size-7 text-muted-foreground hover:text-destructive"
+            tone="danger"
             disabled={isMutating}
             aria-label="Discard all staged annotations"
             onClick={() => {
@@ -530,16 +540,15 @@ function AnnotationsActionContent({
             }}
           >
             <Icon name="Trash2" aria-hidden="true" />
-          </Button>
+          </CompactButton>
         </div>
       </div>
-      <ol
-        className="flex flex-col border-t border-border [&>li+li]:border-t [&>li+li]:border-border"
-        aria-busy={isMutating}
-      >
+      <Separator />
+      <ItemGroup className="has-data-[size=xs]:gap-0" aria-busy={isMutating}>
         {rows.map(({ id, label, parts }, index) => (
           <AnnotationRow
             key={id}
+            separated={index > 0}
             number={index + 1}
             label={label}
             parts={parts}
@@ -554,12 +563,13 @@ function AnnotationsActionContent({
             onDiscard={() => void onDiscard([id], id)}
           />
         ))}
-      </ol>
+      </ItemGroup>
     </>
   );
 }
 
 function AnnotationRow({
+  separated,
   number,
   label,
   parts,
@@ -570,6 +580,7 @@ function AnnotationRow({
   onSend,
   onDiscard,
 }: {
+  separated: boolean;
   number: number;
   label: string;
   parts: AnnotationMentionLabelParts;
@@ -581,75 +592,70 @@ function AnnotationRow({
   onDiscard: () => void;
 }) {
   const descriptionId = useId();
-  const action = "size-7 shrink-0 text-muted-foreground hover:text-foreground";
   return (
-    <li className="flex min-w-0 items-start gap-2 px-3 py-2">
-      <span id={descriptionId} className="sr-only">
-        {label}
-      </span>
-      <span className="shrink-0 pt-1 text-muted-foreground" aria-hidden="true">
-        {number}.
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1 pt-1" aria-hidden="true">
-        <div className="flex min-w-0 items-center gap-2 text-xs leading-4 text-muted-foreground">
-          <Badge variant="secondary" className="min-w-0 max-w-[60%] shrink-0 font-mono">
-            <span className="truncate">{parts.target}</span>
-          </Badge>
-          <span className="min-w-0 truncate">{parts.location}</span>
-        </div>
-        <p className="break-words whitespace-pre-wrap text-foreground">{parts.comment}</p>
-      </div>
-      <div className="flex shrink-0 items-center">
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className={action}
-          disabled={disabled}
-          aria-label="Mention annotation in composer"
-          aria-describedby={descriptionId}
-          onClick={onMention}
-        >
-          <Icon name="AtSign" aria-hidden="true" />
-        </Button>
-        {onSend === null ? null : (
-          <Button
-            type="button"
-            size="icon"
+    <>
+      {separated ? <ItemSeparator className="my-0" /> : null}
+      {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- ItemGroup is a div with role="list", which cannot hold an <li>. */}
+      <Item role="listitem" size="xs" className="min-w-0 flex-nowrap items-start">
+        <span id={descriptionId} className="sr-only">
+          {label}
+        </span>
+        <ItemMedia aria-hidden="true">
+          <span className="pt-1 text-muted-foreground">{number}.</span>
+        </ItemMedia>
+        <ItemContent className="group-data-[size=xs]/item:gap-1" aria-hidden="true">
+          <div className="flex min-w-0 items-center gap-2 pt-1 text-xs leading-4 text-muted-foreground">
+            <Badge variant="secondary" className="min-w-0 max-w-[60%] shrink-0 font-mono">
+              <span className="truncate">{parts.target}</span>
+            </Badge>
+            <span className="min-w-0 truncate">{parts.location}</span>
+          </div>
+          <p className="break-words whitespace-pre-wrap text-foreground">{parts.comment}</p>
+        </ItemContent>
+        <ItemActions className="shrink-0 gap-0">
+          <CompactButton
+            size="icon-sm"
             variant="ghost"
-            className={action}
+            tone="muted"
+            className="shrink-0"
             disabled={disabled}
-            aria-label={
-              isSending ? "Sending annotation to this thread" : "Send annotation to this thread"
-            }
+            aria-label="Mention annotation in composer"
             aria-describedby={descriptionId}
-            onClick={onSend}
+            onClick={onMention}
           >
-            <Icon
-              name={isSending ? "Spinner" : "ArrowUp"}
-              className={isSending ? "animate-spin" : undefined}
-              aria-hidden="true"
-            />
-          </Button>
-        )}
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
-          disabled={disabled}
-          aria-label={isDiscarding ? "Discarding annotation" : "Discard annotation"}
-          aria-describedby={descriptionId}
-          onClick={onDiscard}
-        >
-          <Icon
-            name={isDiscarding ? "Spinner" : "Trash2"}
-            className={isDiscarding ? "animate-spin" : undefined}
-            aria-hidden="true"
-          />
-        </Button>
-      </div>
-    </li>
+            <Icon name="AtSign" aria-hidden="true" />
+          </CompactButton>
+          {onSend === null ? null : (
+            <CompactButton
+              size="icon-sm"
+              variant="ghost"
+              tone="muted"
+              className="shrink-0"
+              disabled={disabled}
+              aria-label={
+                isSending ? "Sending annotation to this thread" : "Send annotation to this thread"
+              }
+              aria-describedby={descriptionId}
+              onClick={onSend}
+            >
+              {isSending ? <Spinner /> : <Icon name="ArrowUp" aria-hidden="true" />}
+            </CompactButton>
+          )}
+          <CompactButton
+            size="icon-sm"
+            variant="ghost"
+            tone="danger"
+            className="shrink-0"
+            disabled={disabled}
+            aria-label={isDiscarding ? "Discarding annotation" : "Discard annotation"}
+            aria-describedby={descriptionId}
+            onClick={onDiscard}
+          >
+            {isDiscarding ? <Spinner /> : <Icon name="Trash2" aria-hidden="true" />}
+          </CompactButton>
+        </ItemActions>
+      </Item>
+    </>
   );
 }
 

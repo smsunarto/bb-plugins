@@ -21,7 +21,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FieldError } from "@/components/ui/field";
 import {
   Table,
   TableBody,
@@ -32,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Icon } from "@/components/ui/icon";
+import { Item, ItemGroup } from "@/components/ui/item";
 import { ConfirmDialog } from "../../components/confirm-dialog.js";
 import {
   PERMISSION_LABELS,
@@ -93,19 +96,13 @@ function LabelEditorRow({
         className="h-7 w-44 text-xs"
       />
       <ColorSwatchPicker value={color} onChange={setColor} />
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-7"
-        disabled={name.trim() === ""}
-        onClick={submit}
-      >
+      <CompactButton size="sm" variant="outline" disabled={name.trim() === ""} onClick={submit}>
         {submitLabel}
-      </Button>
+      </CompactButton>
       {onCancel ? (
-        <Button size="sm" variant="ghost" className="h-7" onClick={onCancel}>
+        <CompactButton size="sm" variant="ghost" onClick={onCancel}>
           Cancel
-        </Button>
+        </CompactButton>
       ) : null}
     </div>
   );
@@ -135,11 +132,7 @@ function LabelsSection() {
     });
 
   if (projectList.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Create a project first — labels are project-scoped.
-      </p>
-    );
+    return <EmptyState message="Create a project first — labels are project-scoped." />;
   }
 
   return (
@@ -171,12 +164,9 @@ function LabelsSection() {
           </SelectGroup>
         </SelectContent>
       </Select>
-      <div className="rounded-md border border-border">
+      <ItemGroup variant="divided">
         {(labels.data ?? []).map((label) => (
-          <div
-            key={label.id}
-            className="border-t border-border-hairline px-3 py-2 first:border-t-0"
-          >
+          <Item key={label.id} size="xs" role="listitem">
             {editingId === label.id ? (
               <LabelEditorRow
                 initialName={label.name}
@@ -195,7 +185,7 @@ function LabelsSection() {
                 }
               />
             ) : (
-              <div className="group flex items-center gap-2">
+              <div className="group flex flex-1 items-center gap-2">
                 <span
                   aria-hidden
                   className="size-2.5 shrink-0 rounded-full"
@@ -203,18 +193,18 @@ function LabelsSection() {
                 />
                 <span className="flex-1 text-sm">{label.name}</span>
                 <Button
-                  size="icon"
+                  size="icon-xs"
                   variant="ghost"
-                  className="size-6 text-muted-foreground opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+                  className="text-muted-foreground opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                   aria-label={`Edit label ${label.name}`}
                   onClick={() => setEditingId(label.id)}
                 >
                   <Icon name="Edit" className="size-3.5" />
                 </Button>
                 <Button
-                  size="icon"
+                  size="icon-xs"
                   variant="ghost"
-                  className="size-6 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+                  className="text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                   aria-label={`Delete label ${label.name}`}
                   onClick={() => void askDelete(label)}
                 >
@@ -222,12 +212,14 @@ function LabelsSection() {
                 </Button>
               </div>
             )}
-          </div>
+          </Item>
         ))}
         {(labels.data ?? []).length === 0 ? (
-          <p className="px-3 py-2 text-sm text-muted-foreground">No labels yet.</p>
+          <Item size="xs" role="listitem">
+            <EmptyState message="No labels yet." />
+          </Item>
         ) : null}
-      </div>
+      </ItemGroup>
       <LabelEditorRow
         initialName=""
         initialColor={DEFAULT_COLOR}
@@ -239,11 +231,7 @@ function LabelsSection() {
           })
         }
       />
-      {error ? (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
-      ) : null}
+      <FieldError>{error}</FieldError>
       <ConfirmDialog
         open={confirmDelete !== null}
         onOpenChange={(open) => {
@@ -288,14 +276,10 @@ function PresetsSection() {
         <p className="text-sm text-muted-foreground">
           Presets available when dispatching a task to an agent.
         </p>
-        <Button
-          size="sm"
-          className="h-7"
-          onClick={() => setDialog({ key: Date.now(), editing: null })}
-        >
+        <CompactButton size="sm" onClick={() => setDialog({ key: Date.now(), editing: null })}>
           <Icon name="Plus" className="size-3.5" />
           New preset
-        </Button>
+        </CompactButton>
       </div>
       <div className="overflow-x-auto rounded-md border border-border">
         <Table>
@@ -348,18 +332,18 @@ function PresetsSection() {
                 <TableCell className="px-3 py-2">
                   <span className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
                     <Button
-                      size="icon"
+                      size="icon-xs"
                       variant="ghost"
-                      className="size-6 text-muted-foreground"
+                      className="text-muted-foreground"
                       aria-label={`Edit preset ${preset.name}`}
                       onClick={() => setDialog({ key: Date.now(), editing: preset })}
                     >
                       <Icon name="Edit" className="size-3.5" />
                     </Button>
                     <Button
-                      size="icon"
+                      size="icon-xs"
                       variant="ghost"
-                      className="size-6 text-muted-foreground hover:text-destructive"
+                      className="text-muted-foreground hover:text-destructive"
                       aria-label={`Delete preset ${preset.name}`}
                       onClick={() => {
                         setError(null);
@@ -377,19 +361,15 @@ function PresetsSection() {
             ))}
             {(presets.data ?? []).length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={8} className="px-3 py-3 text-sm text-muted-foreground">
-                  No presets yet.
+                <TableCell colSpan={8} className="px-3 py-3">
+                  <EmptyState message="No presets yet." />
                 </TableCell>
               </TableRow>
             ) : null}
           </TableBody>
         </Table>
       </div>
-      {error ? (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
-      ) : null}
+      <FieldError>{error}</FieldError>
       {dialog ? (
         <PresetDialog
           key={dialog.key}
@@ -428,7 +408,7 @@ function FolderRow({
   };
 
   return (
-    <div className="flex items-center gap-2 border-t border-border-hairline px-3 py-2 first:border-t-0">
+    <Item size="xs" role="listitem">
       <Icon name="Folder" className="size-3.5 shrink-0 text-muted-foreground" />
       {renaming ? (
         <>
@@ -445,18 +425,17 @@ function FolderRow({
             }}
             className="h-7 w-44 text-xs"
           />
-          <Button
+          <CompactButton
             size="sm"
             variant="outline"
-            className="h-7"
             disabled={draftName.trim() === ""}
             onClick={rename}
           >
             Save
-          </Button>
-          <Button size="sm" variant="ghost" className="h-7" onClick={() => setRenaming(false)}>
+          </CompactButton>
+          <CompactButton size="sm" variant="ghost" onClick={() => setRenaming(false)}>
             Cancel
-          </Button>
+          </CompactButton>
         </>
       ) : (
         <>
@@ -483,9 +462,9 @@ function FolderRow({
             </SelectContent>
           </Select>
           <Button
-            size="icon"
+            size="icon-xs"
             variant="ghost"
-            className="size-6 text-muted-foreground"
+            className="text-muted-foreground"
             aria-label={`Rename folder ${folder.name}`}
             onClick={() => {
               setDraftName(folder.name);
@@ -495,9 +474,9 @@ function FolderRow({
             <Icon name="Edit" className="size-3.5" />
           </Button>
           <Button
-            size="icon"
+            size="icon-xs"
             variant="ghost"
-            className="size-6 text-muted-foreground hover:text-destructive"
+            className="text-muted-foreground hover:text-destructive"
             aria-label={`Delete folder ${folder.name}`}
             onClick={onDelete}
           >
@@ -505,7 +484,7 @@ function FolderRow({
           </Button>
         </>
       )}
-    </div>
+    </Item>
   );
 }
 
@@ -551,11 +530,9 @@ function FoldersSection() {
   return (
     <div className="flex flex-col gap-3">
       {folderList.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No folders yet — create one from the New project dialog.
-        </p>
+        <EmptyState message="No folders yet — create one from the New project dialog." />
       ) : (
-        <div className="rounded-md border border-border">
+        <ItemGroup variant="divided">
           {folderList.map((folder) => (
             <FolderRow
               key={folder.id}
@@ -578,13 +555,9 @@ function FoldersSection() {
               }}
             />
           ))}
-        </div>
+        </ItemGroup>
       )}
-      {error ? (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
-      ) : null}
+      <FieldError>{error}</FieldError>
       <ConfirmDialog
         open={confirmDelete !== null}
         onOpenChange={(open) => {

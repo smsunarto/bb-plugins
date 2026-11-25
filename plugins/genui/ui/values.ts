@@ -106,6 +106,15 @@ export const TONE_DOT: Record<Tone, string> = {
   info: "bg-[var(--color-timeline-accent,var(--primary))]",
 };
 
+/** StatusDot tone per tone. */
+export const TONE_STATUS_DOT = {
+  neutral: "neutral",
+  good: "success",
+  warn: "warning",
+  bad: "destructive",
+  info: "info",
+} as const satisfies Record<Tone, "neutral" | "success" | "warning" | "destructive" | "info">;
+
 /** Badge variant per tone (@bb-plugins/ui's status tones). */
 export const TONE_BADGE = {
   neutral: "secondary",

@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -22,6 +23,7 @@ import {
   type AdoptOptions,
   type AdoptResult,
 } from "../contract/rpc.ts";
+import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.tsx";
 import { Button } from "./components/ui/button.tsx";
 import {
   Dialog,
@@ -31,8 +33,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./components/ui/dialog.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
+import { FieldDescription, FieldLabel, Field as KitField } from "./components/ui/field.tsx";
 import { Input } from "./components/ui/input.tsx";
-import { Label } from "./components/ui/label.tsx";
 import {
   Select,
   SelectContent,
@@ -174,9 +177,9 @@ function AdoptDialog({ threadId, open }: { threadId: string; open: number }) {
 function LoadError({ message, retry }: { message: string; retry: () => void }) {
   return (
     <>
-      <p className="text-sm text-destructive" role="alert">
-        {message}
-      </p>
+      <Alert variant="destructive" role="alert">
+        <AlertDescription>{message}</AlertDescription>
+      </Alert>
       <DialogFooter>
         <Button variant="outline" className={TOUCH} onClick={retry}>
           Retry
@@ -190,7 +193,7 @@ function LoadError({ message, retry }: { message: string; retry: () => void }) {
 function FormSkeleton() {
   const field = (
     <div className="flex flex-col gap-1.5">
-      <div className="h-3.5 w-16 animate-pulse rounded bg-muted" />
+      <div className="h-[1lh] w-16 animate-pulse rounded bg-muted text-sm leading-snug" />
       <div className={`h-9 animate-pulse rounded-md bg-muted ${TOUCH}`} />
     </div>
   );
@@ -271,7 +274,7 @@ function AdoptForm({ options }: { options: AdoptOptions }) {
   useEffect(() => first.current?.focus(), []);
 
   if (captain === undefined) {
-    return <p className="text-sm text-muted-foreground">No live Captain to adopt into.</p>;
+    return <EmptyState message="No live Captain to adopt into." />;
   }
   if (submitted?.result.ok === true) return <Adopted submitted={submitted} />;
 
@@ -386,24 +389,24 @@ function Problems({
 }) {
   if (blockers.length === 0 && error === null) return null;
   return (
-    <ul className="flex flex-col gap-1 text-sm text-destructive" role="alert">
+    <Alert variant="destructive" role="alert">
       {blockers.map((blocker) => (
-        <li key={blocker.reason}>
-          {blocker.reason}
-          <span className="block text-xs text-muted-foreground">Fix: {blocker.fix}</span>
-        </li>
+        <Fragment key={blocker.reason}>
+          <AlertTitle>{blocker.reason}</AlertTitle>
+          <AlertDescription>Fix: {blocker.fix}</AlertDescription>
+        </Fragment>
       ))}
-      {error === null ? null : <li>{error}</li>}
-    </ul>
+      {error === null ? null : <AlertTitle>{error}</AlertTitle>}
+    </Alert>
   );
 }
 
 function Field({ label, id, children }: { label: string; id: string; children: ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
+    <KitField className="min-w-0 gap-1.5">
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
       {children}
-    </div>
+    </KitField>
   );
 }
 
@@ -514,7 +517,7 @@ function TaskField({
         })}
       </Picker>
       {tasksError === null ? null : (
-        <p className="text-xs text-muted-foreground">Open tasks not listed: {tasksError}</p>
+        <FieldDescription>Open tasks not listed: {tasksError}</FieldDescription>
       )}
     </Field>
   );

@@ -1,6 +1,6 @@
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import type { ComponentPropsWithRef, ComponentPropsWithoutRef, ReactNode, Ref } from "react";
-import { Button } from "../components/ui/button.tsx";
+import { CompactButton } from "../components/ui/button.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,16 +36,16 @@ export function RowActionButton({
     <TooltipProvider delayDuration={200}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button
-            type="button"
+          <CompactButton
             variant="ghost"
-            size="icon"
+            size="icon-2xs"
+            tone="muted"
             aria-label={label}
             {...props}
-            className="size-5 shrink-0 text-muted-foreground data-[state=open]:bg-state-hover data-[state=open]:text-foreground max-md:pointer-coarse:size-7"
+            className="shrink-0 max-md:pointer-coarse:size-7"
           >
             <Icon name={icon} aria-hidden className="size-3.5" />
-          </Button>
+          </CompactButton>
         </TooltipTrigger>
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>

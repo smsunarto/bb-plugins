@@ -36,7 +36,7 @@ export function Pending({ pending, icon }: { pending: boolean; icon?: string }) 
  * finger on a phone, as bb's own controls are.
  */
 export const CARD_ACTION_CLASS =
-  "h-7 min-w-0 flex-[1_1_8rem] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]";
+  "min-w-0 flex-[1_1_8rem] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]";
 
 /**
  * A quiet text action beside a status line, such as Retry or Open thread:
@@ -145,7 +145,7 @@ export function OpenOnGitHub({
     <Hint label="Open in GitHub">
       {/* UrlLink takes no ref: the tooltip anchors on this span. */}
       <span className="inline-flex shrink-0">
-        <Button variant="outline" size="icon" className={compact ? "size-7" : "size-8"} asChild>
+        <Button variant="outline" size="icon-sm" className={compact ? "size-7" : undefined} asChild>
           <UrlLink href={href} aria-label={label}>
             <GitHubMark />
           </UrlLink>

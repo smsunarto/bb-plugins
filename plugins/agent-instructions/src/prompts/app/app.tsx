@@ -11,8 +11,11 @@ import type {
   SaveResult,
   Tool,
 } from "../shared/schema.ts";
+import { Alert, AlertDescription } from "../../../components/ui/alert.tsx";
 import { Badge } from "../../../components/ui/badge.tsx";
 import { Button } from "../../../components/ui/button.tsx";
+import { EmptyState } from "../../../components/ui/empty-state.tsx";
+import { Item, ItemActions, ItemContent, ItemTitle } from "../../../components/ui/item.tsx";
 import { Textarea } from "../../../components/ui/textarea.tsx";
 import { TooltipProvider } from "../../../components/ui/tooltip.tsx";
 import { Hint, UnsavedDot } from "../../app/hint.tsx";
@@ -136,7 +139,7 @@ function SkillGroup({
     <details ref={disclosure} className="pe-skill" aria-label={label}>
       <summary className="pe-skill-summary">
         {label.replace(/\/?SKILL\.md$/, "") || "Skills"}
-        {dirty && <UnsavedDot />}
+        {dirty && <UnsavedDot className="ml-1" />}
       </summary>
       {children}
     </details>
@@ -186,36 +189,40 @@ function PluginGroup(props: {
       ? { pluginId: plugin.id, path: plugin.files[0].path }
       : null;
 
-  const fileRow = (file: AgentFile, label: string, nested = false) => {
+  const fileRow = (file: AgentFile, label: string) => {
     const entry = { pluginId: plugin.id, path: file.path };
     return (
-      <button
-        key={file.path}
-        type="button"
-        className="pe-row"
-        data-nested={nested || undefined}
-        aria-current={isSelected(entry) || undefined}
-        onClick={() => onSelect(entry)}
-      >
-        <span className="pe-row-label">{label}</span>
-        {dirty.has(draftKey(plugin.id, file.path)) && <UnsavedDot />}
-      </button>
+      <Item key={file.path} asChild size="row" className="relative">
+        <button
+          type="button"
+          aria-current={isSelected(entry) || undefined}
+          onClick={() => onSelect(entry)}
+        >
+          <ItemContent>
+            <ItemTitle>{label}</ItemTitle>
+          </ItemContent>
+          {dirty.has(draftKey(plugin.id, file.path)) && (
+            <ItemActions>
+              <UnsavedDot />
+            </ItemActions>
+          )}
+        </button>
+      </Item>
     );
   };
 
   return (
     <section className="pe-group">
-      <button
-        type="button"
-        className="pe-plugin"
-        aria-expanded={open}
-        onClick={() => first && onSelect(first)}
-      >
-        <span className="pe-plugin-name">{plugin.name}</span>
-        <span className="pe-meta">
-          {plugin.readOnly !== null ? "read-only" : countLabel(plugin)}
-        </span>
-      </button>
+      <Item asChild size="row" className="relative">
+        <button type="button" aria-expanded={open} onClick={() => first && onSelect(first)}>
+          <ItemTitle className="min-w-0 flex-1">{plugin.name}</ItemTitle>
+          <ItemActions>
+            <span className="pe-meta">
+              {plugin.readOnly !== null ? "read-only" : countLabel(plugin)}
+            </span>
+          </ItemActions>
+        </button>
+      </Item>
       {open && (
         <div className="pe-files">
           {plugin.tools.length > 0 && <h3 className="pe-label">Tools</h3>}
@@ -224,28 +231,37 @@ function PluginGroup(props: {
             const snippet = snippets.get(tool.name);
             return (
               <div key={tool.name}>
-                <button
-                  type="button"
-                  className="pe-row"
-                  aria-current={isSelected(entry) || undefined}
-                  onClick={() => onSelect(entry)}
-                >
-                  <span className="pe-row-label pe-mono">{tool.name}</span>
-                  {tool.file === null && (
-                    <Badge variant="outline" className="py-0">
-                      code
-                    </Badge>
-                  )}
-                  {tool.drift && (
-                    <Badge variant="warning" className="py-0">
-                      stale
-                    </Badge>
-                  )}
-                  {tool.file !== null && dirty.has(draftKey(plugin.id, tool.file)) && (
-                    <UnsavedDot />
-                  )}
-                </button>
-                {snippet && fileRow(snippet, "thread snippet", true)}
+                <Item asChild size="row" className="relative">
+                  <button
+                    type="button"
+                    aria-current={isSelected(entry) || undefined}
+                    onClick={() => onSelect(entry)}
+                  >
+                    <ItemContent>
+                      <ItemTitle className="font-mono">{tool.name}</ItemTitle>
+                    </ItemContent>
+                    {(tool.file === null ||
+                      tool.drift ||
+                      (tool.file !== null && dirty.has(draftKey(plugin.id, tool.file)))) && (
+                      <ItemActions className="gap-1">
+                        {tool.file === null && (
+                          <Badge variant="outline" className="py-0">
+                            code
+                          </Badge>
+                        )}
+                        {tool.drift && (
+                          <Badge variant="warning" className="py-0">
+                            stale
+                          </Badge>
+                        )}
+                        {tool.file !== null && dirty.has(draftKey(plugin.id, tool.file)) && (
+                          <UnsavedDot />
+                        )}
+                      </ItemActions>
+                    )}
+                  </button>
+                </Item>
+                {snippet && <div className="ps-3">{fileRow(snippet, "thread snippet")}</div>}
               </div>
             );
           })}
@@ -267,8 +283,10 @@ function PluginGroup(props: {
                 dirty.has(draftKey(plugin.id, file.path)),
               )}
             >
-              {fileRow(skill, "SKILL.md", true)}
-              {references.map((file) => fileRow(file, file.path.slice(directory.length), true))}
+              <div className="ps-3">
+                {fileRow(skill, "SKILL.md")}
+                {references.map((file) => fileRow(file, file.path.slice(directory.length)))}
+              </div>
             </SkillGroup>
           ))}
           {references.length > 0 && <h3 className="pe-label">Reference files</h3>}
@@ -301,10 +319,12 @@ function CodeTool(props: { plugin: Plugin; tool: Tool }) {
           <h2 className="pe-mono">{props.tool.name}</h2>
         </div>
       </header>
-      <p className="pe-notice">
-        This description is defined in the plugin's code, so it is shown read-only. Move it to{" "}
-        <code>instructions/tools/{props.tool.name}.md</code> to edit it here.
-      </p>
+      <Alert role="none">
+        <AlertDescription>
+          This description is defined in the plugin's code, so it is shown read-only. Move it to{" "}
+          <code>instructions/tools/{props.tool.name}.md</code> to edit it here.
+        </AlertDescription>
+      </Alert>
       <pre className="pe-readonly">{props.tool.live ?? "bb reports no description."}</pre>
     </div>
   );
@@ -322,32 +342,42 @@ function Notices(props: {
   const { plugin, stale, changed, error, result, moved } = props;
   return (
     <>
-      {plugin.readOnly !== null && <p className="pe-notice">{plugin.readOnly}</p>}
+      {plugin.readOnly !== null && (
+        <Alert role="none">
+          <AlertDescription>{plugin.readOnly}</AlertDescription>
+        </Alert>
+      )}
       {stale && (
-        <p className="pe-notice" data-tone="warn">
-          The agent still sees the previous description. Reload {plugin.name} to apply this file.
-        </p>
+        <Alert variant="warning" role="none">
+          <AlertDescription>
+            The agent still sees the previous description. Reload {plugin.name} to apply this file.
+          </AlertDescription>
+        </Alert>
       )}
       {moved !== null && (
-        <p className="pe-notice" data-tone="warn">
-          {moved} changed on disk after you started editing. Revert to load the new text, or copy
-          your edit first.
-        </p>
+        <Alert variant="warning" role="none">
+          <AlertDescription>
+            {moved} changed on disk after you started editing. Revert to load the new text, or copy
+            your edit first.
+          </AlertDescription>
+        </Alert>
       )}
       {error !== null && (
-        <p className="pe-notice" data-tone="bad">
-          {error}
-        </p>
+        <Alert variant="destructive" role="none">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
       {result !== null && result.reloadError !== null && (
-        <p className="pe-notice" data-tone="warn">
-          Saved, but {plugin.name} did not reload: {result.reloadError}
-        </p>
+        <Alert variant="warning" role="none">
+          <AlertDescription>
+            Saved, but {plugin.name} did not reload: {result.reloadError}
+          </AlertDescription>
+        </Alert>
       )}
       {result !== null && result.reloadError === null && !changed && (
-        <p className="pe-notice" data-tone="good">
-          Saved. {plugin.name} reloaded with the new text.
-        </p>
+        <Alert variant="success" role="none">
+          <AlertDescription>Saved. {plugin.name} reloaded with the new text.</AlertDescription>
+        </Alert>
       )}
     </>
   );
@@ -404,8 +434,10 @@ function FileEditor(props: {
   if (loaded.isPending) return <div className="pe-editor pe-empty">Loading {file.path}…</div>;
   if (loaded.isError) {
     return (
-      <div className="pe-editor pe-notice" data-tone="bad">
-        {loaded.error.message}
+      <div className="pe-editor">
+        <Alert variant="destructive" role="none">
+          <AlertDescription>{loaded.error.message}</AlertDescription>
+        </Alert>
       </div>
     );
   }
@@ -513,9 +545,9 @@ function PluginsTabBody({ subPath }: { subPath: string }) {
   if (plugins.isError) {
     return (
       <div className="pe-panel pe-sidebar pe-tab-state">
-        <p className="pe-notice" data-tone="bad">
-          {plugins.error.message}
-        </p>
+        <Alert variant="destructive" role="none">
+          <AlertDescription>{plugins.error.message}</AlertDescription>
+        </Alert>
       </div>
     );
   }
@@ -539,9 +571,9 @@ function PromptEditor({ subPath }: { subPath: string }) {
   if (plugins.isError) {
     return (
       <main className="pe-panel">
-        <p className="pe-notice" data-tone="bad">
-          {plugins.error.message}
-        </p>
+        <Alert variant="destructive" role="none">
+          <AlertDescription>{plugins.error.message}</AlertDescription>
+        </Alert>
       </main>
     );
   }
@@ -550,7 +582,9 @@ function PromptEditor({ subPath }: { subPath: string }) {
   const plugin = plugins.data.plugins.find((p) => p.id === selection?.pluginId);
 
   let body = (
-    <div className="pe-editor pe-empty">Pick a tool, prompt, or skill in the sidebar.</div>
+    <div className="pe-editor pe-empty">
+      <EmptyState message="Pick a tool, prompt, or skill in the sidebar." />
+    </div>
   );
   if (plugin && selection && "tool" in selection) {
     const tool = plugin.tools.find((t) => t.name === selection.tool);

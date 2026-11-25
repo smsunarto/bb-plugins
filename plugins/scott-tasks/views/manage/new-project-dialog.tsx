@@ -22,7 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Icon } from "@/components/ui/icon";
 import {
@@ -186,11 +187,7 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
                 setPrefixTouched(true);
                 setPrefix(event.target.value.toUpperCase());
               }}
-              className={
-                prefixError !== null
-                  ? "h-8 w-32 border-destructive focus-visible:ring-destructive"
-                  : "h-8 w-32"
-              }
+              className="h-8 w-32"
             />
           </Field>
           <Field label="Color">
@@ -243,16 +240,15 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
                   }}
                   className="h-7 text-xs"
                 />
-                <Button
+                <CompactButton
                   size="sm"
                   variant="outline"
-                  className="h-7"
                   disabled={newFolderName.trim() === ""}
                   onClick={() => void createFolderInline()}
                 >
                   <Icon name="FolderPlus" className="size-3.5" />
                   Create
-                </Button>
+                </CompactButton>
               </div>
             ) : null}
           </Field>
@@ -267,11 +263,7 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
             />
           </Field>
         </div>
-        {error ? (
-          <p role="alert" className="text-xs text-destructive">
-            {error}
-          </p>
-        ) : null}
+        <FieldError>{error}</FieldError>
         <DialogFooter>
           <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             Cancel

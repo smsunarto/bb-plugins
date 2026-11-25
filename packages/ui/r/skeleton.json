@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "skeleton",
+  "type": "registry:ui",
+  "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+  "files": [
+    {
+      "path": "registry/components/ui/skeleton.tsx",
+      "content": "import type { HTMLAttributes } from \"react\";\nimport { cn } from \"../../lib/utils\";\n\nexport function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>) {\n  return (\n    <div className={cn(\"animate-pulse rounded-md bg-surface-selected\", className)} {...props} />\n  );\n}\n",
+      "type": "registry:ui"
+    }
+  ]
+}

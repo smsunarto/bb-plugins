@@ -1,5 +1,5 @@
-/* shadcn/ui-derived */
 import * as React from "react";
+/* shadcn/ui-derived: the shadcn CLI strips a leading comment, so this notice follows the first import. */
 import { Drawer as DrawerPrimitive } from "vaul";
 
 import { cn } from "../../lib/utils";
@@ -56,12 +56,12 @@ const DrawerContent = React.forwardRef<
       ref={ref}
       {...usePortalScopeProps()}
       className={cn(
-        "fixed inset-x-0 bottom-0 z-50 mt-24 flex max-h-[85dvh] flex-col rounded-t-xl border bg-background",
+        "fixed inset-x-0 bottom-0 z-50 mt-24 flex max-h-[85dvh] flex-col rounded-t-xl border bg-popover text-sm text-popover-foreground",
         className,
       )}
       {...props}
     >
-      <DrawerPrimitive.Handle className="mx-auto mt-3 mb-1 h-1 w-10 shrink-0 rounded-full bg-muted-foreground/20" />
+      <DrawerPrimitive.Handle className="mx-auto mt-4 h-1.5 w-[100px] shrink-0 rounded-full bg-muted" />
       {children}
     </DrawerPrimitive.Content>
   </DrawerPortal>
@@ -74,7 +74,7 @@ const DrawerTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DrawerPrimitive.Title
     ref={ref}
-    className={cn("text-lg font-semibold leading-none tracking-tight", className)}
+    className={cn("font-medium text-foreground", className)}
     {...props}
   />
 ));

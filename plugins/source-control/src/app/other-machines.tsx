@@ -26,7 +26,7 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
 import { useOpenReview } from "./open-review.ts";
 import { StateBadge } from "./page/rail.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import {
   Collapsible,
   CollapsibleContent,
@@ -34,6 +34,8 @@ import {
 } from "./components/ui/collapsible.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { DISCLOSURE, DisclosureChevron, Pending } from "./ui.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
+import { Item, ItemActions, ItemContent, ItemFooter, ItemMedia } from "./components/ui/item.tsx";
 
 type Checkout = { path: string; repo: string | null };
 type Host = { hostId: string; name: string; checkouts: Checkout[] };
@@ -61,21 +63,20 @@ function BranchRow({
   openReview: OpenReview;
 }) {
   return (
-    <li className="flex min-w-0 border-t border-border-hairline first:border-t-0">
-      <button
-        type="button"
-        className="flex min-h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1 text-start hover:bg-surface-raised"
-        title={row.title}
-        onClick={() => openReview({ key: row.key })}
-      >
-        <StateBadge state={row.state} className="h-4 leading-3" />
-        <span className="min-w-0 truncate text-[12px] leading-4 text-foreground" translate="no">
-          {row.number !== null ? `#${row.number} · ${row.branch}` : row.branch}
-        </span>
-        {mine ? (
-          <span className="shrink-0 text-[11px] leading-4 text-muted-foreground">This change</span>
-        ) : null}
-      </button>
+    <li className="flex min-w-0 border-t border-border-hairline px-1 first:border-t-0">
+      <Item asChild size="row" className="min-h-8 min-w-0 flex-1 cursor-pointer">
+        <button type="button" title={row.title} onClick={() => openReview({ key: row.key })}>
+          <StateBadge state={row.state} className="h-4 leading-3" />
+          <span className="min-w-0 truncate text-[12px] leading-4 text-foreground" translate="no">
+            {row.number !== null ? `#${row.number} · ${row.branch}` : row.branch}
+          </span>
+          {mine ? (
+            <span className="shrink-0 text-[11px] leading-4 text-muted-foreground">
+              This change
+            </span>
+          ) : null}
+        </button>
+      </Item>
     </li>
   );
 }
@@ -121,24 +122,22 @@ function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Check
     }
   };
   return (
-    <li
-      className="flex min-w-0 flex-col gap-1 border-t border-border-hairline px-3 py-2"
-      data-testid="sc-other-checkout"
-    >
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="flex min-w-0 flex-[1_1_8rem] items-center gap-1" title={checkout.path}>
+    <li className="min-w-0 border-t border-border-hairline px-0.5" data-testid="sc-other-checkout">
+      <Item size="xs" className="min-w-0 gap-x-2 gap-y-1">
+        <ItemMedia>
           <Icon name="Folder" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        </ItemMedia>
+        <ItemContent className="basis-32" title={checkout.path}>
           <code
             className="min-w-0 truncate font-mono text-[11px] leading-4 text-muted-foreground"
             translate="no"
           >
             {leaf(checkout.path)}
           </code>
-        </span>
-        <span className="flex shrink-0 gap-1">
-          <Button
+        </ItemContent>
+        <ItemActions className="shrink-0 gap-1">
+          <CompactButton
             size="sm"
-            className="h-7"
             variant="ghost"
             disabled={opening !== null}
             aria-busy={opening === "open"}
@@ -147,10 +146,9 @@ function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Check
           >
             <Pending pending={opening === "open"} />
             Open checkout
-          </Button>
-          <Button
+          </CompactButton>
+          <CompactButton
             size="sm"
-            className="h-7"
             variant="outline"
             disabled={opening !== null}
             aria-busy={opening === "chat"}
@@ -159,12 +157,16 @@ function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Check
           >
             <Pending pending={opening === "chat"} icon="MessageSquarePlus" />
             New chat
-          </Button>
-        </span>
-      </div>
-      {reason ? (
-        <output className="m-0 block text-[11px] leading-4 text-muted-foreground">{reason}</output>
-      ) : null}
+          </CompactButton>
+        </ItemActions>
+        {reason ? (
+          <ItemFooter>
+            <output className="m-0 block text-[11px] leading-4 text-muted-foreground">
+              {reason}
+            </output>
+          </ItemFooter>
+        ) : null}
+      </Item>
     </li>
   );
 }
@@ -234,9 +236,11 @@ function HostSection({
             ))}
           </ul>
         ) : (
-          <p className="m-0 px-3 pb-2 text-[11px] leading-4 text-muted-foreground">
-            No checkout of {repo} here.
-          </p>
+          <EmptyState
+            className="mx-3 mb-2"
+            messageClassName="m-0"
+            message={`No checkout of ${repo} here.`}
+          />
         )
       ) : source?.problem ? null : (
         <div className="px-3 pb-2" aria-busy="true" aria-label={`Reading ${host.name}`}>
@@ -285,9 +289,11 @@ function Hosts({
     );
   if (hosts.length === 0)
     return (
-      <p className="m-0 px-3 py-2 text-[12px] leading-4 text-muted-foreground">
-        bb knows no checkout on another machine.
-      </p>
+      <EmptyState
+        className="mx-3 my-2"
+        messageClassName="m-0"
+        message="bb knows no checkout on another machine."
+      />
     );
   return (
     <div className="flex min-w-0 flex-col">

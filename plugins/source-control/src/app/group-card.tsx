@@ -20,7 +20,7 @@ import { ChangeCard, useSeen } from "./chat-card.tsx";
 import { plural } from "./format.ts";
 import { mergeAll, mergeAllText } from "./merge-all.ts";
 import { mergeTarget, readyToMerge, useChangeMerge, type MergeTarget } from "./merge.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { Pending } from "./ui.tsx";
 
@@ -180,22 +180,22 @@ function GroupActions({
       ) : null}
       {remaining.length > 0 ? (
         <div className="flex min-w-0 flex-wrap gap-2">
-          <Button
+          <CompactButton
             size="sm"
             variant="outline"
-            className="h-7 min-w-0 flex-[1_1_8rem]"
+            className="min-w-0 flex-[1_1_8rem]"
             data-testid="sc-group-ship"
             disabled={busy}
             onClick={() => void ship.send()}
           >
             <Pending pending={ship.pending} icon="Sent" />
             Ship {scope} {remaining.length}
-          </Button>
+          </CompactButton>
           {targets ? (
-            <Button
+            <CompactButton
               size="sm"
               variant="default"
-              className="h-7 min-w-0 flex-[1_1_8rem]"
+              className="min-w-0 flex-[1_1_8rem]"
               data-testid="sc-group-merge"
               disabled={busy}
               // The run keeps the heads and bases seen now, whatever arrives meanwhile.
@@ -205,7 +205,7 @@ function GroupActions({
               {merging.running
                 ? `Merging ${merging.running.index + 1} of ${merging.running.total}`
                 : `Merge ${scope} ${targets.length}`}
-            </Button>
+            </CompactButton>
           ) : null}
         </div>
       ) : null}
@@ -232,24 +232,22 @@ function GroupFooter({ threadId, status }: { threadId: string; status: GroupStat
           the head shown here. It stops at the first that does not merge.
         </p>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button
+          <CompactButton
             size="sm"
-            className="h-7"
             variant="outline"
             ref={cancel}
             onClick={() => merging.setConfirming(null)}
           >
             Cancel
-          </Button>
-          <Button
+          </CompactButton>
+          <CompactButton
             size="sm"
-            className="h-7"
             variant="default"
             data-testid="sc-group-merge-confirm"
             onClick={() => void merging.run(confirming)}
           >
             Merge {confirming.length}
-          </Button>
+          </CompactButton>
         </div>
       </div>
     );

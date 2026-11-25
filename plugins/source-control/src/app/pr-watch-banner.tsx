@@ -29,6 +29,8 @@ import {
   CollapsibleTrigger,
 } from "./components/ui/collapsible.tsx";
 import { Hint, KEEP_COMPOSER_FOCUS } from "./ui.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
+import { Item } from "./components/ui/item.tsx";
 
 const NO_WATCHES: PrWatchView[] = [];
 
@@ -137,55 +139,52 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
   const key = prKey(watch.ref);
   const summary = watchSummary(watch);
   const note = mergeNote(watch);
+  const tone = expanded ? "text-foreground" : "text-muted-foreground";
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded} className="flex min-w-0 flex-col">
       <div className="flex min-h-7 min-w-0 items-center gap-1">
-        <CollapsibleTrigger
-          {...KEEP_COMPOSER_FOCUS}
-          aria-label={`${key} ${watch.title}: ${summary}. ${expanded ? "Hide" : "Show"} checks`}
-          title={`${key} ${watch.title}: ${summary}`}
-          className={cx(
-            "flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-[4px] border-0 bg-transparent px-2 py-1 text-start hover:bg-surface-raised focus-visible:outline-1",
-            expanded ? "text-foreground" : "text-muted-foreground",
-          )}
-        >
-          <StateIcon watch={watch} />
-          <span className="flex min-w-0 font-medium text-foreground">
-            <span className="min-w-0 truncate">{watchOutcome(watch)}</span>
-            {note ? <span className="shrink-0 whitespace-pre"> · {note}</span> : null}
-          </span>
-          {/* The title gives way first; the outcome truncates only when it alone overflows. */}
-          <span className="min-w-0 shrink-[100000] truncate">{watch.title}</span>
-          <span className="shrink-0 tabular-nums" translate="no">
-            #{watch.ref.number}
-          </span>
-          <Icon
-            name="ChevronDown"
-            className={cx(
-              "ms-auto size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none",
-              expanded && "rotate-180",
-            )}
-            aria-hidden
-          />
-        </CollapsibleTrigger>
+        <Item asChild size="row" className="min-h-6 min-w-0 flex-1 cursor-pointer gap-1">
+          <CollapsibleTrigger
+            {...KEEP_COMPOSER_FOCUS}
+            aria-label={`${key} ${watch.title}: ${summary}. ${expanded ? "Hide" : "Show"} checks`}
+            title={`${key} ${watch.title}: ${summary}`}
+          >
+            <StateIcon watch={watch} />
+            <span className="flex min-w-0 font-medium text-foreground">
+              <span className="min-w-0 truncate">{watchOutcome(watch)}</span>
+              {note ? <span className="shrink-0 whitespace-pre"> · {note}</span> : null}
+            </span>
+            {/* The title gives way first; the outcome truncates only when it alone overflows. */}
+            <span className={cx("min-w-0 shrink-[100000] truncate", tone)}>{watch.title}</span>
+            <span className={cx("shrink-0 tabular-nums", tone)} translate="no">
+              #{watch.ref.number}
+            </span>
+            <Icon
+              name="ChevronDown"
+              className={cx(
+                "ms-auto size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none",
+                expanded && "rotate-180",
+              )}
+              aria-hidden
+            />
+          </CollapsibleTrigger>
+        </Item>
         <Hint label="Open on GitHub">
           {/* UrlLink takes no ref: the tooltip anchors on this span. */}
           <span className="inline-flex shrink-0">
-            <UrlLink
-              href={watch.url}
-              className={cx(ACTION, "size-6")}
-              aria-label={`Open ${key} on GitHub`}
-            >
-              <Icon name="ArrowUpRight" className="size-3.5" aria-hidden />
-            </UrlLink>
+            <Button asChild variant="ghost" size="icon-xs" tone="muted">
+              <UrlLink href={watch.url} aria-label={`Open ${key} on GitHub`}>
+                <Icon name="ArrowUpRight" className="size-3" aria-hidden />
+              </UrlLink>
+            </Button>
           </span>
         </Hint>
         <Hint label="Stop watching. The agent is not told.">
           <Button
             type="button"
-            size="sm"
+            size="xs"
             variant="ghost"
-            className="h-6 px-1 text-muted-foreground max-md:pointer-coarse:px-2"
+            tone="muted"
             aria-label={`Unwatch ${key}`}
             {...KEEP_COMPOSER_FOCUS}
             disabled={stop.isPending}
@@ -230,9 +229,11 @@ function WatchDetails({ watch }: { watch: PrWatchView }) {
         </p>
       ) : null}
       {checks.length === 0 ? (
-        <p className="m-0 px-2 py-1 text-[11px] text-muted-foreground">
-          No checks reported for this commit yet.
-        </p>
+        <EmptyState
+          className="mx-2 my-1"
+          messageClassName="m-0"
+          message="No checks reported for this commit yet."
+        />
       ) : (
         <ul
           className="m-0 mt-1 flex max-h-56 list-none flex-col gap-px overflow-y-auto p-0"

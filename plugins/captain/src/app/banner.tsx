@@ -36,6 +36,8 @@ import {
 } from "../contract/queue.ts";
 import { captainContract } from "../contract/rpc.ts";
 import { surface } from "@bb-plugins/ui/surface";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
+import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Icon } from "./components/ui/icon.tsx";
 import { Input } from "./components/ui/input.tsx";
@@ -367,7 +369,9 @@ function Queue({
           />
         )}
         {error ? (
-          <p className="col-start-2 m-0 min-w-0 break-words text-destructive">{error}</p>
+          <Alert variant="destructive" role="none" className="col-start-2 min-w-0">
+            <AlertDescription className="break-words">{error}</AlertDescription>
+          </Alert>
         ) : null}
       </div>
     </div>
@@ -684,9 +688,9 @@ function QueueTabs({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 px-3 py-1.5">
       <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground" aria-live="polite">
-        <span className="min-w-4.5 rounded-full bg-(--surface-attention) px-1 text-center font-semibold text-warning-text">
+        <Badge variant="warning" className="min-w-4.5">
           {waitingCount}
-        </span>
+        </Badge>
         waiting
       </span>
       <div
@@ -741,13 +745,7 @@ function QueueTabs({
             </Button>
           );
         })}
-        {laterCount > 0 ? (
-          <span
-            className={cn(surface.edge, "shrink-0 rounded-md px-2 py-0.5 text-muted-foreground")}
-          >
-            {laterCount} later
-          </span>
-        ) : null}
+        {laterCount > 0 ? <Badge variant="outline">{laterCount} later</Badge> : null}
       </div>
     </div>
   );

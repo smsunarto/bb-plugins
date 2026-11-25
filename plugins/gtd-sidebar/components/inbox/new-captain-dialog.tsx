@@ -10,6 +10,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
+import { Alert, AlertDescription } from "../ui/alert";
+import { EmptyState } from "../ui/empty-state";
+import { Field, FieldError, FieldLabel, FieldLegend, FieldSet } from "../ui/field";
 import { Input } from "../ui/input";
 import { cn } from "../../lib/utils";
 import { CAPTAIN_PLUGIN_ID, captainContract } from "../../lib/captain-contract";
@@ -132,10 +135,8 @@ export function NewCaptainForm({
           A long-lived thread that directs crew threads across the repos you pick.
         </DialogDescription>
       </DialogHeader>
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor={nameId} className="text-sm font-medium">
-          Name
-        </label>
+      <Field className="gap-1.5">
+        <FieldLabel htmlFor={nameId}>Name</FieldLabel>
         <Input
           id={nameId}
           value={name}
@@ -145,21 +146,17 @@ export function NewCaptainForm({
           aria-describedby={nameProblem === null ? undefined : nameErrorId}
           onChange={(event) => setName(event.target.value)}
         />
-        {nameProblem === null ? null : (
-          <p id={nameErrorId} className="text-xs text-destructive">
-            {nameProblem}
-          </p>
-        )}
-      </div>
-      <fieldset
-        className="flex min-w-0 flex-col gap-1.5"
+        {nameProblem === null ? null : <FieldError id={nameErrorId}>{nameProblem}</FieldError>}
+      </Field>
+      <FieldSet
+        className="gap-1.5"
         aria-describedby={reposProblem === null ? undefined : reposErrorId}
       >
-        <legend id={reposId} className="mb-1.5 text-sm font-medium">
+        <FieldLegend id={reposId} variant="label" className="mb-1.5">
           Repos
-        </legend>
+        </FieldLegend>
         {repos.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No bb projects to pick yet.</p>
+          <EmptyState message="No bb projects to pick yet." />
         ) : (
           <ul
             aria-labelledby={reposId}
@@ -176,18 +173,16 @@ export function NewCaptainForm({
             ))}
           </ul>
         )}
-        {reposProblem === null ? null : (
-          <p id={reposErrorId} className="text-xs text-destructive">
-            {reposProblem}
-          </p>
-        )}
-      </fieldset>
+        {reposProblem === null ? null : <FieldError id={reposErrorId}>{reposProblem}</FieldError>}
+      </FieldSet>
       {refusal.length === 0 ? null : (
-        <div role="alert" className="flex flex-col gap-1 text-xs text-destructive">
-          {refusal.map((line) => (
-            <p key={line}>{line}</p>
-          ))}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-col gap-1">
+            {refusal.map((line) => (
+              <div key={line}>{line}</div>
+            ))}
+          </AlertDescription>
+        </Alert>
       )}
       <DialogFooter>
         <Button type="button" variant="ghost" onClick={onCancel}>

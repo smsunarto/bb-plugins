@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { installTestPluginRuntime } from "@get-bb/plugin-sdk/testing/app";
 import { toolCall, toolResult } from "../shared/providers/tools.ts";
 import type { ParsedEvent, TraceEvent } from "../shared/model.ts";
 import { defaultTraceRenderers } from "./renderers.tsx";
+
+// Disclosures and JSON toggles draw their chevron with the SDK's Icon.
+installTestPluginRuntime();
 
 function render(parsed: ParsedEvent) {
   const event: TraceEvent = {
@@ -93,8 +97,14 @@ test("an instruction body renders one section per plugin it was assembled from",
     }),
   );
   // Each source is a disclosure that starts open, so its content renders.
-  assert.match(html, /<button[^>]*aria-expanded="true"[^>]*>agentation<\/button>/);
-  assert.match(html, /<button[^>]*aria-expanded="true"[^>]*>workflows<\/button>/);
+  assert.match(
+    html,
+    /<button[^>]*aria-expanded="true"[^>]*>(?:(?!<\/button>).)*agentation<\/button>/,
+  );
+  assert.match(
+    html,
+    /<button[^>]*aria-expanded="true"[^>]*>(?:(?!<\/button>).)*workflows<\/button>/,
+  );
   assert.match(html, /Read pending feedback before searching the code\./);
   assert.match(html, /Copy the preview directive into your response\./);
   assert.match(html, /Base instructions for the agent\./);

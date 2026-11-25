@@ -68,6 +68,7 @@ import { RevealRequestContext } from "./hooks.ts";
 import { ReviewScroller } from "./review-bar.tsx";
 import { FocusContext, type Spot } from "./review-focus.ts";
 import { Skeleton } from "../components/ui/skeleton.tsx";
+import { EmptyState } from "../components/ui/empty-state.tsx";
 
 // ── Near the viewport ──────────────────────────────────────────────────
 
@@ -1021,9 +1022,11 @@ export function FilesView({
     );
   else if (files!.length === 0)
     cards = (
-      <p className="m-0 py-6 text-[13px] leading-5 text-muted-foreground">
-        This change has no file changes.
-      </p>
+      <EmptyState
+        className="my-6"
+        messageClassName="m-0"
+        message="This change has no file changes."
+      />
     );
   else
     cards = (

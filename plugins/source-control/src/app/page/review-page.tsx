@@ -38,7 +38,8 @@ import { useChangeReview } from "../review-data.ts";
 import { SendControls, useSendControls } from "../send.tsx";
 import { DETAIL_TONE, ShipPath } from "../status.tsx";
 import { Badge } from "../components/ui/badge.tsx";
-import { Button } from "../components/ui/button.tsx";
+import { Button, CompactButton } from "../components/ui/button.tsx";
+import { Separator } from "../components/ui/separator.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,6 +63,14 @@ import { revisionId } from "./patches.ts";
 import { RailSections } from "./rail.tsx";
 import { FocusContext, ReviewFocus } from "./review-focus.ts";
 import { ReviewSection } from "./review-section.tsx";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "../components/ui/empty.tsx";
+import { EmptyState } from "../components/ui/empty-state.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
 
@@ -191,20 +200,20 @@ function AskButton({ compact }: { compact?: boolean }) {
   if (!ask) return null;
   return (
     <Hint label={compact ? "Ask agent" : null}>
-      <Button
-        size="sm"
+      <CompactButton
+        size={compact ? "sm" : "default"}
         variant="outline"
         data-testid="sc-ask-agent"
         aria-label={compact ? "Ask agent" : undefined}
         onClick={(event) => ask({ trigger: event.currentTarget })}
         className={cx(
-          "border-border bg-surface-raised hover:bg-surface-recessed",
-          compact ? "size-7 px-0" : "h-8 gap-2 px-3 text-[13px] leading-5",
+          "bg-surface-raised hover:bg-surface-recessed",
+          compact ? "w-7 px-0" : "gap-2",
         )}
       >
         <BotIcon />
         {compact ? null : "Ask agent"}
-      </Button>
+      </CompactButton>
     </Hint>
   );
 }
@@ -215,16 +224,7 @@ function PageMerge({ detail, compact }: { detail: Ready; compact?: boolean }) {
   const target = mergeTarget(detail);
   if (!target) return null;
   return (
-    <MergeButton
-      submit={submit}
-      target={target}
-      className={
-        compact
-          ? "h-7 px-2 text-[12px] font-semibold max-md:pointer-coarse:px-3"
-          : "h-8 px-3 text-[13px] font-semibold"
-      }
-      label="Merge"
-    />
+    <MergeButton submit={submit} target={target} size={compact ? "sm" : "default"} label="Merge" />
   );
 }
 
@@ -387,9 +387,7 @@ function ReviewTabs({
             className="cursor-pointer gap-2 rounded-none border-b-2 border-solid border-b-transparent px-0 py-2 text-[13px] leading-5 font-normal hover:text-foreground data-[state=active]:border-b-foreground data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:shadow-none"
           >
             {tab.label}
-            {tab.count !== null ? (
-              <span className="font-normal text-(--tertiary-foreground)">{tab.count}</span>
-            ) : null}
+            {tab.count !== null ? <Badge variant="count">{tab.count}</Badge> : null}
           </TabsTrigger>
         ))}
       </TabsList>
@@ -434,20 +432,19 @@ function HeaderSkeleton() {
 
 function Missing({ problem }: { problem: Extract<ChangeDetail, { state: "missing" }>["problem"] }) {
   return (
-    <div
-      className={cx("flex flex-col gap-2 py-10", PAD)}
-      data-testid="sc-review-missing"
-      role="alert"
-    >
-      <h1 className="m-0 text-[16px] leading-6 font-semibold text-foreground">
-        bb doesn't know this change
-      </h1>
-      <p className="m-0 max-w-xl text-[13px] leading-5 text-muted-foreground">
-        {problem
-          ? describeProblem(problem)
-          : "No checkout or pull request bb can read has this branch. It may have been deleted, or the link may be from another bb."}
-      </p>
-    </div>
+    <Empty size="sm" data-testid="sc-review-missing" role="alert">
+      <EmptyHeader>
+        {/* EmptyTitle is a div: the h1 keeps the page's heading. */}
+        <EmptyTitle>
+          <h1 className="m-0 [font:inherit]">bb doesn't know this change</h1>
+        </EmptyTitle>
+        <EmptyDescription>
+          {problem
+            ? describeProblem(problem)
+            : "No checkout or pull request bb can read has this branch. It may have been deleted, or the link may be from another bb."}
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
@@ -610,11 +607,17 @@ function TabBody({
       >
         {lead}
         {description}
-        <p className="m-0 text-[13px] leading-5 text-muted-foreground" data-testid="sc-no-revision">
-          {detail.problem
-            ? `${describeProblem(detail.problem)} Files appear once bb can read them.`
-            : "Files appear once bb has read this change's head and base."}
-        </p>
+        {/* EmptyState takes no testid: the wrapper carries it. */}
+        <div data-testid="sc-no-revision">
+          <EmptyState
+            messageClassName="m-0"
+            message={
+              detail.problem
+                ? `${describeProblem(detail.problem)} Files appear once bb can read them.`
+                : "Files appear once bb has read this change's head and base."
+            }
+          />
+        </div>
       </ReviewScroller>
     );
   if (tab === "overview")
@@ -684,7 +687,7 @@ function TabControls({
   return (
     <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-3">
       {progress}
-      {progress ? <span aria-hidden className="h-4 w-px shrink-0 bg-border" /> : null}
+      {progress ? <Separator orientation="vertical" className="h-4 self-center" /> : null}
       {send}
     </div>
   );
@@ -849,21 +852,16 @@ function Review({ location, width }: { location: Here; width: number }) {
   if (!detail || detail.state === "pending") {
     if (query.error && !detail)
       return (
-        <div className={cx("flex flex-col gap-2 py-10", PAD)} role="alert">
-          <p className="m-0 text-[13px] leading-5 text-muted-foreground">
-            Couldn't read this change. {query.error.message}
-          </p>
-          <div>
-            <Button
-              size="sm"
-              className="h-7"
-              variant="outline"
-              onClick={() => void query.refetch()}
-            >
+        <Empty size="sm" role="alert">
+          <EmptyHeader>
+            <EmptyDescription>Couldn't read this change. {query.error.message}</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <CompactButton size="sm" variant="outline" onClick={() => void query.refetch()}>
               Try again
-            </Button>
-          </div>
-        </div>
+            </CompactButton>
+          </EmptyContent>
+        </Empty>
       );
     return <HeaderSkeleton />;
   }
@@ -882,9 +880,11 @@ function Review({ location, width }: { location: Here; width: number }) {
 function NoSelection() {
   return (
     <div className="flex flex-1 items-center justify-center p-8" data-testid="sc-review-empty">
-      <p className="m-0 max-w-sm text-center text-[13px] leading-5 text-muted-foreground">
-        Pick a change from the list to review its files and commits.
-      </p>
+      <EmptyState
+        className="max-w-sm"
+        messageClassName="m-0 text-center"
+        message="Pick a change from the list to review its files and commits."
+      />
     </div>
   );
 }

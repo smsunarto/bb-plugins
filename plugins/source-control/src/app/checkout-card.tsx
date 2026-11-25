@@ -25,8 +25,9 @@ import {
 } from "./chat-card.tsx";
 import { plural } from "./format.ts";
 import { Quiet, ShipButton, threadShip, useShipThread } from "./thread-card.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { StateBadge } from "./page/rail.tsx";
+import { AlertDescription } from "./components/ui/alert.tsx";
 
 /** A branch with commits that no listed checkout or pull request has: what it is, where, and Ship it. */
 function BranchCard({
@@ -94,21 +95,19 @@ function Unread({
   if (row?.local.problem)
     return (
       <CardNote testId="sc-card-failed">
-        <p role="alert" className="m-0 text-[13px] leading-5 text-muted-foreground">
+        <AlertDescription>
           {offline ? "Offline." : describeProblem(row.local.problem)}
-        </p>
+        </AlertDescription>
       </CardNote>
     );
   if (error && !row)
     return (
       <CardNote testId="sc-card-failed">
-        <p role="alert" className="m-0 text-[13px] leading-5 text-muted-foreground">
-          Couldn't read this checkout. {error.message}
-        </p>
+        <AlertDescription>Couldn't read this checkout. {error.message}</AlertDescription>
         <div>
-          <Button size="sm" className="h-7" variant="outline" onClick={retry}>
+          <CompactButton size="sm" variant="outline" onClick={retry}>
             Try again
-          </Button>
+          </CompactButton>
         </div>
       </CardNote>
     );
@@ -134,7 +133,7 @@ function LocalWork({
   else
     body = (
       <Quiet testId="sc-card-clean">
-        Nothing left to ship: {where} is clean and this branch has no commits of its own.
+        {`Nothing left to ship: ${where} is clean and this branch has no commits of its own.`}
       </Quiet>
     );
   return (

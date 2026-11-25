@@ -18,8 +18,12 @@ import {
   type IconChoice,
 } from "../contract/icon.ts";
 import { captainContract } from "../contract/rpc.ts";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
+import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
 import { Input } from "./components/ui/input.tsx";
+import { Item, ItemGroup } from "./components/ui/item.tsx";
 import { iconImage } from "./icon-image.ts";
 import { cn } from "./lib/utils.ts";
 
@@ -39,9 +43,11 @@ export function CaptainIconSettings() {
           <div className="h-12 animate-pulse rounded-md bg-muted" />
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm wrap-anywhere text-destructive">
-              Captains not loaded: {list.error.message}
-            </p>
+            <Alert variant="destructive" role="none" className="w-auto min-w-0 flex-1 basis-48">
+              <AlertDescription className="wrap-anywhere">
+                Captains not loaded: {list.error.message}
+              </AlertDescription>
+            </Alert>
             <Button
               variant="outline"
               size="sm"
@@ -62,13 +68,13 @@ export function CaptainIconSettings() {
         no icon by that name. Or upload a picture; <code>bb captain icon</code> sets names only.
       </p>
       {list.data.captains.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No live Captains yet.</p>
+        <EmptyState message="No live Captains yet." />
       ) : (
-        <ul className="flex flex-col rounded-md border">
+        <ItemGroup variant="divided">
           {list.data.captains.map((captain) => (
             <CaptainIconRow key={captain.threadId} {...captain} />
           ))}
-        </ul>
+        </ItemGroup>
       )}
     </div>
   );
@@ -157,12 +163,13 @@ function CaptainIconRow({
   const typedName = normalizeIconName(value);
 
   return (
-    <li className="flex flex-col gap-1 border-t px-3 py-2 first:border-t-0">
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- ItemGroup is a div with role="list", which cannot hold an <li>.
+    <Item role="listitem" size="sm" className="flex-col items-stretch gap-1">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="flex min-w-0 flex-1 basis-48 items-center gap-2" title={name}>
           <StoredIcon icon={icon} />
           <span className="truncate text-sm font-medium">{name}</span>
-          <span className="shrink-0 text-xs text-muted-foreground">{iconLabel(icon)}</span>
+          <Badge variant="outline">{iconLabel(icon)}</Badge>
         </span>
         <form className="flex min-w-0 flex-wrap items-center gap-2" onSubmit={submit}>
           <span className="flex min-w-0 items-center gap-2">
@@ -221,11 +228,15 @@ function CaptainIconRow({
           </span>
         </form>
       </div>
-      {error === null ? null : <p className="text-xs wrap-anywhere text-destructive">{error}</p>}
+      {error === null ? null : (
+        <Alert variant="destructive" role="none">
+          <AlertDescription className="wrap-anywhere">{error}</AlertDescription>
+        </Alert>
+      )}
       {note === null || error !== null ? null : (
         <p className="text-xs wrap-anywhere text-muted-foreground">{note}</p>
       )}
-    </li>
+    </Item>
   );
 }
 

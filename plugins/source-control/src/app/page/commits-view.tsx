@@ -15,6 +15,8 @@ import { absoluteTime, cx, shortAge, shortId } from "../format.ts";
 import { Rail } from "../workspace-lane.tsx";
 import { FilesView } from "./files-view.tsx";
 import { ReviewScroller } from "./review-bar.tsx";
+import { EmptyState } from "../components/ui/empty-state.tsx";
+import { Card } from "../components/ui/card.tsx";
 
 /**
  * A commit's own changes as a revision: its parent to itself. The host reads
@@ -130,9 +132,7 @@ function CommitList({
     );
   if (!answer.ok) return <PatchesProblem text={describeProblem(answer.problem)} onRetry={retry} />;
   if (answer.commits.length === 0)
-    return (
-      <p className="m-0 px-3 py-3 text-[12px] leading-4 text-muted-foreground">No commits yet.</p>
-    );
+    return <EmptyState className="mx-3 my-3" messageClassName="m-0" message="No commits yet." />;
   return (
     <ul className="m-0 list-none p-0" aria-label="Commits">
       {answer.commits.map((entry, index) => (
@@ -224,9 +224,9 @@ export function CommitsView({
   );
 
   const card = (
-    <div className="min-w-0 overflow-hidden rounded-[8px] border border-solid border-border-hairline bg-surface-recessed">
+    <Card size="flush" className="min-w-0">
       {list}
-    </div>
+    </Card>
   );
   const elsewhere = selected && !at ? <OnGitHub url={url} commit={selected} /> : null;
   // A narrow column puts the picked commit's files (or its GitHub link) under the whole list, out

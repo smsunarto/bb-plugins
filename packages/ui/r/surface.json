@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "surface",
+  "type": "registry:ui",
+  "description": "Shared edge and surface classes, re-exported from @bb-plugins/ui.",
+  "files": [
+    {
+      "path": "registry/components/ui/surface.ts",
+      "content": "export { surface } from \"@bb-plugins/ui/surface\";\n",
+      "type": "registry:ui"
+    }
+  ]
+}

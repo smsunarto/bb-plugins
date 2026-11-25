@@ -16,7 +16,10 @@ import { describeProblem } from "../core/change.ts";
 import type { OplogEntry } from "../core/oplog.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { absoluteTime, shortAge, shortId } from "./format.ts";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader } from "./components/ui/empty.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
+import { Item } from "./components/ui/item.tsx";
 import {
   Collapsible,
   CollapsibleContent,
@@ -58,62 +61,67 @@ function useAskAgent(): ((text: string) => void) | null {
   return composer.scope.kind === "new-thread" ? null : ask;
 }
 
-/** Its 12px glyph, not the shared Button's 16px. */
-const ICON_BUTTON = "size-6 text-muted-foreground [&_svg]:size-3";
-
 function OperationRow({ entry, path, now }: { entry: OplogEntry; path: string; now: number }) {
   const ask = useAskAgent();
   const title = operationTitle(entry.title);
   const short = shortId(entry.id);
   return (
     <li
-      className="flex min-w-0 items-start gap-2 border-t border-border-hairline px-3 py-2 first:border-t-0"
+      className="min-w-0 border-t border-border-hairline px-0.5 first:border-t-0"
       data-testid="sc-oplog-row"
     >
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="truncate text-[12px] leading-4 font-medium text-foreground" title={title}>
-          {title}
-        </span>
-        {entry.body ? (
-          <span className="truncate text-[11px] leading-4 text-muted-foreground" title={entry.body}>
-            {entry.body}
-          </span>
-        ) : null}
-        <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-[11px] leading-4 text-muted-foreground">
-          <code className="font-mono tabular-nums" translate="no">
-            {short}
-          </code>
-          {entry.createdAt ? (
-            <time dateTime={entry.createdAt} title={absoluteTime(entry.createdAt)}>
-              {shortAge(entry.createdAt, now)}
-            </time>
-          ) : null}
-        </span>
-      </span>
-      <Hint label={`Copy snapshot id ${short}`}>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={ICON_BUTTON}
-          aria-label={`Copy snapshot id ${short}`}
-          onClick={() => void copyToClipboard({ text: entry.id })}
-        >
-          <Icon name="Copy" className="size-3" aria-hidden />
-        </Button>
-      </Hint>
-      {ask ? (
-        <Hint label={`Ask agent to restore snapshot ${short}`}>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={ICON_BUTTON}
-            aria-label={`Ask agent to restore snapshot ${short}`}
-            onClick={() => ask(restoreRequest(entry, title, path))}
+      <Item size="xs" className="min-w-0 items-start">
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span
+            className="truncate text-[12px] leading-4 font-medium text-foreground"
+            title={title}
           >
-            <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
-          </Button>
+            {title}
+          </span>
+          {entry.body ? (
+            <span
+              className="truncate text-[11px] leading-4 text-muted-foreground"
+              title={entry.body}
+            >
+              {entry.body}
+            </span>
+          ) : null}
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-[11px] leading-4 text-muted-foreground">
+            <code className="font-mono tabular-nums" translate="no">
+              {short}
+            </code>
+            {entry.createdAt ? (
+              <time dateTime={entry.createdAt} title={absoluteTime(entry.createdAt)}>
+                {shortAge(entry.createdAt, now)}
+              </time>
+            ) : null}
+          </span>
+        </span>
+        <Hint label={`Copy snapshot id ${short}`}>
+          <CompactButton
+            variant="ghost"
+            size="icon-xs"
+            tone="muted"
+            aria-label={`Copy snapshot id ${short}`}
+            onClick={() => void copyToClipboard({ text: entry.id })}
+          >
+            <Icon name="Copy" className="size-3" aria-hidden />
+          </CompactButton>
         </Hint>
-      ) : null}
+        {ask ? (
+          <Hint label={`Ask agent to restore snapshot ${short}`}>
+            <CompactButton
+              variant="ghost"
+              size="icon-xs"
+              tone="muted"
+              aria-label={`Ask agent to restore snapshot ${short}`}
+              onClick={() => ask(restoreRequest(entry, title, path))}
+            >
+              <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
+            </CompactButton>
+          </Hint>
+        ) : null}
+      </Item>
     </li>
   );
 }
@@ -125,23 +133,36 @@ function Operations({ threadId, path, now }: { threadId: string; path: string; n
     input: { threadId },
   });
   const data = oplog.data;
-  const note = (text: string) => (
-    <p className="m-0 flex flex-wrap items-center gap-2 px-3 py-2 text-[12px] leading-4 text-muted-foreground">
-      {text}
-      {data?.ok === false || oplog.error ? (
-        <Button size="sm" className="h-7" variant="outline" onClick={() => void oplog.refetch()}>
+  const failed = (text: string) => (
+    <Empty size="sm">
+      <EmptyHeader>
+        <EmptyDescription>{text}</EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <CompactButton size="sm" variant="outline" onClick={() => void oplog.refetch()}>
           Try again
-        </Button>
-      ) : null}
-    </p>
+        </CompactButton>
+      </EmptyContent>
+    </Empty>
   );
   if (!data)
-    return oplog.error
-      ? note(`History failed to load. ${oplog.error.message}`)
-      : note("Loading operations…");
-  if (!data.ok) return note(`History unavailable. ${describeProblem(data.problem)}`);
-  if (data.value.entries.length === 0)
-    return note("No operations yet. GitButler lists each change it makes to this workspace here.");
+    return oplog.error ? (
+      failed(`History failed to load. ${oplog.error.message}`)
+    ) : (
+      <p className="m-0 px-3 py-2 text-[12px] leading-4 text-muted-foreground">
+        Loading operations…
+      </p>
+    );
+  if (!data.ok) return failed(`History unavailable. ${describeProblem(data.problem)}`);
+  if (data.value.entries.length === 0) {
+    const none = "No operations yet. GitButler lists each change it makes to this workspace here.";
+    // A failed refetch over an empty list still offers Try again.
+    return oplog.error ? (
+      failed(none)
+    ) : (
+      <EmptyState className="mx-3 my-2" messageClassName="m-0" message={none} />
+    );
+  }
   return (
     // Each row draws its own top rule: a divider utility would add a child selector the CSS guard refuses.
     <ol className="m-0 list-none p-0">

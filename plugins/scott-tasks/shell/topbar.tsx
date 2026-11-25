@@ -8,7 +8,7 @@ import { useTasksLiveQuery } from "./data.js";
 import { refreshTasks } from "./sync.js";
 import { useTasksUi } from "./ui-store.js";
 import type { ResolvedTasksRoute, TaskViewMode, TasksRoute } from "./routes.js";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
@@ -99,8 +99,8 @@ function TaskPager({
       </span>
       <Button
         variant="ghost"
-        size="icon"
-        className="size-6 max-md:pointer-coarse:size-11"
+        size="icon-xs"
+        className="max-md:pointer-coarse:size-11"
         aria-label="Previous task"
         disabled={position.prevKey === null}
         onClick={() => step(position.prevKey)}
@@ -109,8 +109,8 @@ function TaskPager({
       </Button>
       <Button
         variant="ghost"
-        size="icon"
-        className="size-6 max-md:pointer-coarse:size-11"
+        size="icon-xs"
+        className="max-md:pointer-coarse:size-11"
         aria-label="Next task"
         disabled={position.nextKey === null}
         onClick={() => step(position.nextKey)}
@@ -311,15 +311,15 @@ export function TasksTopbar({
       case "task":
         return (
           <span className="flex min-w-0 items-center gap-2">
-            <Button
+            <CompactButton
               variant="ghost"
-              size="icon"
-              className="size-7 shrink-0 max-md:pointer-coarse:size-11"
+              size="icon-sm"
+              className="shrink-0 max-md:pointer-coarse:size-11"
               aria-label="Back (Esc)"
               onClick={onBack}
             >
               <Icon name="ChevronLeft" className="size-4" />
-            </Button>
+            </CompactButton>
             <Breadcrumb className="min-w-0">
               <BreadcrumbList className="flex-nowrap gap-2 sm:gap-2">
                 {project ? (

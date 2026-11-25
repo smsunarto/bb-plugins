@@ -24,7 +24,8 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { useEscapeLayer } from "./escape.ts";
 import { useHostGate } from "./host-gate.ts";
 import { cx, plural, squashMessage } from "./format.ts";
-import { Button } from "./components/ui/button.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { Pending, ReasonHint } from "./ui.tsx";
 import { Input } from "./components/ui/input.tsx";
 import { Textarea } from "./components/ui/textarea.tsx";
@@ -151,16 +152,14 @@ export function useVcsActions(threadId: string, gate: string | null) {
  */
 type ConfirmTone = "default" | "attention" | "destructive";
 
-const CONFIRM_LOOK: Record<ConfirmTone, { box: string; icon: string } | null> = {
+/** A toned confirmation draws as the kit Alert of that tone; a default one has no box. */
+const CONFIRM_LOOK: Record<
+  ConfirmTone,
+  { variant: "warning" | "destructive"; icon: string } | null
+> = {
   default: null,
-  attention: {
-    box: "border-transparent bg-[color-mix(in_oklab,var(--warning)_10%,transparent)]",
-    icon: "text-warning",
-  },
-  destructive: {
-    box: "border-[color-mix(in_oklab,var(--destructive)_35%,transparent)] bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)]",
-    icon: "text-destructive",
-  },
+  attention: { variant: "warning", icon: "text-warning" },
+  destructive: { variant: "destructive", icon: "text-destructive" },
 };
 
 /**
@@ -198,17 +197,16 @@ export function Confirm({
   useEscapeLayer(root, () => {
     if (!pending) onCancel();
   });
+  const Box = look ? Alert : "div";
   return (
-    <div
+    <Box
       ref={root}
-      className={cx(
-        "flex flex-wrap items-center gap-2 text-[12px]",
-        look && `rounded-[6px] border px-3 py-2 ${look.box}`,
-      )}
+      {...(look ? { variant: look.variant, role: "none" } : {})}
+      className={cx("flex flex-wrap items-center gap-2", !look && "text-[12px]")}
     >
       <p
         id={promptId}
-        className="m-0 me-auto min-w-0 basis-full leading-normal text-muted-foreground"
+        className="m-0 me-auto min-w-0 basis-full text-[12px] leading-normal text-muted-foreground"
       >
         {look ? (
           <Icon
@@ -222,9 +220,8 @@ export function Confirm({
       {children}
       {/* One unit, so a long prompt never wraps Cancel apart from its answer. */}
       <div className="ms-auto flex shrink-0 gap-2">
-        <Button
+        <CompactButton
           size="sm"
-          className="h-7"
           variant="ghost"
           disabled={pending}
           aria-describedby={promptId}
@@ -234,11 +231,10 @@ export function Confirm({
           onClick={onCancel}
         >
           Cancel
-        </Button>
+        </CompactButton>
         <ReasonHint reason={blocked} className="flex">
-          <Button
+          <CompactButton
             size="sm"
-            className="h-7"
             variant={tone === "destructive" ? "destructive" : "default"}
             disabled={pending || blocked !== null}
             aria-describedby={promptId}
@@ -246,10 +242,10 @@ export function Confirm({
           >
             <Pending pending={pending} />
             {label}
-          </Button>
+          </CompactButton>
         </ReasonHint>
       </div>
-    </div>
+    </Box>
   );
 }
 
@@ -473,25 +469,23 @@ export function OutcomeLine({
 }) {
   if (!outcome || outcome.kind === "confirm") return null;
   return (
-    <div role="alert" className="flex min-w-0 items-start gap-2">
-      <p
-        className={cx(
-          "m-0 min-w-0 flex-1 text-[12px] leading-4",
-          outcome.kind === "failed" ? "text-destructive" : "text-warning",
-        )}
-      >
+    <Alert
+      variant={outcome.kind === "failed" ? "destructive" : "warning"}
+      className="flex min-w-0 items-start gap-2"
+    >
+      <AlertDescription className="min-w-0 flex-1">
         {outcome.kind === "conflict" ? CONFLICT_TEXT : outcome.text}
-      </p>
-      <Button
+      </AlertDescription>
+      <CompactButton
         variant="ghost"
-        size="icon"
+        size="icon-xs"
+        tone="muted"
         aria-label="Dismiss"
-        className="size-4 rounded-[4px] text-muted-foreground"
         onClick={() => dispatch.dismiss(scope)}
       >
         <Icon name="X" className="size-3" aria-hidden />
-      </Button>
-    </div>
+      </CompactButton>
+    </Alert>
   );
 }
 
@@ -807,9 +801,8 @@ function ActionRow({
     // A disabled button takes no hover, so the row says why its buttons are off.
     <ReasonHint reason={blocked} className="flex min-w-0 flex-wrap items-center gap-2">
       {available.push === "none" ? null : (
-        <Button
+        <CompactButton
           size="sm"
-          className="h-7"
           variant="outline"
           disabled={busy}
           data-host-bound="push"
@@ -818,12 +811,11 @@ function ActionRow({
         >
           <Pending pending={running === "push"} icon="ArrowUp" />
           {pushLabel}
-        </Button>
+        </CompactButton>
       )}
       {available.land ? (
-        <Button
+        <CompactButton
           size="sm"
-          className="h-7"
           variant="outline"
           disabled={busy}
           data-host-bound="land"
@@ -832,13 +824,13 @@ function ActionRow({
         >
           <Pending pending={running === "land"} icon="ArrowDown" />
           Land
-        </Button>
+        </CompactButton>
       ) : null}
       {prAction}
-      <Button
+      <CompactButton
         size="sm"
         variant="ghost"
-        className="h-7 ms-auto shrink-0 text-muted-foreground"
+        className="ms-auto shrink-0 text-muted-foreground"
         disabled={busy}
         data-host-bound="rename"
         aria-label={`Rename ${branch.name}`}
@@ -846,12 +838,12 @@ function ActionRow({
       >
         <Pending pending={running === "rename"} icon="Edit" />
         Rename
-      </Button>
+      </CompactButton>
       {/* Apart from the rest and quiet, so it is never the button a hand drifts to. */}
-      <Button
+      <CompactButton
         size="sm"
         variant="ghost"
-        className="h-7 shrink-0 text-muted-foreground enabled:hover:text-destructive"
+        className="shrink-0 text-muted-foreground enabled:hover:text-destructive"
         disabled={busy}
         data-host-bound="delete"
         aria-label={`Delete ${branch.name}`}
@@ -859,7 +851,7 @@ function ActionRow({
       >
         <Pending pending={running === "delete"} icon="Trash2" />
         Delete
-      </Button>
+      </CompactButton>
     </ReasonHint>
   );
 }
@@ -884,10 +876,9 @@ export function PullButton({
   else if (busy && !running) title = "Another action is running";
   return (
     <ReasonHint reason={title} off={busy || gate !== null} className="flex shrink-0">
-      <Button
-        size="sm"
+      <CompactButton
+        size="icon-sm"
         variant="outline"
-        className="size-7 px-0!"
         aria-label={behind > 0 ? `Pull ${plural(behind, "new commit")}` : "Pull"}
         data-host-bound="pull"
         disabled={busy || gate !== null}
@@ -896,7 +887,7 @@ export function PullButton({
         }
       >
         <Pending pending={running} icon="ArrowDown" />
-      </Button>
+      </CompactButton>
     </ReasonHint>
   );
 }

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObjec
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Spinner } from "@/components/ui/spinner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { relativeTime, type ProjectFailure } from "../../core/project";
@@ -179,7 +180,7 @@ export function Freshness({
         disabled={refreshing}
         onClick={onRefresh}
       >
-        <Icon name="RotateCcw" aria-hidden className={cn(refreshing && "animate-spin motion-reduce:animate-none")} />
+        {refreshing ? <Spinner /> : <Icon name="RotateCcw" aria-hidden />}
       </IconButton>
     </span>
   );

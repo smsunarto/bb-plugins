@@ -1,0 +1,17 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "status-dot",
+  "type": "registry:ui",
+  "description": "A small status dot in neutral, primary, success, warning, destructive or info tone.",
+  "dependencies": [
+    "class-variance-authority"
+  ],
+  "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+  "files": [
+    {
+      "path": "registry/components/ui/status-dot.tsx",
+      "content": "import * as React from \"react\";\nimport { cva, type VariantProps } from \"class-variance-authority\";\nimport { cn } from \"../../lib/utils\";\n\n// A small filled circle that marks a row's or a badge's status. It is decorative unless the\n// caller names it: pass `aria-label` (and `role=\"img\"`) when the dot is the only status cue.\nconst statusDotVariants = cva(\"inline-block shrink-0 rounded-full\", {\n  variants: {\n    tone: {\n      neutral: \"bg-muted-foreground\",\n      primary: \"bg-primary\",\n      success: \"bg-success\",\n      warning: \"bg-warning\",\n      destructive: \"bg-destructive\",\n      info: \"bg-(--timeline-accent,var(--primary))\",\n      attention: \"bg-(--attention,var(--warning))\",\n      muted: \"bg-muted-foreground/40\",\n      /** The surrounding text colour, for a dot that follows its row's ink or a data colour set with `text-*`. */\n      current: \"bg-current\",\n    },\n    size: {\n      default: \"size-2\",\n      sm: \"size-1.5\",\n    },\n    pulse: { false: \"\", true: \"animate-pulse motion-reduce:animate-none\" },\n  },\n  defaultVariants: { tone: \"neutral\", size: \"default\", pulse: false },\n});\n\nfunction StatusDot({\n  className,\n  tone,\n  size,\n  pulse,\n  ...props\n}: React.ComponentProps<\"span\"> & VariantProps<typeof statusDotVariants>) {\n  return (\n    <span\n      data-slot=\"status-dot\"\n      aria-hidden={props[\"aria-label\"] ? undefined : true}\n      className={cn(statusDotVariants({ tone, size, pulse }), className)}\n      {...props}\n    />\n  );\n}\n\nexport { StatusDot, statusDotVariants };\n",
+      "type": "registry:ui"
+    }
+  ]
+}

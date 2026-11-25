@@ -48,6 +48,7 @@ import { CHART_DRAW_MS, EASE_OUT_EXPO, FADE, RISE, useEntrance, type Entrance } 
 import { QuietLine, ShowAll } from "./projectKit";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Item, ItemGroup } from "@/components/ui/item";
 import { Progress } from "@/components/ui/progress";
 import { IconButton } from "./iconButton";
 import { useReviewLinks } from "../reviewLinks";
@@ -257,10 +258,10 @@ function StatusGlyph({ status }: { status: string }) {
 /** A label as a quiet chip, with its GitHub colour as a dot when it has one. */
 function LabelChip({ name, color }: { name: string; color: string | null }) {
   return (
-    <span className="inline-flex min-w-0 max-w-[11rem] items-center gap-1 rounded-full border border-border px-1 text-[10.5px] leading-[18px] text-muted-foreground">
+    <Badge variant="outline" size="sm" className="min-w-0 max-w-[11rem] shrink">
       {color === null ? null : <span aria-hidden className="size-1.5 shrink-0 rounded-full" style={{ background: color }} />}
       <span className="truncate">{name}</span>
-    </span>
+    </Badge>
   );
 }
 
@@ -850,64 +851,68 @@ function RoadmapList({
         return (
           <section key={lane.name} className="flex min-w-0 flex-col" aria-label={lane.name || "Items"}>
             {lane.name === "" ? null : <h4 className="m-0 pb-1 text-[11px] font-medium uppercase leading-5 tracking-[0.06em] text-muted-foreground">{lane.name}</h4>}
-            <ul className="m-0 flex min-w-0 list-none flex-col divide-y divide-border/60 p-0">
-              {items.map((item) => {
-                const open = selected === item.index;
-                const color = ROADMAP_COLOR[item.status];
-                const progress = item.progress ?? (item.status === "done" ? 100 : 0);
-                return (
-                  <li key={item.index} className="min-w-0 py-2">
-                    <button
-                      type="button"
-                      aria-expanded={open}
-                      aria-controls={`${detailId}-${item.index}`}
-                      onClick={() => onSelect(item.index)}
-                      className={cn("flex w-full min-w-0 cursor-pointer flex-col gap-1 rounded-md text-left", FOCUS_RING)}
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        {item.milestone ? <Diamond color={color} className="size-2" /> : null}
-                        <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-foreground">{item.title}</span>
-                        {item.late ? <Pill tone="bad">Late</Pill> : null}
-                        <Pill tone={ROADMAP_TONE[item.status]}>{ROADMAP_STATUS_LABEL[item.status]}</Pill>
-                      </span>
-                      <span className="flex min-w-0 items-center gap-2 text-[11px] leading-4 text-muted-foreground">
-                        <span className="w-[6.75rem] shrink-0 truncate tabular-nums">
-                          {item.milestone ? formatDay(item.start, roadmap.today) : formatRange(item.start, item.end, roadmap.today)}
-                        </span>
-                        <span aria-hidden className="relative h-2 min-w-0 flex-1 rounded-full bg-muted">
-                          {item.milestone ? (
-                            <span
-                              className="absolute top-1/2 block size-1.5 -translate-x-1/2 -translate-y-1/2 rotate-45"
-                              style={{ left: `${axisShare(item.start + 0.5, roadmap) * 100}%`, background: color }}
-                            />
-                          ) : (
-                            <span
-                              className="absolute inset-y-0 block min-w-[3px] overflow-hidden rounded-full"
-                              style={{
-                                left: `${axisShare(item.start, roadmap) * 100}%`,
-                                width: `${(axisShare(item.end + 1, roadmap) - axisShare(item.start, roadmap)) * 100}%`,
-                                background: `color-mix(in oklch, ${color} 30%, transparent)`,
-                              }}
-                            >
-                              <span className="absolute inset-y-0 left-0 block" style={{ width: `${progress}%`, background: color }} />
+            <ItemGroup asChild variant="flush" className="m-0 min-w-0 list-none p-0">
+              <ul>
+                {items.map((item) => {
+                  const open = selected === item.index;
+                  const color = ROADMAP_COLOR[item.status];
+                  const progress = item.progress ?? (item.status === "done" ? 100 : 0);
+                  return (
+                    <Item key={item.index} asChild size="inline" className="min-w-0 flex-col flex-nowrap items-stretch gap-0">
+                      <li>
+                        <button
+                          type="button"
+                          aria-expanded={open}
+                          aria-controls={`${detailId}-${item.index}`}
+                          onClick={() => onSelect(item.index)}
+                          className={cn("flex w-full min-w-0 cursor-pointer flex-col gap-1 rounded-md text-left", FOCUS_RING)}
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            {item.milestone ? <Diamond color={color} className="size-2" /> : null}
+                            <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-foreground">{item.title}</span>
+                            {item.late ? <Pill tone="bad">Late</Pill> : null}
+                            <Pill tone={ROADMAP_TONE[item.status]}>{ROADMAP_STATUS_LABEL[item.status]}</Pill>
+                          </span>
+                          <span className="flex min-w-0 items-center gap-2 text-[11px] leading-4 text-muted-foreground">
+                            <span className="w-[6.75rem] shrink-0 truncate tabular-nums">
+                              {item.milestone ? formatDay(item.start, roadmap.today) : formatRange(item.start, item.end, roadmap.today)}
                             </span>
-                          )}
-                          {todayShare === null ? null : (
-                            <span className={cn("absolute -inset-y-0.5 block w-px", ACCENT_BG)} style={{ left: `${todayShare * 100}%` }} />
-                          )}
-                        </span>
-                        {item.owner === null ? <span className="size-4 shrink-0" /> : <Avatar name={item.owner} className="size-4 text-[8px]" />}
-                      </span>
-                    </button>
-                    {open ? (
-                      <div id={`${detailId}-${item.index}`} className="pt-2">
-                        <ItemDetail item={item} roadmap={roadmap} />
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
+                            <span aria-hidden className="relative h-2 min-w-0 flex-1 rounded-full bg-muted">
+                              {item.milestone ? (
+                                <span
+                                  className="absolute top-1/2 block size-1.5 -translate-x-1/2 -translate-y-1/2 rotate-45"
+                                  style={{ left: `${axisShare(item.start + 0.5, roadmap) * 100}%`, background: color }}
+                                />
+                              ) : (
+                                <span
+                                  className="absolute inset-y-0 block min-w-[3px] overflow-hidden rounded-full"
+                                  style={{
+                                    left: `${axisShare(item.start, roadmap) * 100}%`,
+                                    width: `${(axisShare(item.end + 1, roadmap) - axisShare(item.start, roadmap)) * 100}%`,
+                                    background: `color-mix(in oklch, ${color} 30%, transparent)`,
+                                  }}
+                                >
+                                  <span className="absolute inset-y-0 left-0 block" style={{ width: `${progress}%`, background: color }} />
+                                </span>
+                              )}
+                              {todayShare === null ? null : (
+                                <span className={cn("absolute -inset-y-0.5 block w-px", ACCENT_BG)} style={{ left: `${todayShare * 100}%` }} />
+                              )}
+                            </span>
+                            {item.owner === null ? <span className="size-4 shrink-0" /> : <Avatar name={item.owner} className="size-4 text-[8px]" />}
+                          </span>
+                        </button>
+                        {open ? (
+                          <div id={`${detailId}-${item.index}`} className="pt-2">
+                            <ItemDetail item={item} roadmap={roadmap} />
+                          </div>
+                        ) : null}
+                      </li>
+                    </Item>
+                  );
+                })}
+              </ul>
+            </ItemGroup>
           </section>
         );
       })}
@@ -1105,41 +1110,44 @@ function HealthRow({ item, today }: { item: HealthItem; today: number }) {
   const due = item.due === null ? null : relativeDue(item.due, today);
   const label = item.status === null ? (item.given ?? "No status") : HEALTH_LABEL[item.status];
   return (
-    <li
-      ref={rise}
-      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-2 min-h-10 py-2 @xl:grid-cols-[minmax(0,1fr)_6.5rem_7.5rem_minmax(0,7.5rem)_6rem]"
+    <Item
+      asChild
+      size="inline"
+      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-2 min-h-10 @xl:grid-cols-[minmax(0,1fr)_6.5rem_7.5rem_minmax(0,7.5rem)_6rem]"
     >
-      <div className="col-start-1 row-start-1 flex min-w-0 flex-col gap-1">
-        <span className="text-[13px] font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{item.name}</span>
-        {item.note === null ? null : <Markdown content={item.note} className={cn(SMALL_PROSE, "text-muted-foreground")} />}
-      </div>
-      <Pill tone={tone} className="col-start-2 row-start-1 justify-self-end @xl:justify-self-start">
-        <span aria-hidden className={cn("size-1.5 rounded-full", TONE_DOT[tone])} />
-        {label}
-      </Pill>
-      <div className={cn("col-span-2 min-w-0 @xl:col-span-1 @xl:col-start-3 @xl:row-start-1", item.progress === null && "hidden @xl:block")}>
-        <HealthBar item={item} />
-      </div>
-      <div className="col-span-2 flex min-w-0 items-center gap-3 text-xs leading-5 text-muted-foreground @xl:contents">
-        <span className="flex min-w-0 items-center gap-1 @xl:col-start-4 @xl:row-start-1">
-          {item.owner === null ? null : (
-            <>
-              <Avatar name={item.owner} />
-              <span className="truncate">{item.owner}</span>
-            </>
-          )}
-        </span>
-        <span
-          title={item.due === null ? undefined : `Due ${fullDay(item.due)}`}
-          className={cn(
-            "ml-auto whitespace-nowrap tabular-nums @xl:col-start-5 @xl:row-start-1 @xl:ml-0 @xl:text-right",
-            item.late && "font-medium text-destructive",
-          )}
-        >
-          {due === null ? null : item.status === "done" ? formatDay(item.due!, today) : due.text}
-        </span>
-      </div>
-    </li>
+      <li ref={rise}>
+        <div className="col-start-1 row-start-1 flex min-w-0 flex-col gap-1">
+          <span className="text-[13px] font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{item.name}</span>
+          {item.note === null ? null : <Markdown content={item.note} className={cn(SMALL_PROSE, "text-muted-foreground")} />}
+        </div>
+        <Pill tone={tone} className="col-start-2 row-start-1 justify-self-end @xl:justify-self-start">
+          <span aria-hidden className={cn("size-1.5 rounded-full", TONE_DOT[tone])} />
+          {label}
+        </Pill>
+        <div className={cn("col-span-2 min-w-0 @xl:col-span-1 @xl:col-start-3 @xl:row-start-1", item.progress === null && "hidden @xl:block")}>
+          <HealthBar item={item} />
+        </div>
+        <div className="col-span-2 flex min-w-0 items-center gap-3 text-xs leading-5 text-muted-foreground @xl:contents">
+          <span className="flex min-w-0 items-center gap-1 @xl:col-start-4 @xl:row-start-1">
+            {item.owner === null ? null : (
+              <>
+                <Avatar name={item.owner} />
+                <span className="truncate">{item.owner}</span>
+              </>
+            )}
+          </span>
+          <span
+            title={item.due === null ? undefined : `Due ${fullDay(item.due)}`}
+            className={cn(
+              "ml-auto whitespace-nowrap tabular-nums @xl:col-start-5 @xl:row-start-1 @xl:ml-0 @xl:text-right",
+              item.late && "font-medium text-destructive",
+            )}
+          >
+            {due === null ? null : item.status === "done" ? formatDay(item.due!, today) : due.text}
+          </span>
+        </div>
+      </li>
+    </Item>
   );
 }
 
@@ -1205,11 +1213,13 @@ export function Status({ props }: { props: Props }) {
           <span>Owner</span>
           <span className="text-right">Due</span>
         </div>
-        <ul className="m-0 flex min-w-0 list-none flex-col divide-y divide-border/60 p-0">
-          {shown.map((item) => (
-            <HealthRow key={item.index} item={item} today={today} />
-          ))}
-        </ul>
+        <ItemGroup asChild variant="flush" className="m-0 min-w-0 list-none p-0">
+          <ul>
+            {shown.map((item) => (
+              <HealthRow key={item.index} item={item} today={today} />
+            ))}
+          </ul>
+        </ItemGroup>
       </div>
       {shown.length < total ? <ShowAll count={total} noun="projects" onClick={() => setAll(true)} /> : null}
     </Frame>

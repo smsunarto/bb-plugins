@@ -3,26 +3,3 @@
   height: 0.875rem;
   flex: 0 0 auto;
 }
-
-.devin-cloud-status-dot {
-  width: 0.32rem;
-  height: 0.32rem;
-  border-radius: 9999px;
-  background: currentColor;
-}
-
-.devin-cloud-status[data-state="starting"] .devin-cloud-status-dot {
-  animation: devin-cloud-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes devin-cloud-pulse {
-  50% {
-    opacity: 0.3;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .devin-cloud-status[data-state="starting"] .devin-cloud-status-dot {
-    animation: none;
-  }
-}

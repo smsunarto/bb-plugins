@@ -16,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "./components/ui/card.tsx";
+import { Kbd, KbdGroup } from "./components/ui/kbd.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 
 const PLATFORM = keybindingPlatform(navigator.platform);
@@ -44,33 +45,25 @@ interface ResolvedEntry {
   readonly action: string;
 }
 
-function Key({ label }: { label: string }): ReactElement {
-  return (
-    <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded border border-border bg-muted px-1 font-mono text-xs text-foreground shadow-[0_1px_0] shadow-border">
-      {label}
-    </kbd>
-  );
-}
-
 function Keys({ entry }: { entry: ResolvedEntry }): ReactElement {
-  if (entry.keys === null) return <Skeleton aria-hidden className="size-6 rounded" />;
+  if (entry.keys === null) return <Skeleton aria-hidden className="size-5 rounded" />;
   if (entry.keys.length === 0)
     return <span className="text-xs text-muted-foreground">Unbound</span>;
   const keys = entry.keys;
   return (
-    <span className="flex flex-wrap items-center gap-1">
+    <KbdGroup className="flex-wrap">
       {keys.map((key, index) => (
         <Fragment key={key}>
           {index > 0 && !entry.oneOf && <span className="text-xs text-muted-foreground">then</span>}
           {key.split("+").map((part, partIndex) => (
             <Fragment key={part}>
               {partIndex > 0 && <span className="text-xs text-muted-foreground">+</span>}
-              <Key label={part} />
+              <Kbd>{part}</Kbd>
             </Fragment>
           ))}
         </Fragment>
       ))}
-    </span>
+    </KbdGroup>
   );
 }
 
@@ -82,14 +75,14 @@ function Section({
   resolve: (entry: CheatsheetEntry) => ResolvedEntry;
 }): ReactElement {
   return (
-    <Card className="mb-4 break-inside-avoid last:mb-0">
-      <CardHeader className="gap-1 p-4 pb-0">
+    <Card className="mb-4 break-inside-avoid gap-3 [--card-spacing:1rem] last:mb-0">
+      <CardHeader className="gap-1">
         <CardTitle className="text-sm">
           <h2>{section.title}</h2>
         </CardTitle>
         {section.note && <CardDescription className="text-xs">{section.note}</CardDescription>}
       </CardHeader>
-      <CardContent className="px-4 pt-3 pb-4">
+      <CardContent>
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2">
           {section.entries.map((entry) => (
             <Fragment key={entry.action}>

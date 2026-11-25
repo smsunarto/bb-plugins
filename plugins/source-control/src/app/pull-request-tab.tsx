@@ -19,6 +19,13 @@ import type { ChangeDetail } from "../core/review.ts";
 import { prKey, prLookup, prUrl, type PrRef } from "../core/watch.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { Button } from "./components/ui/button.tsx";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "./components/ui/empty.tsx";
 import { Spinner } from "./components/ui/spinner.tsx";
 import {
   knownPullRequest,
@@ -28,6 +35,7 @@ import {
   resolvePullRequest,
 } from "./open-pull-request.tsx";
 import { prTabParams, REVIEW_TAB, useOpenReview } from "./open-review.ts";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 
 type Phase =
   | { at: "looking"; key: ChangeKey | null }
@@ -162,34 +170,37 @@ function PullRequestTabView({
   onRetry: () => void;
 }) {
   return (
-    <div
+    <Empty
+      size="sm"
       data-bb-plugin="source-control"
       data-testid="sc-pull-request-tab"
-      className="flex h-full flex-col items-center gap-3 overflow-auto p-8 text-center"
+      // Safe centring: a short panel scrolls the content instead of clipping its top.
+      className="h-full justify-center-safe overflow-auto"
     >
-      <p
-        className="m-0 w-full [overflow-wrap:anywhere] text-[13px] leading-5 font-medium text-foreground"
-        translate="no"
-      >
-        {prKey(pr)}
-      </p>
-      {phase.at === "opened" ? (
-        <p className="m-0 text-[13px] leading-5 text-muted-foreground">Opened in its review tab.</p>
-      ) : phase.at === "looking" ? (
-        <output className="m-0 flex items-center gap-2 text-[13px] leading-5 text-muted-foreground">
-          <Spinner />
-          Opening its review…
-        </output>
-      ) : (
-        <>
-          <p
-            role="alert"
-            className="m-0 w-full max-w-sm [overflow-wrap:anywhere] text-[13px] leading-5 text-muted-foreground"
-          >
-            {phase.at === "elsewhere"
-              ? `This branch's review shows #${phase.number} now, so #${pr.number} is on GitHub.`
-              : phase.problem}
-          </p>
+      <EmptyHeader className="w-full">
+        <EmptyTitle className="w-full [overflow-wrap:anywhere]" translate="no">
+          {prKey(pr)}
+        </EmptyTitle>
+        {phase.at === "opened" ? (
+          <EmptyDescription>Opened in its review tab.</EmptyDescription>
+        ) : phase.at === "looking" ? (
+          <EmptyDescription>
+            <output className="flex items-center gap-2">
+              <Spinner />
+              Opening its review…
+            </output>
+          </EmptyDescription>
+        ) : null}
+      </EmptyHeader>
+      {phase.at === "opened" || phase.at === "looking" ? null : (
+        <EmptyContent>
+          <Alert variant={phase.at === "failed" ? "destructive" : "default"} className="max-w-sm">
+            <AlertDescription className="[overflow-wrap:anywhere]">
+              {phase.at === "elsewhere"
+                ? `This branch's review shows #${phase.number} now, so #${pr.number} is on GitHub.`
+                : phase.problem}
+            </AlertDescription>
+          </Alert>
           <div className="flex flex-wrap justify-center gap-2">
             <Button size="sm" variant="outline" className="pointer-coarse:h-11" asChild>
               <UrlLink href={prUrl(pr)}>Open #{pr.number} on GitHub</UrlLink>
@@ -200,9 +211,9 @@ function PullRequestTabView({
               </Button>
             ) : null}
           </div>
-        </>
+        </EmptyContent>
       )}
-    </div>
+    </Empty>
   );
 }
 

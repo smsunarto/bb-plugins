@@ -1,4 +1,4 @@
-import { Label } from "@/components/ui/label";
+import { Field as KitField, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { errorMessage } from "../../shared/errors.js";
 
@@ -80,12 +80,10 @@ export function Field({
   hint?: string;
 }) {
   return (
-    <div>
-      <Label htmlFor={htmlFor} className="mb-1 block text-xs text-muted-foreground">
-        {label}
-      </Label>
+    <KitField>
+      <FieldLabel htmlFor={htmlFor}>{label}</FieldLabel>
       {children}
-      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
-    </div>
+      {hint ? <FieldDescription>{hint}</FieldDescription> : null}
+    </KitField>
   );
 }

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "delayed-loading",
+  "type": "registry:ui",
+  "files": [
+    {
+      "path": "registry/components/ui/delayed-loading.tsx",
+      "content": "import { useEffect, useState, type ReactNode } from \"react\";\n\nconst LOADING_REVEAL_DELAY_MS = 200;\n\nexport function DelayedLoading({ children }: { children: ReactNode }) {\n  const [visible, setVisible] = useState(false);\n\n  useEffect(() => {\n    const timeout = window.setTimeout(() => setVisible(true), LOADING_REVEAL_DELAY_MS);\n    return () => window.clearTimeout(timeout);\n  }, []);\n\n  return visible ? children : null;\n}\n",
+      "type": "registry:ui"
+    }
+  ]
+}

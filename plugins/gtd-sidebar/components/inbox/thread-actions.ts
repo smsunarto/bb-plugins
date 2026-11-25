@@ -1,4 +1,4 @@
-import type { IconName } from "../ui/icon";
+import type { IconName } from "../hugeicon";
 import { snoozeUntilTomorrow } from "../../lib/lifecycle";
 
 export type ActiveThreadShelf = "pinned" | "nextAction" | "waiting" | "slopcop";

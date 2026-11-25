@@ -24,8 +24,9 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { guardCodeSwipe } from "./code-swipe.ts";
 // workaround:source-control/shadow-code-sidebar-swipe end
 import { cx } from "./format.ts";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 
 type ChangeKind = FileChange["kind"];
 
@@ -258,14 +259,12 @@ export function FileRowsSkeleton({ rows = 3, label }: { rows?: number; label: st
 /** What a patches read that did not succeed says, with a way to read again. */
 export function PatchesProblem({ text, onRetry }: { text: string; onRetry: () => void }) {
   return (
-    <div role="alert" className="flex flex-wrap items-center gap-2 px-3 py-2">
-      <span className="min-w-0 grow basis-40 text-[12px] leading-4 text-muted-foreground">
-        {text}
-      </span>
-      <Button size="sm" className="h-7" variant="ghost" onClick={onRetry}>
+    <Alert variant="destructive" className="m-2 flex w-auto flex-wrap items-center gap-2">
+      <AlertDescription className="min-w-0 grow basis-40">{text}</AlertDescription>
+      <CompactButton size="sm" variant="ghost" onClick={onRetry}>
         Try again
-      </Button>
-    </div>
+      </CompactButton>
+    </Alert>
   );
 }
 

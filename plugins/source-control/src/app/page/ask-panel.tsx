@@ -27,10 +27,11 @@ import {
 import { sourceControlContract } from "../../contract/rpc.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import type { ChangeDetail } from "../../core/review.ts";
-import { Button } from "../components/ui/button.tsx";
+import { Button, CompactButton } from "../components/ui/button.tsx";
 import { useEscapeLayer } from "../escape.ts";
 import { cx } from "../format.ts";
 import { Hint } from "../ui.tsx";
+import { Alert, AlertDescription } from "../components/ui/alert.tsx";
 
 /** Where a question comes from: the header's button, or a diff line with its text. */
 export type AskRequest = {
@@ -168,8 +169,6 @@ type Ready = Extract<ChangeDetail, { state: "change" }>;
  */
 const PHONE_CHAT = "[&_div[data-follow-up-composer-footer]]:hidden";
 
-const ICON_BUTTON = "size-6 px-0 text-muted-foreground hover:text-foreground [&_svg]:size-[13px]";
-
 /** Why questions cannot be sent now, or null. */
 function unavailable(detail: Ready | null): string | null {
   const problem = detail?.problem;
@@ -233,12 +232,12 @@ function FirstQuestion({
         />
         <div className="flex items-center justify-end">
           <Button
-            size="sm"
+            size="icon-xs"
             variant="default"
             aria-label="Send question"
             disabled={!canSend}
             onClick={submit}
-            className="size-6 rounded-full px-0 disabled:opacity-40"
+            className="rounded-full disabled:opacity-40"
           >
             <SendIcon />
           </Button>
@@ -342,27 +341,27 @@ function AskPanel({
           {row?.title ?? ""}
         </span>
         <Hint label="Open as full thread">
-          <Button
+          <CompactButton
             variant="ghost"
-            size="icon"
+            size="icon-xs"
+            tone="muted"
             aria-label="Open as full thread"
             disabled={!threadId || full.isPending}
             onClick={() => void openFull()}
-            className={ICON_BUTTON}
           >
             <OpenIcon />
-          </Button>
+          </CompactButton>
         </Hint>
         <Hint label="Close">
-          <Button
+          <CompactButton
             variant="ghost"
-            size="icon"
+            size="icon-xs"
+            tone="muted"
             aria-label="Close"
             onClick={onClose}
-            className={ICON_BUTTON}
           >
             <CloseIcon />
-          </Button>
+          </CompactButton>
         </Hint>
       </div>
       {blocked ? (
@@ -375,9 +374,9 @@ function AskPanel({
         </output>
       ) : null}
       {problem ? (
-        <p role="alert" className="m-0 shrink-0 px-3 pt-2 text-[12px] leading-4 text-warning">
-          {problem}
-        </p>
+        <Alert variant="warning" className="mx-3 mt-2 w-auto shrink-0">
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
       ) : null}
       {threadId ? (
         <ThreadChat

@@ -2,6 +2,7 @@ import { memo, useId, useState } from "react";
 import type { Label, Project, Task, TaskThread } from "../../shared/contract.js";
 import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/ui/icon";
+import { StatusDot } from "@/components/ui/status-dot";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { PriorityIcon } from "./icons.js";
@@ -15,9 +16,6 @@ import {
   TaskContextMenu,
 } from "./property-menus.js";
 
-const RAIL_CHIP_CLASS =
-  "h-4.5 gap-1 rounded-full px-1.5 py-0 text-2xs font-normal text-muted-foreground";
-
 function ActiveChip({ threads }: { threads: readonly TaskThread[] }) {
   if (threads.length === 0) return null;
   return (
@@ -26,7 +24,7 @@ function ActiveChip({ threads }: { threads: readonly TaskThread[] }) {
       className="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-recessed text-muted-foreground"
     >
       <Icon name="Bot" className="size-3" aria-hidden />
-      <span aria-hidden className="absolute bottom-0 right-0 size-1.5 rounded-full bg-success" />
+      <StatusDot tone="success" size="sm" className="absolute bottom-0 right-0" />
       <span className="sr-only">Active</span>
     </span>
   );
@@ -34,12 +32,8 @@ function ActiveChip({ threads }: { threads: readonly TaskThread[] }) {
 
 function LabelChip({ label }: { label: Label }) {
   return (
-    <Badge variant="outline" className={cn(RAIL_CHIP_CLASS, "max-w-32")}>
-      <span
-        aria-hidden
-        className="size-1.5 shrink-0 rounded-full"
-        style={{ backgroundColor: label.color }}
-      />
+    <Badge variant="outline" size="sm" className="max-w-32 gap-1">
+      <StatusDot tone="current" size="sm" style={{ color: label.color }} />
       <span className="truncate">{label.name}</span>
     </Badge>
   );
@@ -56,7 +50,8 @@ function LabelChipRow({ labels, maxVisible }: { labels: readonly Label[]; maxVis
         <Badge
           variant="outline"
           title={hidden.map((label) => label.name).join(", ")}
-          className={cn(RAIL_CHIP_CLASS, "tabular-nums")}
+          size="sm"
+          className="tabular-nums"
         >
           +{hidden.length}
         </Badge>

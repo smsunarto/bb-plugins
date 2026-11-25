@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "badge",
+  "type": "registry:ui",
+  "description": "Badge with status tones, re-exported from @bb-plugins/ui.",
+  "files": [
+    {
+      "path": "registry/components/ui/badge.tsx",
+      "content": "export { Badge, badgeVariants, type BadgeProps } from \"@bb-plugins/ui/badge\";\n",
+      "type": "registry:ui"
+    }
+  ]
+}

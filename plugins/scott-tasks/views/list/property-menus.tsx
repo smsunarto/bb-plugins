@@ -13,6 +13,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -27,7 +28,7 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import type { TaskEdit } from "../../shell/collections.js";
@@ -77,9 +78,9 @@ function MenuHeading({ label, shortcut }: { label: string; shortcut: string }) {
   return (
     <DropdownMenuLabel className="flex items-center gap-2">
       <span className="flex-1">{label}</span>
-      <span className="w-3 text-right text-2xs tabular-nums text-subtle-foreground">
+      <DropdownMenuShortcut className="w-3 text-right tabular-nums">
         {shortcut}
-      </span>
+      </DropdownMenuShortcut>
     </DropdownMenuLabel>
   );
 }
@@ -105,14 +106,14 @@ function PickerOption({
       <span aria-hidden className="flex w-4 items-center justify-center text-subtle-foreground">
         {active ? <Icon name="Check" className="size-3.5" /> : null}
       </span>
-      <span aria-hidden className="w-3 text-right text-2xs tabular-nums text-subtle-foreground">
+      <DropdownMenuShortcut aria-hidden className="w-3 text-right tabular-nums">
         {shortcut}
-      </span>
+      </DropdownMenuShortcut>
     </>
   );
 }
 
-const TRIGGER_CLASS = "relative z-10 size-5 rounded-sm max-md:pointer-coarse:size-11";
+const TRIGGER_CLASS = "relative z-10 max-md:pointer-coarse:size-11";
 
 export function LabelsEditor({
   task,
@@ -193,15 +194,15 @@ export function StatusEditor({
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button
+        <CompactButton
           variant="ghost"
-          size="icon"
+          size="icon-2xs"
           aria-label={`Change status, currently ${STATUS_LABELS[task.status]}`}
           aria-keyshortcuts="S"
           className={cn(TRIGGER_CLASS, className)}
         >
           <StatusIcon status={task.status} />
-        </Button>
+        </CompactButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
@@ -255,15 +256,15 @@ export function PriorityEditor({
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button
+        <CompactButton
           variant="ghost"
-          size="icon"
+          size="icon-2xs"
           aria-label={`Set priority, currently ${PRIORITY_LABELS[task.priority]}`}
           aria-keyshortcuts="P"
           className={cn(TRIGGER_CLASS, className)}
         >
           <PriorityIcon priority={task.priority} />
-        </Button>
+        </CompactButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"

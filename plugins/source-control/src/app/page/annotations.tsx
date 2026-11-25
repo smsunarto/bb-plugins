@@ -27,6 +27,7 @@ import {
   YouMark,
 } from "../review-ui.tsx";
 import { PrMarkdown } from "../pr-markdown.tsx";
+import { FieldError } from "../components/ui/field.tsx";
 
 /** A new comment being written on a line. */
 export type ComposerEntry = { kind: "composer"; id: string; anchor: Anchor };
@@ -118,11 +119,7 @@ function Composer({
         )}
       />
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-        {error ? (
-          <span role="alert" className="min-w-0 flex-1 text-[12px] leading-4 text-warning">
-            {error}
-          </span>
-        ) : null}
+        {error ? <FieldError className="min-w-0 flex-1">{error}</FieldError> : null}
         {canAsk ? (
           <Button
             variant="link"
@@ -150,11 +147,11 @@ function Composer({
           Cancel
         </Button>
         <Button
-          size="sm"
+          size="xs"
           variant={primary ? "default" : "outline"}
           disabled={!body || saving}
           onClick={submit}
-          className={cx("h-6 px-3 font-semibold", !primary && "border-border")}
+          className={cx(!primary && "border-border")}
         >
           {saving ? "Saving…" : submitLabel}
         </Button>
@@ -223,11 +220,7 @@ const DraftBody = memo(function DraftBody({
       <p className="m-0 min-w-0 text-[13px] leading-5 whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
         {draft.body}
       </p>
-      {error ? (
-        <span role="alert" className="text-[12px] leading-4 text-warning">
-          {error}
-        </span>
-      ) : null}
+      {error ? <FieldError>{error}</FieldError> : null}
     </div>
   );
 });
@@ -372,11 +365,7 @@ function ItemAction({
       >
         {dismissing ? "Dismissing…" : "Dismiss"}
       </Button>
-      {error ? (
-        <span role="alert" className="basis-full text-[12px] leading-4 text-warning">
-          {error}
-        </span>
-      ) : null}
+      {error ? <FieldError className="basis-full">{error}</FieldError> : null}
     </>
   );
 }

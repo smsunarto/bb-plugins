@@ -124,7 +124,7 @@ const STACKED =
 const LEAD_TOUCH = "max-md:pointer-coarse:text-[13px] max-md:pointer-coarse:leading-[18px]";
 /** A strip button: 36px under a finger on a phone, as bb's own controls are. */
 const STRIP_BUTTON =
-  "h-6 px-3 font-semibold max-md:pointer-coarse:h-9 max-md:pointer-coarse:px-4 max-md:pointer-coarse:text-[13px]";
+  "max-md:pointer-coarse:h-9 max-md:pointer-coarse:px-4 max-md:pointer-coarse:text-[13px]";
 
 export function StripSummary({
   threadId,
@@ -260,7 +260,7 @@ function StripShip({ threadId }: { threadId: string }) {
       <StripMessage text={ship.sent?.text ?? null} failed={ship.sent?.failed} />
       <Button
         type="button"
-        size="sm"
+        size="xs"
         variant="outline"
         data-testid="sc-strip-ship"
         {...KEEP_COMPOSER_FOCUS}
@@ -283,7 +283,7 @@ function StripMarkReady({ threadId, summary }: { threadId: string; summary: Chan
       <StripMessage text={draft.message} />
       <Button
         type="button"
-        size="sm"
+        size="xs"
         variant="outline"
         data-testid="sc-strip-mark-ready"
         {...KEEP_COMPOSER_FOCUS}

@@ -49,10 +49,11 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button, CompactButton } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { CreateLabelItem } from "../../components/create-label-item.js";
 import { Hint } from "../../components/hint.js";
 import { Icon } from "@/components/ui/icon";
@@ -315,14 +316,16 @@ export function NewTaskDialog({
         </DialogDescription>
         {createdTask ? (
           <div className="px-4 pt-2">
-            <p role="alert" className="text-sm">
-              Task <span className="font-medium">{createdTask.key}</span> was created, but{" "}
-              {failedCount} attachment
-              {failedCount === 1 ? "" : "s"} failed to upload.
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Retry the uploads below, remove a file to skip it, or skip them all and open the task.
-            </p>
+            <Alert variant="warning">
+              <AlertTitle>
+                Task {createdTask.key} was created, but {failedCount} attachment
+                {failedCount === 1 ? "" : "s"} failed to upload.
+              </AlertTitle>
+              <AlertDescription>
+                Retry the uploads below, remove a file to skip it, or skip them all and open the
+                task.
+              </AlertDescription>
+            </Alert>
             <div className="mt-3 flex flex-wrap gap-2">
               {pendingFiles.map((entry) => (
                 <AttachmentChip
@@ -375,9 +378,9 @@ export function NewTaskDialog({
             </div>
           ) : null}
           {hasOversized ? (
-            <p className="mt-2 text-xs text-destructive">
+            <FieldError role="none" className="mt-2">
               Remove attachments over the 25 MB limit before creating the task.
-            </p>
+            </FieldError>
           ) : null}
         </div>
         <div
@@ -513,11 +516,7 @@ export function NewTaskDialog({
             className="h-7 w-auto px-2 text-xs text-muted-foreground"
           />
         </div>
-        {error ? (
-          <p role="alert" className="px-4 pt-2 text-xs text-destructive">
-            {error}
-          </p>
-        ) : null}
+        <FieldError className="mx-4 mt-2">{error}</FieldError>
         <DialogFooter className="mt-4 shrink-0 flex-row items-center border-t border-border-hairline px-4 py-3 sm:justify-between">
           {createdTask ? (
             <>
@@ -528,16 +527,14 @@ export function NewTaskDialog({
             </>
           ) : (
             <>
-              <div className="flex items-center gap-2">
+              <Field orientation="horizontal" className="w-auto gap-2">
                 <Checkbox
                   id={createMoreId}
                   checked={createMore}
                   onCheckedChange={(checked) => setCreateMore(checked === true)}
                 />
-                <Label htmlFor={createMoreId} className="text-xs font-normal text-muted-foreground">
-                  Create more
-                </Label>
-              </div>
+                <FieldLabel htmlFor={createMoreId}>Create more</FieldLabel>
+              </Field>
               <div className="flex items-center gap-2">
                 {hasDraftContent({ title, description }) ? (
                   <Button
@@ -551,16 +548,16 @@ export function NewTaskDialog({
                   </Button>
                 ) : null}
                 <Hint label="Attach files">
-                  <Button
+                  <CompactButton
                     variant="ghost"
-                    size="icon"
+                    tone="muted"
+                    size="icon-sm"
                     aria-label="Attach files"
                     disabled={submitting}
-                    className="size-7 text-muted-foreground"
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Icon name="Paperclip" className="size-4" />
-                  </Button>
+                  </CompactButton>
                 </Hint>
                 <input
                   ref={fileInputRef}

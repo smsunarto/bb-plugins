@@ -3,7 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 import File01Icon from "@hugeicons/core-free-icons/File01Icon";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { MAX_ATTACHMENT_SIZE_BYTES } from "../shared/attachments.js";
 import type { AttachmentOwner } from "../shared/contract.js";
@@ -167,16 +167,16 @@ export function AttachmentChip({
           {entry.retrying ? "Retrying…" : "Retry"}
         </Button>
       ) : null}
-      <Button
+      <CompactButton
         variant="ghost"
-        size="icon"
+        size="icon-2xs"
+        tone={broken ? undefined : "muted"}
         aria-label={`Remove ${entry.file.name}`}
         disabled={disabled || retrying}
-        className={cn("size-4 rounded-sm", !broken && "text-muted-foreground")}
         onClick={onRemove}
       >
         <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
-      </Button>
+      </CompactButton>
     </Badge>
   );
 }

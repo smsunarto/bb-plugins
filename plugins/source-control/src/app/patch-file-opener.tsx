@@ -29,7 +29,7 @@ import {
   type PatchFileCommit,
   type PatchFileEntry,
 } from "../core/patch-file.ts";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { FileRowsSkeleton, parsePatch } from "./file-cards.tsx";
 import { plural, shortId } from "./format.ts";
 import { PHONE, useWidth } from "./page/hooks.ts";
@@ -431,31 +431,29 @@ function Toolbar({ children, actions }: { children: ReactNode; actions?: ReactNo
   );
 }
 
-const TOOL = "h-7 shrink-0 px-2 text-[12px] max-md:pointer-coarse:min-h-11";
-
 function TextButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <Button
+    <CompactButton
       size="sm"
       variant="ghost"
       data-testid="sc-patch-file-mode"
-      className={TOOL}
+      className="shrink-0 max-md:pointer-coarse:min-h-11"
       onClick={onClick}
     >
       {label}
-    </Button>
+    </CompactButton>
   );
 }
 
 function RefreshButton({ refreshing, onRefresh }: { refreshing: boolean; onRefresh: () => void }) {
   return (
     <Hint label="Read the file again">
-      <Button
-        size="sm"
+      <CompactButton
+        size="icon-sm"
         variant="ghost"
         aria-label="Refresh file"
         aria-busy={refreshing}
-        className={`${TOOL} w-7 max-md:pointer-coarse:min-w-11`}
+        className="shrink-0 max-md:pointer-coarse:min-h-11 max-md:pointer-coarse:min-w-11"
         onClick={onRefresh}
       >
         <Icon
@@ -463,7 +461,7 @@ function RefreshButton({ refreshing, onRefresh }: { refreshing: boolean; onRefre
           className={`size-3.5 ${refreshing ? "opacity-50" : ""}`}
           aria-hidden
         />
-      </Button>
+      </CompactButton>
     </Hint>
   );
 }

@@ -17,7 +17,9 @@ import {
   type TodoSnapshot,
 } from "../../shared/rpiv-todo.ts";
 import { Button } from "../components/ui/button.tsx";
-import { CheckIcon, ChevronDownIcon, ListTodoIcon, LoaderIcon, SquareIcon } from "./icons.tsx";
+import { Item } from "../components/ui/item.tsx";
+import { Spinner } from "../components/ui/spinner.tsx";
+import { CheckIcon, ChevronDownIcon, ListTodoIcon, SquareIcon } from "./icons.tsx";
 import type { TodoItem } from "../../shared/rpiv-todo-types.ts";
 
 const STATUS_ORDER = { in_progress: 0, pending: 1, completed: 2 } as const;
@@ -32,7 +34,8 @@ function StatusGlyph({ status }: { status: TodoItem["status"] }) {
     return <CheckIcon className="rpiv-todo-icon text-muted-foreground" />;
   }
   if (status === "in_progress") {
-    return <LoaderIcon className="rpiv-todo-icon rpiv-todo-spin text-foreground" />;
+    // The card's ink is foreground, which the in-progress row's text also uses.
+    return <Spinner className="mt-0.5" />;
   }
   return <SquareIcon className="rpiv-todo-icon text-muted-foreground" />;
 }
@@ -42,19 +45,22 @@ function TodoRow({ item }: { item: TodoItem }) {
   const current = active && item.activeForm ? item.activeForm : null;
   const title = current ? `${item.text} — ${current}` : item.text;
   return (
-    <li
-      className={`flex min-w-0 items-start gap-2 text-xs ${active ? "text-foreground" : "text-muted-foreground"}`}
-    >
-      <StatusGlyph status={item.status} />
-      <span className="min-w-0 flex-1" title={title}>
-        <span className="block truncate">
-          #{item.id} {item.text}
+    <Item asChild size="inline" className="min-w-0 items-start gap-2">
+      <li>
+        <StatusGlyph status={item.status} />
+        <span
+          className={`min-w-0 flex-1 text-xs ${active ? "text-foreground" : "text-muted-foreground"}`}
+          title={title}
+        >
+          <span className="block truncate">
+            #{item.id} {item.text}
+          </span>
+          {current ? (
+            <span className="mt-1 block truncate text-muted-foreground">{current}</span>
+          ) : null}
         </span>
-        {current ? (
-          <span className="mt-1 block truncate text-muted-foreground">{current}</span>
-        ) : null}
-      </span>
-    </li>
+      </li>
+    </Item>
   );
 }
 

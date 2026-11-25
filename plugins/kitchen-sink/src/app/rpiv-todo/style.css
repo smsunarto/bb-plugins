@@ -7,15 +7,6 @@
   height: 0.875rem;
   flex-shrink: 0;
 }
-.rpiv-todo-spin {
-  margin-top: 0.125rem;
-  animation: rpiv-todo-spin 0.9s linear infinite;
-}
-@keyframes rpiv-todo-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 .rpiv-todo-chevron {
   transition: transform 200ms ease;
 }
@@ -49,9 +40,6 @@
   color: var(--muted-foreground);
 }
 @media (prefers-reduced-motion: reduce) {
-  .rpiv-todo-spin {
-    animation: none;
-  }
   .rpiv-todo-chevron,
   .rpiv-todo-body {
     transition: none;

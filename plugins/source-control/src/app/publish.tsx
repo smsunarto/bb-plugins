@@ -12,7 +12,7 @@ import {
 import { useEffect, useState } from "react";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { useHostGate } from "./host-gate.ts";
-import { Button } from "./components/ui/button.tsx";
+import { CompactButton } from "./components/ui/button.tsx";
 import { Pending, ReasonHint } from "./ui.tsx";
 
 /** While a child works, the tab looks this often to see it finish. */
@@ -74,9 +74,8 @@ export function CreatePullRequest({
     <>
       {running ? null : (
         <ReasonHint reason={gate} className="flex shrink-0">
-          <Button
+          <CompactButton
             size="sm"
-            className="h-7"
             variant="outline"
             disabled={busy || gate !== null || pending}
             data-host-bound="createPullRequest"
@@ -86,7 +85,7 @@ export function CreatePullRequest({
           >
             <Pending pending={pending} icon="GitPullRequest" />
             Create PR
-          </Button>
+          </CompactButton>
         </ReasonHint>
       )}
       {current ? (
@@ -100,14 +99,13 @@ export function CreatePullRequest({
               ? "A subthread is writing and opening the PR."
               : "The PR subthread stopped without opening a PR."}
           </span>
-          <Button
+          <CompactButton
             size="sm"
-            className="h-7"
             variant="ghost"
             onClick={() => navigate.toThread(current.threadId)}
           >
             Open subthread
-          </Button>
+          </CompactButton>
         </output>
       ) : null}
       {error ? (

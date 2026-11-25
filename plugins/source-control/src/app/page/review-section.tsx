@@ -43,7 +43,10 @@ import {
 } from "../review-ui.tsx";
 import { BatchBanner } from "../send.tsx";
 import { SLOPCOP_PLUGIN_ID, slopCopContract, slopCopInput } from "../slopcop-contract.ts";
+import { Badge } from "../components/ui/badge.tsx";
+import { Item } from "../components/ui/item.tsx";
 import { Button } from "../components/ui/button.tsx";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader } from "../components/ui/empty.tsx";
 import { ReasonHint, TEXT_LINK } from "../ui.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import { useNow } from "./hooks.ts";
@@ -270,7 +273,7 @@ function GroupHeader({
       <span className="shrink-0 text-[12px] leading-4 font-semibold whitespace-pre text-muted-foreground">
         {group.label}
       </span>
-      <span className="text-[12px] leading-4 text-(--tertiary-foreground)">{count}</span>
+      <Badge variant="count">{count}</Badge>
       <span className="min-w-0 flex-1" />
       {children}
     </div>
@@ -295,65 +298,70 @@ const ItemRow = memo(function ItemRow({
   const title = itemTitle(item);
   const quiet = item.priority !== null && item.priority >= 2;
   return (
-    <li
-      className={cx("flex min-w-0 gap-2 rounded-[6px] px-2 py-1", focused && "bg-border-hairline")}
+    <Item
+      asChild
+      size="row"
+      className="min-w-0"
+      aria-current={focused || undefined}
       data-testid="sc-review-row"
       data-item={item.id}
     >
-      {fixing ? (
-        <FixingMark />
-      ) : (
-        <Checkbox
-          checked={checked}
-          label={title}
-          testId="sc-review-check"
-          onChange={(next) => onToggle(item.id, next)}
-        />
-      )}
-      <button
-        type="button"
-        onClick={() => onOpen(item)}
-        className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 border-0 bg-transparent p-0 text-start"
-      >
-        <span
-          className={cx(
-            "w-full min-w-0 truncate text-[13px] leading-4",
-            quiet ? "text-muted-foreground" : "text-foreground",
-            focused && "font-semibold",
-          )}
+      <li>
+        {fixing ? (
+          <FixingMark />
+        ) : (
+          <Checkbox
+            checked={checked}
+            label={title}
+            testId="sc-review-check"
+            onChange={(next) => onToggle(item.id, next)}
+          />
+        )}
+        <button
+          type="button"
+          onClick={() => onOpen(item)}
+          className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 border-0 bg-transparent p-0 text-start"
         >
-          {title}
-        </span>
-        <span className="flex min-w-0 items-center gap-2">
-          {fixing ? (
-            <span
-              className="shrink-0 text-[12px] leading-4 text-warning"
-              data-testid="sc-review-fixing"
-            >
-              Agent working
-            </span>
-          ) : item.priority !== null ? (
-            <PriorityChip priority={item.priority} />
-          ) : null}
-          <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-(--tertiary-foreground)">
-            {placeLabel(item.anchor)}
+          <span
+            className={cx(
+              "w-full min-w-0 truncate text-[13px] leading-4",
+              quiet ? "text-muted-foreground" : "text-foreground",
+              focused && "font-semibold",
+            )}
+          >
+            {title}
           </span>
-          {item.origin.kind === "reader" ? (
-            <span
-              className="shrink-0 text-[11px] leading-4 text-(--tertiary-foreground)"
-              data-testid="sc-review-sent"
-            >
-              Sent
+          <span className="flex min-w-0 items-center gap-2">
+            {fixing ? (
+              <span
+                className="shrink-0 text-[12px] leading-4 text-warning"
+                data-testid="sc-review-fixing"
+              >
+                Agent working
+              </span>
+            ) : item.priority !== null ? (
+              <PriorityChip priority={item.priority} />
+            ) : null}
+            <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-(--tertiary-foreground)">
+              {placeLabel(item.anchor)}
             </span>
-          ) : null}
-          {item.state !== "open" ? (
-            <span className="shrink-0 text-[11px] leading-4 text-(--tertiary-foreground)">
-              {item.state === "outdated" ? "Outdated" : "Resolved"}
-            </span>
-          ) : null}
-        </span>
-      </button>
-    </li>
+            {item.origin.kind === "reader" ? (
+              <span
+                className="shrink-0 text-[11px] leading-4 text-(--tertiary-foreground)"
+                data-testid="sc-review-sent"
+              >
+                Sent
+              </span>
+            ) : null}
+            {item.state !== "open" ? (
+              <span className="shrink-0 text-[11px] leading-4 text-(--tertiary-foreground)">
+                {item.state === "outdated" ? "Outdated" : "Resolved"}
+              </span>
+            ) : null}
+          </span>
+        </button>
+      </li>
+    </Item>
   );
 });
 
@@ -374,39 +382,36 @@ const DraftRow = memo(function DraftRow({
       .find((line) => line.trim() !== "")
       ?.trim() || "Comment";
   return (
-    <li
-      className={cx("flex min-w-0 gap-2 rounded-md px-2 py-1", focused && "bg-border-hairline")}
-      data-testid="sc-review-draft"
-      data-draft={draft.id}
-    >
-      <button
-        type="button"
-        aria-current={focused || undefined}
-        onClick={() => onOpen(spot)}
-        className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 border-0 bg-transparent p-0 text-start"
+    <li className="flex min-w-0" data-testid="sc-review-draft" data-draft={draft.id}>
+      <Item
+        asChild
+        size="row"
+        className="min-w-0 flex-1 cursor-pointer flex-col items-stretch gap-1"
       >
-        <span
-          className={cx(
-            "w-full min-w-0 truncate text-[13px] leading-4 text-foreground",
-            focused && "font-semibold",
-          )}
-        >
-          {title}
-        </span>
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-(--tertiary-foreground)">
-            {placeLabel(draft.anchor)}
-          </span>
+        <button type="button" aria-current={focused || undefined} onClick={() => onOpen(spot)}>
           <span
             className={cx(
-              "shrink-0 text-[11px] leading-4",
-              draft.state === "outdated" ? "text-(--tertiary-foreground)" : "text-warning",
+              "w-full min-w-0 truncate text-[13px] leading-4 text-foreground",
+              focused && "font-semibold",
             )}
           >
-            {draft.state === "outdated" ? "Outdated" : "Pending"}
+            {title}
           </span>
-        </span>
-      </button>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-(--tertiary-foreground)">
+              {placeLabel(draft.anchor)}
+            </span>
+            <span
+              className={cx(
+                "shrink-0 text-[11px] leading-4",
+                draft.state === "outdated" ? "text-(--tertiary-foreground)" : "text-warning",
+              )}
+            >
+              {draft.state === "outdated" ? "Outdated" : "Pending"}
+            </span>
+          </span>
+        </button>
+      </Item>
     </li>
   );
 });
@@ -483,19 +488,21 @@ function railCounts(fixing: number, rest: readonly ReviewItem[]): string {
 function ReviewUnread({ error, refetch }: { error: string | null; refetch: () => void }) {
   if (error)
     return (
-      <div className="flex flex-wrap items-center gap-2 px-2">
-        <p className="m-0 min-w-0 flex-1 text-[12px] leading-4 text-muted-foreground">
-          Couldn't read the review. {error}
-        </p>
-        <Button
-          variant="link"
-          size="sm"
-          className={cx(TEXT_LINK, "text-[11px] font-medium")}
-          onClick={refetch}
-        >
-          Try again
-        </Button>
-      </div>
+      <Empty size="sm">
+        <EmptyHeader>
+          <EmptyDescription>Couldn't read the review. {error}</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button
+            variant="link"
+            size="sm"
+            className={cx(TEXT_LINK, "text-[11px] font-medium")}
+            onClick={refetch}
+          >
+            Try again
+          </Button>
+        </EmptyContent>
+      </Empty>
     );
   return (
     <div aria-busy="true" aria-label="Reading the review" className="flex flex-col gap-2 px-2 py-1">
@@ -537,11 +544,11 @@ function SelectionBar({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 px-2 pt-2">
       <Button
-        size="sm"
+        size="xs"
         variant="default"
         data-testid="sc-review-select-all"
         onClick={onClick}
-        className="h-6 px-2 font-semibold whitespace-pre"
+        className="whitespace-pre"
       >
         {allChosen ? "Clear selection" : "Select all"}
       </Button>
