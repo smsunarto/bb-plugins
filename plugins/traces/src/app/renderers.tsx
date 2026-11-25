@@ -5,6 +5,7 @@ import { scanInstructions } from "../shared/providers/common.ts";
 import { JsonView } from "./json-view.tsx";
 import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 import { Button } from "./components/ui/button.tsx";
+import { Card, CardContent } from "./components/ui/card.tsx";
 import {
   Collapsible,
   CollapsibleContent,
@@ -252,28 +253,28 @@ function SubagentRenderer({ body, related, onRaw }: TraceRendererProps) {
     </>
   );
 }
+function UsageTile({ term, value }: { term: string; value: string }) {
+  return (
+    <Card size="xs">
+      <CardContent>
+        <dl>
+          <dt>{term}</dt>
+          <dd>{value}</dd>
+        </dl>
+      </CardContent>
+    </Card>
+  );
+}
 function UsageRenderer({ event, body, related, onRaw }: TraceRendererProps) {
   return (
     <>
       {event.usage && (
-        <dl className="tr-usage">
-          <div>
-            <dt>Input</dt>
-            <dd>{event.usage.input?.toLocaleString() ?? "Not recorded"}</dd>
-          </div>
-          <div>
-            <dt>Output</dt>
-            <dd>{event.usage.output?.toLocaleString() ?? "Not recorded"}</dd>
-          </div>
-          <div>
-            <dt>Cached</dt>
-            <dd>{event.usage.cached?.toLocaleString() ?? "Not recorded"}</dd>
-          </div>
-          <div>
-            <dt>Scope</dt>
-            <dd>{event.usage.scope}</dd>
-          </div>
-        </dl>
+        <div className="tr-usage">
+          <UsageTile term="Input" value={event.usage.input?.toLocaleString() ?? "Not recorded"} />
+          <UsageTile term="Output" value={event.usage.output?.toLocaleString() ?? "Not recorded"} />
+          <UsageTile term="Cached" value={event.usage.cached?.toLocaleString() ?? "Not recorded"} />
+          <UsageTile term="Scope" value={event.usage.scope} />
+        </div>
       )}
       <GenericRenderer body={body} related={related} onRaw={onRaw} />
     </>

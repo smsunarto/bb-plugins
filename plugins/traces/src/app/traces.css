@@ -482,11 +482,6 @@ body.tr-resizing {
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
-.tr-usage > div {
-  border: 1px solid var(--tr-line);
-  border-radius: 5px;
-  padding: 8px;
-}
 .tr-usage dt {
   color: var(--tr-muted);
   font-size: 10px;
