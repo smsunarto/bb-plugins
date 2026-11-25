@@ -42,6 +42,7 @@ import {
   needsYouCount,
   sinceYouLeft,
   type CrewReads,
+  type CrewSnapshot,
 } from "./queue.ts";
 
 /** How often a watched banner rechecks the crew for a new or answered interaction. */
@@ -236,18 +237,18 @@ async function watchTasks(
 ): Promise<void> {
   // The first check's outcome is the baseline: the read just ran against the same Tasks.
   let last: { ok: true; signature: string } | { ok: false } | null = null;
-  let checkingCrew = false;
+  let recovery: CrewSnapshot | undefined;
   while (!signal.aborted) {
     // Keep one recovery probe in flight while task signatures continue to publish.
-    if (!checkingCrew && crewUnavailable.has(captainId)) {
-      checkingCrew = true;
-      void crewReads.read(captainId).rowsError.then(
+    if (recovery === undefined && crewUnavailable.has(captainId)) {
+      recovery = crewReads.read(captainId);
+      void recovery.rowsError.then(
         (error) => {
-          checkingCrew = false;
+          recovery = undefined;
           if (!signal.aborted && error === null) crewRecovered(captainId);
         },
         () => {
-          checkingCrew = false;
+          recovery = undefined;
         },
       );
     }
@@ -257,6 +258,8 @@ async function watchTasks(
     );
     if (signal.aborted) return;
     if (last !== null && tasksMoved(last, now)) {
+      // An ordinary read can predate changed task attachments. Keep only the recovery probe.
+      crewReads.changed(captainId, recovery);
       deps.bb.rpc.experimental_invalidate([crewTag(captainId)]);
     }
     last = now;

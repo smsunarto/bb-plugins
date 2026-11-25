@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
 import type { ExperimentalPanelTab, ExperimentalPanelTabs } from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, mountPluginContentScripts } from "@get-bb/plugin-sdk/testing/app";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { classifyOpen, observe, SETTLE_MS, type Watch } from "./overview-default.ts";
+import { describe, expect, test, vi } from "vitest";
+import {
+  classifyOpen,
+  newTabPressFor,
+  observe,
+  overviewPanel,
+  SETTLE_MS,
+  type Watch,
+} from "./overview-default.ts";
 
 const info: ExperimentalPanelTab = {
   key: "info",
@@ -64,13 +71,12 @@ function steps(
     tabs: ExperimentalPanelTabs;
     isCaptain?: boolean | null;
     at?: number;
-    click?: () => void;
+    press?: symbol;
   }[],
 ) {
   let watch = start;
   let clock = 0;
   return frames.map((frame) => {
-    frame.click?.();
     clock = frame.at ?? clock + 1;
     const step = observe(
       "captain",
@@ -79,6 +85,7 @@ function steps(
       frame.tabs,
       frame.isCaptain === undefined ? true : frame.isCaptain,
       clock,
+      frame.press,
     );
     watch = step.watch;
     return step;
@@ -116,56 +123,82 @@ describe("classifyOpen", () => {
 
 describe("the registered New Tab click listener", () => {
   const app = loadPluginApp(() => import("./app.tsx"));
-  let scripts: Awaited<ReturnType<typeof mountPluginContentScripts>>;
-  let button: HTMLButtonElement;
-  let glyph: HTMLSpanElement;
 
-  beforeEach(async () => {
-    scripts = await mountPluginContentScripts(await app, { pluginId: "captain" });
-    button = document.createElement("button");
-    button.setAttribute("data-panel-new-tab", "");
-    glyph = button.appendChild(document.createElement("span"));
-    document.body.append(button);
-  });
+  test("scopes to the matching hosted panel, ignores an automatic late +, and disposes", async () => {
+    const root = document.createElement("div");
+    root.innerHTML = `
+      <div data-split-pane-id="pane-a"><span id="anchor-a" hidden></span></div>
+      <div data-split-pane-id="pane-b"><span id="anchor-b" hidden></span></div>
+      <section id="thread-detail-secondary-panel-pane-a"></section>
+      <section id="thread-detail-secondary-panel-pane-b"></section>
+    `;
+    document.body.append(root);
+    const scripts = await mountPluginContentScripts(await app, { pluginId: "captain" });
+    try {
+      const anchorA = root.querySelector("#anchor-a")!;
+      const anchorB = root.querySelector("#anchor-b")!;
+      const panelA = root.querySelector("#thread-detail-secondary-panel-pane-a")!;
+      const panelB = root.querySelector("#thread-detail-secondary-panel-pane-b")!;
+      expect(overviewPanel(anchorA)).toBe(panelA);
+      expect(overviewPanel(anchorB)).toBe(panelB);
 
-  afterEach(async () => {
-    await scripts.lifecycle.dispose();
-    button.remove();
-  });
+      const button = document.createElement("button");
+      button.setAttribute("data-panel-new-tab", "");
+      const add = vi.spyOn(button, "addEventListener");
+      const remove = vi.spyOn(button, "removeEventListener");
+      panelA.append(button);
+      await vi.waitFor(() =>
+        expect(add).toHaveBeenCalledWith("click", expect.any(Function), expect.anything()),
+      );
+      button.click();
 
-  const click = () => glyph.click();
+      const opening = steps(seen(info.key), [{ tabs: panel(true, info.key), isCaptain: null }]);
+      const resolved = observe(
+        "captain",
+        opening[0]!.watch,
+        "t1",
+        panel(true, newTab.key),
+        true,
+        80,
+        newTabPressFor(anchorA),
+      );
+      expect(resolved.action).toEqual(selectOverview);
+      expect(newTabPressFor(anchorB)).toBeNull();
 
-  test("an immediate + click keeps New tab selected during the settle window", () => {
-    const run = steps(seen(info.key), [
-      { tabs: panel(true, info.key) },
-      { tabs: panel(true, overview.key) },
-      { tabs: panel(true, newTab.key), click, at: 250 },
-      { tabs: panel(true, newTab.key), at: 350 },
-    ]);
-    expect(actions(run)).toEqual([selectOverview, none, none, none]);
-  });
-
-  test("a + click on New tab survives the Captain lookup", () => {
-    const run = steps(seen(info.key), [
-      { tabs: panel(true, newTab.key), isCaptain: null },
-      { tabs: panel(true, newTab.key), click, isCaptain: null },
-      { tabs: panel(true, newTab.key) },
-    ]);
-    expect(actions(run)).toEqual([none, none, none]);
-  });
-
-  test("disposing the content script stops handling clicks", async () => {
-    await scripts.lifecycle.dispose();
-    const run = steps(seen(info.key), [
-      { tabs: panel(true, info.key) },
-      { tabs: panel(true, overview.key) },
-      { tabs: panel(true, newTab.key), click, at: 250 },
-    ]);
-    expect(actions(run)).toEqual([selectOverview, none, selectOverview]);
+      await scripts.lifecycle.dispose();
+      expect(remove).toHaveBeenCalledWith("click", add.mock.calls[0]?.[1], true);
+      expect(document.querySelector("[data-captain-overview-style]")).toBeNull();
+    } finally {
+      await scripts.lifecycle.dispose();
+      root.remove();
+    }
   });
 });
 
 describe("a toggle on a Captain thread lands on Overview", () => {
+  test("an immediate + click keeps New tab selected during the settle window", () => {
+    const press = Symbol();
+    const run = steps(seen(info.key), [
+      { tabs: panel(true, info.key) },
+      { tabs: panel(true, overview.key) },
+      { tabs: panel(true, newTab.key), press, at: 250 },
+      { tabs: panel(true, newTab.key), press, at: 350 },
+      { tabs: panel(false, newTab.key), press },
+      { tabs: panel(true, newTab.key), press },
+    ]);
+    expect(actions(run)).toEqual([selectOverview, none, none, none, none, selectOverview]);
+  });
+
+  test("a + click on New tab survives the Captain lookup", () => {
+    const press = Symbol();
+    const run = steps(seen(info.key), [
+      { tabs: panel(true, newTab.key), isCaptain: null },
+      { tabs: panel(true, newTab.key), press, isCaptain: null },
+      { tabs: panel(true, newTab.key), press },
+    ]);
+    expect(actions(run)).toEqual([none, none, none]);
+  });
+
   test("onto Info: selected at once", () => {
     expect(actions(steps(seen("info"), [{ tabs: panel(true, "info") }]))).toEqual([selectOverview]);
   });

@@ -419,7 +419,8 @@ test("Tasks holds one-line rows while it loads; Needs you keeps two-line ones", 
   expect(needsRows).toHaveLength(2);
   for (const row of needsRows) {
     expect(row.className).toContain("items-start");
-    expect(row.querySelectorAll(".animate-pulse")).toHaveLength(3);
+    const text = row.querySelector(":scope > .flex.flex-col");
+    expect(text?.querySelectorAll(":scope > .animate-pulse")).toHaveLength(2);
   }
   const rows = [...tasks.querySelectorAll("[aria-busy] > div")];
   expect(rows).toHaveLength(3);

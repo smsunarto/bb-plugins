@@ -440,6 +440,45 @@ describe("the Tasks recheck", () => {
     }
   });
 
+  test("refreshes from a new snapshot when a task edit overtakes an ordinary crew read", async () => {
+    const { host, as, captainId, tasks, invalidations } = await overviewHost({
+      crewPollMs: 60_000,
+    });
+    host.addTask("BBPLUGINS-1", { status: "in_progress" });
+    const threadId = await dispatch(as, "BBPLUGINS-1");
+    expect(await tasks()).toMatchObject({ crewError: null });
+    const stop = host.harness.behavior.experimental_watchRpc("tasks", { input: { captainId } });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const snapshots = () =>
+      host.tasks.calls.filter((call) => call.method === "crewSnapshot").length;
+    try {
+      await settle();
+      const before = snapshots();
+      const notice = invalidations().length;
+      host.crewSnapshotHold.afterCapture = held;
+      const original = tasks();
+      await vi.waitFor(() => expect(snapshots()).toBe(before + 1));
+      host.crewSnapshotHold.afterCapture = null;
+      const added = host.addTask("BBPLUGINS-2", { status: "in_progress" });
+      host.attach(added.id, threadId, "Captain Implement");
+      await vi.waitFor(() => expect(invalidations().slice(notice)).toContain(crewTag(captainId)));
+
+      const refreshed = tasks();
+      await vi.waitFor(() => expect(snapshots()).toBe(before + 2));
+      release();
+      const listing = await refreshed;
+      expect(listing.crewError).toBeNull();
+      expect(listing.tasks.find((task) => task.key === added.key)?.crew?.threadId).toBe(threadId);
+      await original;
+    } finally {
+      stop();
+      release();
+    }
+  });
+
   test("a task changed in Tasks refreshes a watched tasks read, and stops when unwatched", async () => {
     const { host, captainId, invalidations } = await overviewHost({ crewPollMs: 60_000 });
     const task = host.addTask("BBPLUGINS-1", { status: "todo" });

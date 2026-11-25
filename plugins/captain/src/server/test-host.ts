@@ -336,7 +336,10 @@ export async function captainHost(options: FakeOptions = {}) {
   /** The parent of every `threads.list` read, in order, to count crew polls. */
   const threadLists: (string | undefined)[] = [];
   /** While `gate` is set, Tasks' `crewSnapshot` waits for it. */
-  const crewSnapshotHold: { gate: Promise<void> | null } = { gate: null };
+  const crewSnapshotHold: {
+    gate: Promise<void> | null;
+    afterCapture: Promise<void> | null;
+  } = { gate: null, afterCapture: null };
   /** Each `interactions.list` call's thread, in order. */
   const interactionReads: string[] = [];
   /** Thread metadata by `<threadId> <pluginId>`, as other plugins read it. */
@@ -616,6 +619,7 @@ export async function captainHost(options: FakeOptions = {}) {
                   : { id: report.id, createdAt: report.createdAt, delivery: report.delivery },
             };
           });
+        if (crewSnapshotHold.afterCapture !== null) await crewSnapshotHold.afterCapture;
         return { rows };
       }
       case "defineField":

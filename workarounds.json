@@ -9,9 +9,9 @@
         "needed": null,
         "fixed": null
       },
-      "manual": "Use the host's selection intent or default-tab support in overview-default.ts. Replace the removed pending calculation and update the explicit New tab scenarios in overview-default.test.ts.",
+      "manual": "Use the host's selection intent or default-tab support in overview-default.ts. Replace the removed pending calculation, remove the hidden pane anchor from banner.tsx, and update the New Tab tests.",
       "afterRemoval": ["cd plugins/captain && bun run typecheck && bun run test"],
-      "verify": "Open a Captain thread's panel and press its New tab button as soon as Overview appears. New tab stays selected. Repeat with the Captain lookup held and release it after pressing New tab. A generic reopen still selects Overview."
+      "verify": "Press + as soon as a Captain's Overview appears and while the Captain lookup is held. New Tab stays selected after the lookup. A delayed automatic click on + and a click on another pane's + both leave the Captain's generic open on Overview."
     },
     {
       "id": "source-control/keyed-prediction-drop",
