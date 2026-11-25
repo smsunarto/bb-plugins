@@ -17,13 +17,14 @@ import SwiftUI
 
 struct Snapshot: Decodable {
     let providers: [Provider]
-    let error: String?
 }
 
 struct Provider: Decodable {
     let id: String
     let name: String
     let accounts: [Account]
+    /// Why this provider's last read failed. Antigravity is read apart from Codex and Claude.
+    let error: String?
 }
 
 struct Account: Decodable {
@@ -261,6 +262,7 @@ enum Brand {
         switch provider {
         case "codex": Color(red: 73 / 255, green: 163 / 255, blue: 176 / 255)
         case "claude": Color(red: 204 / 255, green: 124 / 255, blue: 94 / 255)
+        case "antigravity": Color(red: 66 / 255, green: 133 / 255, blue: 244 / 255)
         default: Color.accentColor
         }
     }
@@ -319,17 +321,27 @@ struct UsageRow: View {
         let started = remaining.rounded() < 100
         let pace = started && showsPace ? Pace.of(window, now: now) : nil
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(window.label) \(Format.percent(remaining)) left")
-                    .font(.body)
-                    .fontWeight(.medium)
+            let label = Text("\(window.label) \(Format.percent(remaining)) left")
+                .font(.body)
+                .fontWeight(.medium)
+                .lineLimit(1)
+            let reset = started ? window.resetDate.map { reset in
+                Text(Format.resets(reset, now: now))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
-                Spacer(minLength: 8)
-                if started, let reset = window.resetDate {
-                    Text(Format.resets(reset, now: now))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+            } : nil
+            // A label too long to share its line, such as Antigravity's "Claude/GPT weekly",
+            // puts the reset under it instead of truncating.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    label.fixedSize()
+                    Spacer(minLength: 8)
+                    reset
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    label
+                    reset
                 }
             }
             UsageBar(remaining: remaining, tint: tint, pace: pace)
@@ -536,9 +548,10 @@ struct AccountCard: View {
 /// Shown above the cards when the last read failed and the menu shows older data.
 struct ErrorBanner: View {
     @ObservedObject var store: Store
+    let providerId: String
 
     var body: some View {
-        if let error = store.snapshot?.error {
+        if let error = store.provider(providerId)?.error {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Color(nsColor: .systemOrange))
@@ -638,7 +651,7 @@ final class ProviderItem: NSObject, NSMenuDelegate {
         button.attributedTitle = NSAttributedString(
             string: title,
             attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)])
-        let stale = store.snapshot?.error != nil || account?.error != nil
+        let stale = provider?.error != nil || account?.error != nil
         button.appearsDisabled = stale
         let name = provider?.name ?? providerId
         let detail = window.map { "\($0.label) \(title) left" } ?? "No usage reading"
@@ -675,7 +688,7 @@ final class ProviderItem: NSObject, NSMenuDelegate {
 
     private func shape(_ provider: Provider?) -> [String] {
         guard let provider else { return [] }
-        return provider.accounts.map(\.id) + [store.snapshot?.error == nil ? "" : "error", notice(provider) ?? ""]
+        return provider.accounts.map(\.id) + [provider.error == nil ? "" : "error", notice(provider) ?? ""]
     }
 
     private func build(_ menu: NSMenu) {
@@ -685,8 +698,8 @@ final class ProviderItem: NSObject, NSMenuDelegate {
         shape = shape(provider)
         guard let provider else { return }
 
-        if store.snapshot?.error != nil {
-            menu.addItem(row(ErrorBanner(store: store)))
+        if provider.error != nil {
+            menu.addItem(row(ErrorBanner(store: store, providerId: providerId)))
             menu.addItem(.separator())
         }
         for (index, account) in provider.accounts.enumerated() {

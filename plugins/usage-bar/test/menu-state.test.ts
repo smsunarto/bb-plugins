@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { createMenuState } from "../src/server/lib/menu-state.ts";
 import type { Source } from "../src/server/lib/sources.ts";
+import type { MenuProvider } from "../src/server/lib/pool.ts";
 import { codexExtras, type ExtrasUpdate } from "../src/server/lib/extras.ts";
 function defer<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -15,7 +16,7 @@ const balance = (value: number): ExtrasUpdate => ({
 });
 function source(
   email: string,
-  extras: (provider: "codex" | "claude", id: string, fresh?: boolean) => Promise<ExtrasUpdate>,
+  extras: (provider: MenuProvider["id"], id: string, fresh?: boolean) => Promise<ExtrasUpdate>,
   status: "ready" | "disabled" = "ready",
 ): Source {
   return {

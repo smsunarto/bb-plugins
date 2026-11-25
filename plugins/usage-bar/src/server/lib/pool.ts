@@ -76,9 +76,11 @@ export interface MenuAccount {
 }
 
 export interface MenuProvider {
-  id: "codex" | "claude";
+  id: "codex" | "claude" | "antigravity";
   name: string;
   accounts: MenuAccount[];
+  /** Antigravity's own read failure, since it is read apart from the Codex and Claude source. */
+  error?: string | null;
 }
 
 /** A menu account joined with its observed extras: what the helper decodes. */
@@ -90,8 +92,12 @@ export type SnapshotAccount = MenuAccount & AccountExtras;
  * test/wire.test.ts decodes real snapshots with the helper.
  */
 export interface MenuSnapshot {
-  providers: (Omit<MenuProvider, "accounts"> & { accounts: SnapshotAccount[] })[];
-  /** Why the last read failed, shown dimmed like CodexBar's stale state. */
+  providers: (Omit<MenuProvider, "accounts"> & {
+    accounts: SnapshotAccount[];
+    /** This provider's copy of `error`. Antigravity is read apart, so it never has one. */
+    error: string | null;
+  })[];
+  /** Why the last Codex and Claude read failed, shown dimmed like CodexBar's stale state. */
   error: string | null;
 }
 

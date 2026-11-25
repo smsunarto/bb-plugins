@@ -11,12 +11,20 @@ import {
 } from "@get-bb/plugin-sdk/testing";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
 import { createMenuHost } from "../src/host/host.ts";
-import plugin from "../src/server/server.ts";
+import type { AntigravityReader } from "../src/server/lib/antigravity.ts";
+import type { MenuProvider } from "../src/server/lib/pool.ts";
+import { usageBarPlugin } from "../src/server/server.ts";
 
-/** Load the plugin and start its menu service the way bb does. */
-async function startMenu(options: CreateFakePluginHostOptions) {
+/**
+ * Load the plugin and start its menu service the way bb does. The Antigravity
+ * reader is always stubbed: the real one would run this machine's `agy`.
+ */
+async function startMenu(
+  options: CreateFakePluginHostOptions,
+  readAntigravity: AntigravityReader = async () => null,
+) {
   const { bb, harness } = createFakePluginHost({ pluginId: "usage-bar", ...options });
-  await plugin(bb);
+  await usageBarPlugin({ readAntigravity })(bb);
   const service = harness.behavior.runService("menu-bar");
   return {
     harness,
@@ -226,7 +234,10 @@ const pool = (refreshUsage: () => Promise<unknown>) => ({
   callRpc: async ({ method }: { method: string }) =>
     method === "account.refreshUsage" ? refreshUsage() : [poolAccount],
 });
-type RenderInput = { refreshing: boolean; snapshot: { error: string | null } };
+type RenderInput = {
+  refreshing: boolean;
+  snapshot: { error: string | null; providers: { id: string }[] };
+};
 const renders = (harness: Awaited<ReturnType<typeof startMenu>>["harness"], hostId: string) =>
   harness.inspection.experimental_hostRpcCalls
     .filter((call) => call.hostId === hostId)
@@ -234,6 +245,38 @@ const renders = (harness: Awaited<ReturnType<typeof startMenu>>["harness"], host
       refreshing: (input as RenderInput).refreshing,
       error: (input as RenderInput).snapshot.error,
     }));
+
+test("Antigravity is drawn even when every Codex and Claude source fails", async () => {
+  const antigravity: MenuProvider = { id: "antigravity", name: "Antigravity", accounts: [] };
+  const { harness, stop } = await startMenu(
+    {
+      sdk: {
+        hosts: { list: async () => [mac] },
+        plugins: {
+          experimental_discoverRpc: async () => {
+            throw new Error("sources unavailable");
+          },
+        },
+      },
+      experimental_callHostRpc: async () => ({ status: "ok" }),
+    },
+    async () => antigravity,
+  );
+  const drawn = () =>
+    harness.inspection.experimental_hostRpcCalls
+      .filter((call) => call.hostId === "mac")
+      .map(({ input }) => (input as RenderInput).snapshot);
+  try {
+    await waitFor(() => drawn().some((snapshot) => snapshot.providers.length > 0));
+    expect(
+      drawn()
+        .at(-1)
+        ?.providers.map((provider) => provider.id),
+    ).toEqual(["antigravity"]);
+  } finally {
+    await stop();
+  }
+});
 
 test("each host draws one menu at a time, then the latest, without holding up other hosts", async () => {
   let release!: () => void;

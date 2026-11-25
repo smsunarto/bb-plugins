@@ -6,6 +6,8 @@ import { buildHelper } from "../src/host/helper.ts";
 import { createMenuState } from "../src/server/lib/menu-state.ts";
 import { accountListSchema, type MenuSnapshot, poolProviders } from "../src/server/lib/pool.ts";
 import type { Source } from "../src/server/lib/sources.ts";
+import { createAntigravityReader } from "../src/server/lib/antigravity.ts";
+import antigravityUsage from "./fixtures/antigravity-usage.json";
 
 const NOW = Date.parse("2026-10-01T05:00:00Z");
 const NO_FAMILIES = { fable: null, sonnet: null, opus: null, haiku: null, other: null };
@@ -111,7 +113,14 @@ test.skipIf(process.platform !== "darwin")(
     };
     const state = createMenuState(new AbortController().signal, () => {});
     state.setSource(source);
+    state.setAntigravity(
+      await createAntigravityReader(async () => ({ status: "ok", body: antigravityUsage }))(
+        new AbortController().signal,
+        true,
+      ),
+    );
     await state.refresh(true);
+    expect(state.snapshot().providers.at(-1)?.id).toBe("antigravity");
     expect(await decode(state.snapshot())).toEqual({ status: 0, stderr: "" });
   },
   120_000,

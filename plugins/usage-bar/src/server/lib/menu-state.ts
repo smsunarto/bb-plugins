@@ -1,5 +1,5 @@
 import { type AccountExtras, type ExtrasUpdate, NO_EXTRAS } from "./extras.ts";
-import type { MenuSnapshot } from "./pool.ts";
+import type { MenuProvider, MenuSnapshot } from "./pool.ts";
 import type { Source } from "./sources.ts";
 
 /** Kept extras expire after six 5-minute passes in a row that learned nothing. */
@@ -8,6 +8,8 @@ const KEPT_MS = 30 * 60_000;
 /** Own account-scoped observations and serialize background/manual extras refreshes. */
 export function createMenuState(signal: AbortSignal, changed: () => void, now = Date.now) {
   let source: Source | null = null;
+  /** Read from its own CLI, so a Codex or Claude failure never hides or resets it. */
+  let antigravity: MenuProvider | null = null;
   let identity = "";
   let generation = 0;
   let error: string | null = null;
@@ -44,11 +46,21 @@ export function createMenuState(signal: AbortSignal, changed: () => void, now = 
     get source() {
       return source;
     },
+    /** Antigravity has no extras, so it skips the account-scoped extras state. */
+    setAntigravity(next: MenuProvider | null) {
+      if (next === antigravity) return;
+      antigravity = next;
+      changed();
+    },
     snapshot(): MenuSnapshot {
+      const providers = antigravity
+        ? [...(source?.providers ?? []), antigravity]
+        : source?.providers;
       return {
         error,
-        providers: (source?.providers ?? []).map((provider) =>
+        providers: (providers ?? []).map((provider) =>
           Object.assign({}, provider, {
+            error: provider === antigravity ? (antigravity.error ?? null) : error,
             accounts: provider.accounts.map((account) =>
               Object.assign({}, account, extras.get(account.id)?.value ?? NO_EXTRAS),
             ),

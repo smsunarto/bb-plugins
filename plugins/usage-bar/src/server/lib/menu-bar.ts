@@ -3,6 +3,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { Data, Effect, FiberSet, Schedule } from "effect";
 import { z } from "zod";
 import { menuHostContract, menuHostSignals } from "../../shared/host-contract.ts";
+import { type AntigravityReader, createAntigravityReader } from "./antigravity.ts";
 import { createMenuState } from "./menu-state.ts";
 import { POOL_PLUGIN_ID, createSourceReader } from "./sources.ts";
 
@@ -44,7 +45,12 @@ function singleFlight<A>(read: () => Promise<A>): Effect.Effect<A, SdkError> {
  * every connected host. Each Mac's host entry draws it in that Mac's menu bar,
  * so the items appear on the Mac you use even when the bb server runs elsewhere.
  */
-export const menuBar = Effect.fn("menuBar")(function* (bb: BbPluginApi) {
+export const menuBar = Effect.fn("menuBar")(function* (
+  bb: BbPluginApi,
+  readAntigravity: AntigravityReader = createAntigravityReader(undefined, undefined, (message) =>
+    bb.log.warn(message),
+  ),
+) {
   // Dev bb instances auto-install workspace plugins and would each draw duplicate items.
   if (
     bb.server.experimental_dataDir.split(sep).includes(".bb-dev") &&
@@ -134,9 +140,18 @@ export const menuBar = Effect.fn("menuBar")(function* (bb: BbPluginApi) {
   const pollRead = singleFlight(() => readSource(signal, false));
   const refreshRead = singleFlight(() => readSource(signal, true));
 
+  // A poll answers from the reader's cache and starts a background read when stale;
+  // Refresh waits for a fresh one. The reader never rejects.
+  const readAntigravityInto = async (refresh: boolean) => {
+    const provider = await readAntigravity(signal, refresh);
+    if (!signal.aborted) state.setAntigravity(provider);
+  };
   const publish = (refresh: boolean) =>
     Effect.promise(() =>
-      state.publish(() => runPromise(refresh ? refreshRead : pollRead), refresh),
+      Promise.all([
+        state.publish(() => runPromise(refresh ? refreshRead : pollRead), refresh),
+        readAntigravityInto(refresh),
+      ]),
     );
 
   const refreshPool = Effect.suspend(() => {
