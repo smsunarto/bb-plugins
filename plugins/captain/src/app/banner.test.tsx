@@ -889,6 +889,40 @@ function delayedAnswer() {
   return { promise, resolve, reject };
 }
 
+test("refreshing the final ask away keeps focus on the banner through All clear", async () => {
+  const response = delayedAnswer();
+  let items = [decision];
+  const { slot, of } = render(CAPTAIN, () => items, { resolve: () => response.promise });
+  fireEvent.click(await slot.findByRole("button", { name: "Other…" }));
+  const input = slot.getByRole("textbox", { name: "Your answer" }) as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "Use the shared cache" } });
+  fireEvent.submit(input.form!);
+  await waitFor(() => expect(of("resolveAsk")).toHaveLength(1));
+  items = [];
+  await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+  const status = await slot.findByText("All clear");
+  expect(document.activeElement).not.toBe(document.body);
+  expect(document.activeElement?.contains(status)).toBe(true);
+  await act(async () => response.resolve({ state: "answered", warnings: [] }));
+});
+
+test("revisiting a typed answer blocks a second answer until the refreshed queue arrives", async () => {
+  const response = delayedAnswer();
+  const { slot, of } = render(CAPTAIN, [decision, access], { resolve: () => response.promise });
+  fireEvent.click(await slot.findByRole("button", { name: "Other…" }));
+  const input = slot.getByRole("textbox", { name: "Your answer" }) as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "Read-only for a day" } });
+  fireEvent.submit(input.form!);
+  await waitFor(() => expect(of("resolveAsk")).toHaveLength(1));
+  fireEvent.click(slot.getByRole("tab", { name: /Pick the cache/u }));
+  expect(slot.getByRole("button", { name: "SQLite" })).toBeDefined();
+  fireEvent.click(slot.getByRole("tab", { name: /Grant the crew/u }));
+  expect(slot.queryByRole("button", { name: /Grant read-only/u })).toBeNull();
+  await act(async () => response.resolve({ state: "answered", warnings: [] }));
+  expect(slot.queryByRole("button", { name: /Grant read-only/u })).toBeNull();
+  expect(of("resolveAsk")).toHaveLength(1);
+});
+
 test.each(["answered", "failed"] as const)(
   "Other on a second ask stays editable and focused when the first submit is %s",
   async (result) => {
