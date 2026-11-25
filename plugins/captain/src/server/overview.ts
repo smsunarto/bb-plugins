@@ -13,7 +13,7 @@ import { type CrewThread, isActive, joinCrew } from "./crew.ts";
 import { DRIVE_FILES, isInside, readInside } from "./drive.ts";
 import type { CrewSnapshot } from "./queue.ts";
 import { ROLE_SPECS, SHIP_READY_REVIEWS } from "./roles.ts";
-import type { TasksTask } from "./tasks-client.ts";
+import { isStaleTasksCursor, type TasksTask } from "./tasks-client.ts";
 
 /**
  * The Overview tab's reads: the Captain's tasks as rows, and its Drive as
@@ -128,6 +128,19 @@ async function readProjectTasks(
   deps: Pick<CommandDeps, "tasks">,
   projectId: string,
 ): Promise<{ tasks: TasksTask[]; truncated: boolean }> {
+  try {
+    return await readProjectPages(deps, projectId);
+  } catch (error) {
+    if (!isStaleTasksCursor(error)) throw error;
+    // The earlier pages belong to an old Tasks revision. Start a fresh read once.
+    return readProjectPages(deps, projectId);
+  }
+}
+
+async function readProjectPages(
+  deps: Pick<CommandDeps, "tasks">,
+  projectId: string,
+): Promise<{ tasks: TasksTask[]; truncated: boolean }> {
   const tasks: TasksTask[] = [];
   let cursor: string | undefined;
   while (tasks.length < TASKS_READ_MAX) {
@@ -152,6 +165,7 @@ export async function openTasksSignature(
 ): Promise<string> {
   const read = await readOpenTasks(deps, captainId);
   return [
+    read.truncated ? "+" : "",
     ...read.unavailable.map((name) => `!${name}`),
     ...read.tasks.map((task) => `${task.key}\0${task.status}\0${task.title}\0${task.updatedAt}`),
   ].join("\n");

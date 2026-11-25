@@ -74,6 +74,7 @@ export function readCrewSnapshot(
  * at once. A read in flight is shared by the calls that arrive while it runs;
  * once both its parts settle, the next call reads afresh. `changed` drops a
  * read in flight, so a call after a change never gets the read from before it.
+ * The Tasks poll can keep its own recovery probe shareable through an invalidation.
  */
 export function createCrewReads(deps: Pick<QueueDeps, "bb" | "tasks">) {
   const inFlight = new Map<string, CrewSnapshot>();
@@ -90,8 +91,8 @@ export function createCrewReads(deps: Pick<QueueDeps, "bb" | "tasks">) {
       read.rows.then(settle, settle);
       return read;
     },
-    changed(captainId: string): void {
-      inFlight.delete(captainId);
+    changed(captainId: string, keep?: CrewSnapshot): void {
+      if (inFlight.get(captainId) !== keep) inFlight.delete(captainId);
     },
   };
 }

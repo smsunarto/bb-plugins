@@ -116,7 +116,12 @@ export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
           collapsed={collapsed.tasks}
           onToggle={toggle}
         >
-          <ReadState read={tasks} rows={3} line>
+          <ReadState
+            read={tasks}
+            rows={3}
+            line
+            partialProblem={listed?.crewError ? `Crew unavailable · ${listed.crewError}` : null}
+          >
             {listed === undefined ? null : <TasksBody listing={listed} />}
           </ReadState>
         </Section>
@@ -216,6 +221,7 @@ function ReadState({
   rows,
   line = false,
   cards = false,
+  partialProblem = null,
   children,
 }: {
   read: Read;
@@ -223,6 +229,7 @@ function ReadState({
   /** Rows of one line, as Tasks has; the others have a subline. */
   line?: boolean;
   cards?: boolean;
+  partialProblem?: string | null;
   children: ReactNode;
 }) {
   const connection = useRealtimeConnectionState();
@@ -233,7 +240,7 @@ function ReadState({
       ? "Offline · showing the last loaded"
       : "Offline · waiting for bb to reconnect"
     : read.error === null
-      ? null
+      ? partialProblem
       : loaded
         ? `Couldn't refresh · ${read.error.message}`
         : `Couldn't load · ${read.error.message}`;
@@ -405,11 +412,11 @@ const otherDrafts = new Map<string, string>();
 
 /**
  * The banner's answer controls on the Overview's 4px grid: an 8px inset around
- * a 16px line, an 8px gap. An outline button's 1px hairline is part of its
- * inset, so both kinds stand 32px tall.
+ * a 16px line and an 8px gap. Draw the outline inside the button so it
+ * keeps the same padding and height as the primary action.
  */
 const OVERVIEW_ACTION = "py-2 leading-4";
-const OVERVIEW_OUTLINE_ACTION = "py-[7px] leading-4";
+const OVERVIEW_OUTLINE_ACTION = "border-0 py-2 leading-4 inset-ring inset-ring-input";
 const OVERVIEW_OTHER = "gap-2";
 function useOpenAsk(captainId: string): string | null {
   return useSyncExternalStore(subscribeOpenAsks, () => openAsks.get(captainId) ?? null);
@@ -591,7 +598,6 @@ type TaskListing = {
   tasks: CaptainTaskItem[];
   total: number;
   truncated: boolean;
-  crewError: string | null;
   unavailable: string[];
 };
 
@@ -604,9 +610,6 @@ function TasksBody({ listing }: { listing: TaskListing }) {
         <Notice
           text={`Couldn't load ${listing.unavailable.join(", ")} · the other repos are listed`}
         />
-      )}
-      {listing.crewError === null ? null : (
-        <Notice text={`Crew unavailable · ${listing.crewError}`} />
       )}
       {listing.tasks.length === 0 ? (
         listing.unavailable.length === 0 ? (

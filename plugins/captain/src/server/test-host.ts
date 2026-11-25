@@ -312,6 +312,7 @@ export async function captainHost(options: FakeOptions = {}) {
     down: options.tasksDown === true,
     /** Methods that fail while listed; `listTasks:<projectId>` fails one project's list. */
     failing: new Set<string>(),
+    staleTaskPages: 0,
   };
   const pushes: { method: string; input: unknown }[] = [];
   /** Messages sent into threads, in order, with the sender exactly as the send passed it. */
@@ -335,7 +336,10 @@ export async function captainHost(options: FakeOptions = {}) {
   /** The parent of every `threads.list` read, in order, to count crew polls. */
   const threadLists: (string | undefined)[] = [];
   /** While `gate` is set, Tasks' `crewSnapshot` waits for it. */
-  const crewSnapshotHold: { gate: Promise<void> | null } = { gate: null };
+  const crewSnapshotHold: {
+    gate: Promise<void> | null;
+    afterCapture: Promise<void> | null;
+  } = { gate: null, afterCapture: null };
   /** Each `interactions.list` call's thread, in order. */
   const interactionReads: string[] = [];
   /** Thread metadata by `<threadId> <pluginId>`, as other plugins read it. */
@@ -513,6 +517,15 @@ export async function captainHost(options: FakeOptions = {}) {
         return { task: task === undefined ? null : snapshotTask(task) };
       }
       case "listTasks": {
+        if (input["cursor"] !== undefined && tasks.staleTaskPages > 0) {
+          tasks.staleTaskPages -= 1;
+          throw Object.assign(
+            new Error(
+              "HTTP 500: task-list data changed after this cursor was issued; restart pagination without --cursor",
+            ),
+            { code: "handler_error" },
+          );
+        }
         const project = tasks.projects.find((entry) => entry.id === input["projectId"]);
         const statuses = input["statuses"] as string[] | undefined;
         const search = input["search"] as string | undefined;
@@ -611,6 +624,7 @@ export async function captainHost(options: FakeOptions = {}) {
                   : { id: report.id, createdAt: report.createdAt, delivery: report.delivery },
             };
           });
+        if (crewSnapshotHold.afterCapture !== null) await crewSnapshotHold.afterCapture;
         return { rows };
       }
       case "defineField":

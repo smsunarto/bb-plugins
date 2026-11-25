@@ -82,12 +82,11 @@ function CaptainGate({ threadId }: { threadId: string }) {
 
 /**
  * Rides on the banner's slot, mounted on every thread before bb says which
- * are Captains, so a panel opened meanwhile still lands on Overview. It
- * renders nothing.
+ * are Captains, so a panel opened meanwhile still lands on Overview.
  */
 function OverviewOnOpen({ threadId, isCaptain }: { threadId: string; isCaptain: boolean | null }) {
-  useOverviewOnOpen(threadId, isCaptain);
-  return null;
+  const anchor = useOverviewOnOpen(threadId, isCaptain);
+  return isCaptain === false ? null : <span ref={anchor} hidden data-captain-overview-anchor="" />;
 }
 
 export type Action = { label: string; run: () => void; primary?: boolean; recommended?: boolean };

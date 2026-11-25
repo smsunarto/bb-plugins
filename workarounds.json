@@ -2,6 +2,18 @@
   "$comment": "Plugin code that compensates for a bb defect. `bun scripts/workarounds.ts check` probes the installed bb; `remove <id>` deletes an entry's files and marked blocks. See AGENTS.md, bb workarounds.",
   "workarounds": [
     {
+      "id": "captain/panel-new-tab-intent",
+      "defect": "BB reports the same New tab selection for a generic panel open and an explicit press of the panel's New tab button. Captain Overview can take focus back during the opening window because the panel SDK exposes no selection intent.",
+      "verifiedOn": "0.50.1",
+      "probe": {
+        "needed": null,
+        "fixed": null
+      },
+      "manual": "Use the host's selection intent or default-tab support in overview-default.ts. Replace the removed pending calculation, remove the hidden pane anchor from banner.tsx, and update the New Tab tests.",
+      "afterRemoval": ["cd plugins/captain && bun run typecheck && bun run test"],
+      "verify": "Press + as soon as a Captain's Overview appears and while the Captain lookup is held. New Tab stays selected after the lookup. A delayed automatic click on + and a click on another pane's + both leave the Captain's generic open on Overview."
+    },
+    {
       "id": "source-control/keyed-prediction-drop",
       "defect": "bb's keyed RPC prediction (cache.updateKey) loses an earlier accepted write to a key when a later write to the same key is predicted while the server's pushed invalidation read is in flight: the first check is unticked, the first new review comment disappears and the first dismissed finding comes back until a reload, though the server stored both.",
       "verifiedOn": "0.49.0",

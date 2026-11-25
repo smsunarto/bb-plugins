@@ -22,7 +22,7 @@ import {
   type ExperimentalPanelTab,
   type ExperimentalPanelTabs,
 } from "@get-bb/plugin-sdk/app";
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, type RefObject } from "react";
 
 /** The tabs bb shows for a generic open. */
 const FALLBACK_KINDS: ReadonlySet<string> = new Set(["info", "new-tab"]);
@@ -33,6 +33,93 @@ const FALLBACK_KINDS: ReadonlySet<string> = new Set(["info", "new-tab"]);
  * the user's.
  */
 export const SETTLE_MS = 500;
+
+// workaround:captain/panel-new-tab-intent
+// workaround:captain/panel-new-tab-intent begin
+const PANEL_ID = "thread-detail-secondary-panel";
+const SHELF = '[data-testid="secondary-panel-shelf"]';
+const PANELS = `[id="${PANEL_ID}"], [id^="${PANEL_ID}-"], ${SHELF}`;
+const PLUS = "button[data-panel-new-tab]";
+let readPress: ((anchor: Element) => symbol | null) | null = null;
+
+/** Hosted panes have suffixed ids. Standalone threads own an inline panel or the compact shelf. */
+export function overviewPanel(anchor: Element, shelf: Element | null = null): Element | null {
+  const doc = anchor.ownerDocument;
+  const paneId = anchor.closest("[data-split-pane-id]")?.getAttribute("data-split-pane-id");
+  const hosted = paneId ? doc.getElementById(`${PANEL_ID}-${paneId}`) : null;
+  const timeline = anchor.closest('[id="thread-detail-timeline-panel"]');
+  const grid = timeline?.closest("[data-split-resize-grid-root]");
+  return hosted ?? (grid ? (grid.querySelector(`[id="${PANEL_ID}"]`) ?? shelf) : null);
+}
+
+export function newTabPressFor(anchor: Element): symbol | null {
+  return readPress?.(anchor) ?? null;
+}
+
+/** Only a real activation of this pane's + can cancel its Overview default. */
+export function watchNewTabClicks(document: Document, signal: AbortSignal): () => void {
+  if (signal.aborted) return () => {};
+  const presses = new WeakMap<Element, { panelId: string; press: symbol }>();
+  const controls = new Set<Element>();
+  let shelf: Element | null = null;
+  const read = (anchor: Element) => {
+    const panel = overviewPanel(anchor, shelf?.isConnected ? shelf : null);
+    if (panel === null) return null;
+    const last = presses.get(panel);
+    // BB can reuse the hosted element when a different workspace pane takes focus.
+    return last?.panelId === panel.id ? last.press : null;
+  };
+  readPress = read;
+
+  function capture(event: Event) {
+    if (event.isTrusted && event.currentTarget instanceof Element) {
+      const panel = event.currentTarget.closest(PANELS);
+      if (panel !== null) presses.set(panel, { panelId: panel.id, press: Symbol() });
+    }
+  }
+  function bind(button: Element) {
+    const panel = button.closest(PANELS);
+    if (controls.has(button) || panel === null) return;
+    if (panel.matches(SHELF)) shelf = panel;
+    controls.add(button);
+    button.addEventListener("click", capture, { capture: true, passive: true });
+  }
+  function unbind(button: Element) {
+    if (!controls.delete(button)) return;
+    button.removeEventListener("click", capture, true);
+    if (shelf !== null && !shelf.isConnected) shelf = null;
+  }
+  function visit(node: Node, handle: (button: Element) => void) {
+    if (!(node instanceof Element)) return;
+    if (node.matches(PLUS)) handle(node);
+    if (node.childElementCount > 0) node.querySelectorAll(PLUS).forEach(handle);
+  }
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.removedNodes) if (!node.isConnected) visit(node, unbind);
+      for (const node of record.addedNodes) if (node.isConnected) visit(node, bind);
+    }
+  });
+  // The host hides an empty banner with :empty. Keep the hidden anchor layout-free too.
+  const style = document.createElement("style");
+  style.setAttribute("data-captain-overview-style", "");
+  style.textContent =
+    'section:has(> [data-captain-overview-anchor]:only-child)[aria-label="captain"] { display: none; }';
+  document.head.append(style);
+  observer.observe(document.body, { childList: true, subtree: true });
+  document.querySelectorAll(PLUS).forEach(bind);
+
+  function dispose() {
+    if (readPress === read) readPress = null;
+    observer.disconnect();
+    controls.forEach(unbind);
+    style.remove();
+    signal.removeEventListener("abort", dispose);
+  }
+  signal.addEventListener("abort", dispose, { once: true });
+  return dispose;
+}
+// workaround:captain/panel-new-tab-intent end
 
 export const OVERVIEW_TAB = {
   id: "overview",
@@ -58,6 +145,9 @@ export type Watch = {
   /** The tab selected when the panel was last seen open, for a bb that reports none while closed. */
   lastOpenKey: string | null;
   pending: Pending | null;
+  // workaround:captain/panel-new-tab-intent begin
+  newTabPress: symbol | null;
+  // workaround:captain/panel-new-tab-intent end
 };
 
 export type OnOpen =
@@ -92,16 +182,24 @@ export function observe(
   next: ExperimentalPanelTabs,
   isCaptain: boolean | null,
   now: number,
+  newTabPress: symbol | null = null,
 ): { watch: Watch; action: OnOpen } {
   const previous = prior?.threadId === threadId ? prior : null;
   const overview = next.tabs.find((tab) => isOverview(pluginId, tab));
-  const pending = settle(previous, next, overview, isCaptain, now);
+  // workaround:captain/panel-new-tab-intent begin
+  const explicitNewTab =
+    next.open && previous !== null && newTabPress !== null && previous.newTabPress !== newTabPress;
+  const pending = explicitNewTab ? null : settle(previous, next, overview, isCaptain, now);
+  // workaround:captain/panel-new-tab-intent end
   const watch: Watch = {
     threadId,
     open: next.open,
     selectedKey: next.selectedKey,
     lastOpenKey: next.open ? next.selectedKey : (previous?.lastOpenKey ?? null),
     pending,
+    // workaround:captain/panel-new-tab-intent begin
+    newTabPress,
+    // workaround:captain/panel-new-tab-intent end
   };
   const showing = overview !== undefined && overview.key === next.selectedKey;
   if (pending === null || !pending.sure || isCaptain !== true || showing) {
@@ -161,11 +259,15 @@ function isOverview(pluginId: string, tab: ExperimentalPanelTab): boolean {
  * the thread is a Captain's, with `isCaptain` null until then, so an open in
  * that window is not missed.
  */
-export function useOverviewOnOpen(threadId: string, isCaptain: boolean | null): void {
+export function useOverviewOnOpen(
+  threadId: string,
+  isCaptain: boolean | null,
+): RefObject<HTMLSpanElement | null> {
   const pluginId = usePluginId();
   const tabs = usePanelTabs();
   const panel = useAppPanel();
   const last = useRef<Watch | null>(null);
+  const anchor = useRef<HTMLSpanElement>(null);
   // A layout effect: bb's own pick and Overview land in one commit, before paint.
   useLayoutEffect(() => {
     const { watch, action } = observe(
@@ -175,6 +277,7 @@ export function useOverviewOnOpen(threadId: string, isCaptain: boolean | null): 
       tabs,
       isCaptain,
       performance.now(),
+      anchor.current === null ? null : newTabPressFor(anchor.current),
     );
     last.current = watch;
     if (action.kind !== "select") return;
@@ -182,4 +285,5 @@ export function useOverviewOnOpen(threadId: string, isCaptain: boolean | null): 
     if (action.overviewKey === null) panel.openTab({ tab: OVERVIEW_TAB });
     else panel.selectTab(action.overviewKey);
   }, [isCaptain, panel, pluginId, tabs, threadId]);
+  return anchor;
 }
