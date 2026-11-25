@@ -16,10 +16,10 @@ export const HEADER_SETTLE_ATTRIBUTE = "data-gtd-header-settle";
 
 const ARCHIVE_KEYS = [ARCHIVE_ACTION_KEY];
 
-// 28px with a 16px glyph, as bb's header icon buttons; under a coarse pointer
-// a 44px touch target (AGENTS.md) with a 22px glyph.
+// `icon-sm` is 28px with a 16px glyph, as bb's header icon buttons; under a
+// coarse pointer a 44px touch target (AGENTS.md) with a 22px glyph.
 const ICON_BUTTON_CLASS =
-  "size-7 p-0 max-md:pointer-coarse:size-11 [&_[data-icon-root]]:size-4 max-md:pointer-coarse:[&_[data-icon-root]]:size-[22px]";
+  "max-md:pointer-coarse:size-11 [&_[data-icon-root]]:size-4 max-md:pointer-coarse:[&_[data-icon-root]]:size-[22px]";
 
 interface HeaderActionProps {
   threadId: string;
@@ -59,6 +59,7 @@ function NewThreadButton({ projectId }: { projectId: string }) {
       data-bb-plugin="gtd-sidebar"
       data-bb-plugin-scope-gtd-sidebar=""
       variant="ghost"
+      size="icon-sm"
       aria-label="New thread"
       title="New thread"
       onClick={() =>
@@ -108,6 +109,7 @@ function SettleButton({ thread }: { thread: PluginSidebarThread }) {
       data-bb-plugin="gtd-sidebar"
       data-bb-plugin-scope-gtd-sidebar=""
       variant="ghost"
+      size="icon-sm"
       aria-label="Settle"
       title="Settle"
       disabled={running || archive === undefined || archive.action.disabled === true}
