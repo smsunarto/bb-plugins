@@ -593,7 +593,6 @@ function AnnotationRow({
   onDiscard: () => void;
 }) {
   const descriptionId = useId();
-  const action = "size-7 shrink-0 text-muted-foreground hover:text-foreground";
   return (
     <>
       {separated ? <ItemSeparator className="my-0" /> : null}
@@ -615,24 +614,24 @@ function AnnotationRow({
           <p className="break-words whitespace-pre-wrap text-foreground">{parts.comment}</p>
         </ItemContent>
         <ItemActions className="shrink-0 gap-0">
-          <Button
-            type="button"
-            size="icon"
+          <CompactButton
+            size="icon-sm"
             variant="ghost"
-            className={action}
+            tone="muted"
+            className="shrink-0"
             disabled={disabled}
             aria-label="Mention annotation in composer"
             aria-describedby={descriptionId}
             onClick={onMention}
           >
             <Icon name="AtSign" aria-hidden="true" />
-          </Button>
+          </CompactButton>
           {onSend === null ? null : (
-            <Button
-              type="button"
-              size="icon"
+            <CompactButton
+              size="icon-sm"
               variant="ghost"
-              className={action}
+              tone="muted"
+              className="shrink-0"
               disabled={disabled}
               aria-label={
                 isSending ? "Sending annotation to this thread" : "Send annotation to this thread"
@@ -641,7 +640,7 @@ function AnnotationRow({
               onClick={onSend}
             >
               {isSending ? <Spinner /> : <Icon name="ArrowUp" aria-hidden="true" />}
-            </Button>
+            </CompactButton>
           )}
           <Button
             type="button"

@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { EmptyStatePanel } from "@/components/ui/empty-state";
 import {
   InputGroup,
@@ -208,183 +209,185 @@ function AnnotationCard({
   const assigned = routing?.state === "assigned" ? routing : null;
 
   return (
-    <div className={cn("rounded-lg border border-border bg-card p-3", isClosed && "opacity-60")}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-xs text-foreground">{annotation.element}</span>
-        <Badge variant={statusBadge[annotation.status]}>{annotation.status}</Badge>
-        {routing ? (
-          <Badge variant={routing.state === "assigned" ? "info" : "secondary"}>
-            {routing.state === "assigned" ? `assigned: ${routing.threadId}` : routing.state}
+    <Card size="xs" className={cn(isClosed && "opacity-60")}>
+      <CardContent>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-xs text-foreground">{annotation.element}</span>
+          <Badge variant={statusBadge[annotation.status]}>{annotation.status}</Badge>
+          {routing ? (
+            <Badge variant={routing.state === "assigned" ? "info" : "secondary"}>
+              {routing.state === "assigned" ? `assigned: ${routing.threadId}` : routing.state}
+            </Badge>
+          ) : null}
+          {annotation.severity ? (
+            <Badge variant={severityBadge[annotation.severity]}>{annotation.severity}</Badge>
+          ) : null}
+          {annotation.intent ? <Badge variant="outline">{annotation.intent}</Badge> : null}
+          <Badge variant="outline">
+            {annotation.bb.pluginId ? `plugin: ${annotation.bb.pluginId}` : "bb shell"}
           </Badge>
-        ) : null}
-        {annotation.severity ? (
-          <Badge variant={severityBadge[annotation.severity]}>{annotation.severity}</Badge>
-        ) : null}
-        {annotation.intent ? <Badge variant="outline">{annotation.intent}</Badge> : null}
-        <Badge variant="outline">
-          {annotation.bb.pluginId ? `plugin: ${annotation.bb.pluginId}` : "bb shell"}
-        </Badge>
-        {annotation.bb.surface ? <Badge variant="outline">{annotation.bb.surface}</Badge> : null}
-      </div>
-
-      <p className="mt-2 text-sm text-foreground">{annotation.comment}</p>
-
-      <dl className="mt-2 flex flex-col gap-1 text-[11px] text-muted-foreground">
-        <div className="truncate">
-          <dt className="inline font-medium">Selector: </dt>
-          <dd className="inline font-mono">{annotation.elementPath}</dd>
+          {annotation.bb.surface ? <Badge variant="outline">{annotation.bb.surface}</Badge> : null}
         </div>
-        {annotation.reactComponents ? (
+
+        <p className="mt-2 text-sm text-foreground">{annotation.comment}</p>
+
+        <dl className="mt-2 flex flex-col gap-1 text-[11px] text-muted-foreground">
           <div className="truncate">
-            <dt className="inline font-medium">React: </dt>
-            <dd className="inline font-mono">{annotation.reactComponents}</dd>
+            <dt className="inline font-medium">Selector: </dt>
+            <dd className="inline font-mono">{annotation.elementPath}</dd>
+          </div>
+          {annotation.reactComponents ? (
+            <div className="truncate">
+              <dt className="inline font-medium">React: </dt>
+              <dd className="inline font-mono">{annotation.reactComponents}</dd>
+            </div>
+          ) : null}
+          {annotation.sourceFile ? (
+            <div className="truncate">
+              <dt className="inline font-medium">Source: </dt>
+              <dd className="inline font-mono">{annotation.sourceFile}</dd>
+            </div>
+          ) : null}
+          {annotation.selectedText ? (
+            <div className="truncate">
+              <dt className="inline font-medium">Selected: </dt>
+              <dd className="inline">“{annotation.selectedText}”</dd>
+            </div>
+          ) : null}
+        </dl>
+
+        {annotation.thread.length > 0 ? (
+          <div className="mt-2 flex gap-3">
+            <Separator orientation="vertical" />
+            <ul className="flex min-w-0 flex-1 flex-col gap-1">
+              {annotation.thread.map((message) => (
+                <li key={message.id} className="text-xs">
+                  <span
+                    className={cn(
+                      "font-medium",
+                      message.role === "agent" ? "text-primary" : "text-muted-foreground",
+                    )}
+                  >
+                    {message.role}
+                  </span>
+                  <span className="text-foreground"> {message.content}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
-        {annotation.sourceFile ? (
-          <div className="truncate">
-            <dt className="inline font-medium">Source: </dt>
-            <dd className="inline font-mono">{annotation.sourceFile}</dd>
-          </div>
+
+        {annotation.resolution ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            <span className="font-medium">Outcome:</span> {annotation.resolution}
+          </p>
         ) : null}
-        {annotation.selectedText ? (
-          <div className="truncate">
-            <dt className="inline font-medium">Selected: </dt>
-            <dd className="inline">“{annotation.selectedText}”</dd>
-          </div>
-        ) : null}
-      </dl>
 
-      {annotation.thread.length > 0 ? (
-        <div className="mt-2 flex gap-3">
-          <Separator orientation="vertical" />
-          <ul className="flex min-w-0 flex-1 flex-col gap-1">
-            {annotation.thread.map((message) => (
-              <li key={message.id} className="text-xs">
-                <span
-                  className={cn(
-                    "font-medium",
-                    message.role === "agent" ? "text-primary" : "text-muted-foreground",
-                  )}
-                >
-                  {message.role}
-                </span>
-                <span className="text-foreground"> {message.content}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {annotation.resolution ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          <span className="font-medium">Outcome:</span> {annotation.resolution}
-        </p>
-      ) : null}
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {!isClosed ? (
-          <>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {!isClosed ? (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={isBusy}
+                onClick={() => void mutate("resolve")}
+              >
+                Resolve
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={isBusy}
+                onClick={() => void mutate("dismiss")}
+              >
+                Dismiss
+              </Button>
+            </>
+          ) : (
             <Button
               size="sm"
               variant="outline"
               disabled={isBusy}
-              onClick={() => void mutate("resolve")}
+              onClick={() => void mutate("reopen")}
             >
-              Resolve
+              Reopen
             </Button>
+          )}
+          <Button size="sm" variant="ghost" disabled={isBusy} onClick={() => void mutate("delete")}>
+            Delete
+          </Button>
+          {assigned ? (
+            <Button size="sm" variant="ghost" onClick={() => navigate.toThread(assigned.threadId)}>
+              Open assigned thread
+            </Button>
+          ) : null}
+          {annotation.bb.threadId && annotation.bb.threadId !== assigned?.threadId ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => navigate.toThread(annotation.bb.threadId as string)}
+            >
+              Open source thread
+            </Button>
+          ) : null}
+          {!isClosed && assigned ? (
             <Button
               size="sm"
               variant="ghost"
               disabled={isBusy}
-              onClick={() => void mutate("dismiss")}
+              onClick={() =>
+                void run(async () => {
+                  const result = await rpc.call("restageAnnotation", {
+                    annotationId: annotation.id,
+                  });
+                  return { routing: result.routing };
+                }, "Could not stage the annotation again")
+              }
             >
-              Dismiss
+              Stage again
             </Button>
-          </>
-        ) : (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={isBusy}
-            onClick={() => void mutate("reopen")}
-          >
-            Reopen
-          </Button>
-        )}
-        <Button size="sm" variant="ghost" disabled={isBusy} onClick={() => void mutate("delete")}>
-          Delete
-        </Button>
-        {assigned ? (
-          <Button size="sm" variant="ghost" onClick={() => navigate.toThread(assigned.threadId)}>
-            Open assigned thread
-          </Button>
-        ) : null}
-        {annotation.bb.threadId && annotation.bb.threadId !== assigned?.threadId ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => navigate.toThread(annotation.bb.threadId as string)}
-          >
-            Open source thread
-          </Button>
-        ) : null}
-        {!isClosed && assigned ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={isBusy}
-            onClick={() =>
-              void run(async () => {
-                const result = await rpc.call("restageAnnotation", {
-                  annotationId: annotation.id,
-                });
-                return { routing: result.routing };
-              }, "Could not stage the annotation again")
-            }
-          >
-            Stage again
-          </Button>
-        ) : null}
-      </div>
+          ) : null}
+        </div>
 
-      <form
-        className="mt-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const message = reply.trim();
-          if (message.length === 0) return;
-          void run(async () => {
-            const result = await rpc.call("replyToAnnotation", {
-              annotationId: annotation.id,
-              message,
-            });
-            setReply("");
-            return result.annotation ? { annotation: result.annotation } : {};
-          }, "Could not post the reply");
-        }}
-      >
-        <InputGroup data-disabled={!assigned || isBusy}>
-          <InputGroupInput
-            value={reply}
-            placeholder={
-              assigned
-                ? "Reply in the assigned thread…"
-                : "Send this annotation to a thread before replying"
-            }
-            disabled={!assigned || isBusy}
-            onChange={(event) => setReply(event.target.value)}
-          />
-          <InputGroupAddon align="inline-end">
-            <InputGroupButton
-              type="submit"
-              disabled={!assigned || isBusy || reply.trim().length === 0}
-            >
-              Reply
-            </InputGroupButton>
-          </InputGroupAddon>
-        </InputGroup>
-      </form>
-    </div>
+        <form
+          className="mt-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const message = reply.trim();
+            if (message.length === 0) return;
+            void run(async () => {
+              const result = await rpc.call("replyToAnnotation", {
+                annotationId: annotation.id,
+                message,
+              });
+              setReply("");
+              return result.annotation ? { annotation: result.annotation } : {};
+            }, "Could not post the reply");
+          }}
+        >
+          <InputGroup data-disabled={!assigned || isBusy}>
+            <InputGroupInput
+              value={reply}
+              placeholder={
+                assigned
+                  ? "Reply in the assigned thread…"
+                  : "Send this annotation to a thread before replying"
+              }
+              disabled={!assigned || isBusy}
+              onChange={(event) => setReply(event.target.value)}
+            />
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                type="submit"
+                disabled={!assigned || isBusy || reply.trim().length === 0}
+              >
+                Reply
+              </InputGroupButton>
+            </InputGroupAddon>
+          </InputGroup>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
