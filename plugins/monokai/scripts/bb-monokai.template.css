@@ -1853,8 +1853,8 @@
     [data-follow-up-composer]:not([data-follow-up-composer-expanded])
     [data-promptbox]:not([data-promptbox-voice-active])
     [data-promptbox-editor-scroll] {
-    min-height: 3rem !important;
-    max-height: 3rem !important;
+    min-height: var(--compact-editor-height, 3rem) !important;
+    max-height: var(--compact-editor-height, 3rem) !important;
   }
 }
 
@@ -2251,12 +2251,19 @@
  * placeholder is hidden separately. Checkbox, radio, range,
  * and file inputs draw no text and keep their native size. */
 @media (max-width: 767px) and (pointer: coarse) {
-  .dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror,
   .dark .bb-markdown-prose[contenteditable="true"],
   .dark input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
   .dark textarea,
   .dark select {
     font-size: 16px;
+  }
+
+  :where(.dark) [data-promptbox] {
+    --bb-composer-editor-base-font-size: 16px;
+  }
+
+  .dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror {
+    font-size: calc(var(--bb-composer-editor-base-font-size) * var(--bb-ios-font-scale, 1));
   }
 }
 
