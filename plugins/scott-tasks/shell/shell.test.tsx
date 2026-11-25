@@ -192,6 +192,39 @@ function pagerTask(key: string, status: Task["status"], position: number) {
 }
 
 describe("task pager", () => {
+  it("skips a task deleted remotely while detail is open", async () => {
+    const current = pagerTask("TSK-10", "todo", 1);
+    const removed = pagerTask("TSK-11", "todo", 2);
+    const remaining = pagerTask("TSK-12", "todo", 3);
+    let rows = [current, removed, remaining];
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "all" },
+      {
+        rpc: seededRpc({
+          listTasks: (input: unknown) => ({ tasks: rpcInput(input).parentTaskId ? [] : rows }),
+          getTaskByKey: () => ({ task: current }),
+          getTask: (input: unknown) => ({
+            task: rows.find(({ id }) => id === rpcInput(input).taskId) ?? null,
+          }),
+          listLabels: () => ({ labels: [] }),
+          listAttachments: () => ({ attachments: [] }),
+          listTaskThreads: () => ({ taskThreads: [] }),
+          listComments: () => ({ comments: [] }),
+        }),
+      },
+    );
+    const Panel = app.navPanels[0]!.component;
+    fireEvent.click(await slot.findByRole("button", { name: /Open TSK-10/ }));
+    slot.lifecycle.rerender(<Panel subPath="task/TSK-10" />);
+    await slot.findByText("1 / 3");
+    rows = [current, remaining];
+    await slot.emitRealtime("tasks:changed", { taskId: removed.id, projectId: PROJECT_ID });
+    await slot.findByText("1 / 2");
+    fireEvent.click(slot.getByRole("button", { name: "Next task" }));
+    expect(slot.navigateCalls.at(-1)).toMatchObject({ options: { subPath: "task/TSK-12" } });
+  });
+
   it("keeps the originating Backlog order and stops at its final result", async () => {
     const backlog = [
       { ...pagerTask("TSK-5", "backlog", 1), priority: "low" },

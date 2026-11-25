@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EMPTY_FILTERS, type ListFilterState } from "./filter-bar.js";
 import {
   listScrollScopeKey,
+  captureListAnchor,
   readListScroll,
   resolveRestoreTarget,
+  resolveListAnchor,
   useListScrollRestoration,
   writeListScroll,
 } from "./scroll-restoration.js";
@@ -71,6 +73,27 @@ describe("resolveRestoreTarget", () => {
     expect(resolveRestoreTarget(400, 300, 500)).toBe(0);
     expect(resolveRestoreTarget(-50, 1000, 500)).toBe(0);
   });
+});
+
+it("restores the same task and offset after inserts, with a surviving-neighbor fallback", () => {
+  const layout = {
+    groups: [{ status: "todo" as const, tasks: [{ id: "a" }, { id: "b" }, { id: "c" }] }],
+    collapsed: {},
+    rowHeight: 36,
+    headerHeight: 32,
+  };
+  const anchor = captureListAnchor(layout, 44)!;
+  expect(anchor).toEqual({ taskId: "b", offset: 24 });
+  const inserted = {
+    ...layout,
+    groups: [{ status: "todo" as const, tasks: [{ id: "new" }, ...layout.groups[0]!.tasks] }],
+  };
+  expect(resolveListAnchor(inserted, anchor, ["a", "b", "c"])).toBe(80);
+  const deleted = {
+    ...layout,
+    groups: [{ status: "todo" as const, tasks: [{ id: "a" }, { id: "c" }] }],
+  };
+  expect(resolveListAnchor(deleted, anchor, ["a", "b", "c"])).toBe(44);
 });
 
 describe("scroll store", () => {

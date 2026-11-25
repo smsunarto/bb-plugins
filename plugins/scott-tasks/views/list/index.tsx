@@ -12,7 +12,6 @@ import { useActiveThreads, useLabels, useProjects, useTasksRpc } from "../../she
 import type { TaskScope } from "../../shell/routes.js";
 import { useTasksUi } from "../../shell/ui-store.js";
 import { hasOpenOverlay } from "../../shell/keyboard.js";
-import { DetailToasts, useDetailToasts } from "../detail/toast.js";
 import { ViewEmptyState } from "../../components/empty-state.js";
 import { Button } from "@/components/ui/button";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
@@ -40,7 +39,14 @@ import {
 import { sortTasks } from "../../shared/sort.js";
 import type { TaskSort } from "../../shared/pagination.js";
 import { StatusIcon } from "./icons.js";
-import { listScrollScopeKey, useListScrollRestoration } from "./scroll-restoration.js";
+import {
+  captureListAnchor,
+  listScrollScopeKey,
+  resolveListAnchor,
+  useListScrollRestoration,
+  type CollapsedGroups,
+  type ListScrollAnchor,
+} from "./scroll-restoration.js";
 import { groupTasksByStatus, labelFilterOptions, selectedLabelIds, STATUS_LABELS } from "./lib.js";
 import { TaskRow } from "./row.js";
 import { rowWindows, useRowWindowViewport } from "./row-window.js";
@@ -49,16 +55,28 @@ import { isBareKey } from "./property-menus.js";
 const NO_LABELS: readonly Label[] = [];
 const NO_TASKS: readonly Task[] = [];
 const NO_PROJECTS: readonly Project[] = [];
+const BULK_STATUS_CONCURRENCY = 4;
 
 /** A row with an optimistic edit the server has not confirmed yet. */
 function hasPendingWrites(task: Task): boolean {
   return (task as { $hasPendingWrites?: boolean }).$hasPendingWrites === true;
 }
 
+export interface ListResume {
+  scopeKey: string;
+  collapsed: CollapsedGroups;
+  selection: ReadonlySet<string>;
+  orderedIds: readonly string[];
+  openedId: string;
+  anchor: ListScrollAnchor | null;
+}
+
 interface ListViewProps {
   projectId: string | null;
   scope?: TaskScope;
-  onOpenTask: (taskKey: string, orderedKeys: readonly string[]) => void;
+  resume: ListResume | null;
+  onOpenTask: (taskKey: string, resume: ListResume) => void;
+  onError: (message: string) => void;
 }
 
 function readRow(container: HTMLElement, key: string) {
@@ -83,26 +101,37 @@ function LoadingRows() {
   );
 }
 
-export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
+export function ListView({ projectId, scope, resume, onOpenTask, onError: push }: ListViewProps) {
   const activeOnly = scope === "active";
   const backlogOnly = scope === "backlog";
   const projects = useProjects();
-  const { toasts, push, dismiss } = useDetailToasts();
   const preferenceScope = listPreferenceScope(projectId, scope);
-  const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
   // Each scope keeps its own saved preference, read again when the scope changes.
   const [stored, setStored] = useState(() => ({
     scope: preferenceScope,
     preference: loadListPreference(preferenceScope),
   }));
+  const { filters, sort } = stored.preference;
+  const statuses: TaskStatus[] = backlogOnly ? ["backlog"] : filters.statuses;
+  const scopeKey = listScrollScopeKey({
+    projectId,
+    activeOnly,
+    backlogOnly,
+    filters: { ...filters, statuses },
+    sort,
+  });
+  const [selection, setSelection] = useState<ReadonlySet<string>>(() =>
+    resume?.scopeKey === scopeKey ? resume.selection : new Set(),
+  );
+  const [collapsed, setCollapsed] = useState<CollapsedGroups>(() => resume?.collapsed ?? {});
   if (stored.scope !== preferenceScope) {
     setStored({ scope: preferenceScope, preference: loadListPreference(preferenceScope) });
     setSelection(new Set());
+    setCollapsed({});
   }
   const setPreference = (update: (current: ListPreference) => ListPreference) => {
     setStored((current) => ({ scope: current.scope, preference: update(current.preference) }));
   };
-  const { filters, sort } = stored.preference;
   const setFilters = (next: ListFilterState) => {
     setSelection(new Set());
     setPreference((current) => {
@@ -138,7 +167,6 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
     return selectedLabelIds(labelOptions, filters.labelNames);
   }, [filters.labelNames, labelOptions, labels]);
 
-  const statuses: TaskStatus[] = backlogOnly ? ["backlog"] : filters.statuses;
   const visibleFilters = backlogOnly ? { ...filters, statuses: [] } : filters;
   const tasksQuery = useListTasks(projectId, activeOnly, {
     statuses,
@@ -194,21 +222,41 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
   const tasks = tasksQuery.phase === "ready" ? tasksQuery.tasks : NO_TASKS;
   const groups = useMemo(() => groupTasksByStatus(sortTasks(tasks, sort)), [tasks, sort]);
   const groupId = useId();
-  const [collapsed, setCollapsed] = useState<Partial<Record<TaskStatus, boolean>>>({});
-  const orderedKeys = useMemo(
-    () =>
-      groups.flatMap(({ status, tasks }) => (collapsed[status] ? [] : tasks.map(({ key }) => key))),
+  const orderedTasks = useMemo(
+    () => groups.flatMap(({ status, tasks }) => (collapsed[status] ? [] : tasks)),
     [collapsed, groups],
   );
-  const orderedKeysRef = useRef(orderedKeys);
-  const openTask = useCallback(
-    (taskKey: string) => onOpenTask(taskKey, orderedKeysRef.current),
-    [onOpenTask],
-  );
+  const openTaskRef = useRef<(taskKey: string) => void>(() => {});
+  const openTask = useCallback((taskKey: string) => openTaskRef.current(taskKey), []);
   const selectedTasks = useMemo(
     () => tasks.filter((task) => selection.has(task.id)),
     [selection, tasks],
   );
+  const bulkStatusPending = useTasksUi((state) => state.bulkStatusPending);
+  const setBulkStatus = async (status: TaskStatus) => {
+    if (useTasksUi.getState().bulkStatusPending) return;
+    const queue = selectedTasks.filter((task) => task.status !== status).values();
+    useTasksUi.setState({ bulkStatusPending: true });
+    setSelection(new Set());
+    try {
+      await Promise.all(
+        Array.from(
+          { length: Math.min(BULK_STATUS_CONCURRENCY, selectedTasks.length) },
+          async () => {
+            for (const task of queue) {
+              try {
+                await editTask(task.id, { status });
+              } catch (error) {
+                push(`${task.key}: ${errorMessage(error)}`);
+              }
+            }
+          },
+        ),
+      );
+    } finally {
+      useTasksUi.setState({ bulkStatusPending: false });
+    }
+  };
   const toggleSelection = useCallback((taskId: string) => {
     setSelection((current) => {
       const next = new Set(current);
@@ -221,15 +269,10 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
   const showProject = projectId === null;
   const filtered = hasActiveFilters(visibleFilters);
 
+  const listRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const scopeKey = listScrollScopeKey({
-    projectId,
-    activeOnly,
-    backlogOnly,
-    filters: { ...filters, statuses },
-    sort,
-  });
   const pendingFocus = useRef<string | null>(null);
+  const pendingResume = useRef(resume);
   // Rows are still arriving while the primary query loads or the closed split trails it.
   const loading =
     tasksQuery.phase === "loading" || (tasksQuery.phase === "ready" && tasksQuery.closedPending);
@@ -237,6 +280,15 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
   const [settledScope, setSettledScope] = useState(scopeKey);
   if (!loading && settledScope !== scopeKey) setSettledScope(scopeKey);
   const scopeChanged = settledScope !== scopeKey;
+  if (
+    !loading &&
+    !scopeChanged &&
+    tasksQuery.phase === "ready" &&
+    selectedTasks.length < selection.size
+  ) {
+    // A remotely deleted or moved task must not silently rejoin selection later.
+    setSelection(new Set(selectedTasks.map(({ id }) => id)));
+  }
   useListScrollRestoration(scrollRef, scopeKey, {
     contentReady: tasks.length > 0,
     loading: loading || scopeChanged,
@@ -244,6 +296,12 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
   });
 
   const viewport = useRowWindowViewport(scrollRef, groups);
+  const anchorLayout = {
+    groups,
+    collapsed,
+    rowHeight: viewport.rowHeight,
+    headerHeight: viewport.headerHeight,
+  };
   const visibleCounts = groups.map((group) => (collapsed[group.status] ? 0 : group.tasks.length));
   const ranges = rowWindows({
     counts: visibleCounts,
@@ -254,8 +312,36 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
   });
 
   useLayoutEffect(() => {
-    orderedKeysRef.current = orderedKeys;
     const container = scrollRef.current;
+    openTaskRef.current = (taskKey) => {
+      const task = orderedTasks.find(({ key }) => key === taskKey);
+      if (!task || !container) return;
+      onOpenTask(taskKey, {
+        scopeKey,
+        collapsed,
+        selection,
+        orderedIds: orderedTasks.map(({ id }) => id),
+        openedId: task.id,
+        anchor: captureListAnchor(anchorLayout, container.scrollTop),
+      });
+    };
+    const saved = pendingResume.current;
+    if (
+      saved &&
+      !loading &&
+      container &&
+      (viewport.rowHeight > 0 || orderedTasks.length === 0 || saved.anchor === null)
+    ) {
+      pendingResume.current = null;
+      if (saved.scopeKey === scopeKey) {
+        const target =
+          saved.anchor && resolveListAnchor(anchorLayout, saved.anchor, saved.orderedIds);
+        if (target !== null) container.scrollTop = target;
+        const openedKey = orderedTasks.find(({ id }) => id === saved.openedId)?.key;
+        const opened = openedKey && readRow(container, openedKey);
+        (opened || container).focus({ preventScroll: true });
+      }
+    }
     if (container === null || pendingFocus.current === null) return;
     const row = readRow(container, pendingFocus.current);
     if (!row) return;
@@ -264,26 +350,24 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
   });
 
   const moveFocus = (currentKey: string | undefined, direction: number) => {
-    const current = currentKey === undefined ? -1 : orderedKeys.indexOf(currentKey);
+    const current = orderedTasks.findIndex(({ key }) => key === currentKey);
     const index =
       current === -1
         ? direction < 0
-          ? orderedKeys.length - 1
+          ? orderedTasks.length - 1
           : 0
-        : Math.min(orderedKeys.length - 1, Math.max(0, current + direction));
-    const nextKey = orderedKeys[index];
+        : Math.min(orderedTasks.length - 1, Math.max(0, current + direction));
+    const next = orderedTasks[index];
     const container = scrollRef.current;
-    if (!nextKey || !container) return;
-    const row = readRow(container, nextKey);
+    if (!next || !container) return;
+    const row = readRow(container, next.key);
     if (row) {
       row.focus({ preventScroll: true });
       row.scrollIntoView?.({ block: "nearest" });
       return;
     }
-    const groupIndex = groups.findIndex((group) =>
-      group.tasks.some((task) => task.key === nextKey),
-    );
-    pendingFocus.current = nextKey;
+    const groupIndex = groups.findIndex((group) => group.status === next.status);
+    pendingFocus.current = next.key;
     container.scrollTop = Math.max(
       0,
       viewport.headerHeight * (groupIndex + 1) + viewport.rowHeight * index - viewport.height / 2,
@@ -299,7 +383,9 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
         !container ||
         event.defaultPrevented ||
         !isBareKey(event) ||
-        !(target instanceof HTMLElement)
+        !(target instanceof HTMLElement) ||
+        target.isContentEditable ||
+        target.closest('input, textarea, select, [role="textbox"]')
       )
         return;
       const checkboxRow = target.matches('[role="checkbox"]')
@@ -312,12 +398,8 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
         : null;
       const rowKey =
         target.dataset.openTask ?? checkboxRow?.dataset.taskKey ?? propertyRow?.dataset.taskKey;
-      if (
-        target !== document.body &&
-        target !== container &&
-        !(rowKey && container.contains(target))
-      )
-        return;
+      const page = listRef.current?.closest("[data-scott-tasks-page]");
+      if (target !== document.body && !page?.contains(target)) return;
       if (hasOpenOverlay()) return;
       const key = event.key.toLowerCase();
       if (key === "escape" && selectedTasks.length > 0) {
@@ -464,7 +546,7 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div ref={listRef} className="flex h-full min-h-0 flex-col">
       <ListFilterBar
         filters={visibleFilters}
         onChange={setFilters}
@@ -481,21 +563,18 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
           </span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="max-md:pointer-coarse:h-11">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="max-md:pointer-coarse:h-11"
+                disabled={bulkStatusPending}
+              >
                 Set status
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" mobileTitle="Set status">
               {TASK_STATUSES.map((status) => (
-                <DropdownMenuItem
-                  key={status}
-                  onSelect={() => {
-                    for (const task of selectedTasks) {
-                      if (task.status !== status) onEdit(task, { status });
-                    }
-                    setSelection(new Set());
-                  }}
-                >
+                <DropdownMenuItem key={status} onSelect={() => void setBulkStatus(status)}>
                   <StatusIcon status={status} />
                   {STATUS_LABELS[status]}
                 </DropdownMenuItem>
@@ -516,6 +595,7 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
         ref={scrollRef}
         role="region"
         aria-label="Task list"
+        tabIndex={-1}
         aria-keyshortcuts="J K ArrowUp ArrowDown"
         className="min-h-0 flex-1 overflow-y-auto focus-visible:outline-none"
       >
@@ -523,7 +603,6 @@ export function ListView({ projectId, scope, onOpenTask }: ListViewProps) {
           {body}
         </div>
       </div>
-      <DetailToasts toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }

@@ -17,6 +17,7 @@ interface TasksUiState {
   /** The quick-create dialog's request, or null while it is closed. */
   newTask: NewTaskRequest | null;
   dispatchingTaskIds: ReadonlySet<string>;
+  bulkStatusPending: boolean;
   beginDispatch: (taskId: string) => boolean;
   endDispatch: (taskId: string) => void;
   setRefreshing: (refreshing: boolean) => void;
@@ -30,6 +31,7 @@ const INITIAL_STATE = {
   syncGeneration: 0,
   newTask: null,
   dispatchingTaskIds: new Set<string>(),
+  bulkStatusPending: false,
 };
 
 /** Interaction state shared across Tasks surfaces. Remote data lives in Query and DB. */

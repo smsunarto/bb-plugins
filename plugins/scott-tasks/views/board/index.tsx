@@ -40,6 +40,8 @@ import { cn } from "@/lib/utils";
 
 const DRAG_THRESHOLD_PX = 5;
 const TOUCH_HOLD_MS = 400;
+const SCROLL_EDGE_PX = 48;
+const SCROLL_SPEED_PX_PER_MS = 0.8;
 
 interface BoardCardMeta {
   workingThreads: readonly TaskThread[];
@@ -322,6 +324,9 @@ export function BoardView({ projectId }: BoardViewProps) {
     let cardRect: DOMRect | null = null;
     let hold: ReturnType<typeof setTimeout> | undefined;
     let moved = false;
+    let scrollFrame: number | null = null;
+    let lastFrame: number | null = null;
+    let pointer = start;
 
     const updateDrag = (x: number, y: number) => {
       if (!cardRect) return;
@@ -338,6 +343,36 @@ export function BoardView({ projectId }: BoardViewProps) {
       });
     };
 
+    const scrollAtEdge = (now: number) => {
+      scrollFrame = null;
+      const board = boardRef.current;
+      if (!board || !cardRect) return;
+      const { left, right, top, bottom } = board.getBoundingClientRect();
+      if (pointer.y < top || pointer.y > bottom || pointer.x < left || pointer.x > right) {
+        lastFrame = null;
+        return;
+      }
+      const leftPressure = Math.max(0, 1 - (pointer.x - left) / SCROLL_EDGE_PX);
+      const rightPressure = Math.max(0, 1 - (right - pointer.x) / SCROLL_EDGE_PX);
+      const direction = rightPressure - leftPressure;
+      if (direction === 0) {
+        lastFrame = null;
+        return;
+      }
+      const previous = board.scrollLeft;
+      const elapsed = lastFrame === null ? 16 : Math.min(now - lastFrame, 32);
+      lastFrame = now;
+      const step = direction * SCROLL_SPEED_PX_PER_MS * elapsed;
+      // Scroll positions can be rounded to CSS pixels; even the edge of the zone must advance.
+      board.scrollLeft = previous + Math.sign(step) * Math.max(1, Math.abs(step));
+      if (board.scrollLeft === previous) {
+        lastFrame = null;
+        return;
+      }
+      updateDrag(pointer.x, pointer.y);
+      scrollFrame = requestAnimationFrame(scrollAtEdge);
+    };
+
     const onMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
       const { clientX: x, clientY: y } = moveEvent;
@@ -352,7 +387,9 @@ export function BoardView({ projectId }: BoardViewProps) {
       }
       moved = true;
       moveEvent.preventDefault();
+      pointer = { x, y };
       updateDrag(x, y);
+      if (scrollFrame === null) scrollFrame = requestAnimationFrame(scrollAtEdge);
     };
     const finish = (upEvent: PointerEvent | null) => {
       dragCleanupRef.current?.();
@@ -388,6 +425,7 @@ export function BoardView({ projectId }: BoardViewProps) {
     window.addEventListener("pointercancel", onCancel);
     dragCleanupRef.current = () => {
       clearTimeout(hold);
+      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
       card.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
@@ -495,8 +533,8 @@ export function BoardView({ projectId }: BoardViewProps) {
     <div
       ref={boardRef}
       className={cn(
-        "flex h-full snap-x items-start gap-4 overflow-x-auto px-3 py-3 @md:px-6 max-md:pointer-coarse:pb-22",
-        drag !== null && "cursor-grabbing",
+        "flex h-full items-start gap-4 overflow-x-auto px-3 py-3 @md:px-6 max-md:pointer-coarse:pb-22",
+        drag === null ? "snap-x" : "cursor-grabbing snap-none",
       )}
     >
       {visibleBoardStatuses(columns).map(renderColumn)}

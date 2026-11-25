@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { COMPACT_VIEWPORT_QUERY } from "@/components/ui/hooks/use-compact-viewport";
@@ -198,6 +198,65 @@ async function selectSort(slot: ReturnType<typeof renderProject>, label: string)
 }
 
 describe("list filter/sort preference persistence", () => {
+  it("restores the originating list's collapsed groups, selection, and row focus", async () => {
+    const slot = renderProject(PROJECT_A);
+    const Panel = app.navPanels[0]!.component;
+    const done = await slot.findByRole("button", { name: /Done 1/ });
+    fireEvent.click(done);
+    fireEvent.click(slot.getByRole("checkbox", { name: "Select ALP-2" }));
+    fireEvent.click(slot.getByRole("button", { name: /Open ALP-1/ }));
+    slot.lifecycle.rerender(<Panel subPath="task/ALP-1" />);
+    slot.lifecycle.rerender(<Panel subPath={PROJECT_A} />);
+    const opened = await slot.findByRole("button", { name: /Open ALP-1/ });
+    await waitFor(() => expect(document.activeElement).toBe(opened));
+    expect(slot.getByRole("button", { name: /Done 1/ }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(slot.queryByRole("button", { name: /Open ALP-3/ })).toBeNull();
+    expect(slot.getByText("1 selected")).toBeDefined();
+  });
+
+  it("limits bulk status writes to four and reports a failure without stopping the queue", async () => {
+    const rows = Array.from({ length: 8 }, (_, index) => task(PROJECT_A, index + 1, "todo"));
+    const releases: (() => void)[] = [];
+    let active = 0;
+    let peak = 0;
+    const updateTask = vi.fn(
+      (input: unknown) =>
+        new Promise((resolve, reject) => {
+          const edited = rows.find(({ id }) => id === rpcInput(input).taskId)!;
+          active++;
+          peak = Math.max(peak, active);
+          releases.push(() => {
+            active--;
+            if (edited.number === 1) reject(new Error("Write refused"));
+            else resolve({ ok: true, task: { ...edited, status: "done" } });
+          });
+        }),
+    );
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: PROJECT_A },
+      {
+        rpc: baseRpc({
+          listTasks: (input: unknown) => ({ tasks: applyListFilters(rows, rpcInput(input)) }),
+          updateTask,
+        }),
+      },
+    );
+    for (const row of rows) {
+      fireEvent.click(await slot.findByRole("checkbox", { name: `Select ${row.key}` }));
+    }
+    fireEvent.click(slot.getByRole("button", { name: "Set status" }));
+    fireEvent.click(await slot.findByRole("menuitem", { name: "Done" }));
+    await waitFor(() => expect(updateTask).toHaveBeenCalledTimes(4));
+    await act(async () => releases.splice(0, 4).forEach((release) => release()));
+    await waitFor(() => expect(updateTask).toHaveBeenCalledTimes(8));
+    await act(async () => releases.splice(0, 4).forEach((release) => release()));
+    expect(peak).toBe(4);
+    await slot.findByText(/ALP-1:.*Write refused/);
+  });
+
   it("resumes row navigation after closing a keyboard-opened property menu", async () => {
     const matchMedia = window.matchMedia;
     vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
@@ -212,6 +271,13 @@ describe("list filter/sort preference persistence", () => {
     fireEvent.keyDown(menu, { key: "Escape" });
     await waitFor(() =>
       expect(document.activeElement?.getAttribute("aria-keyshortcuts")).toBe("S"),
+    );
+    fireEvent.keyDown(document.activeElement!, { key: "l" });
+    const labels = await slot.findByRole("menu");
+    expect(within(labels).getByRole("menuitemcheckbox", { name: "Bug" })).toBeDefined();
+    fireEvent.keyDown(labels, { key: "Escape" });
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute("aria-keyshortcuts")).toBe("L"),
     );
     fireEvent.keyDown(document.activeElement!, { key: "j" });
     expect(document.activeElement).toBe(slot.getByRole("button", { name: /Open ALP-2/ }));

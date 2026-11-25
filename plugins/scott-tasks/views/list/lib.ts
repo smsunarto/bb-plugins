@@ -84,10 +84,17 @@ const monthDayAndYear = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-export function formatDueDate(dueDate: string, today = new Date()): string {
-  const date = new Date(`${dueDate}T00:00:00`);
+function formatRowDate(date: Date, today: Date): string {
   if (Number.isNaN(date.getTime())) return "Invalid Date";
   return (date.getFullYear() === today.getFullYear() ? monthAndDay : monthDayAndYear).format(date);
+}
+
+export function formatDueDate(dueDate: string, today = new Date()): string {
+  return formatRowDate(new Date(`${dueDate}T00:00:00`), today);
+}
+
+export function formatUpdatedAt(updatedAt: string, today = new Date()): string {
+  return formatRowDate(new Date(updatedAt), today);
 }
 
 export function activeWorkLabel(threads: readonly { liveStatus: string }[]): string {

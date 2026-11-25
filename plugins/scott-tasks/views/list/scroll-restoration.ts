@@ -2,10 +2,66 @@ import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import type { ListFilterState } from "./filter-bar.js";
 import type { TaskSort } from "../../shared/pagination.js";
 import { listPreferenceScope } from "./list-preference.js";
+import type { Task, TaskStatus } from "../../shared/contract.js";
 
 const STORAGE_PREFIX = "bb-tasks:list-scroll:";
 
 const memoryFallback = new Map<string, number>();
+
+export type CollapsedGroups = Partial<Record<TaskStatus, boolean>>;
+
+interface AnchorLayout {
+  groups: readonly { status: TaskStatus; tasks: readonly Pick<Task, "id">[] }[];
+  collapsed: CollapsedGroups;
+  rowHeight: number;
+  headerHeight: number;
+}
+
+export interface ListScrollAnchor {
+  taskId: string;
+  /** Distance from the viewport's top to the row's top, including the sticky header. */
+  offset: number;
+}
+
+function* rowPositions({ groups, collapsed, rowHeight, headerHeight }: AnchorLayout) {
+  let top = 0;
+  for (const group of groups) {
+    top += headerHeight;
+    if (collapsed[group.status]) continue;
+    for (const task of group.tasks) {
+      yield { id: task.id, top };
+      top += rowHeight;
+    }
+  }
+}
+
+export function captureListAnchor(
+  layout: AnchorLayout,
+  scrollTop: number,
+): ListScrollAnchor | null {
+  if (layout.rowHeight <= 0) return null;
+  for (const row of rowPositions(layout)) {
+    if (row.top + layout.rowHeight > scrollTop + layout.headerHeight) {
+      return { taskId: row.id, offset: row.top - scrollTop };
+    }
+  }
+  return null;
+}
+
+export function resolveListAnchor(
+  layout: AnchorLayout,
+  anchor: ListScrollAnchor,
+  originalOrder: readonly string[],
+): number | null {
+  const positions = new Map(Array.from(rowPositions(layout), ({ id, top }) => [id, top]));
+  const index = originalOrder.indexOf(anchor.taskId);
+  // If the anchor was deleted or filtered out, retain the nearest surviving neighbor.
+  const candidates = originalOrder.slice(index + 1).concat(originalOrder.slice(0, index).reverse());
+  const id = positions.has(anchor.taskId)
+    ? anchor.taskId
+    : candidates.find((candidate) => positions.has(candidate));
+  return id === undefined ? null : Math.max(0, positions.get(id)! - anchor.offset);
+}
 
 function storage(): Storage | null {
   try {

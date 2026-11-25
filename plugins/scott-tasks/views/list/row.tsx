@@ -5,7 +5,7 @@ import { Icon } from "@/components/ui/icon";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { PriorityIcon } from "./icons.js";
-import { activeWorkLabel, formatDueDate, partitionLabels } from "./lib.js";
+import { activeWorkLabel, formatDueDate, formatUpdatedAt, partitionLabels } from "./lib.js";
 import type { EditFn } from "./property-menus.js";
 import {
   isBareKey,
@@ -116,8 +116,8 @@ export const TaskRow = memo(function TaskRow({
 }: TaskRowProps) {
   const [openMenu, setOpenMenu] = useState<"status" | "priority" | "labels" | null>(null);
   const selectionId = useId();
-  const date = task.dueDate ?? task.updatedAt.slice(0, 10);
-  const dateLabel = formatDueDate(date);
+  const date = task.dueDate ?? task.updatedAt;
+  const dateLabel = task.dueDate === null ? formatUpdatedAt(date) : formatDueDate(date);
 
   return (
     <TaskContextMenu
@@ -131,6 +131,23 @@ export const TaskRow = memo(function TaskRow({
     >
       <div
         data-task-key={task.key}
+        onKeyDown={(event) => {
+          // Menus portal out of the row; their events still bubble through React.
+          if (
+            !event.currentTarget.contains(event.target as Node) ||
+            !isBareKey(event) ||
+            event.defaultPrevented
+          )
+            return;
+          const key = event.key.toLowerCase();
+          if (key === "s" || key === "p" || key === "l") {
+            event.preventDefault();
+            setOpenMenu(key === "s" ? "status" : key === "p" ? "priority" : "labels");
+          } else if (key === "x" && onToggleSelection) {
+            event.preventDefault();
+            onToggleSelection(task.id);
+          }
+        }}
         aria-busy={pending || undefined}
         className={cn(
           "group relative grid min-h-14 w-full grid-cols-[2.75rem_minmax(0,1fr)] grid-rows-[1.75rem_1.75rem] items-center gap-x-2 px-3 text-left hover:bg-state-hover pointer-coarse:grid-rows-[1.5rem_2.75rem]",
@@ -146,23 +163,6 @@ export const TaskRow = memo(function TaskRow({
           data-open-task={task.key}
           title="Open task (Enter) · Move (↑/↓ or J/K)"
           onClick={() => onOpen(task.key)}
-          onKeyDown={(event) => {
-            if (!isBareKey(event)) return;
-            const key = event.key.toLowerCase();
-            if (key === "s") {
-              event.preventDefault();
-              setOpenMenu("status");
-            } else if (key === "p") {
-              event.preventDefault();
-              setOpenMenu("priority");
-            } else if (key === "l") {
-              event.preventDefault();
-              setOpenMenu("labels");
-            } else if (key === "x" && onToggleSelection) {
-              event.preventDefault();
-              onToggleSelection(task.id);
-            }
-          }}
           className="absolute inset-0 scroll-mt-11 rounded-none focus-visible:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
         />
         {onToggleSelection ? (

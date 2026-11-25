@@ -3,6 +3,7 @@ import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { useProjects } from "./data.js";
 import {
   parseTasksRoute,
+  tasksRouteToSubPath,
   useTasksNavigation,
   type ResolvedTasksRoute,
   type TasksNavigation,
@@ -10,7 +11,8 @@ import {
 } from "./routes.js";
 import { loadViewMode, storeViewMode } from "./view-preference.js";
 import { TasksTopbar } from "./topbar.js";
-import { ListView } from "../views/list/index.js";
+import { ListView, type ListResume } from "../views/list/index.js";
+import { DetailToasts, useDetailToasts } from "../views/detail/toast.js";
 import { BoardView } from "../views/board/index.js";
 import { DetailView } from "../views/detail/index.js";
 import { NewTaskDialog } from "../views/manage/new-task-dialog.js";
@@ -35,16 +37,21 @@ function isEditableTarget(target: EventTarget | null): boolean {
 function RouteOutlet({
   route,
   onOpenTask,
+  resume,
+  onError,
 }: {
   route: ResolvedTasksRoute;
-  onOpenTask: (taskKey: string, orderedKeys: readonly string[]) => void;
+  onOpenTask: (taskKey: string, resume: ListResume) => void;
+  resume: ListResume | null;
+  onError: (message: string) => void;
 }) {
+  const listProps = { onOpenTask, resume, onError };
   switch (route.kind) {
     case "all":
-      return <ListView projectId={null} onOpenTask={onOpenTask} />;
+      return <ListView projectId={null} {...listProps} />;
     case "active":
     case "backlog":
-      return <ListView projectId={null} scope={route.kind} onOpenTask={onOpenTask} />;
+      return <ListView projectId={null} scope={route.kind} {...listProps} />;
     case "manage":
       return <ManagePanel />;
     case "task":
@@ -53,7 +60,7 @@ function RouteOutlet({
       return route.view === "board" ? (
         <BoardView projectId={route.projectId} />
       ) : (
-        <ListView projectId={route.projectId} scope={route.scope} onOpenTask={onOpenTask} />
+        <ListView projectId={route.projectId} scope={route.scope} {...listProps} />
       );
   }
 }
@@ -85,11 +92,12 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
   const projects = useProjects();
 
   const lastBrowseRouteRef = useRef<TasksRoute | null>(null);
-  const pagerKeys = useRef<readonly string[] | null>(null);
+  const listResume = useRef<ListResume | null>(null);
+  const { toasts, push, dismiss } = useDetailToasts();
   const openListTask = useCallback(
-    (taskKey: string, orderedKeys: readonly string[]) => {
+    (taskKey: string, resume: ListResume) => {
       // Retain what the user was browsing across detail-to-detail navigation.
-      pagerKeys.current = orderedKeys;
+      listResume.current = resume;
       navigation.go({ kind: "task", taskKey });
     },
     [navigation],
@@ -97,7 +105,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
   useEffect(() => {
     if (route.kind !== "task") {
       lastBrowseRouteRef.current = route;
-      pagerKeys.current = null;
+      listResume.current = null;
     }
     // oxlint-disable-next-line react/exhaustive-deps
   }, [subPath]);
@@ -123,6 +131,11 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
     route.kind === "backlog" || (route.kind === "project" && route.scope === "backlog")
       ? "backlog"
       : undefined;
+  const lastBrowseRoute = lastBrowseRouteRef.current;
+  const resume =
+    lastBrowseRoute && tasksRouteToSubPath(lastBrowseRoute) === tasksRouteToSubPath(route)
+      ? listResume.current
+      : null;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -147,7 +160,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
         <TasksTopbar
           route={route}
           projects={projects.data}
-          pagerKeys={pagerKeys.current}
+          pagerIds={listResume.current?.orderedIds ?? null}
           pagerScope={
             lastBrowseRouteRef.current === null
               ? null
@@ -176,7 +189,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
               }
             />
           ) : (
-            <RouteOutlet route={route} onOpenTask={openListTask} />
+            <RouteOutlet route={route} onOpenTask={openListTask} resume={resume} onError={push} />
           )}
         </div>
       </main>
@@ -189,6 +202,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
         defaultStatus={newTask?.status}
       />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+      <DetailToasts toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }
