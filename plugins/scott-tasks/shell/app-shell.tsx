@@ -21,9 +21,6 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { TasksDataRoot } from "./data-root.js";
 import { useTasksUi } from "./ui-store.js";
-import { observeSharedResize } from "@/lib/shared-resize-observer";
-
-const BOARD_MIN_WIDTH = 448;
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -42,7 +39,7 @@ function hasOpenOverlay(): boolean {
   );
 }
 
-function RouteOutlet({ route, boardUsable }: { route: ResolvedTasksRoute; boardUsable: boolean }) {
+function RouteOutlet({ route }: { route: ResolvedTasksRoute }) {
   switch (route.kind) {
     case "all":
       return <ListView projectId={null} />;
@@ -53,7 +50,7 @@ function RouteOutlet({ route, boardUsable }: { route: ResolvedTasksRoute; boardU
     case "task":
       return <DetailView taskKey={route.taskKey} />;
     case "project":
-      return route.view === "board" && boardUsable ? (
+      return route.view === "board" ? (
         <BoardView projectId={route.projectId} />
       ) : (
         <ListView projectId={route.projectId} />
@@ -85,18 +82,6 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
   const closeNewTask = useTasksUi((state) => state.closeNewTask);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
 
-  const mainRef = useRef<HTMLElement>(null);
-  const [boardUsable, setBoardUsable] = useState(true);
-  useEffect(() => {
-    const main = mainRef.current;
-    if (!main || typeof ResizeObserver === "undefined") return;
-    const readUsable = () => {
-      const mainWidth = main.clientWidth;
-      return !(mainWidth > 0 && mainWidth < BOARD_MIN_WIDTH);
-    };
-    setBoardUsable(readUsable());
-    return observeSharedResize(main, { read: readUsable, write: setBoardUsable });
-  }, []);
   const projects = useProjects();
 
   const lastBrowseRouteRef = useRef<TasksRoute | null>(null);
@@ -137,8 +122,11 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
   }, [openNewTask, newTaskProjectId]);
 
   return (
-    <div className="relative flex h-full min-h-0 bg-background text-foreground">
-      <main ref={mainRef} className="@container flex min-w-0 flex-1 flex-col">
+    <div
+      data-bb-plugin="scott-tasks"
+      className="relative flex h-full min-h-0 bg-background text-foreground"
+    >
+      <main className="@container flex min-w-0 flex-1 flex-col">
         <TasksTopbar
           route={route}
           projects={projects.data}
@@ -170,7 +158,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
               }
             />
           ) : (
-            <RouteOutlet route={route} boardUsable={boardUsable} />
+            <RouteOutlet route={route} />
           )}
         </div>
       </main>

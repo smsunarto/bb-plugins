@@ -24,7 +24,7 @@ function SidebarRow({ active, onClick, children, title }: SidebarRowProps) {
       onClick={onClick}
       title={title}
       className={cn(
-        "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:pointer-coarse:h-9",
+        "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:pointer-coarse:h-11",
         "cursor-pointer",
         active ? "bg-sidebar-accent font-medium text-foreground" : "text-muted-foreground",
         !active && "hover:bg-state-hover hover:text-foreground",
@@ -37,7 +37,7 @@ function SidebarRow({ active, onClick, children, title }: SidebarRowProps) {
 
 function SectionHeader({ label }: { label: string }) {
   return (
-    <div className="mt-4 flex items-center gap-1 px-2 pb-1 text-xs font-semibold text-muted-foreground">
+    <div className="mt-4 flex items-center gap-1 px-2 pb-1 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
       {label}
     </div>
   );
@@ -158,7 +158,7 @@ export function TasksSidebar({
         onOpenChange={() => toggleFolder(folder.id)}
         className={cn(indent && "pl-3")}
       >
-        <CollapsibleTrigger className="group mt-4 flex w-full items-center gap-1 rounded-md px-2 pb-1 text-xs font-semibold text-muted-foreground hover:text-foreground">
+        <CollapsibleTrigger className="group mt-3 flex min-h-7 w-full items-center gap-1.5 rounded-md px-2 text-xs font-semibold text-muted-foreground hover:text-foreground max-md:pointer-coarse:min-h-11">
           <Icon
             name="ChevronDown"
             className="size-3 transition-transform group-data-[state=closed]:-rotate-90"
@@ -182,7 +182,7 @@ export function TasksSidebar({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-sidebar">
+    <div data-bb-plugin="scott-tasks" className="flex h-full min-h-0 flex-col bg-sidebar">
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2">
         <div className="flex flex-col">
           <SidebarRow active={route.kind === "all"} onClick={() => onNavigate({ kind: "all" })}>

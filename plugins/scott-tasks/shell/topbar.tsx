@@ -77,7 +77,7 @@ function TaskPager({
       <Button
         variant="ghost"
         size="icon"
-        className="size-6 max-md:pointer-coarse:size-9"
+        className="size-6 max-md:pointer-coarse:size-11"
         aria-label="Previous task"
         disabled={position.prevKey === null}
         onClick={() => step(position.prevKey)}
@@ -87,7 +87,7 @@ function TaskPager({
       <Button
         variant="ghost"
         size="icon"
-        className="size-6 max-md:pointer-coarse:size-9"
+        className="size-6 max-md:pointer-coarse:size-11"
         aria-label="Next task"
         disabled={position.nextKey === null}
         onClick={() => step(position.nextKey)}
@@ -115,13 +115,25 @@ function ViewToggle({
         // Pressing the current view emits "", which still pins that view as before.
         onChange(next === "list" || next === "board" ? next : view);
       }}
-      className="gap-1 rounded-md bg-muted p-1"
+      className="gap-0.5 rounded-md bg-surface-recessed-solid p-0.5"
     >
-      <ToggleGroupItem value="list" className="h-5 px-2 text-xs max-md:pointer-coarse:h-8">
-        List
+      <ToggleGroupItem
+        value="list"
+        aria-label="List"
+        title="List view"
+        className="h-7 gap-1.5 px-2 text-xs max-md:pointer-coarse:size-11"
+      >
+        <Icon name="ListView" className="size-4 shrink-0" />
+        <span className="hidden @md:inline max-md:pointer-coarse:hidden">List</span>
       </ToggleGroupItem>
-      <ToggleGroupItem value="board" className="h-5 px-2 text-xs max-md:pointer-coarse:h-8">
-        Board
+      <ToggleGroupItem
+        value="board"
+        aria-label="Board"
+        title="Board view"
+        className="h-7 gap-1.5 px-2 text-xs max-md:pointer-coarse:size-11"
+      >
+        <Icon name="Columns2" className="size-4 shrink-0" />
+        <span className="hidden @md:inline max-md:pointer-coarse:hidden">Board</span>
       </ToggleGroupItem>
     </ToggleGroup>
   );
@@ -136,7 +148,7 @@ function RefreshTasksButton() {
         type="button"
         variant="ghost"
         size="icon"
-        className="size-7 shrink-0 text-muted-foreground hover:text-foreground active:bg-state-active active:text-foreground max-md:pointer-coarse:size-9"
+        className="size-7 shrink-0 text-muted-foreground hover:text-foreground active:bg-state-active active:text-foreground max-md:pointer-coarse:size-11"
         aria-label={REFRESH_TASKS_LABEL}
         aria-busy={isRefreshing}
         disabled={isRefreshing}
@@ -217,7 +229,7 @@ export function TasksTopbar({
             <Button
               variant="ghost"
               size="icon"
-              className="size-6 shrink-0 max-md:pointer-coarse:size-9"
+              className="size-7 shrink-0 max-md:pointer-coarse:size-11"
               aria-label="Back (Esc)"
               onClick={onBack}
             >
@@ -265,7 +277,7 @@ export function TasksTopbar({
   })();
 
   return (
-    <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border-hairline bg-background px-4 text-sm max-md:pointer-coarse:h-12 max-md:pl-12 max-md:pointer-coarse:pl-14">
+    <header className="flex min-h-12 shrink-0 items-center gap-1.5 border-b border-border-hairline bg-background px-3 text-sm @md:gap-2 @md:px-5 max-md:pl-12 max-md:pointer-coarse:min-h-14 max-md:pointer-coarse:pl-14">
       <div className="min-w-0 flex-1 overflow-hidden">{breadcrumb}</div>
       {route.kind === "task" && (pagerScope !== null || projects !== undefined) ? (
         <TaskPager
@@ -275,21 +287,24 @@ export function TasksTopbar({
         />
       ) : null}
       {route.kind === "project" ? (
-        <span className="hidden @md:block">
+        <span className="shrink-0">
           <ViewToggle view={route.view} onChange={(view) => onNavigate({ ...route, view })} />
         </span>
       ) : null}
       <RefreshTasksButton />
       {route.kind !== "task" && route.kind !== "manage" ? (
-        <Button
-          size="sm"
-          className="h-7 gap-1 max-md:pointer-coarse:h-9"
-          aria-label="New task"
-          onClick={onNewTask}
-        >
-          <Icon name="Plus" className="size-3.5" />
-          <span className="hidden @lg:inline">New task</span>
-        </Button>
+        <Hint label="New task (C)" side="bottom">
+          <Button
+            size="sm"
+            className="h-7 gap-1 max-md:pointer-coarse:size-11"
+            aria-label="New task"
+            aria-keyshortcuts="C"
+            onClick={onNewTask}
+          >
+            <Icon name="Plus" className="size-3.5" />
+            <span className="hidden @lg:inline">New task</span>
+          </Button>
+        </Hint>
       ) : null}
     </header>
   );

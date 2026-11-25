@@ -40,7 +40,7 @@ const PRIORITY_OPTIONS: readonly ResourceOption[] = TASK_PRIORITIES.map((priorit
   leading: <PriorityIcon priority={priority} className="size-3" />,
 }));
 
-const FILTER_TRIGGER_CLASS = "h-6 max-w-64 max-md:pointer-coarse:h-8 [&>span]:truncate";
+const FILTER_TRIGGER_CLASS = "h-7 max-w-52 max-md:pointer-coarse:h-11 [&>span]:truncate";
 
 function FilterMenu({
   icon,
@@ -92,8 +92,9 @@ function SortMenu({ sort, onChange }: { sort: TaskSort; onChange: (sort: TaskSor
       <DropdownMenuTrigger asChild>
         <ResourceControlButton
           label={`Sort: ${SORT_LABELS[sort]}`}
-          text={sort === "manual" ? "Sort" : SORT_LABELS[sort]}
-          icon="Sort"
+          text={sort === "manual" ? "Display" : SORT_LABELS[sort]}
+          tooltip="Display and sort tasks"
+          icon="SlidersHorizontal"
           active={sort !== "manual"}
           open={open}
           className={FILTER_TRIGGER_CLASS}
@@ -172,8 +173,16 @@ export function ListFilterBar({
       })),
   ];
   return (
-    <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border-hairline px-4 py-1 max-md:pointer-coarse:min-h-11">
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+    <div className="flex min-h-11 shrink-0 items-center gap-2 border-b border-border-hairline px-3 py-1 @md:px-5">
+      <div
+        role="group"
+        aria-label="Filter tasks"
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+      >
+        <span className="mr-1 hidden shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground @lg:flex">
+          <Icon name="Filter" className="size-3.5" />
+          Filter
+        </span>
         <FilterMenu
           icon="Circle"
           label="Status"
@@ -212,7 +221,7 @@ export function ListFilterBar({
             variant="outline"
             size="sm"
             onClick={() => onChange(EMPTY_FILTERS)}
-            className="h-6 shrink-0 gap-1 border-dashed px-2 text-muted-foreground max-md:pointer-coarse:h-8"
+            className="h-7 shrink-0 gap-1 px-2 text-muted-foreground max-md:pointer-coarse:h-11"
           >
             <Icon name="X" className="size-3" />
             Clear
@@ -220,7 +229,7 @@ export function ListFilterBar({
         ) : null}
       </div>
       <SortMenu sort={sort} onChange={onSortChange} />
-      <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-subtle-foreground">
+      <span className="hidden shrink-0 whitespace-nowrap text-2xs tabular-nums text-muted-foreground @md:inline">
         {taskCount === undefined ? "" : `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`}
       </span>
     </div>

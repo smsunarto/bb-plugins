@@ -10,6 +10,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuCheckboxItem,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
@@ -111,7 +112,66 @@ function PickerOption({
   );
 }
 
-const TRIGGER_CLASS = "relative z-10 size-5 rounded-sm max-md:pointer-coarse:size-8";
+const TRIGGER_CLASS = "relative z-10 size-5 rounded-sm max-md:pointer-coarse:size-11";
+
+export function LabelsEditor({
+  task,
+  labels,
+  onEdit,
+  open,
+  onOpenChange,
+  children,
+}: {
+  task: Task;
+  labels: readonly Label[];
+  onEdit: EditFn;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Edit task labels"
+          aria-keyshortcuts="L"
+          className="relative z-10 min-w-0 gap-1 px-1 max-md:pointer-coarse:h-11"
+        >
+          {children ?? <Icon name="Tag" className="size-3.5 text-subtle-foreground" />}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44" mobileTitle="Edit labels">
+        <MenuHeading label="Labels" shortcut="L" />
+        {labels.length === 0 ? (
+          <DropdownMenuItem disabled>No project labels</DropdownMenuItem>
+        ) : null}
+        {labels.map((label) => (
+          <DropdownMenuCheckboxItem
+            key={label.id}
+            checked={task.labelIds.includes(label.id)}
+            onSelect={(event) => event.preventDefault()}
+            onCheckedChange={(checked) =>
+              onEdit(task, {
+                labelIds: checked
+                  ? [...task.labelIds, label.id]
+                  : task.labelIds.filter((id) => id !== label.id),
+              })
+            }
+          >
+            <span
+              aria-hidden
+              className="size-2 rounded-full"
+              style={{ backgroundColor: label.color }}
+            />
+            {label.name}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 export function StatusEditor({
   task,
@@ -136,6 +196,7 @@ export function StatusEditor({
           variant="ghost"
           size="icon"
           aria-label={`Change status, currently ${STATUS_LABELS[task.status]}`}
+          aria-keyshortcuts="S"
           className={cn(TRIGGER_CLASS, className)}
         >
           <StatusIcon status={task.status} />
@@ -197,6 +258,7 @@ export function PriorityEditor({
           variant="ghost"
           size="icon"
           aria-label={`Set priority, currently ${PRIORITY_LABELS[task.priority]}`}
+          aria-keyshortcuts="P"
           className={cn(TRIGGER_CLASS, className)}
         >
           <PriorityIcon priority={task.priority} />

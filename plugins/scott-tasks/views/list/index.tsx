@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Label, Project, Task } from "../../shared/contract.js";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  TASK_STATUSES,
+  type Label,
+  type Project,
+  type Task,
+  type TaskStatus,
+} from "../../shared/contract.js";
 import { errorMessage } from "../../shared/errors.js";
 import { editTask, type TaskEdit } from "../../shell/collections.js";
 import { useActiveThreads, useLabels, useProjects, useTasksRpc } from "../../shell/data.js";
@@ -11,6 +17,12 @@ import { Button } from "@/components/ui/button";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
 import { Icon } from "@/components/ui/icon";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useListTasks } from "./data.js";
 import {
   EMPTY_FILTERS,
@@ -31,6 +43,7 @@ import { listScrollScopeKey, useListScrollRestoration } from "./scroll-restorati
 import { groupTasksByStatus, labelFilterOptions, selectedLabelIds, STATUS_LABELS } from "./lib.js";
 import { TaskRow } from "./row.js";
 import { rowWindows, useRowWindowViewport } from "./row-window.js";
+import { isBareKey } from "./property-menus.js";
 
 const NO_LABELS: readonly Label[] = [];
 const NO_TASKS: readonly Task[] = [];
@@ -44,6 +57,10 @@ function hasPendingWrites(task: Task): boolean {
 interface ListViewProps {
   projectId: string | null;
   activeOnly?: boolean;
+}
+
+function readRow(container: HTMLElement, key: string) {
+  return container.querySelector<HTMLButtonElement>(`[data-open-task="${key}"]`);
 }
 
 function LoadingRows() {
@@ -169,12 +186,28 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
 
   const tasks = tasksQuery.phase === "ready" ? tasksQuery.tasks : NO_TASKS;
   const groups = useMemo(() => groupTasksByStatus(sortTasks(tasks, sort)), [tasks, sort]);
+  const groupId = useId();
+  const [collapsed, setCollapsed] = useState<Partial<Record<TaskStatus, boolean>>>({});
+  const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
+  const selectedTasks = useMemo(
+    () => tasks.filter((task) => selection.has(task.id)),
+    [selection, tasks],
+  );
+  const toggleSelection = useCallback((taskId: string) => {
+    setSelection((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }, []);
 
   const showProject = projectId === null;
   const filtered = hasActiveFilters(filters);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scopeKey = listScrollScopeKey({ projectId, activeOnly, filters, sort });
+  const pendingFocus = useRef<string | null>(null);
   // Rows are still arriving while the primary query loads or the closed split trails it.
   const loading =
     tasksQuery.phase === "loading" || (tasksQuery.phase === "ready" && tasksQuery.closedPending);
@@ -189,13 +222,88 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
   });
 
   const viewport = useRowWindowViewport(scrollRef, groups);
+  const visibleCounts = groups.map((group) => (collapsed[group.status] ? 0 : group.tasks.length));
   const ranges = rowWindows({
-    counts: groups.map((group) => group.tasks.length),
+    counts: visibleCounts,
     headerHeight: viewport.headerHeight,
     rowHeight: viewport.rowHeight,
     scrollTop: viewport.scrollTop,
     viewportHeight: viewport.height,
   });
+
+  useLayoutEffect(() => {
+    const container = scrollRef.current;
+    if (container === null || pendingFocus.current === null) return;
+    const row = readRow(container, pendingFocus.current);
+    if (!row) return;
+    pendingFocus.current = null;
+    row.focus();
+  });
+
+  const moveFocus = (currentKey: string | undefined, direction: number) => {
+    const visible = groups.flatMap(({ status, tasks }) => (collapsed[status] ? [] : tasks));
+    const current = visible.findIndex((task) => task.key === currentKey);
+    const index =
+      current === -1
+        ? direction < 0
+          ? visible.length - 1
+          : 0
+        : Math.min(visible.length - 1, Math.max(0, current + direction));
+    const next = visible[index];
+    const container = scrollRef.current;
+    if (!next || !container) return;
+    const row = readRow(container, next.key);
+    if (row) {
+      row.focus({ preventScroll: true });
+      row.scrollIntoView?.({ block: "nearest" });
+      return;
+    }
+    const groupIndex = groups.findIndex((group) => group.status === next.status);
+    pendingFocus.current = next.key;
+    container.scrollTop = Math.max(
+      0,
+      viewport.headerHeight * (groupIndex + 1) + viewport.rowHeight * index - viewport.height / 2,
+    );
+  };
+
+  const listKeyDown = useRef<(event: KeyboardEvent) => void>(() => {});
+  useLayoutEffect(() => {
+    listKeyDown.current = (event) => {
+      const container = scrollRef.current;
+      const target = event.target;
+      if (
+        !container ||
+        event.defaultPrevented ||
+        !isBareKey(event) ||
+        !(target instanceof HTMLElement)
+      )
+        return;
+      if (
+        target !== document.body &&
+        target !== container &&
+        !(container.contains(target) && target.matches("[data-open-task]"))
+      )
+        return;
+      if (
+        target === document.body &&
+        document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
+      )
+        return;
+      const key = event.key.toLowerCase();
+      if (key === "escape" && selectedTasks.length > 0) {
+        event.preventDefault();
+        setSelection(new Set());
+      } else if (key === "j" || key === "k" || key === "arrowup" || key === "arrowdown") {
+        event.preventDefault();
+        moveFocus(target.dataset.openTask, key === "j" || key === "arrowdown" ? 1 : -1);
+      }
+    };
+  });
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => listKeyDown.current(event);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   let body: React.ReactNode;
   if (tasksQuery.phase === "failed") {
@@ -247,38 +355,73 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
   } else {
     body = groups.map((group, groupIndex) => {
       const [start, end] = ranges[groupIndex] ?? [0, group.tasks.length];
+      const isCollapsed = collapsed[group.status] === true;
+      const listId = `${groupId}-${group.status}`;
       const hiddenAbove = start * viewport.rowHeight;
       const hiddenBelow = (group.tasks.length - end) * viewport.rowHeight;
       return (
         <section key={group.status}>
           <div
             data-status-group-header={group.status}
-            className="sticky top-0 z-20 isolate flex items-center gap-2 border-b border-border-hairline bg-background px-4 py-2 text-sm font-semibold"
+            className="sticky top-0 z-20 isolate flex h-9 items-center justify-between border-b border-border-hairline bg-surface-recessed-solid px-3 text-xs @md:px-5 max-md:pointer-coarse:h-11"
           >
-            <StatusIcon status={group.status} />
-            {STATUS_LABELS[group.status]}
-            <span className="text-xs font-normal tabular-nums text-subtle-foreground">
-              {group.tasks.length}
-            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-expanded={!isCollapsed}
+              aria-controls={listId}
+              className="h-full gap-2 px-1"
+              onClick={() => setCollapsed((state) => ({ ...state, [group.status]: !isCollapsed }))}
+            >
+              <Icon
+                name={isCollapsed ? "ChevronRight" : "ChevronDown"}
+                className="size-3 text-muted-foreground"
+              />
+              <StatusIcon status={group.status} />
+              {STATUS_LABELS[group.status]}
+              <span className="font-normal tabular-nums text-muted-foreground">
+                {group.tasks.length}
+              </span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground max-md:pointer-coarse:size-11"
+              aria-label={`New ${STATUS_LABELS[group.status]} task`}
+              onClick={() => openNewTask({ projectId, status: group.status })}
+            >
+              <Icon name="Plus" className="size-3.5" />
+            </Button>
           </div>
-          {hiddenAbove > 0 ? <div aria-hidden style={{ height: hiddenAbove }} /> : null}
-          {group.tasks.slice(start, end).map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              activeThreads={activeThreads.get(task.id)}
-              project={projectsById.get(task.projectId)}
-              showProject={showProject}
-              labelsById={labelsById}
-              projectLabels={labelsByProject.get(task.projectId) ?? NO_LABELS}
-              projects={projectList}
-              onMoveToProject={moveToProject}
-              onEdit={onEdit}
-              onOpen={openTask}
-              pending={hasPendingWrites(task)}
-            />
-          ))}
-          {hiddenBelow > 0 ? <div aria-hidden style={{ height: hiddenBelow }} /> : null}
+          <div id={listId} hidden={isCollapsed}>
+            {!isCollapsed ? (
+              <>
+                {hiddenAbove > 0 ? <div aria-hidden style={{ height: hiddenAbove }} /> : null}
+                {group.tasks.slice(start, end).map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    activeThreads={activeThreads.get(task.id)}
+                    project={projectsById.get(task.projectId)}
+                    showProject={showProject}
+                    labelsById={labelsById}
+                    projectLabels={labelsByProject.get(task.projectId) ?? NO_LABELS}
+                    projects={projectList}
+                    onMoveToProject={moveToProject}
+                    onEdit={onEdit}
+                    onOpen={openTask}
+                    selected={selection.has(task.id)}
+                    selectionActive={selectedTasks.length > 0}
+                    onToggleSelection={toggleSelection}
+                    pending={hasPendingWrites(task)}
+                  />
+                ))}
+                {hiddenBelow > 0 ? <div aria-hidden style={{ height: hiddenBelow }} /> : null}
+              </>
+            ) : null}
+          </div>
         </section>
       );
     });
@@ -294,7 +437,51 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
         labelOptions={labelOptions}
         taskCount={tasksQuery.phase === "ready" ? tasksQuery.tasks.length : undefined}
       />
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      {selectedTasks.length > 0 ? (
+        <div className="flex items-center gap-2 border-b border-border-hairline px-4 text-xs">
+          <span role="status" className="mr-auto tabular-nums">
+            {selectedTasks.length} selected
+          </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="max-md:pointer-coarse:h-11">
+                Set status
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" mobileTitle="Set status">
+              {TASK_STATUSES.map((status) => (
+                <DropdownMenuItem
+                  key={status}
+                  onSelect={() => {
+                    for (const task of selectedTasks) {
+                      if (task.status !== status) onEdit(task, { status });
+                    }
+                    setSelection(new Set());
+                  }}
+                >
+                  <StatusIcon status={status} />
+                  {STATUS_LABELS[status]}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="max-md:pointer-coarse:h-11"
+            onClick={() => setSelection(new Set())}
+          >
+            Clear selection
+          </Button>
+        </div>
+      ) : null}
+      <div
+        ref={scrollRef}
+        role="region"
+        aria-label="Task list"
+        aria-keyshortcuts="J K ArrowUp ArrowDown"
+        className="min-h-0 flex-1 overflow-y-auto focus-visible:outline-none"
+      >
         <div className="@container flex min-h-full flex-col">{body}</div>
       </div>
       <DetailToasts toasts={toasts} onDismiss={dismiss} />

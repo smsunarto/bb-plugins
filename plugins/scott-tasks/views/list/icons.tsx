@@ -27,6 +27,7 @@ export function StatusIcon({ status, className }: { status: TaskStatus; classNam
     <svg
       viewBox="0 0 14 14"
       aria-hidden
+      data-status-icon={status}
       className={cn("size-3.5 shrink-0", STATUS_COLOR_CLASS[status], className)}
     >
       {status === "backlog" ? ring(true) : null}
@@ -39,8 +40,14 @@ export function StatusIcon({ status, className }: { status: TaskStatus; classNam
       ) : null}
       {status === "in_review" ? (
         <>
-          {ring(false)}
-          <path d="M7 7 L7 2.4 A4.6 4.6 0 1 1 6.99 2.4 Z" fill="currentColor" />
+          <path
+            d="M7 1.5 12.5 7 7 12.5 1.5 7Z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+            fill="none"
+          />
+          <circle cx="7" cy="7" r="1.65" fill="currentColor" />
         </>
       ) : null}
       {status === "done" ? (
@@ -89,6 +96,7 @@ export function PriorityIcon({
       <svg
         viewBox="0 0 14 14"
         aria-hidden
+        data-priority-icon={priority}
         className={cn("size-3.5 shrink-0 text-warning", className)}
       >
         <rect x="0.5" y="0.5" width="13" height="13" rx="3" fill="currentColor" />
@@ -107,6 +115,7 @@ export function PriorityIcon({
     <svg
       viewBox="0 0 14 14"
       aria-hidden
+      data-priority-icon={priority}
       className={cn("size-3.5 shrink-0", priority === "none" && "opacity-40", className)}
     >
       {bars.map((bar, index) => (
