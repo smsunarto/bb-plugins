@@ -3,7 +3,7 @@ import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Alert, AlertDescription } from "../../components/ui/alert.tsx";
 import { Badge } from "../../components/ui/badge.tsx";
-import { Button } from "../../components/ui/button.tsx";
+import { Button, CompactButton } from "../../components/ui/button.tsx";
 import {
   Collapsible,
   CollapsibleContent,
@@ -212,15 +212,15 @@ export function RuleCard({
             />
           </Button>
         </CollapsibleTrigger>
-        <Button
-          size="sm"
+        <CompactButton
+          size="icon-sm"
           variant="ghost"
-          className="size-7 p-0 text-muted-foreground hover:text-destructive"
+          tone="danger"
           aria-label={`Delete ${label}`}
           onClick={onDelete}
         >
           <Icon name="Trash2" className="size-3.5" aria-hidden />
-        </Button>
+        </CompactButton>
       </div>
       <CollapsibleContent>
         <ScopeEditor
