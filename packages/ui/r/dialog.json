@@ -8,9 +8,13 @@
     "@radix-ui/react-slot"
   ],
   "registryDependencies": [
-    "@bb-plugins/overlay-trigger"
+    "@bb-plugins/icon",
+    "@bb-plugins/overlay-trigger",
+    "@bb-plugins/portal-scope",
+    "@bb-plugins/responsive-overlay",
+    "@bb-plugins/use-browser-dimming-modal"
   ],
-  "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers. Also imports @bb/icon, @bb/portal-scope, @bb/responsive-overlay, @bb/use-browser-dimming-modal. bb's items set a fixed target, so run `bunx shadcn@latest add @bb/icon @bb/portal-scope @bb/responsive-overlay @bb/use-browser-dimming-modal`, move only those files into the plugin's ui, lib, or hooks folder, and delete the other files it writes: this registry already provides overlay-trigger, its hooks, and utils.",
+  "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
   "files": [
     {
       "path": "registry/components/ui/dialog.tsx",

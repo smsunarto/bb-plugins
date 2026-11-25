@@ -1,4 +1,4 @@
-import { Icon } from "../ui/icon";
+import { Icon } from "../hugeicon";
 import type { SidebarMachine } from "../../lib/machines";
 import { cn } from "../../lib/utils";
 import { useIsBoatMachine, useMachineColors } from "./machine-appearance";

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "portal-scope",
+  "type": "registry:lib",
+  "files": [
+    {
+      "path": "registry/lib/portal-scope.ts",
+      "content": "import { createContext, useContext } from \"react\";\n\ndeclare const __BB_PLUGIN_ID__: string | undefined;\n\ntype PortalScopeExtra = Readonly<Partial<Record<`data-${string}`, string>>>;\n\nconst NO_EXTRA: PortalScopeExtra = {};\nconst PortalScopeExtraContext = createContext<PortalScopeExtra>(NO_EXTRA);\n\n/**\n * Adds a plugin's own data attributes to every overlay portaled below it, such as genui's\n * `data-genui-motion`, which its stylesheet reads to stop animations. Portals leave the\n * plugin's mount, so an attribute on an ancestor would not reach them.\n */\nexport const PortalScopeExtraProvider = PortalScopeExtraContext.Provider;\n\nexport function usePortalScopeProps(): {\n  \"data-bb-portaled-overlay\": \"\";\n  \"data-bb-plugin-root\"?: \"\";\n  \"data-bb-plugin\"?: string;\n  [attribute: `data-${string}`]: string | undefined;\n} {\n  const extra = useContext(PortalScopeExtraContext);\n  const pluginId = typeof __BB_PLUGIN_ID__ === \"string\" ? __BB_PLUGIN_ID__ : undefined;\n  return {\n    ...extra,\n    \"data-bb-portaled-overlay\": \"\",\n    \"data-bb-plugin-root\": \"\",\n    ...(pluginId !== undefined\n      ? { \"data-bb-plugin\": pluginId, [`data-bb-plugin-scope-${pluginId}`]: \"\" }\n      : {}),\n  };\n}\n",
+      "type": "registry:lib"
+    }
+  ]
+}

@@ -8,9 +8,11 @@
  * `bun scripts/shadcn-registry.ts`.
  *
  * Items carry no `target`, so the CLI places each file under the plugin's own
- * `ui` or `lib` alias. Built paths start with `registry/components/ui/` or
- * `registry/lib/`, which the CLI strips; a `registry:ui` file keeps the rest
- * of its path, so hooks land in components/ui/hooks beside their importers.
+ * `ui`, `lib`, or `hooks` alias. Built paths start with
+ * `registry/components/ui/`, `registry/lib/`, or `registry/hooks/`, which the
+ * CLI strips; a `registry:ui` file keeps the rest of its path, so the
+ * use-media-query family lands in components/ui/hooks beside its importers,
+ * while a `registry:hook` file lands in the plugin's own hooks folder.
  *
  * Kit files are also vendored byte for byte (scripts/style-contract.ts,
  * registry-drift), so the built content is the source file unchanged.
@@ -23,7 +25,7 @@ export const outputDir = "packages/ui/r";
 const itemSchema = "https://ui.shadcn.com/schema/registry-item.json";
 /** This registry's namespace. A bare dependency means the official shadcn item,
  * and bb's `@bb/` items set a fixed `target` that writes outside a nested
- * plugin layout, so items name those in `docs` instead of depending on them. */
+ * plugin layout, so every dependency must be an item of this registry. */
 const self = "@bb-plugins/";
 
 export interface RegistryFile {
@@ -51,6 +53,7 @@ const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
 /** The path the CLI maps onto the plugin's alias: stubs/ is a source-only folder. */
 export function builtPath(file: RegistryFile): string {
   if (file.type === "registry:lib") return `registry/lib/${basename(file.path)}`;
+  if (file.type === "registry:hook") return `registry/hooks/${basename(file.path)}`;
   return `registry/components/ui/${file.path.replace(/^stubs\//, "")}`;
 }
 
@@ -61,8 +64,8 @@ function fileProblem(file: RegistryFile, root: string): string | undefined {
   // would no longer match its canonical source.
   if (/^\s*(?:\/\/|\/\*)/.test(readFileSync(source, "utf8")))
     return "starts with a comment, which shadcn add strips";
-  if (file.type !== "registry:ui" && file.type !== "registry:lib")
-    return "must be registry:ui or registry:lib";
+  if (!["registry:ui", "registry:lib", "registry:hook"].includes(file.type))
+    return "must be registry:ui, registry:lib, or registry:hook";
   if (file.target !== undefined) return "must not set a target; the plugin's aliases place it";
   return undefined;
 }

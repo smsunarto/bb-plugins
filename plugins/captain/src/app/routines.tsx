@@ -43,7 +43,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select.tsx";
-import { Switch } from "./components/ui/switch.tsx";
+import { Switch } from "./components/overview-switch.tsx";
 import { Textarea } from "./components/ui/textarea.tsx";
 import { cn } from "./lib/utils.ts";
 

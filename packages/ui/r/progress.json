@@ -1,0 +1,16 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "progress",
+  "type": "registry:ui",
+  "dependencies": [
+    "@radix-ui/react-progress"
+  ],
+  "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
+  "files": [
+    {
+      "path": "registry/components/ui/progress.tsx",
+      "content": "import * as React from \"react\";\nimport * as ProgressPrimitive from \"@radix-ui/react-progress\";\n\nimport { cn } from \"../../lib/utils\";\n\ntype ProgressProps = React.ComponentPropsWithoutRef<typeof ProgressPrimitive.Root> & {\n  /** Colours the fill, such as a tone. */\n  indicatorClassName?: string;\n  /** Reaches the fill, such as for an entrance animation. */\n  indicatorRef?: React.Ref<HTMLDivElement>;\n  /** Extra fill style, such as a timing function; the width is always set from value. */\n  indicatorStyle?: React.CSSProperties;\n};\n\n// From the @bb registry at desktop-v0.49.0. The fill grows by width rather than\n// translateX, so an entrance can scale it from the left edge, and it takes a\n// tone class and a ref.\nconst Progress = React.forwardRef<React.ComponentRef<typeof ProgressPrimitive.Root>, ProgressProps>(\n  (\n    { className, value, max = 100, indicatorClassName, indicatorRef, indicatorStyle, ...props },\n    ref,\n  ) => {\n    const ratio = max > 0 ? Math.min(1, Math.max(0, (value ?? 0) / max)) : 0;\n    return (\n      <ProgressPrimitive.Root\n        ref={ref}\n        value={value}\n        max={max}\n        className={cn(\"relative h-1.5 w-full overflow-hidden rounded-full bg-muted\", className)}\n        {...props}\n      >\n        <ProgressPrimitive.Indicator\n          ref={indicatorRef}\n          className={cn(\n            \"block h-full origin-left rounded-full bg-primary transition-[width] duration-500 motion-reduce:transition-none\",\n            indicatorClassName,\n          )}\n          style={{ ...indicatorStyle, width: `${ratio * 100}%` }}\n        />\n      </ProgressPrimitive.Root>\n    );\n  },\n);\nProgress.displayName = ProgressPrimitive.Root.displayName;\n\nexport { Progress };\n",
+      "type": "registry:ui"
+    }
+  ]
+}

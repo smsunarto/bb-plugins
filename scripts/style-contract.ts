@@ -12,8 +12,8 @@
  * published as the @bb-plugins shadcn registry (scripts/shadcn-registry.ts).
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 export interface Rule {
   id: string;
@@ -181,10 +181,17 @@ const registryDriftFix =
   "Edit packages/ui/registry instead, then copy it into each plugin with bun scripts/style-contract.ts --sync <plugin>.";
 export const registryRoot = "packages/ui/registry";
 
-/** The kit path of a plugin's components/ui file, such as hooks/use-media-query.ts. */
+/** The registry path of a plugin's kit file: components/ui/<rel> keeps its
+ * path, such as hooks/use-media-query.ts; a file directly in the plugin's lib
+ * or hooks folder maps to lib/<name> or app-hooks/<name>, since registry
+ * hooks/ holds the components/ui/hooks files. */
 export function kitPath(file: string): string | undefined {
   if (!file.startsWith("plugins/")) return undefined;
-  return /\/components\/ui\/(.+)$/.exec(file)?.[1];
+  const ui = /\/components\/ui\/(.+)$/.exec(file)?.[1];
+  if (ui) return ui;
+  const folder = /^plugins\/[^/]+\/(?:src\/app\/|app\/)?(lib|hooks)\/([^/]+)$/.exec(file);
+  if (!folder) return undefined;
+  return `${folder[1] === "hooks" ? "app-hooks" : "lib"}/${folder[2]}`;
 }
 
 export function scanRegistry(file: string, source: string, root = "."): Violation[] {
@@ -256,7 +263,56 @@ function toBaseline(found: readonly Entry[]): Entry[] {
     .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
 }
 
-/** Overwrite a plugin's existing kit files with the canonical copies. */
+interface KitItem {
+  name: string;
+  registryDependencies?: string[];
+  files?: { path: string; type: string }[];
+}
+
+/** Where a registry file lands in a plugin, following its components.json aliases. */
+function installPath(pluginRoot: string, file: { path: string; type: string }, root: string) {
+  const config = JSON.parse(readFileSync(`${root}/${pluginRoot}/components.json`, "utf8"));
+  const alias = (name: string) => join(pluginRoot, config.aliases[name].replace(/^@\//, ""));
+  if (file.type === "registry:lib") return join(alias("lib"), basename(file.path));
+  if (file.type === "registry:hook") return join(alias("hooks"), basename(file.path));
+  return join(alias("ui"), file.path.replace(/^stubs\//, ""));
+}
+
+/** Copy in the registry dependencies a plugin's kit files import but it lacks,
+ * since a canonical copy can import a file the plugin's old fork did not. */
+function addMissingDependencies(plugin: string, root: string): string[] {
+  const pluginRoot = `plugins/${plugin}`;
+  if (!existsSync(`${root}/${pluginRoot}/components.json`)) return [];
+  const items: KitItem[] = JSON.parse(
+    readFileSync(`${root}/${registryRoot}/registry.json`, "utf8"),
+  ).items;
+  const byName = new Map(items.map((item) => [item.name, item]));
+  const present = (item: KitItem) =>
+    item.files?.length &&
+    item.files.every((file) => existsSync(`${root}/${installPath(pluginRoot, file, root)}`));
+  const queue = items.filter(present);
+  const seen = new Set(queue.map((item) => item.name));
+  const written: string[] = [];
+  for (let item = queue.shift(); item; item = queue.shift()) {
+    for (const dependency of item.registryDependencies ?? []) {
+      const dep = byName.get(dependency.replace(/^@bb-plugins\//, ""));
+      if (!dep || seen.has(dep.name)) continue;
+      seen.add(dep.name);
+      queue.push(dep);
+      for (const file of dep.files ?? []) {
+        const out = installPath(pluginRoot, file, root);
+        if (existsSync(`${root}/${out}`)) continue;
+        mkdirSync(dirname(`${root}/${out}`), { recursive: true });
+        writeFileSync(`${root}/${out}`, readFileSync(`${root}/${registryRoot}/${file.path}`));
+        written.push(out);
+      }
+    }
+  }
+  return written;
+}
+
+/** Overwrite a plugin's existing kit files with the canonical copies, then add
+ * any registry dependencies those copies import that the plugin lacks. */
 export function syncPlugin(plugin: string, root = "."): string[] {
   const written: string[] = [];
   // Include untracked files so a freshly vendored copy syncs before its first commit.
@@ -284,7 +340,7 @@ export function syncPlugin(plugin: string, root = "."): string[] {
     writeFileSync(`${root}/${file}`, canonical);
     written.push(file);
   }
-  return written;
+  return [...written, ...addMissingDependencies(plugin, root)];
 }
 
 if (import.meta.main) {

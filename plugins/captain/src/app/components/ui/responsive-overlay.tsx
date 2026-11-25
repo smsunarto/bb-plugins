@@ -363,6 +363,11 @@ interface PersistentResponsiveDrawerShellProps extends DrawerDismissalHandlers {
   contentClassName?: string;
   motionDurationMs?: number;
   onContentAnimationEnd?: (open: boolean) => void;
+  /**
+   * Focused in place of the panel as the drawer opens, in the same commit, so a text field
+   * focused from a tap can raise the phone keyboard. Falls back to the panel when unset.
+   */
+  initialFocusRef?: React.RefObject<HTMLElement | null>;
   children: React.ReactNode;
 }
 
@@ -506,6 +511,7 @@ interface UsePersistentOverlayFocusArgs {
   onEscapeKeyDown?: (event: KeyboardEvent) => void;
   open: boolean;
   panelRef: React.RefObject<HTMLElement | null>;
+  initialFocusRef?: React.RefObject<HTMLElement | null>;
   requestClose: () => void;
 }
 
@@ -515,6 +521,7 @@ export function usePersistentOverlayFocus({
   onEscapeKeyDown,
   open,
   panelRef,
+  initialFocusRef,
   requestClose,
 }: UsePersistentOverlayFocusArgs): void {
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
@@ -540,9 +547,9 @@ export function usePersistentOverlayFocus({
         if (!event.defaultPrevented) requestClose();
       },
     });
-    panel.focus({ preventScroll: true });
+    (initialFocusRef?.current ?? panel).focus({ preventScroll: true });
     return unregister;
-  }, [open, panelRef, requestClose]);
+  }, [initialFocusRef, open, panelRef, requestClose]);
 
   const previousOpenRef = React.useRef(open);
   React.useLayoutEffect(() => {
@@ -604,6 +611,7 @@ export function PersistentResponsiveDrawerShell({
   onEscapeKeyDown,
   onPointerDownOutside,
   onInteractOutside,
+  initialFocusRef,
   children,
 }: PersistentResponsiveDrawerShellProps) {
   const panelRef = React.useRef<HTMLDivElement>(null);
@@ -635,6 +643,7 @@ export function PersistentResponsiveDrawerShell({
     onEscapeKeyDown,
     open,
     panelRef,
+    initialFocusRef,
     requestClose,
   });
 

@@ -35,6 +35,9 @@ test("built paths map onto the plugin's ui and lib aliases", () => {
     "registry/components/ui/hooks/use-media-query.ts",
   );
   expect(builtPath({ path: "stubs/utils.ts", type: "registry:lib" })).toBe("registry/lib/utils.ts");
+  expect(builtPath({ path: "app-hooks/useBrowserDimmingModal.ts", type: "registry:hook" })).toBe(
+    "registry/hooks/useBrowserDimmingModal.ts",
+  );
 });
 
 test("flags items that would install wrong", () => {

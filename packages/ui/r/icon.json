@@ -1,0 +1,12 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "icon",
+  "type": "registry:ui",
+  "files": [
+    {
+      "path": "registry/components/ui/icon.tsx",
+      "content": "import { experimental_Icon, type ExperimentalIconProps } from \"@get-bb/plugin-sdk/app\";\n\nexport type IconName = string;\nexport type IconProps = ExperimentalIconProps;\nexport const Icon = experimental_Icon;\n",
+      "type": "registry:ui"
+    }
+  ]
+}

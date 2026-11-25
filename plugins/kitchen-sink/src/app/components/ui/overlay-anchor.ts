@@ -1,7 +1,10 @@
 import * as React from "react";
 
-function isAnchorInteractive(anchor: Element): boolean {
-  return anchor.isConnected && anchor.closest("[inert]") === null;
+// BB hides or inerts a composer while the agent waits on a question or approval.
+const UNAVAILABLE_ANCESTOR = "[inert], [hidden]";
+
+export function isAnchorInteractive(anchor: Element): boolean {
+  return anchor.isConnected && anchor.closest(UNAVAILABLE_ANCESTOR) === null;
 }
 
 function assignRef<T>(ref: React.ForwardedRef<T>, value: T | null): void {
@@ -45,7 +48,7 @@ export function useCloseWhenAnchorDetaches<T extends Element>(
     });
     mutationObserver.observe(anchor.ownerDocument.documentElement, {
       attributes: true,
-      attributeFilter: ["inert"],
+      attributeFilter: ["inert", "hidden"],
       childList: true,
       subtree: true,
     });

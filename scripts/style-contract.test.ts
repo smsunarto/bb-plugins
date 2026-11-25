@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import {
   fixFor,
   isReExport,
+  kitPath,
   readBaseline,
   scanFile,
   scanRepository,
@@ -80,6 +82,45 @@ test("a vendored kit file must match its canonical registry copy", () => {
     },
   ]);
   expect(scanRegistry("plugins/x/components/ui/not-in-registry.tsx", "x")).toEqual([]);
+});
+
+test("kit paths cover components/ui and the plugin's lib and hooks folders", () => {
+  expect(kitPath("plugins/x/components/ui/hooks/use-media-query.ts")).toBe(
+    "hooks/use-media-query.ts",
+  );
+  expect(kitPath("plugins/x/src/app/lib/portal-scope.ts")).toBe("lib/portal-scope.ts");
+  expect(kitPath("plugins/x/hooks/useBrowserDimmingModal.ts")).toBe(
+    "app-hooks/useBrowserDimmingModal.ts",
+  );
+  expect(kitPath("plugins/x/server/lib/portal-scope.ts")).toBeUndefined();
+  expect(kitPath("packages/ui/registry/lib/portal-scope.ts")).toBeUndefined();
+});
+
+// Every components/ui file is either a canonical kit copy or a stub that
+// re-exports @bb-plugins/ui; anything else is a fork the registry can't update.
+test("every components/ui file comes from the registry", () => {
+  const files = execFileSync(
+    "git",
+    ["ls-files", "--cached", "--others", "--exclude-standard", "plugins"],
+    {
+      encoding: "utf8",
+    },
+  )
+    .split("\n")
+    .filter(
+      (file) =>
+        file.includes("/components/ui/") &&
+        !file.includes("/node_modules/") &&
+        !/\.test\.tsx?$/.test(file),
+    );
+  const orphans = files.filter((file) => {
+    const rel = kitPath(file);
+    if (!rel || !existsSync(file)) return false;
+    if (existsSync(`packages/ui/registry/${rel}`)) return false;
+    if (existsSync(`packages/ui/registry/stubs/${rel}`)) return false;
+    return !isReExport(readFileSync(file, "utf8"));
+  });
+  expect(orphans).toEqual([]);
 });
 
 test("flags hand-written selectors that anchor on Tailwind utilities", () => {

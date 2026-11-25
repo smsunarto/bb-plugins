@@ -5,7 +5,10 @@
   "dependencies": [
     "@radix-ui/react-alert-dialog"
   ],
-  "docs": "Imports the plugin's `utils` and `button` from @bb-plugins/ui; add @bb-plugins/utils and @bb-plugins/button only to a plugin that lacks them, since a plugin's copy may export extra helpers. Also imports @bb/portal-scope. bb's items set a fixed target, so run `bunx shadcn@latest add @bb/portal-scope`, move only those files into the plugin's ui, lib, or hooks folder, and delete the other files it writes: this registry already provides overlay-trigger, its hooks, and utils.",
+  "registryDependencies": [
+    "@bb-plugins/portal-scope"
+  ],
+  "docs": "Imports the plugin's `button` and `utils` from @bb-plugins/ui; add @bb-plugins/button and @bb-plugins/utils only to a plugin that lacks them, since a plugin's copy may export extra helpers.",
   "files": [
     {
       "path": "registry/components/ui/alert-dialog.tsx",

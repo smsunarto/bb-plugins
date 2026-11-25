@@ -1,6 +1,6 @@
 import * as React from "react";
-import { cn } from "../../lib/utils";
-import { CONTROL_HOVER_TRANSITION } from "./motion.ts";
+import { cn } from "../lib/utils";
+import { CONTROL_HOVER_TRANSITION } from "./ui/motion.ts";
 
 type SwitchProps = Omit<React.ComponentPropsWithoutRef<"button">, "onChange" | "role"> & {
   checked: boolean;

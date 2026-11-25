@@ -280,53 +280,458 @@
       "name": "tooltip",
       "type": "registry:ui",
       "dependencies": ["@radix-ui/react-tooltip"],
-      "registryDependencies": ["@bb-plugins/overlay-trigger"],
+      "registryDependencies": ["@bb-plugins/overlay-trigger", "@bb-plugins/portal-scope"],
       "files": [
         {
           "path": "tooltip.tsx",
           "type": "registry:ui"
         }
       ],
-      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers. Also imports @bb/portal-scope. bb's items set a fixed target, so run `bunx shadcn@latest add @bb/portal-scope`, move only those files into the plugin's ui, lib, or hooks folder, and delete the other files it writes: this registry already provides overlay-trigger, its hooks, and utils."
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
     },
     {
       "name": "dialog",
       "type": "registry:ui",
       "description": "Dialog that becomes a bottom sheet on compact viewports.",
       "dependencies": ["@radix-ui/react-dialog", "@radix-ui/react-slot"],
-      "registryDependencies": ["@bb-plugins/overlay-trigger"],
+      "registryDependencies": [
+        "@bb-plugins/icon",
+        "@bb-plugins/overlay-trigger",
+        "@bb-plugins/portal-scope",
+        "@bb-plugins/responsive-overlay",
+        "@bb-plugins/use-browser-dimming-modal"
+      ],
       "files": [
         {
           "path": "dialog.tsx",
           "type": "registry:ui"
         }
       ],
-      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers. Also imports @bb/icon, @bb/portal-scope, @bb/responsive-overlay, @bb/use-browser-dimming-modal. bb's items set a fixed target, so run `bunx shadcn@latest add @bb/icon @bb/portal-scope @bb/responsive-overlay @bb/use-browser-dimming-modal`, move only those files into the plugin's ui, lib, or hooks folder, and delete the other files it writes: this registry already provides overlay-trigger, its hooks, and utils."
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
     },
     {
       "name": "alert-dialog",
       "type": "registry:ui",
       "dependencies": ["@radix-ui/react-alert-dialog"],
+      "registryDependencies": ["@bb-plugins/portal-scope"],
       "files": [
         {
           "path": "alert-dialog.tsx",
           "type": "registry:ui"
         }
       ],
-      "docs": "Imports the plugin's `utils` and `button` from @bb-plugins/ui; add @bb-plugins/utils and @bb-plugins/button only to a plugin that lacks them, since a plugin's copy may export extra helpers. Also imports @bb/portal-scope. bb's items set a fixed target, so run `bunx shadcn@latest add @bb/portal-scope`, move only those files into the plugin's ui, lib, or hooks folder, and delete the other files it writes: this registry already provides overlay-trigger, its hooks, and utils."
+      "docs": "Imports the plugin's `button` and `utils` from @bb-plugins/ui; add @bb-plugins/button and @bb-plugins/utils only to a plugin that lacks them, since a plugin's copy may export extra helpers."
     },
     {
       "name": "drawer",
       "type": "registry:ui",
       "dependencies": ["vaul"],
-      "registryDependencies": ["@bb-plugins/overlay-trigger"],
+      "registryDependencies": ["@bb-plugins/overlay-trigger", "@bb-plugins/portal-scope"],
       "files": [
         {
           "path": "drawer.tsx",
           "type": "registry:ui"
         }
       ],
-      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers. Also imports @bb/portal-scope. bb's items set a fixed target, so run `bunx shadcn@latest add @bb/portal-scope`, move only those files into the plugin's ui, lib, or hooks folder, and delete the other files it writes: this registry already provides overlay-trigger, its hooks, and utils."
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "avatar",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-avatar"],
+      "files": [
+        {
+          "path": "avatar.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "breadcrumb",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-slot"],
+      "registryDependencies": ["@bb-plugins/icon"],
+      "files": [
+        {
+          "path": "breadcrumb.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "checkbox",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-checkbox"],
+      "registryDependencies": ["@bb-plugins/icon", "@bb-plugins/motion"],
+      "files": [
+        {
+          "path": "checkbox.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "chrome-style-tokens",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "chrome-style-tokens.ts",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "collapsible",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-collapsible"],
+      "files": [
+        {
+          "path": "collapsible.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "command",
+      "type": "registry:ui",
+      "dependencies": ["cmdk"],
+      "registryDependencies": ["@bb-plugins/icon"],
+      "files": [
+        {
+          "path": "command.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "context-menu",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-context-menu"],
+      "registryDependencies": [
+        "@bb-plugins/coarse-pointer-sizing",
+        "@bb-plugins/icon",
+        "@bb-plugins/menu-item-hover",
+        "@bb-plugins/motion",
+        "@bb-plugins/portal-scope"
+      ],
+      "files": [
+        {
+          "path": "context-menu.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "delayed-loading",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "delayed-loading.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "dropdown-menu",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-dropdown-menu", "@radix-ui/react-slot"],
+      "registryDependencies": [
+        "@bb-plugins/coarse-pointer-sizing",
+        "@bb-plugins/icon",
+        "@bb-plugins/menu-item-hover",
+        "@bb-plugins/motion",
+        "@bb-plugins/overlay-anchor",
+        "@bb-plugins/overlay-trigger",
+        "@bb-plugins/portal-scope",
+        "@bb-plugins/responsive-overlay"
+      ],
+      "files": [
+        {
+          "path": "dropdown-menu.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "empty-state",
+      "type": "registry:ui",
+      "registryDependencies": ["@bb-plugins/icon"],
+      "files": [
+        {
+          "path": "empty-state.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "icon",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "icon.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "label",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-label"],
+      "files": [
+        {
+          "path": "label.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "menu-item-hover",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "menu-item-hover.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "overlay-anchor",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "overlay-anchor.ts",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "pill",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "pill.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "popover",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-popover"],
+      "registryDependencies": [
+        "@bb-plugins/overlay-anchor",
+        "@bb-plugins/overlay-trigger",
+        "@bb-plugins/portal-scope",
+        "@bb-plugins/responsive-overlay",
+        "@bb-plugins/use-pointer-coarse"
+      ],
+      "files": [
+        {
+          "path": "popover.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "progress",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-progress"],
+      "files": [
+        {
+          "path": "progress.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "radio-group",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-radio-group"],
+      "registryDependencies": ["@bb-plugins/icon"],
+      "files": [
+        {
+          "path": "radio-group.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "resource-toolbar",
+      "type": "registry:ui",
+      "registryDependencies": [
+        "@bb-plugins/dropdown-menu",
+        "@bb-plugins/icon",
+        "@bb-plugins/tooltip"
+      ],
+      "files": [
+        {
+          "path": "resource/toolbar.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `button` and `utils` from @bb-plugins/ui; add @bb-plugins/button and @bb-plugins/utils only to a plugin that lacks them, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "responsive-overlay",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-slot"],
+      "registryDependencies": [
+        "@bb-plugins/overlay-trigger",
+        "@bb-plugins/portal-scope",
+        "@bb-plugins/use-compact-viewport",
+        "@bb-plugins/use-pointer-coarse"
+      ],
+      "files": [
+        {
+          "path": "responsive-overlay.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "select",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-select"],
+      "registryDependencies": [
+        "@bb-plugins/coarse-pointer-sizing",
+        "@bb-plugins/icon",
+        "@bb-plugins/motion",
+        "@bb-plugins/overlay-anchor",
+        "@bb-plugins/overlay-trigger",
+        "@bb-plugins/portal-scope",
+        "@bb-plugins/responsive-overlay"
+      ],
+      "files": [
+        {
+          "path": "select.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "skeleton",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "skeleton.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "slider",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-slider"],
+      "files": [
+        {
+          "path": "slider.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "spinner",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "spinner.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "switch",
+      "type": "registry:ui",
+      "registryDependencies": ["@bb-plugins/motion"],
+      "files": [
+        {
+          "path": "switch.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "tabs",
+      "type": "registry:ui",
+      "dependencies": ["@radix-ui/react-tabs"],
+      "files": [
+        {
+          "path": "tabs.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "truncate-start",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "truncate-start.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "video-thumbnail",
+      "type": "registry:ui",
+      "registryDependencies": ["@bb-plugins/icon", "@bb-plugins/video"],
+      "files": [
+        {
+          "path": "video-thumbnail.tsx",
+          "type": "registry:ui"
+        }
+      ],
+      "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers."
+    },
+    {
+      "name": "video",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "video.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "use-browser-dimming-modal",
+      "type": "registry:hook",
+      "files": [
+        {
+          "path": "app-hooks/useBrowserDimmingModal.ts",
+          "type": "registry:hook"
+        }
+      ]
+    },
+    {
+      "name": "portal-scope",
+      "type": "registry:lib",
+      "files": [
+        {
+          "path": "lib/portal-scope.ts",
+          "type": "registry:lib"
+        }
+      ]
     }
   ]
 }

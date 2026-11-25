@@ -13,7 +13,7 @@ import {
   ContextMenuSub,
   ContextMenuSubTrigger,
 } from "../ui/context-menu";
-import { Icon } from "../ui/icon";
+import { Icon } from "../hugeicon";
 import { cn } from "../../lib/utils";
 import { attachHapticTrigger } from "../../lib/ios-haptics";
 import {

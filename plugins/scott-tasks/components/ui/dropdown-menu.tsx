@@ -1,5 +1,6 @@
 import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
+import { Slot } from "@radix-ui/react-slot";
 
 import { cn } from "../../lib/utils";
 import { usePortalScopeProps } from "../../lib/portal-scope";
@@ -18,6 +19,7 @@ import {
   isLastInputKeyboard,
   preventOverlayTriggerSelection,
 } from "./overlay-trigger.js";
+import { useCloseWhenAnchorDetaches } from "./overlay-anchor.js";
 import {
   MENU_ITEM_LAST_HOVERED_CLASS,
   MenuHoverProvider,
@@ -33,11 +35,25 @@ const MENU_ITEM_DESTRUCTIVE_STATE_CLASS =
 const MENU_ITEM_DESTRUCTIVE_TOUCH_CLASS =
   "text-destructive focus:bg-destructive/15 focus:text-destructive active:bg-destructive/20 active:text-destructive";
 
-const ResponsiveMenuContext = React.createContext<ResponsiveOverlayContextValue>({
-  isCompactViewport: false,
-  open: false,
-  onOpenChange: () => {},
-});
+const RESPONSIVE_MENU_CONTEXT_KEY = Symbol.for("bb.responsive-menu-context.v1");
+
+function isReactContext(value: unknown): value is React.Context<ResponsiveOverlayContextValue> {
+  return typeof value === "object" && value !== null && "Provider" in value && "Consumer" in value;
+}
+
+function sharedResponsiveMenuContext(): React.Context<ResponsiveOverlayContextValue> {
+  const existing: unknown = Reflect.get(globalThis, RESPONSIVE_MENU_CONTEXT_KEY);
+  if (isReactContext(existing)) return existing;
+  const context = React.createContext<ResponsiveOverlayContextValue>({
+    isCompactViewport: false,
+    open: false,
+    onOpenChange: () => {},
+  });
+  Reflect.set(globalThis, RESPONSIVE_MENU_CONTEXT_KEY, context);
+  return context;
+}
+
+const ResponsiveMenuContext = sharedResponsiveMenuContext();
 
 function useResponsiveMenu() {
   return React.useContext(ResponsiveMenuContext);
@@ -68,6 +84,7 @@ const DropdownMenuTrigger = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger>
 >(({ asChild, children, className, ...props }, ref) => {
   const { isCompactViewport, open, onOpenChange } = useResponsiveMenu();
+  const anchorRef = useCloseWhenAnchorDetaches(ref, open && !isCompactViewport, onOpenChange);
 
   if (isCompactViewport) {
     return (
@@ -87,7 +104,7 @@ const DropdownMenuTrigger = React.forwardRef<
 
   return (
     <DropdownMenuPrimitive.Trigger
-      ref={ref}
+      ref={anchorRef}
       asChild={asChild}
       className={getOverlayTriggerClassName(className)}
       onMouseDown={(event) => {
@@ -120,13 +137,13 @@ const DropdownMenuContent = React.forwardRef<
         open={open}
         onOpenChange={onOpenChange}
         srLabel={mobileTitle ?? "Menu"}
+        onEscapeKeyDown={props.onEscapeKeyDown}
+        onPointerDownOutside={props.onPointerDownOutside}
+        onInteractOutside={props.onInteractOutside}
       >
         <div
           ref={ref}
-          className={cn(
-            "flex flex-col gap-0.5 overflow-y-auto p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]",
-            className,
-          )}
+          className={cn("flex flex-col gap-0.5 overflow-y-auto p-2", className)}
           {...domProps}
           style={{ ...style, ...COMPACT_SHEET_CONTENT_STYLE }}
         >
@@ -184,6 +201,7 @@ const DropdownMenuItem = React.forwardRef<
   (
     {
       className,
+      asChild,
       inset,
       variant = "default",
       onSelect,
@@ -215,16 +233,17 @@ const DropdownMenuItem = React.forwardRef<
       };
 
     if (isCompactViewport) {
+      const Comp = asChild ? Slot : "button";
       return (
-        <button
+        <Comp
           ref={ref as React.RefCallback<HTMLButtonElement> | null}
-          type="button"
+          type={asChild ? undefined : "button"}
           role={role}
           disabled={disabled}
           aria-disabled={disabled || undefined}
           aria-checked={ariaChecked}
           className={cn(
-            "relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-2 text-left text-xs outline-none transition-colors focus:bg-state-hover focus:text-foreground active:bg-state-active active:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&>[data-icon-root]]:size-4 [&>[data-icon-root]]:shrink-0",
+            "relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-[0.3125rem] max-md:pointer-coarse:py-2 text-left text-xs outline-none transition-colors focus:bg-state-hover focus:text-foreground active:bg-state-active active:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&>[data-icon-root]]:size-4 [&>[data-icon-root]]:shrink-0",
             inset && "pl-8",
             variant === "destructive" && MENU_ITEM_DESTRUCTIVE_TOUCH_CLASS,
             className,
@@ -232,8 +251,11 @@ const DropdownMenuItem = React.forwardRef<
           data-disabled={disabled ? "" : undefined}
           onFocus={callerFocus}
           onBlur={callerBlur}
-          onClick={() => {
-            if (disabled) return;
+          onClick={(clickEvent) => {
+            if (disabled) {
+              clickEvent.preventDefault();
+              return;
+            }
             const event = createSelectEvent();
             onSelect?.(event);
             if (!event.defaultPrevented) {
@@ -242,13 +264,14 @@ const DropdownMenuItem = React.forwardRef<
           }}
         >
           {children}
-        </button>
+        </Comp>
       );
     }
 
     return (
       <DropdownMenuPrimitive.Item
         ref={ref}
+        asChild={asChild}
         className={cn(
           "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-[0.3125rem] text-xs outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&>[data-icon-root]]:size-4 [&>[data-icon-root]]:shrink-0",
           LIST_HOVER_TRANSITION,
@@ -312,7 +335,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
           disabled={disabled}
           aria-disabled={disabled || undefined}
           className={cn(
-            "relative flex w-full cursor-default select-none items-center rounded-sm py-2 pl-2 pr-8 text-left text-xs outline-none transition-colors focus:bg-state-hover focus:text-foreground active:bg-state-active active:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+            "relative flex w-full cursor-default select-none items-center rounded-sm py-[0.3125rem] max-md:pointer-coarse:py-2 pl-2 pr-8 text-left text-xs outline-none transition-colors focus:bg-state-hover focus:text-foreground active:bg-state-active active:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
             className,
           )}
           data-disabled={disabled ? "" : undefined}
@@ -443,7 +466,7 @@ const DropdownMenuLabel = React.forwardRef<
       <div
         ref={ref}
         className={cn(
-          "px-2 py-1.5 text-xs font-medium text-muted-foreground",
+          "px-2 py-[0.3125rem] max-md:pointer-coarse:py-1.5 text-xs font-medium text-muted-foreground",
           inset && "pl-8",
           className,
         )}
