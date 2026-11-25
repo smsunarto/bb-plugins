@@ -31,8 +31,8 @@ function ItemSeparator({ className, ...props }: React.ComponentProps<typeof Sepa
   );
 }
 
-/** Vega's item. `row` is the kit's dense list or tree row: 28px tall, 44px under a coarse
- * pointer. An item rendered as a link or button (`asChild`) hovers with the state colour, and
+/** Vega's item. `row` is the kit's dense list or tree row: 28px tall, and a link or button row
+ * is 44px under a coarse pointer. An item rendered as a link or button (`asChild`) hovers with the state colour, and
  * `aria-pressed`, `aria-selected` or `aria-current` marks it selected. */
 const itemVariants = cva(
   `group/item flex w-full flex-wrap items-center rounded-md border text-sm ${LIST_HOVER_TRANSITION} outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 [a]:hover:bg-state-hover [button]:text-left [button]:hover:bg-state-hover [button]:disabled:pointer-events-none [button]:disabled:opacity-50 aria-pressed:bg-state-active aria-selected:bg-state-active aria-[current=page]:bg-state-active aria-[current=true]:bg-state-active`,
@@ -47,7 +47,7 @@ const itemVariants = cva(
         default: "gap-3.5 px-4 py-3.5",
         sm: "gap-2.5 px-3 py-2.5",
         xs: "gap-2 px-2.5 py-2",
-        row: "min-h-7 flex-nowrap gap-2 px-2 py-1 max-md:pointer-coarse:min-h-11",
+        row: "min-h-7 flex-nowrap gap-2 px-2 py-1 max-md:pointer-coarse:[a]:min-h-11 max-md:pointer-coarse:[button]:min-h-11",
       },
     },
     defaultVariants: { variant: "default", size: "default" },
