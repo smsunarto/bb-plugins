@@ -184,6 +184,35 @@ describe("the stall wake", () => {
   });
 });
 
+test("bb captain tell reaches errored crew by task and role", async () => {
+  const { host, captainId, as, idleCrew } = await checkHost();
+  const threadId = await idleCrew("BBPLUGINS-1");
+  host.updateThread(threadId, { status: "error" });
+  host.tasks.taskThreads[0]!.liveStatus = "failed";
+
+  const result = await as(["tell", "BBPLUGINS-1", "--role", "Implement", "--message", "Resume."]);
+
+  expect(result.exitCode, result.stdout).toBe(0);
+  expect(host.sent).toContainEqual({
+    threadId,
+    text: "Resume.",
+    mode: "steer-if-active",
+    senderThreadId: captainId,
+  });
+});
+
+test("bb captain tell by task leaves completed attachments alone", async () => {
+  const { host, as, idleCrew } = await checkHost();
+  const threadId = await idleCrew("BBPLUGINS-1");
+  host.updateThread(threadId, { status: "error" });
+  host.tasks.taskThreads[0]!.liveStatus = "completed";
+
+  const result = await as(["tell", "BBPLUGINS-1", "--message", "Resume."]);
+
+  expect(result.exitCode).toBe(1);
+  expect(host.sent).toEqual([]);
+});
+
 describe("bb captain tell --stalled", () => {
   test("steers only the stalled crew from the Captain and moves their report-due marks", async () => {
     const { host, captainId, as, idleCrew } = await checkHost();

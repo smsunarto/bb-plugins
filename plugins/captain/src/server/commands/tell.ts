@@ -29,7 +29,8 @@ export function tellCommand(deps: CommandDeps) {
       {
         name: "target",
         variadic: true,
-        description: "Task keys or crew thread ids; a task reaches its live crew threads",
+        description:
+          "Task keys or crew thread ids; a task reaches its live or errored crew threads",
       },
     ],
     options: {
@@ -242,7 +243,7 @@ function pick(
       continue;
     }
     const key = target.toUpperCase();
-    const members = crewOnTask(crew, key, role ?? undefined);
+    const members = crewOnTask(crew, key, role ?? undefined, { includeErrored: true });
     if (members.length === 0) {
       const label = role === null ? "" : `${ROLE_SPECS[role].label} `;
       blockers.push({
