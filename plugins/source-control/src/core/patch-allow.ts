@@ -418,14 +418,18 @@ class Gate {
       const [oldStart, nextStart] = [Number(hunk[1]), Number(hunk[3])];
       const oldCount = hunk[2] === undefined ? 1 : Number(hunk[2]);
       const nextCount = hunk[4] === undefined ? 1 : Number(hunk[4]);
-      if (added && oldStart + oldCount !== 0) this.fail("adds a file but its hunk reads old lines");
-      if (deleted && nextStart + nextCount !== 0)
-        this.fail("deletes a file but its hunk writes new lines");
-      if (last && (oldStart < last.old || nextStart < last.next))
-        this.fail("starts a hunk inside or before the hunk above it");
-      if ((eof.old && oldCount > 0) || (eof.next && nextCount > 0))
-        this.fail("starts a hunk past a no-newline marker on the same side");
-      last = { old: oldStart + oldCount, next: nextStart + nextCount };
+      const end = { old: oldStart + oldCount, next: nextStart + nextCount };
+      if (added && end.old !== 0) this.fail("adds a file but its hunk reads old lines");
+      if (deleted && end.next !== 0) this.fail("deletes a file but its hunk writes new lines");
+      if (last) {
+        if (oldStart < last.old || nextStart < last.next)
+          this.fail("starts a hunk inside or before the hunk above it");
+        // An empty range's start names the line it anchors after. The previous
+        // hunk's end is one past the line marked as EOF.
+        if ((eof.old && end.old >= last.old) || (eof.next && end.next >= last.next))
+          this.fail("starts a hunk past a no-newline marker on the same side");
+      }
+      last = end;
       this.readHunkBody(oldCount, nextCount, eof);
     }
   }

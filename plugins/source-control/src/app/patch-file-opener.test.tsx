@@ -170,6 +170,22 @@ test.each([
     () => open("x", { headers: { "content-length": String(MAX_PATCH_BYTES + 1) } }),
     "This file is over 8 MB, too large for the diff view.",
   ],
+  [
+    "an insertion anchored past marked old EOF",
+    () =>
+      open(
+        "--- a/a\n+++ b/a\n@@ -1 +1 @@\n-old\n\\ arbitrary-marker\n+new\n@@ -9,0 +10 @@\n+later\n",
+      ),
+    "Line 7 starts a hunk past a no-newline marker on the same side.",
+  ],
+  [
+    "a deletion anchored past marked new EOF",
+    () =>
+      open(
+        "--- a/a\n+++ b/a\n@@ -1 +1 @@\n-old\n+new\n\\ arbitrary-marker\n@@ -10 +9,0 @@\n-later\n",
+      ),
+    "Line 7 starts a hunk past a no-newline marker on the same side.",
+  ],
 ])("%s falls back to BB's text preview", async (_, start, reason) => {
   start();
   await waitFor(() => expect(screen.getByTestId("bb-original")).toBeTruthy());
