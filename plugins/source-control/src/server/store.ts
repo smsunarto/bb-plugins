@@ -19,9 +19,10 @@ import {
   type Facet,
   type ForgeValue,
   type Placement,
+  type Problem,
   type WorkspaceValue,
 } from "../core/change.ts";
-import type { ChangeKey } from "../core/ids.ts";
+import { changeKeySchema, type ChangeKey, type Repo } from "../core/ids.ts";
 import { guideSchema, guideStateSchema, type Viewed } from "../core/guide.ts";
 import {
   batchSchema,
@@ -38,7 +39,7 @@ import {
   type ReviewItem,
   type ReviewRun,
 } from "../core/items.ts";
-import { sourceRowsSchema, type SourceRows } from "../core/review.ts";
+import { parseChangeKey, sourceRowsSchema, type SourceRows } from "../core/review.ts";
 import type { ReadAs } from "../contract/host.ts";
 import type { ForgeHost } from "./forge-sites.ts";
 
@@ -60,6 +61,11 @@ type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 
 /** Why a thread on a machine bb removed has no checkout. */
 export const HOST_REMOVED = "This thread's machine was removed from bb.";
+
+// GitHub keys are gh:owner/repo:headOwner:branch. Git branches cannot contain a colon.
+const FORGE_GITHUB_KEY = "substr(change_key, 1, 3) = 'gh:'";
+const FORGE_HEAD_AND_BRANCH = "substr(change_key, 4 + instr(substr(change_key, 4), ':'))";
+const FORGE_BRANCH = `substr(${FORGE_HEAD_AND_BRANCH}, instr(${FORGE_HEAD_AND_BRANCH}, ':') + 1)`;
 
 /** Numbered and never edited once landed: append only. */
 export const MIGRATIONS = [
@@ -116,6 +122,14 @@ export const MIGRATIONS = [
   // branch-only recovery wrote may name another repository's Change and cannot be told apart: they go.
   `DROP TABLE thread_change`,
   `CREATE TABLE thread_change (thread_id TEXT PRIMARY KEY, change_key TEXT NOT NULL, host_id TEXT NOT NULL, host_name TEXT NOT NULL)`,
+  `CREATE INDEX forge_facet_by_branch ON forge_facet (${FORGE_BRANCH}, change_key) WHERE ${FORGE_GITHUB_KEY}`,
+  `ALTER TABLE thread_change ADD COLUMN inferred INTEGER NOT NULL DEFAULT 0`,
+  // An observed Change always has a thread_branch row, even after a detached read.
+  `UPDATE thread_change SET inferred = 1
+   WHERE NOT EXISTS (SELECT 1 FROM thread_branch WHERE thread_branch.thread_id = thread_change.thread_id)`,
+  // A legacy null branch cannot establish that the remembered key was observed.
+  `UPDATE thread_change SET inferred = 1
+   WHERE thread_id IN (SELECT thread_id FROM thread_branch WHERE branch IS NULL)`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -349,35 +363,46 @@ function askTables(db: Database) {
 function threadChangeTables(db: Database) {
   const getLastChange = db.prepare<
     [string],
-    { change_key: string; host_id: string; host_name: string }
-  >(`SELECT change_key, host_id, host_name FROM thread_change WHERE thread_id = ?`);
+    { change_key: string; host_id: string; host_name: string; inferred: number }
+  >(`SELECT change_key, host_id, host_name, inferred FROM thread_change WHERE thread_id = ?`);
   const putLastChange = db.prepare(
-    `INSERT INTO thread_change (thread_id, change_key, host_id, host_name) VALUES (?, ?, ?, ?)
+    `INSERT INTO thread_change (thread_id, change_key, host_id, host_name, inferred) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT (thread_id) DO UPDATE SET change_key = excluded.change_key,
-       host_id = excluded.host_id, host_name = excluded.host_name`,
+       host_id = excluded.host_id, host_name = excluded.host_name, inferred = excluded.inferred
+     WHERE thread_change.inferred = 1 OR excluded.inferred = 0`,
   );
+  const forgetInference = db.prepare(
+    `DELETE FROM thread_change WHERE thread_id = ? AND inferred = 1`,
+  );
+
   return {
     /** The last GitHub Change the thread was read on, and its checkout's host. */
-    lastChange(threadId: string): { key: ChangeKey; host: ForgeHost } | null {
+    lastChange(threadId: string): { key: ChangeKey; host: ForgeHost; inferred: boolean } | null {
       const row = getLastChange.get(threadId);
       return row
         ? {
             key: row.change_key as ChangeKey,
+            inferred: row.inferred === 1,
             host: { hostId: row.host_id, hostName: row.host_name },
           }
         : null;
     },
     /** Returns whether the remembered Change moved; a new host name alone is stored quietly. */
-    rememberChange(threadId: string, key: ChangeKey, host: ForgeHost): boolean {
+    rememberChange(threadId: string, key: ChangeKey, host: ForgeHost, inferred = false): boolean {
       const before = getLastChange.get(threadId);
       if (
         before?.host_id !== host.hostId ||
         before.host_name !== host.hostName ||
-        before.change_key !== key
+        before.change_key !== key ||
+        before.inferred !== Number(inferred)
       )
-        putLastChange.run(threadId, key, host.hostId, host.hostName);
-      return before?.change_key !== key;
+        return (
+          putLastChange.run(threadId, key, host.hostId, host.hostName, Number(inferred)).changes >
+            0 && before?.change_key !== key
+        );
+      return false;
     },
+    forgetInference: (threadId: string): boolean => forgetInference.run(threadId).changes > 0,
   };
 }
 
@@ -594,6 +619,10 @@ export function openStore(bb: BbPluginApi) {
   const getForge = db.prepare<[string], { json: string }>(
     `SELECT json FROM forge_facet WHERE change_key = ?`,
   );
+  const forgeForBranch = db.prepare<[string, string, string], { change_key: string; json: string }>(
+    `SELECT change_key, json FROM forge_facet
+     WHERE ${FORGE_GITHUB_KEY} AND ${FORGE_BRANCH} = ? AND change_key >= ? AND change_key < ?`,
+  );
   const putForge = db.prepare(
     `INSERT INTO forge_facet (change_key, json) VALUES (?, ?) ON CONFLICT (change_key) DO UPDATE SET json = excluded.json`,
   );
@@ -623,13 +652,18 @@ export function openStore(bb: BbPluginApi) {
     const row = getLocal.get(hostId, path);
     return (row && parsed(localFacetSchema, row.json)) ?? EMPTY_FACET;
   };
-  const forge = (key: ChangeKey): Facet<ForgeValue> => {
+  // A failed read describes one reader's connection. Only successful data is shared and persisted.
+  const forgeProblems = new Map<string | undefined, Map<ChangeKey, Problem>>();
+  const problem = (key: ChangeKey, hostId?: string) => forgeProblems.get(hostId)?.get(key) ?? null;
+  const forge = (key: ChangeKey, hostId?: string): Facet<ForgeValue> => {
     const row = getForge.get(key);
-    return (row && parsed(forgeFacetSchema, row.json)) ?? EMPTY_FACET;
+    const facet = (row && parsed(forgeFacetSchema, row.json)) ?? EMPTY_FACET;
+    return { read: facet.read, problem: problem(key, hostId) };
   };
   const checks = (key: ChangeKey): Facet<ChecksValue> => {
     const row = getChecks.get(key);
-    return (row && parsed(checksFacetSchema, row.json)) ?? EMPTY_FACET;
+    const facet = (row && parsed(checksFacetSchema, row.json)) ?? EMPTY_FACET;
+    return { read: facet.read, problem: problem(key) };
   };
   const placementRows = db.prepare<[], { host_id: string; path: string; json: string }>(
     `SELECT tc.host_id, tc.path, tp.json FROM thread_checkout tc
@@ -725,17 +759,70 @@ export function openStore(bb: BbPluginApi) {
       return changed;
     },
     forge,
+    /** A unique cached Change, keeping an existing inference in the absence of conflicting evidence. */
+    knownBranchChange(repo: Repo, branch: string, inferred?: ChangeKey): ChangeKey | null {
+      const prefix = `gh:${repo.owner}/${repo.name}`;
+      // Bound the index scan to this repository: ";" follows ":" in the key's binary sort order.
+      let match: { key: ChangeKey; eligible: boolean } | null = null;
+      for (const row of forgeForBranch.all(branch, `${prefix}:`, `${prefix};`)) {
+        const key = changeKeySchema.safeParse(row.change_key);
+        if (!key.success) continue;
+        const parsedKey = parseChangeKey(key.data);
+        if (parsedKey?.kind !== "gh" || parsedKey.branch !== branch) continue;
+        const read = parsed(forgeFacetSchema, row.json)?.read;
+        if (!read) continue;
+        // A different head owner is evidence of ambiguity even without a PR.
+        if (match) return null;
+        match = {
+          key: key.data,
+          eligible:
+            key.data === inferred || read.value !== null || parsedKey.headOwner === repo.owner,
+        };
+      }
+      return match ? (match.eligible ? match.key : null) : (inferred ?? null);
+    },
     setForge(key: ChangeKey, facet: Facet<ForgeValue>): boolean {
       const changed = !sameFacet(forge(key), facet);
       putForge.run(key, JSON.stringify(facet));
       return changed;
     },
     checks,
-    setChecks(key: ChangeKey, facet: Facet<ChecksValue>): boolean {
-      const changed = !sameFacet(checks(key), facet);
-      putChecks.run(key, JSON.stringify(facet));
-      return changed;
+    threads: (key: ChangeKey): Facet<ForgeThread[]> => ({
+      read: review.threads(key).read,
+      problem: problem(key),
+    }),
+    setForgeProblem(key: ChangeKey, hostId: string | undefined, next: Problem | null): boolean {
+      if (JSON.stringify(problem(key, hostId)) === JSON.stringify(next)) return false;
+      if (next) {
+        const problems = forgeProblems.get(hostId) ?? new Map<ChangeKey, Problem>();
+        problems.set(key, next);
+        forgeProblems.set(hostId, problems);
+      } else forgeProblems.get(hostId)?.delete(key);
+      return true;
     },
+    /** A forge read publishes its PR, checks and review threads together. */
+    setForgeFacets: db.transaction(
+      (
+        key: ChangeKey,
+        facets: {
+          forge: Facet<ForgeValue>;
+          checks: Facet<ChecksValue>;
+          threads: Facet<ForgeThread[]>;
+        },
+      ) => {
+        const before = {
+          forge: { read: forge(key).read, problem: null },
+          checks: { read: checks(key).read, problem: null },
+        };
+        putForge.run(key, JSON.stringify(facets.forge));
+        putChecks.run(key, JSON.stringify(facets.checks));
+        return {
+          forge: !sameFacet(before.forge, facets.forge),
+          checks: !sameFacet(before.checks, facets.checks),
+          threads: review.setThreads(key, facets.threads),
+        };
+      },
+    ),
     /** The thread's branch in its checkout, as last worked out. */
     branch,
     setBranch(threadId: string, name: string | null): boolean {

@@ -20,9 +20,12 @@ import {
   type ReviewLocation,
   type ReviewTab,
 } from "../core/review.ts";
+import { prKey, type PrRef } from "../core/watch.ts";
+import { retirePendingReview } from "./pending-review-request.ts";
 import { PANEL_PATH } from "./page/hooks.ts";
 
 export type ReviewTarget = Partial<ReviewLocation> & { key: ChangeKey };
+type ReviewOpenTarget = ReviewTarget | { pr: PrRef };
 type Here = ReviewLocation & { key: ChangeKey };
 
 export const REVIEW_TAB = {
@@ -36,6 +39,11 @@ export function reviewTabParams(params: unknown): { key: ChangeKey } | null {
   if (typeof params !== "object" || params === null || !("key" in params)) return null;
   const key = changeKeySchema.safeParse(params.key);
   return key.success ? { key: key.data } : null;
+}
+
+/** The unresolved tab is identified by the pull request, regardless of URL casing. */
+export function prTabParams(ref: PrRef): { pr: string } {
+  return { pr: prKey(ref).toLowerCase() };
 }
 
 /** The tab strip's label: the branch, the one name every key carries. */
@@ -162,10 +170,12 @@ export function resetPlaces({ reload = false } = {}): void {
 
 // ── Opening ────────────────────────────────────────────────────────────
 
-/** Where an Open review may go when the surface has no side panel. */
+/** How the Review tab opens for this intent. */
 export type OpenReviewOptions = {
   /** Open the review page instead (the default). False: open nothing and return false. */
   readonly page?: boolean;
+  /** Promoting a PR tab continues an earlier click, leaving any newer requests pending. */
+  readonly continuation?: boolean;
 };
 
 /**
@@ -175,7 +185,7 @@ export type OpenReviewOptions = {
  */
 export function useOpenReview(
   threadId: string,
-): (target: ReviewTarget, options?: OpenReviewOptions) => boolean {
+): (target: ReviewOpenTarget, options?: OpenReviewOptions) => boolean {
   const panel = useAppPanel();
   const navigate = useBbNavigate();
   const latest = useRef({ panel, navigate, threadId });
@@ -184,20 +194,33 @@ export function useOpenReview(
   });
   return useMemo(
     () =>
-      (target: ReviewTarget, { page = true }: OpenReviewOptions = {}) => {
+      (target: ReviewOpenTarget, { page = true, continuation = false }: OpenReviewOptions = {}) => {
         const { panel, navigate, threadId } = latest.current;
+        if ("pr" in target) {
+          const opened = panel.openTab({
+            tab: REVIEW_TAB,
+            params: prTabParams(target.pr),
+            title: `#${target.pr.number} · Review`,
+          });
+          if (opened) retirePendingReview();
+          return opened;
+        }
         const undo = requestPlace(threadId, target);
         const opened = panel.openTab({
           tab: REVIEW_TAB,
           params: { key: target.key },
           title: reviewTabTitle(target.key),
         });
-        if (opened) return true;
+        if (opened) {
+          if (!continuation) retirePendingReview();
+          return true;
+        }
         if (!page) {
           undo();
           return false;
         }
         navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath(target) });
+        if (!continuation) retirePendingReview();
         return true;
       },
     [],

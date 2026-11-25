@@ -12,7 +12,8 @@ import { Effect } from "effect";
 import type { Viewer } from "../core/items.ts";
 import { parseChangeKey } from "../core/review.ts";
 import { createBatches } from "./batches.ts";
-import type { ForgeSites } from "./forge-sites.ts";
+import type { BeginForgeRead } from "./forge-read.ts";
+import type { ForgeHost, ForgeSites } from "./forge-sites.ts";
 import type { HostCalls } from "./host-calls.ts";
 import type { LocalReads } from "./local-read.ts";
 import { createReviewChange, localMatch } from "./review-change.ts";
@@ -32,8 +33,7 @@ export function createReview(deps: {
   host: HostCalls;
   share: Share;
   invalidate: (tags: readonly string[]) => void;
-  /** A Change's pull request was read: the threads showing it read again. */
-  forgeChanged: (key: ChangeKey) => void;
+  beginForgeRead: BeginForgeRead;
   /** Runs work no caller waits for. */
   fork: (work: Effect.Effect<void>) => void;
   now: () => number;
@@ -41,6 +41,7 @@ export function createReview(deps: {
   /** Threads working on the Change's branch. */
   threadsOnChange: (key: ChangeKey) => string[];
   worktreeHost: WorktreeHost;
+  threadForgeHost: (threadId: string) => Effect.Effect<ForgeHost | null>;
 }) {
   const sources = createReviewSources({
     ...deps,
@@ -52,12 +53,9 @@ export function createReview(deps: {
       Effect.map((hosts) => hosts.map((host) => host.id)),
     ),
   });
-  // Bound below: a pull request read may move the Change's head.
-  let headMayHaveMoved = (_key: ChangeKey) => {};
   const change = createReviewChange({
     ...deps,
     inboxRow: sources.inboxRow,
-    forgeRead: (key) => headMayHaveMoved(key),
   });
   const revision = createRevisionReads(deps);
   // Stored with the repository once learned, so "You" survives a restart before GitHub is asked again.
@@ -99,7 +97,6 @@ export function createReview(deps: {
     fork: deps.fork,
     now: deps.now,
   });
-  headMayHaveMoved = items.settleIfBehind;
   const images = createPrImages({
     sites: deps.sites,
     share: deps.share,
@@ -120,6 +117,7 @@ export function createReview(deps: {
     watchHost: sources.watchHost,
     forgetHost: sources.forgetHost,
     detail: change.detail,
+    prLinkDetail: change.prLinkDetail,
     /** Read the Change's pull request now, by its key alone: no checkout needed. */
     readForge: change.readForge,
     forgeDue: change.forgeDue,

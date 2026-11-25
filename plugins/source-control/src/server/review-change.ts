@@ -5,9 +5,7 @@
  */
 import { Effect } from "effect";
 import {
-  failed,
   findBranch,
-  succeeded,
   uncommittedCount,
   type Facet,
   type ForgeAction,
@@ -18,7 +16,7 @@ import {
   type PullRequest,
   type WorkspaceValue,
 } from "../core/change.ts";
-import { changeTag, checksTag, reviewTag, type ChangeKey } from "../core/ids.ts";
+import type { ChangeKey } from "../core/ids.ts";
 import type { MergePolicy } from "../core/merge.ts";
 import {
   inboxRow,
@@ -29,7 +27,13 @@ import {
   type ReviewRevision,
 } from "../core/review.ts";
 import { changeState, publishedSummary, shipPath, type ChangeSummary } from "../core/status.ts";
-import { forgeInterval, FORGE_ACTIVE_MS, knownOpen } from "./forge-read.ts";
+import {
+  forgeInterval,
+  forgeScope,
+  FORGE_ACTIVE_MS,
+  knownOpen,
+  type BeginForgeRead,
+} from "./forge-read.ts";
 import type { ForgeHost, ForgeSites } from "./forge-sites.ts";
 import { rowsOf } from "./review-sources.ts";
 import type { Share } from "./shared.ts";
@@ -206,16 +210,13 @@ export function createReviewChange(deps: {
   store: Store;
   sites: ForgeSites;
   share: Share;
+  threadForgeHost: (threadId: string) => Effect.Effect<ForgeHost | null>;
   inboxRow: (key: ChangeKey) => ChangeRow | null;
-  invalidate: (tags: readonly string[]) => void;
-  /** A Change's pull request was read: the threads showing it read again. */
-  forgeChanged: (key: ChangeKey) => void;
-  /** A Change's pull request was read: its review items may need a new head. */
-  forgeRead?: (key: ChangeKey) => void;
+  beginForgeRead: BeginForgeRead;
   now: () => number;
 }) {
   const { store } = deps;
-  const attempts = new Map<ChangeKey, number>();
+  const attempts = new Map<string, number>();
 
   /**
    * Read the Change's pull request by its key, from wherever an account can
@@ -223,61 +224,86 @@ export function createReviewChange(deps: {
    */
   const readForge = (key: ChangeKey, host?: ForgeHost) =>
     deps.share(
-      `forge:${key}`,
+      host ? `remembered-forge:${JSON.stringify([key, host.hostId])}` : `forge:${key}`,
       Effect.gen(function* () {
         const parsed = parseChangeKey(key);
         if (parsed?.kind !== "gh") return;
-        attempts.set(key, deps.now());
+        attempts.set(forgeScope(key, host?.hostId), deps.now());
         const { repo, headOwner, branch } = parsed;
         // The Change's own checkout first, then any checkout's host, so a server with no gh login still reads it.
         const own = localMatch(store, key)?.placement;
         const placements = host ? [host] : own ? [own, ...store.checkouts()] : store.checkouts();
+        const publish = deps.beginForgeRead(key, host ? { hostId: host.hostId } : {});
         const answer = yield* deps.sites
           .pullRequestVia(
-            { repo, headOwner, branch, ...knownOpen(store.forge(key)) },
+            {
+              repo,
+              headOwner,
+              branch,
+              ...knownOpen(store.forge(key)),
+            },
             placements,
             host ? "only" : "any",
           )
           .pipe(Effect.result);
-        const at = deps.now();
-        const ok = answer._tag === "Success";
-        const forge = ok
-          ? succeeded(answer.success.pullRequest, at)
-          : failed(store.forge(key), answer.failure.problem);
-        const checks = ok
-          ? succeeded(answer.success.checks, at)
-          : failed(store.checks(key), answer.failure.problem);
-        if (store.setForge(key, forge)) {
-          deps.invalidate([changeTag(key)]);
-          deps.forgeChanged(key);
-        }
-        if (store.setChecks(key, checks)) deps.invalidate([checksTag(key)]);
-        const threads = ok
-          ? succeeded(answer.success.threads ?? [], at)
-          : failed(store.threads(key), answer.failure.problem);
-        if (store.setThreads(key, threads)) deps.invalidate([reviewTag(key)]);
-        deps.forgeRead?.(key);
+        publish(
+          answer._tag === "Success"
+            ? { value: answer.success }
+            : { problem: answer.failure.problem },
+        );
       }),
     );
 
-  const due = (key: ChangeKey) => {
-    const last = attempts.get(key);
-    return last === undefined || deps.now() - last >= forgeInterval(store.forge(key));
+  const due = (key: ChangeKey, hostId?: string) => {
+    const last = attempts.get(forgeScope(key, hostId));
+    return last === undefined || deps.now() - last >= forgeInterval(store.forge(key, hostId));
   };
+
+  function detailOf(key: ChangeKey, forge = store.forge(key)): ChangeDetail {
+    return changeDetail(key, {
+      match: localMatch(store, key),
+      forge,
+      fromInbox: deps.inboxRow(key),
+    });
+  }
 
   return {
     detail(keys: readonly ChangeKey[]): Record<string, ChangeDetail> {
-      return Object.fromEntries(
-        keys.map((key) => [
-          key,
-          changeDetail(key, {
-            match: localMatch(store, key),
-            forge: store.forge(key),
-            fromInbox: deps.inboxRow(key),
-          }),
-        ]),
-      );
+      return Object.fromEntries(keys.map((key) => [key, detailOf(key)]));
     },
+    /** Refresh the branch's selected PR. The link number never picks what the branch stores. */
+    prLinkDetail: (key: ChangeKey, threadId?: string) =>
+      deps.share(
+        // A thread id scopes the pending read before its host is needed or known.
+        `pr-link-forge:${JSON.stringify([key, threadId ?? null])}`,
+        Effect.gen(function* () {
+          const parsed = parseChangeKey(key);
+          if (parsed?.kind !== "gh")
+            return { [key]: { state: "missing", problem: null } satisfies ChangeDetail };
+          const { repo, headOwner, branch } = parsed;
+          const publish = deps.beginForgeRead(key);
+          const answer = yield* deps.sites
+            .pullRequestVia(
+              { repo, headOwner, branch, ...knownOpen(store.forge(key)) },
+              [],
+              "only",
+              threadId ? deps.threadForgeHost(threadId) : undefined,
+            )
+            .pipe(Effect.result);
+          // A thread's connection or permission failure says nothing about the shared branch.
+          if (answer._tag === "Failure")
+            return {
+              [key]: { state: "missing", problem: answer.failure.problem } satisfies ChangeDetail,
+            };
+          publish({ value: answer.success });
+          const forge = store.forge(key);
+          return {
+            [key]: forge.read?.value
+              ? detailOf(key, { read: forge.read, problem: null })
+              : ({ state: "missing", problem: null } satisfies ChangeDetail),
+          };
+        }),
+      ),
     /** Read the Change's pull request now. */
     readForge,
     /** Whether the Change's pull request is due another read. */

@@ -70,16 +70,15 @@ export function useReviewLinks(
       ? []
       : urls.flatMap((url) => {
           const href = typeof url === "string" ? openableLink(url)?.href : undefined;
-          return href !== undefined && pullRequestUrlKey(href) !== null ? [href] : [];
+          if (href === undefined) return [];
+          const key = pullRequestUrlKey(href);
+          return key === null ? [] : [{ href, key }];
         });
   const asks = threadId !== null && pullRequests.length > 0;
   // The pull requests that open in Review, as one string so an unchanged answer keeps its identity.
   const opening = useSyncExternalStore(asks ? subscribe : noSubscription, () =>
     asks
-      ? pullRequests
-          .filter((url) => available(threadId, url))
-          .map(pullRequestUrlKey)
-          .join("\n")
+      ? pullRequests.flatMap(({ href, key }) => (available(threadId, href) ? [key] : [])).join("\n")
       : "",
   );
   return useMemo(() => {

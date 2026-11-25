@@ -1,14 +1,28 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
-import type { ComponentType } from "react";
-import type { ExperimentalPanelTabs } from "@get-bb/plugin-sdk/app";
+import { useState, type ComponentType } from "react";
+import {
+  experimental_useRpcKeyedQuery as useKeyed,
+  type ExperimentalPanelTabs,
+} from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { changeKeySchema } from "../core/ids.ts";
 import type { ChangeDetail, ChangeRow } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { knownPullRequest, resetKnownPullRequests, RESOLVE_MS } from "./open-pull-request.tsx";
+import {
+  knownPullRequest,
+  rememberChange,
+  resetKnownPullRequests,
+  RESOLVE_MS,
+} from "./open-pull-request.tsx";
 import { resetPlaces } from "./open-review.ts";
+import {
+  pendingReviewThread,
+  retirePendingReview,
+  waitForReview,
+} from "./pending-review-request.ts";
+import { PullRequestTab } from "./pull-request-tab.tsx";
 
 const app = await loadPluginApp(() => import("./app.tsx"));
 const reviewTab = app.tabs.find((tab) => tab.id === "review") as unknown as {
@@ -23,6 +37,7 @@ afterEach(() => {
   cleanup();
   resetKnownPullRequests();
   resetPlaces();
+  retirePendingReview();
 });
 
 /** The Review tab a link opened for acme/api#12, as the panel lists it. */
@@ -85,6 +100,8 @@ function detailShowing(number: number | null): ChangeDetail {
 function render(
   legacyChange: (input: { keys: string[]; threadId?: string }) => unknown,
   shown: number | null = 12,
+  changeDetail = vi.fn((): ChangeDetail | Promise<ChangeDetail> => detailShowing(shown)),
+  openTab = () => true,
 ) {
   const asked: unknown[] = [];
   const slot = renderSlot(
@@ -93,14 +110,15 @@ function render(
     {
       experimental_rpcContract: sourceControlContract,
       pluginId: "source-control",
-      experimental_panel: { openTab: () => true, getTabs: () => SELF, closeTab: () => true },
+      experimental_panel: { openTab, getTabs: () => SELF, closeTab: () => true },
       rpc: {
         legacyChange: (input: { keys: string[]; threadId?: string }) => {
           asked.push(input);
           return legacyChange(input);
         },
-        changeDetail: ({ keys }: { keys: string[] }) =>
-          Object.fromEntries(keys.map((key) => [key, detailShowing(shown)])),
+        changeDetail: async ({ keys }: { keys: string[] }) => ({
+          [keys[0]!]: await changeDetail(),
+        }),
       } as never,
     },
   );
@@ -126,7 +144,7 @@ test("the tab says it is looking, then opens the Change's own tab and closes its
     ]),
   );
   expect(asked).toEqual([{ keys: [LOOKUP], threadId: "thread-a" }]);
-  expect(knownPullRequest(LOOKUP)).toEqual({ key: KEY });
+  expect(knownPullRequest(LOOKUP, "thread-a")).toEqual({ key: KEY });
 });
 
 test("a pull request Source Control cannot read says why and offers GitHub, a click away", async () => {
@@ -134,7 +152,8 @@ test("a pull request Source Control cannot read says why and offers GitHub, a cl
   expect((await slot.findByRole("alert")).textContent).toContain("gh has no access.");
   const github = slot.getByRole("link", { name: "Open #12 on GitHub" });
   expect(github.getAttribute("href")).toBe("https://github.com/acme/api/pull/12");
-  expect(knownPullRequest(LOOKUP)).toEqual({ problem: "gh has no access." });
+  expect(knownPullRequest(LOOKUP, "thread-a")).toEqual({ problem: "gh has no access." });
+  expect(knownPullRequest(LOOKUP, "thread-b")).toBeNull();
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
 });
 
@@ -162,7 +181,7 @@ test("when the branch's review now shows another pull request, the link's goes t
   expect((await slot.findByRole("alert")).textContent).toContain("shows #9 now");
   expect(slot.getByRole("link", { name: "Open #12 on GitHub" })).toBeTruthy();
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
-  expect(knownPullRequest(LOOKUP)).toMatchObject({ problem: expect.any(String) });
+  expect(knownPullRequest(LOOKUP, "thread-a")).toMatchObject({ problem: expect.any(String) });
 });
 
 test("a tab closed before the answer opens nothing", async () => {
@@ -171,4 +190,181 @@ test("a tab closed before the answer opens nothing", async () => {
   slot.unmount();
   await act(async () => answer(found()));
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("Try again reads a previously missing Change again even when the mapping is unchanged", async () => {
+  const detail = vi
+    .fn((): ChangeDetail => detailShowing(12))
+    .mockReturnValueOnce({ state: "missing", problem: null });
+  const { slot } = render(found, 12, detail);
+  await slot.findByRole("alert");
+  fireEvent.click(slot.getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(detail).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(slot.inspection.experimental_panelCalls).toMatchObject([
+      { method: "openTab", options: { params: { key: KEY } } },
+      { method: "closeTab" },
+    ]),
+  );
+  expect(knownPullRequest(LOOKUP, "thread-a")).toEqual({ key: KEY });
+});
+
+test("a warm mapping still checks which pull request the Change shows", async () => {
+  rememberChange(LOOKUP, KEY, "thread-a");
+  const { slot, asked } = render(found, 13);
+  expect((await slot.findByRole("alert")).textContent).toContain("shows #13 now");
+  expect(asked).toEqual([]);
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+  expect(slot.inspection.rpcCalls).toContainEqual(
+    expect.objectContaining({
+      method: "changeDetail",
+      input: { keys: [KEY], prNumber: 12, threadId: "thread-a" },
+    }),
+  );
+});
+
+test("a thrown lookup records a temporary miss", async () => {
+  const { slot } = render(async () => {
+    throw new Error("offline");
+  });
+  expect((await slot.findByRole("alert")).textContent).toContain("offline");
+  expect(knownPullRequest(LOOKUP, "thread-a")).toEqual({
+    problem: expect.stringContaining("offline"),
+  });
+  expect(knownPullRequest(LOOKUP, "thread-a", Date.now() + 60_000)).toBeNull();
+});
+
+test("a slow Change read names the Review in its timeout", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const detail = vi.fn((): Promise<ChangeDetail> => new Promise(() => {}));
+  const { slot } = render(found, 12, detail);
+  await waitFor(() => expect(detail).toHaveBeenCalled());
+  await act(async () => vi.advanceTimersByTime(RESOLVE_MS));
+  expect(slot.getByRole("alert").textContent).toContain("The Review didn't load in time.");
+});
+
+test("a slow GitHub lookup can return its server failure after eight seconds", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const { slot, asked } = render(
+    () =>
+      new Promise((resolve) => {
+        setTimeout(
+          () => resolve({ [LOOKUP]: { key: null, problem: "Repository is unavailable." } }),
+          14_000,
+        );
+      }),
+  );
+  await waitFor(() => expect(asked).toHaveLength(1));
+  await act(async () => vi.advanceTimersByTimeAsync(14_000));
+  expect(slot.getByRole("alert").textContent).toContain("Repository is unavailable.");
+});
+
+test("a missing Change states the branch error once", async () => {
+  const detail = vi.fn((): ChangeDetail => ({ state: "missing", problem: null }));
+  const { slot } = render(found, 12, detail);
+  expect((await slot.findByRole("alert")).textContent).toBe(
+    "Source Control doesn't know this pull request's branch.",
+  );
+});
+
+test("an older PR handoff preserves a newer Tasks request", async () => {
+  let resolveDetail: (detail: ChangeDetail) => void = () => {};
+  const detail = vi.fn(() => new Promise<ChangeDetail>((resolve) => (resolveDetail = resolve)));
+  const { slot } = render(found, 12, detail);
+  await waitFor(() => expect(detail).toHaveBeenCalled());
+  waitForReview({
+    threadId: "thread-b",
+    url: "https://github.com/acme/api/pull/13",
+    fallback: () => {},
+  });
+  await act(async () => resolveDetail(detailShowing(12)));
+  await waitFor(() => expect(slot.inspection.experimental_panelCalls).toHaveLength(2));
+  expect(pendingReviewThread()).toBe("thread-b");
+});
+
+test("an in-flight refresh of a cached branch must finish before promotion", async () => {
+  rememberChange(LOOKUP, KEY, "thread-a");
+  let answer: (detail: ChangeDetail) => void = () => {};
+  const read = vi
+    .fn(() => new Promise<ChangeDetail>((resolve) => (answer = resolve)))
+    .mockResolvedValueOnce(detailShowing(12));
+  function Flow() {
+    const [show, setShow] = useState(false);
+    const q = useKeyed({ contract: sourceControlContract, method: "changeDetail", keys: [KEY] });
+    return (
+      <>
+        <button onClick={() => void q.refetchKeys([KEY])}>refresh</button>
+        <span>{q.data?.[KEY]?.state}</span>
+        <button onClick={() => setShow(true)}>link</button>
+        {show && (
+          <PullRequestTab threadId="thread-a" pr={{ owner: "acme", repo: "api", number: 12 }} />
+        )}
+      </>
+    );
+  }
+  const slot = renderSlot({ component: Flow as never }, {} as never, {
+    experimental_rpcContract: sourceControlContract,
+    pluginId: "source-control",
+    experimental_panel: { openTab: () => true, getTabs: () => SELF, closeTab: () => true },
+    rpc: { changeDetail: async () => ({ [KEY]: await read() }) } as never,
+  });
+  await slot.findByText("change");
+  fireEvent.click(slot.getByText("refresh"));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    fireEvent.click(slot.getByText("link"));
+  });
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+  await act(async () => answer(detailShowing(13)));
+  expect((await slot.findByRole("alert")).textContent).toContain("shows #13 now");
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("reconnect promotes the Change after a detail RPC error", async () => {
+  const detail = vi
+    .fn((): ChangeDetail => detailShowing(12))
+    .mockImplementationOnce(() => {
+      throw new Error("Disconnected");
+    });
+  const { slot } = render(found, 12, detail);
+  expect((await slot.findByRole("alert")).textContent).toContain("Disconnected");
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+  await act(async () => slot.experimental_invalidateRpc(null, "source-control"));
+  await slot.findByText("Opened in its review tab.");
+  expect(slot.inspection.experimental_panelCalls).toMatchObject([
+    { method: "openTab", options: { params: { key: KEY } } },
+    { method: "closeTab" },
+  ]);
+});
+
+test("report the forge failure when the branch is known", async () => {
+  const detail = vi.fn((): ChangeDetail => ({
+    state: "missing",
+    problem: { kind: "rate-limited", site: "GitHub", detail: "API rate limit exceeded" },
+  }));
+  const { slot } = render(found, 12, detail);
+  expect((await slot.findByRole("alert")).textContent).toContain("GitHub is rate-limiting");
+});
+
+test.each([
+  ["No signed-in GitHub account can see acme/api.", "can see acme/api"],
+  ["The token has expired.", "Run gh auth login"],
+])("the alert explains %s", async (reason, expected) => {
+  const detail = vi.fn((): ChangeDetail => ({
+    state: "missing",
+    problem: { kind: "auth", site: "bb server", detail: reason },
+  }));
+  const { slot } = render(found, 12, detail);
+  expect((await slot.findByRole("alert")).textContent).toContain(expected);
+});
+
+test("a declined Review tab opens the full Review page", async () => {
+  const detail = vi.fn(() => detailShowing(12));
+  const { slot } = render(found, 12, detail, () => false);
+  await slot.findByText("Opened in its review tab.");
+  expect(slot.navigateCalls).toContainEqual(expect.objectContaining({ method: "toPluginPanel" }));
+  expect(slot.inspection.experimental_panelCalls).toContainEqual({
+    method: "closeTab",
+    key: SELF.tabs[0]!.key,
+  });
 });

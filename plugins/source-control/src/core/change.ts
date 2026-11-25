@@ -555,7 +555,9 @@ export function describeProblem(problem: Problem): string {
         return `This checkout is a GitButler workspace, and ${problem.host} has no GitButler CLI (but).`;
       return `${problem.host} has no GitHub CLI (gh).`;
     case "auth":
-      return `GitHub CLI on ${problem.site} is not signed in. Run gh auth login there.`;
+      return problem.detail.startsWith("No signed-in GitHub account can see ")
+        ? problem.detail
+        : `GitHub CLI on ${problem.site} is not signed in. Run gh auth login there.`;
     case "rate-limited":
       return `GitHub is rate-limiting ${problem.site}. bb will read again later.`;
     case "no-site":

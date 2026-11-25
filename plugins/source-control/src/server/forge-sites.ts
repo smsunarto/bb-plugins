@@ -13,6 +13,7 @@ import { Effect, Schema } from "effect";
 import { problemSchema, type ForgeRead, type ForgeResult, type Problem } from "../core/change.ts";
 import type { ForgeAccount, HostFailure } from "../contract/host.ts";
 import { runReviewRead, type ReviewAnswer, type ReviewRead } from "../forge/review.ts";
+import { FORGE_DEADLINE_MS } from "../core/deadlines.ts";
 import type { Repo } from "../core/ids.ts";
 import type { MergePolicy } from "../core/merge.ts";
 import { mergeAt, type MergeWrite } from "../forge/merge.ts";
@@ -34,7 +35,6 @@ import {
 
 export const SERVER_SITE_NAME = "the bb server";
 const PROBE_TTL_MS = 5 * 60_000;
-export const FORGE_DEADLINE_MS = 15_000;
 /** A merge may take GitHub longer than a read; past this its outcome is unknown. */
 export const MERGE_DEADLINE_MS = 60_000;
 
@@ -474,6 +474,20 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
       });
     });
 
+  function readSources(
+    placements: readonly Placement[],
+    fallbackHost?: Effect.Effect<Placement | null>,
+  ) {
+    const sources = [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)];
+    if (fallbackHost)
+      sources.push(
+        fallbackHost.pipe(
+          Effect.flatMap((host) => (host ? hostAccesses(host) : Effect.succeed([]))),
+        ),
+      );
+    return sources;
+  }
+
   /**
    * The branch's pull request and checks: the account that read the
    * repository last, else each server account, else each of the host's,
@@ -492,11 +506,12 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
     query: PullRequestQuery,
     placements: readonly Placement[],
     scope: "any" | "only" = "any",
+    fallbackHost?: Effect.Effect<Placement | null>,
   ) =>
     withinDeadline(
       firstThatSees(
         repoName(query),
-        [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)],
+        readSources(placements, fallbackHost),
         (access) => readAt(access, query),
         { kind: "no-site", host: placements[0]?.hostName ?? SERVER_SITE_NAME },
         (access) =>
@@ -628,15 +643,22 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
     repo: { owner: string; name: string },
     read: ReviewRead,
     placements: readonly Placement[],
+    scope: "any" | "only" = "any",
+    // A thread PR link resolves its host only if no server account can read it.
+    fallbackHost?: Effect.Effect<Placement | null>,
   ): Effect.Effect<SiteOutcome<ReviewAnswer>> =>
     Effect.gen(function* () {
       if (login === null) {
         const answer = yield* withinDeadline(
           firstThatSees(
             repoName({ repo }),
-            [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)],
+            readSources(placements, fallbackHost),
             (access) => reviewAt(access, read),
             { kind: "no-site", host: placements[0]?.hostName ?? SERVER_SITE_NAME },
+            (access) =>
+              scope === "any" ||
+              access.hostId === null ||
+              placements.some((each) => each.hostId === access.hostId),
           ),
         ).pipe(Effect.result);
         if (answer._tag === "Success") {

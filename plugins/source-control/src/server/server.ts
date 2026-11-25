@@ -5,6 +5,7 @@ import type {
 } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-plugins/instructions";
 import { makePluginRuntime, type PluginRuntime } from "@bb-plugins/effect-bridge";
+import { FORGE_DEADLINE_MS } from "../core/deadlines.ts";
 import { Effect } from "effect";
 import { z } from "zod";
 import {
@@ -24,12 +25,7 @@ import { createAsk, type Ask } from "./ask.ts";
 import { createPublish, type Publish } from "./publish.ts";
 import { createFixChecks, type FixChecks } from "./fix-checks.ts";
 import { createCheckoutChat } from "./checkout-chat.ts";
-import {
-  createForgeSites,
-  FORGE_DEADLINE_MS,
-  MERGE_DEADLINE_MS,
-  type HostForge,
-} from "./forge-sites.ts";
+import { createForgeSites, MERGE_DEADLINE_MS, type HostForge } from "./forge-sites.ts";
 import {
   createGuides,
   type Guides,
@@ -297,7 +293,13 @@ function registerRpc(
       inbox: ({ keys }) => changes.review.inbox(keys),
       hostChanges: ({ keys }) => changes.review.hostChanges(keys),
       checkoutHosts: () => changes.review.checkoutHosts(),
-      changeDetail: ({ keys }) => changes.review.detail(keys),
+      changeDetail: ({ keys, prNumber, threadId }, context) =>
+        prNumber === undefined
+          ? changes.review.detail(keys)
+          : runtime.run(
+              changes.review.prLinkDetail(keys[0]!, threadId),
+              context.experimental_signal,
+            ),
       changeFiles: ({ key, revision }, context) =>
         runtime.run(changes.review.files(key, revision), context.experimental_signal),
       changePatches: ({ key, revision, paths }, context) =>
@@ -639,16 +641,17 @@ export function createSourceControl(deps: SourceControlDeps) {
       now: deps.now,
       worktreeHost,
     });
+    const placements = createPlacements({ bb, store, now: deps.now });
     const moved = createMoved({
       bb,
       store,
       host: checkoutCalls(host),
       read: sites.backgroundRead,
+      threadForgeHost: placements.threadForgeHost,
       run: (effect) => runtime.run(effect),
       invalidate,
       now: deps.now,
     });
-    const placements = createPlacements({ bb, store, now: deps.now });
     registerRpc(
       bb,
       runtime,

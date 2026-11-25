@@ -17,7 +17,7 @@ import {
   type PluginAgentToolContext,
 } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-plugins/instructions";
-import type { Effect } from "effect";
+import { Effect } from "effect";
 import { z } from "zod";
 import type { Placement } from "../core/change.ts";
 import { changeKeySchema, prWatchTag, type ChangeKey } from "../core/ids.ts";
@@ -33,9 +33,10 @@ import {
 import type { sourceControlContract } from "../contract/rpc.ts";
 import type { ReviewAnswer, ReviewRead } from "../forge/review.ts";
 import { createCutover, legacyBranchId } from "./cutover.ts";
-import type { SiteOutcome } from "./forge-sites.ts";
+import type { ForgeHost, ForgeSites, SiteOutcome } from "./forge-sites.ts";
 import type { HostCalls } from "./host-calls.ts";
 import { createLanded, SHARE_LANDED } from "./landed.ts";
+import type { createPlacements } from "./placement.ts";
 import { createLegacy, LEGACY_PLUGIN } from "./legacy.ts";
 import { createPrWatcher, WATCH_PR } from "./pr-watch.ts";
 import { rowsOf } from "./review-sources.ts";
@@ -44,12 +45,7 @@ import type { Store } from "./store.ts";
 
 const files = instructionFiles(import.meta.url);
 
-type BackgroundRead = (
-  login: string | null,
-  repo: { owner: string; name: string },
-  read: ReviewRead,
-  placements: readonly Placement[],
-) => Effect.Effect<SiteOutcome<ReviewAnswer>>;
+type BackgroundRead = ForgeSites["backgroundRead"];
 
 const quiet = new Set(["side-chat", "review"]);
 const answering = /^(Arena|Review) \((Claude|Codex)\)(?: — .+)?$/;
@@ -125,6 +121,7 @@ export function createMoved(deps: {
   store: Store;
   host: HostCalls;
   read: BackgroundRead;
+  threadForgeHost: ReturnType<typeof createPlacements>["threadForgeHost"];
   run: <A>(effect: Effect.Effect<A>) => Promise<A>;
   invalidate: (tags: readonly string[]) => void;
   now: () => number;
@@ -254,11 +251,12 @@ export function createMoved(deps: {
 
   /**
    * An old card's target, or a pull request link, as a Change: by the stored
-   * mapping, the checkouts' rows, or GitHub, read first from `threadId`'s host.
+   * mapping, the checkouts' rows, or a GitHub read on the server and the asking thread's host.
    */
   async function legacyChange(
     lookup: string,
     threadId: string | null,
+    host?: Effect.Effect<ForgeHost | null>,
   ): Promise<{ key: ChangeKey | null; problem: string | null }> {
     const stored = store.legacyBranch(lookup) ?? store.legacyBranch(lookup.replace(/^branch:/, ""));
     if (stored) return { key: stored, problem: null };
@@ -274,12 +272,17 @@ export function createMoved(deps: {
     }
     const ref = parsePrReference(lookup.replace(/^pr:/, ""));
     if (!ref) return { key: null, problem: "This card names no pull request." };
-    // The thread's own host first, then every other checkout: a link can name any repository.
-    const placements = threadId
-      ? [...placementsOf(threadId), ...store.checkouts()]
-      : store.checkouts();
+    // Keeping the host effect last lets a server account answer without asking bb about the thread.
+    const placements = threadId ? [] : store.checkouts();
     const outcome = await deps.run(
-      deps.read(null, repoOf(ref), { kind: "prHead", ref }, placements),
+      deps.read(
+        null,
+        repoOf(ref),
+        { kind: "prHead", ref },
+        placements,
+        threadId ? "only" : "any",
+        host,
+      ),
     );
     if (!outcome.ok || outcome.value.kind !== "prHead")
       return {
@@ -293,12 +296,17 @@ export function createMoved(deps: {
 
   const handlers = {
     importFromOldPlugins: () => cutover.run(),
-    legacyChange: async ({ keys, threadId }) =>
-      Object.fromEntries(
+    legacyChange: async ({ keys, threadId }) => {
+      let resolved: Promise<ForgeHost | null> | undefined;
+      const host = threadId
+        ? Effect.promise(() => (resolved ??= deps.run(deps.threadForgeHost(threadId))))
+        : undefined;
+      return Object.fromEntries(
         await Promise.all(
-          keys.map(async (key) => [key, await legacyChange(key, threadId ?? null)] as const),
+          keys.map(async (key) => [key, await legacyChange(key, threadId ?? null, host)] as const),
         ),
-      ),
+      );
+    },
     landedCard: async (target) => {
       const first = target.prs[0] ?? target.commits[0];
       if (!first) return { ok: false as const, message: "Nothing listed.", away: false };

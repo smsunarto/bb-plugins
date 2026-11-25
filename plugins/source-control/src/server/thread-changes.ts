@@ -22,7 +22,7 @@ import { threadTag, type ChangeKey } from "../core/ids.ts";
 import type { ThreadStatus } from "../core/status.ts";
 import { createActions } from "./actions.ts";
 import { createCheckoutWork } from "./checkout-work.ts";
-import { createForgeReads } from "./forge-read.ts";
+import { createForgePublisher, createForgeReads } from "./forge-read.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import { HOST_DEADLINE_MS, type HostCalls } from "./host-calls.ts";
 import { createLocalReads, type ThreadBranchLookup } from "./local-read.ts";
@@ -127,7 +127,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
       branch: branch ? branchName : null,
       key,
       local,
-      forge: key ? store.forge(key) : EMPTY_FACET,
+      forge: key ? store.forge(key, placement.hostId) : EMPTY_FACET,
     };
   }
 
@@ -157,16 +157,26 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     now,
     deadlineMs: hostDeadlineMs,
   });
-  const forge = createForgeReads({
+  const beginForgeRead = createForgePublisher({
     store,
-    sites: deps.sites,
-    share,
-    threadsOf: showing,
-    announce,
     invalidate,
+    forgeChanged: (key, threadId) =>
+      announce(threadId ? [threadId, ...showing(key)] : showing(key)),
+    hostProblemChanged: (key, hostId, requester) => {
+      const threads = showing(key).filter((threadId) => {
+        const placement = store.placement(threadId);
+        return (
+          (placement?.state === "checkout"
+            ? placement.placement.hostId
+            : store.lastChange(threadId)?.host.hostId) === hostId
+        );
+      });
+      announce(requester ? [requester, ...threads] : threads);
+    },
     forgeRead: (key) => review.items.settleIfBehind(key),
     now,
   });
+  const forge = createForgeReads({ store, sites: deps.sites, share, beginForgeRead, now });
 
   /** Local and forge together; the forge again if the local read moved the Change. */
   const refreshNow = Effect.fn("refreshThread")(function* (threadId: string) {
@@ -205,11 +215,12 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     host: deps.host,
     share,
     invalidate,
-    forgeChanged: (key) => announce(showing(key)),
+    beginForgeRead,
     fork: deps.fork,
     now,
     deadlineMs: hostDeadlineMs,
     threadsOnChange: owners,
+    threadForgeHost: placements.threadForgeHost,
     worktreeHost: deps.worktreeHost,
   });
   checkoutRead = review.checkoutRead;

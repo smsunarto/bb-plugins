@@ -250,7 +250,15 @@ export const sourceControlContract = defineRpcContract({
   changeDetail: {
     experimental_description:
       "Each Change's review header and rail, keyed by ChangeKey: its pull request, size, the revision its files are read at, and its stack.",
-    input: z.object({ keys: z.array(changeKeySchema).min(1).max(20) }).strict(),
+    input: z
+      .object({
+        keys: z.array(changeKeySchema).min(1).max(20),
+        // A PR link checks its number against GitHub before opening the branch Review.
+        prNumber: z.number().int().positive().optional(),
+        threadId: threadIdSchema.optional(),
+      })
+      .strict()
+      .refine(({ keys, prNumber }) => prNumber === undefined || keys.length === 1),
     output: z.record(z.string(), changeDetailSchema),
     keyTags: (key: string) => [changeTag(key as ChangeKey), checksTag(key as ChangeKey)],
   },
@@ -445,7 +453,7 @@ export const sourceControlContract = defineRpcContract({
     input: z
       .object({
         keys: z.array(z.string().min(1).max(300)).min(1).max(25),
-        /** The thread asking: a cold GitHub read tries its host first. */
+        /** With a thread, read GitHub only on the server and that thread’s host. */
         threadId: threadIdSchema.optional(),
       })
       .strict(),
