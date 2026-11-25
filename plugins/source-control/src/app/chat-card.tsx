@@ -41,7 +41,9 @@ import { Badge } from "./components/ui/badge.tsx";
 import { CompactButton } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { CARD_ACTION_CLASS, Pending } from "./ui.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 import { EmptyState } from "./components/ui/empty-state.tsx";
+import { FieldError } from "./components/ui/field.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
 
@@ -130,11 +132,25 @@ export function CardSkeleton() {
   );
 }
 
-export function CardNote({ children, testId }: { children: ReactNode; testId: string }) {
+/** A card-sized notice: a failed read alerts in the destructive tone; a note is a plain box. */
+export function CardNote({
+  children,
+  testId,
+  tone = "failed",
+}: {
+  children: ReactNode;
+  testId: string;
+  tone?: "failed" | "note";
+}) {
   return (
-    <div className={cx(CARD, "gap-2 p-3")} data-testid={testId}>
+    <Alert
+      variant={tone === "failed" ? "destructive" : "default"}
+      role={tone === "failed" ? "alert" : "none"}
+      className="max-w-[576px] min-w-0 gap-2 font-sans"
+      data-testid={testId}
+    >
       {children}
-    </div>
+    </Alert>
   );
 }
 
@@ -333,11 +349,7 @@ function ReadyCard({
           {thread.sent}
         </output>
       ) : null}
-      {fix.error ? (
-        <span role="alert" className="px-3 pb-3 text-[12px] leading-4 text-warning">
-          {fix.error}
-        </span>
-      ) : null}
+      {fix.error ? <FieldError className="mx-3 mb-3">{fix.error}</FieldError> : null}
     </div>
   );
 }
@@ -370,9 +382,7 @@ export function ChangeCard({
     body =
       query.error && !detail ? (
         <CardNote testId="sc-card-failed">
-          <p role="alert" className="m-0 text-[13px] leading-5 text-muted-foreground">
-            Couldn't read this change. {query.error.message}
-          </p>
+          <AlertDescription>Couldn't read this change. {query.error.message}</AlertDescription>
           <div>
             <CompactButton size="sm" variant="outline" onClick={() => void query.refetch()}>
               Try again
@@ -384,7 +394,7 @@ export function ChangeCard({
       );
   else if (detail.state === "missing")
     body = (
-      <CardNote testId="sc-card-missing">
+      <CardNote testId="sc-card-missing" tone="note">
         <EmptyState
           messageClassName="m-0"
           message={

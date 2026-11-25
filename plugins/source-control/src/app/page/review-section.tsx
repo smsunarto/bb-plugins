@@ -44,6 +44,7 @@ import {
 import { BatchBanner } from "../send.tsx";
 import { SLOPCOP_PLUGIN_ID, slopCopContract, slopCopInput } from "../slopcop-contract.ts";
 import { Badge } from "../components/ui/badge.tsx";
+import { Item } from "../components/ui/item.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { ReasonHint, TEXT_LINK } from "../ui.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
@@ -296,65 +297,70 @@ const ItemRow = memo(function ItemRow({
   const title = itemTitle(item);
   const quiet = item.priority !== null && item.priority >= 2;
   return (
-    <li
-      className={cx("flex min-w-0 gap-2 rounded-[6px] px-2 py-1", focused && "bg-border-hairline")}
+    <Item
+      asChild
+      size="row"
+      className="min-w-0"
+      aria-current={focused || undefined}
       data-testid="sc-review-row"
       data-item={item.id}
     >
-      {fixing ? (
-        <FixingMark />
-      ) : (
-        <Checkbox
-          checked={checked}
-          label={title}
-          testId="sc-review-check"
-          onChange={(next) => onToggle(item.id, next)}
-        />
-      )}
-      <button
-        type="button"
-        onClick={() => onOpen(item)}
-        className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 border-0 bg-transparent p-0 text-start"
-      >
-        <span
-          className={cx(
-            "w-full min-w-0 truncate text-[13px] leading-4",
-            quiet ? "text-muted-foreground" : "text-foreground",
-            focused && "font-semibold",
-          )}
+      <li>
+        {fixing ? (
+          <FixingMark />
+        ) : (
+          <Checkbox
+            checked={checked}
+            label={title}
+            testId="sc-review-check"
+            onChange={(next) => onToggle(item.id, next)}
+          />
+        )}
+        <button
+          type="button"
+          onClick={() => onOpen(item)}
+          className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 border-0 bg-transparent p-0 text-start"
         >
-          {title}
-        </span>
-        <span className="flex min-w-0 items-center gap-2">
-          {fixing ? (
-            <span
-              className="shrink-0 text-[12px] leading-4 text-warning"
-              data-testid="sc-review-fixing"
-            >
-              Agent working
-            </span>
-          ) : item.priority !== null ? (
-            <PriorityChip priority={item.priority} />
-          ) : null}
-          <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-(--tertiary-foreground)">
-            {placeLabel(item.anchor)}
+          <span
+            className={cx(
+              "w-full min-w-0 truncate text-[13px] leading-4",
+              quiet ? "text-muted-foreground" : "text-foreground",
+              focused && "font-semibold",
+            )}
+          >
+            {title}
           </span>
-          {item.origin.kind === "reader" ? (
-            <span
-              className="shrink-0 text-[11px] leading-4 text-(--tertiary-foreground)"
-              data-testid="sc-review-sent"
-            >
-              Sent
+          <span className="flex min-w-0 items-center gap-2">
+            {fixing ? (
+              <span
+                className="shrink-0 text-[12px] leading-4 text-warning"
+                data-testid="sc-review-fixing"
+              >
+                Agent working
+              </span>
+            ) : item.priority !== null ? (
+              <PriorityChip priority={item.priority} />
+            ) : null}
+            <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-(--tertiary-foreground)">
+              {placeLabel(item.anchor)}
             </span>
-          ) : null}
-          {item.state !== "open" ? (
-            <span className="shrink-0 text-[11px] leading-4 text-(--tertiary-foreground)">
-              {item.state === "outdated" ? "Outdated" : "Resolved"}
-            </span>
-          ) : null}
-        </span>
-      </button>
-    </li>
+            {item.origin.kind === "reader" ? (
+              <span
+                className="shrink-0 text-[11px] leading-4 text-(--tertiary-foreground)"
+                data-testid="sc-review-sent"
+              >
+                Sent
+              </span>
+            ) : null}
+            {item.state !== "open" ? (
+              <span className="shrink-0 text-[11px] leading-4 text-(--tertiary-foreground)">
+                {item.state === "outdated" ? "Outdated" : "Resolved"}
+              </span>
+            ) : null}
+          </span>
+        </button>
+      </li>
+    </Item>
   );
 });
 
@@ -375,39 +381,36 @@ const DraftRow = memo(function DraftRow({
       .find((line) => line.trim() !== "")
       ?.trim() || "Comment";
   return (
-    <li
-      className={cx("flex min-w-0 gap-2 rounded-md px-2 py-1", focused && "bg-border-hairline")}
-      data-testid="sc-review-draft"
-      data-draft={draft.id}
-    >
-      <button
-        type="button"
-        aria-current={focused || undefined}
-        onClick={() => onOpen(spot)}
-        className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 border-0 bg-transparent p-0 text-start"
+    <li className="flex min-w-0" data-testid="sc-review-draft" data-draft={draft.id}>
+      <Item
+        asChild
+        size="row"
+        className="min-w-0 flex-1 cursor-pointer flex-col items-stretch gap-1"
       >
-        <span
-          className={cx(
-            "w-full min-w-0 truncate text-[13px] leading-4 text-foreground",
-            focused && "font-semibold",
-          )}
-        >
-          {title}
-        </span>
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-(--tertiary-foreground)">
-            {placeLabel(draft.anchor)}
-          </span>
+        <button type="button" aria-current={focused || undefined} onClick={() => onOpen(spot)}>
           <span
             className={cx(
-              "shrink-0 text-[11px] leading-4",
-              draft.state === "outdated" ? "text-(--tertiary-foreground)" : "text-warning",
+              "w-full min-w-0 truncate text-[13px] leading-4 text-foreground",
+              focused && "font-semibold",
             )}
           >
-            {draft.state === "outdated" ? "Outdated" : "Pending"}
+            {title}
           </span>
-        </span>
-      </button>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-(--tertiary-foreground)">
+              {placeLabel(draft.anchor)}
+            </span>
+            <span
+              className={cx(
+                "shrink-0 text-[11px] leading-4",
+                draft.state === "outdated" ? "text-(--tertiary-foreground)" : "text-warning",
+              )}
+            >
+              {draft.state === "outdated" ? "Outdated" : "Pending"}
+            </span>
+          </span>
+        </button>
+      </Item>
     </li>
   );
 });

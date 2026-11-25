@@ -17,6 +17,7 @@ import type { OplogEntry } from "../core/oplog.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { absoluteTime, shortAge, shortId } from "./format.ts";
 import { Button, CompactButton } from "./components/ui/button.tsx";
+import { Item } from "./components/ui/item.tsx";
 import {
   Collapsible,
   CollapsibleContent,
@@ -67,53 +68,61 @@ function OperationRow({ entry, path, now }: { entry: OplogEntry; path: string; n
   const short = shortId(entry.id);
   return (
     <li
-      className="flex min-w-0 items-start gap-2 border-t border-border-hairline px-3 py-2 first:border-t-0"
+      className="min-w-0 border-t border-border-hairline px-0.5 first:border-t-0"
       data-testid="sc-oplog-row"
     >
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="truncate text-[12px] leading-4 font-medium text-foreground" title={title}>
-          {title}
-        </span>
-        {entry.body ? (
-          <span className="truncate text-[11px] leading-4 text-muted-foreground" title={entry.body}>
-            {entry.body}
+      <Item size="xs" className="min-w-0 items-start">
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span
+            className="truncate text-[12px] leading-4 font-medium text-foreground"
+            title={title}
+          >
+            {title}
           </span>
-        ) : null}
-        <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-[11px] leading-4 text-muted-foreground">
-          <code className="font-mono tabular-nums" translate="no">
-            {short}
-          </code>
-          {entry.createdAt ? (
-            <time dateTime={entry.createdAt} title={absoluteTime(entry.createdAt)}>
-              {shortAge(entry.createdAt, now)}
-            </time>
+          {entry.body ? (
+            <span
+              className="truncate text-[11px] leading-4 text-muted-foreground"
+              title={entry.body}
+            >
+              {entry.body}
+            </span>
           ) : null}
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-[11px] leading-4 text-muted-foreground">
+            <code className="font-mono tabular-nums" translate="no">
+              {short}
+            </code>
+            {entry.createdAt ? (
+              <time dateTime={entry.createdAt} title={absoluteTime(entry.createdAt)}>
+                {shortAge(entry.createdAt, now)}
+              </time>
+            ) : null}
+          </span>
         </span>
-      </span>
-      <Hint label={`Copy snapshot id ${short}`}>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={ICON_BUTTON}
-          aria-label={`Copy snapshot id ${short}`}
-          onClick={() => void copyToClipboard({ text: entry.id })}
-        >
-          <Icon name="Copy" className="size-3" aria-hidden />
-        </Button>
-      </Hint>
-      {ask ? (
-        <Hint label={`Ask agent to restore snapshot ${short}`}>
+        <Hint label={`Copy snapshot id ${short}`}>
           <Button
             variant="ghost"
             size="icon"
             className={ICON_BUTTON}
-            aria-label={`Ask agent to restore snapshot ${short}`}
-            onClick={() => ask(restoreRequest(entry, title, path))}
+            aria-label={`Copy snapshot id ${short}`}
+            onClick={() => void copyToClipboard({ text: entry.id })}
           >
-            <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
+            <Icon name="Copy" className="size-3" aria-hidden />
           </Button>
         </Hint>
-      ) : null}
+        {ask ? (
+          <Hint label={`Ask agent to restore snapshot ${short}`}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={ICON_BUTTON}
+              aria-label={`Ask agent to restore snapshot ${short}`}
+              onClick={() => ask(restoreRequest(entry, title, path))}
+            >
+              <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
+            </Button>
+          </Hint>
+        ) : null}
+      </Item>
     </li>
   );
 }

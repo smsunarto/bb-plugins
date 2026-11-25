@@ -27,6 +27,7 @@ import { plural } from "./format.ts";
 import { Quiet, ShipButton, threadShip, useShipThread } from "./thread-card.tsx";
 import { CompactButton } from "./components/ui/button.tsx";
 import { StateBadge } from "./page/rail.tsx";
+import { AlertDescription } from "./components/ui/alert.tsx";
 
 /** A branch with commits that no listed checkout or pull request has: what it is, where, and Ship it. */
 function BranchCard({
@@ -94,17 +95,15 @@ function Unread({
   if (row?.local.problem)
     return (
       <CardNote testId="sc-card-failed">
-        <p role="alert" className="m-0 text-[13px] leading-5 text-muted-foreground">
+        <AlertDescription>
           {offline ? "Offline." : describeProblem(row.local.problem)}
-        </p>
+        </AlertDescription>
       </CardNote>
     );
   if (error && !row)
     return (
       <CardNote testId="sc-card-failed">
-        <p role="alert" className="m-0 text-[13px] leading-5 text-muted-foreground">
-          Couldn't read this checkout. {error.message}
-        </p>
+        <AlertDescription>Couldn't read this checkout. {error.message}</AlertDescription>
         <div>
           <CompactButton size="sm" variant="outline" onClick={retry}>
             Try again

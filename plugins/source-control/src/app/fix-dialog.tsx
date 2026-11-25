@@ -31,6 +31,8 @@ import { cx } from "./format.ts";
 import { CompactButton } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { Spinner } from "./components/ui/spinner.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
+import { FieldError } from "./components/ui/field.tsx";
 
 export type FixTarget = { changeKey: ChangeKey; head: string; checks: CheckRow[] };
 
@@ -56,14 +58,14 @@ function FixComposer({ target, onClose }: { target: FixTarget; onClose: () => vo
   const answer = prompt.data;
   if (!answer)
     return prompt.error ? (
-      <div className="flex min-w-0 flex-wrap items-center gap-2" role="alert">
-        <p className="m-0 min-w-0 flex-1 text-[12px] leading-4 text-destructive-text">
+      <Alert variant="destructive" className="flex min-w-0 flex-wrap items-center gap-2">
+        <AlertDescription className="min-w-0 flex-1">
           Could not prepare the fix. {prompt.error.message}
-        </p>
+        </AlertDescription>
         <CompactButton size="sm" variant="outline" onClick={() => void prompt.refetch()}>
           Try again
         </CompactButton>
-      </div>
+      </Alert>
     ) : (
       <output className="flex flex-col gap-2 text-[12px] leading-4" aria-busy="true">
         <span className="flex items-center gap-1 text-muted-foreground">
@@ -75,9 +77,9 @@ function FixComposer({ target, onClose }: { target: FixTarget; onClose: () => vo
     );
   if (!answer.ok)
     return (
-      <p role="alert" className="m-0 text-[12px] leading-4 text-destructive-text">
-        {answer.message}
-      </p>
+      <Alert variant="destructive">
+        <AlertDescription>{answer.message}</AlertDescription>
+      </Alert>
     );
   const submit = async (request: NewThreadRequest) => {
     setFailure(null);
@@ -108,11 +110,7 @@ function FixComposer({ target, onClose }: { target: FixTarget; onClose: () => vo
       aria-busy={start.isPending}
       className={cx("flex shrink-0 flex-col gap-2", start.isPending && "opacity-70")}
     >
-      {failure ? (
-        <p role="alert" className="m-0 text-[12px] leading-4 text-destructive-text">
-          {failure}
-        </p>
-      ) : null}
+      {failure ? <FieldError>{failure}</FieldError> : null}
       <NewThreadComposer
         {...(answer.projectId ? { defaultProjectId: answer.projectId } : {})}
         {...(answer.environment ? { defaultEnvironment: answer.environment } : {})}

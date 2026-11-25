@@ -65,6 +65,7 @@ import { usePatchStore } from "./patches.ts";
 import { ReviewBar } from "./review-bar.tsx";
 import { useListWindow } from "./use-window.ts";
 import { EmptyState } from "../components/ui/empty-state.tsx";
+import { FieldError } from "../components/ui/field.tsx";
 
 const LABEL =
   "m-0 text-[11px] leading-4 font-normal tracking-[0.06em] text-(--tertiary-foreground) uppercase";
@@ -279,9 +280,7 @@ function GuideStatus({
           {rewrite.pending ? "Starting…" : status.label}
         </Button>
         {rewrite.error ? (
-          <span role="alert" className="min-w-0 basis-full text-[12px] leading-4 text-warning">
-            {rewrite.error}
-          </span>
+          <FieldError className="min-w-0 basis-full">{rewrite.error}</FieldError>
         ) : null}
       </section>
     );
@@ -312,11 +311,7 @@ function GuideStatus({
           {rewrite.pending ? "Starting…" : status.label}
         </Button>
       ) : null}
-      {rewrite.error ? (
-        <span role="alert" className="min-w-0 text-[12px] leading-4 text-warning">
-          {rewrite.error}
-        </span>
-      ) : null}
+      {rewrite.error ? <FieldError className="min-w-0">{rewrite.error}</FieldError> : null}
     </div>
   );
 }

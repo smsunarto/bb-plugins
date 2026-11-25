@@ -24,6 +24,7 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { useEscapeLayer } from "./escape.ts";
 import { useHostGate } from "./host-gate.ts";
 import { cx, plural, squashMessage } from "./format.ts";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 import { Button, CompactButton } from "./components/ui/button.tsx";
 import { Pending, ReasonHint } from "./ui.tsx";
 import { Input } from "./components/ui/input.tsx";
@@ -151,16 +152,14 @@ export function useVcsActions(threadId: string, gate: string | null) {
  */
 type ConfirmTone = "default" | "attention" | "destructive";
 
-const CONFIRM_LOOK: Record<ConfirmTone, { box: string; icon: string } | null> = {
+/** A toned confirmation draws as the kit Alert of that tone; a default one has no box. */
+const CONFIRM_LOOK: Record<
+  ConfirmTone,
+  { variant: "warning" | "destructive"; icon: string } | null
+> = {
   default: null,
-  attention: {
-    box: "border-transparent bg-[color-mix(in_oklab,var(--warning)_10%,transparent)]",
-    icon: "text-warning",
-  },
-  destructive: {
-    box: "border-[color-mix(in_oklab,var(--destructive)_35%,transparent)] bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)]",
-    icon: "text-destructive",
-  },
+  attention: { variant: "warning", icon: "text-warning" },
+  destructive: { variant: "destructive", icon: "text-destructive" },
 };
 
 /**
@@ -198,17 +197,16 @@ export function Confirm({
   useEscapeLayer(root, () => {
     if (!pending) onCancel();
   });
+  const Box = look ? Alert : "div";
   return (
-    <div
+    <Box
       ref={root}
-      className={cx(
-        "flex flex-wrap items-center gap-2 text-[12px]",
-        look && `rounded-[6px] border px-3 py-2 ${look.box}`,
-      )}
+      {...(look ? { variant: look.variant, role: "none" } : {})}
+      className={cx("flex flex-wrap items-center gap-2", !look && "text-[12px]")}
     >
       <p
         id={promptId}
-        className="m-0 me-auto min-w-0 basis-full leading-normal text-muted-foreground"
+        className="m-0 me-auto min-w-0 basis-full text-[12px] leading-normal text-muted-foreground"
       >
         {look ? (
           <Icon
@@ -247,7 +245,7 @@ export function Confirm({
           </CompactButton>
         </ReasonHint>
       </div>
-    </div>
+    </Box>
   );
 }
 
@@ -471,15 +469,13 @@ export function OutcomeLine({
 }) {
   if (!outcome || outcome.kind === "confirm") return null;
   return (
-    <div role="alert" className="flex min-w-0 items-start gap-2">
-      <p
-        className={cx(
-          "m-0 min-w-0 flex-1 text-[12px] leading-4",
-          outcome.kind === "failed" ? "text-destructive" : "text-warning",
-        )}
-      >
+    <Alert
+      variant={outcome.kind === "failed" ? "destructive" : "warning"}
+      className="flex min-w-0 items-start gap-2"
+    >
+      <AlertDescription className="min-w-0 flex-1">
         {outcome.kind === "conflict" ? CONFLICT_TEXT : outcome.text}
-      </p>
+      </AlertDescription>
       <Button
         variant="ghost"
         size="icon"
@@ -489,7 +485,7 @@ export function OutcomeLine({
       >
         <Icon name="X" className="size-3" aria-hidden />
       </Button>
-    </div>
+    </Alert>
   );
 }
 

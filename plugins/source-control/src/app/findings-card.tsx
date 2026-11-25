@@ -23,6 +23,8 @@ import { Checkbox, FixingMark, PriorityChip } from "./review-ui.tsx";
 import { Hint, TEXT_LINK } from "./ui.tsx";
 import { BatchLine, useFixSelected, type FixSelected } from "./send.tsx";
 import { Button, CompactButton } from "./components/ui/button.tsx";
+import { FieldError } from "./components/ui/field.tsx";
+import { Item } from "./components/ui/item.tsx";
 
 /** How many lines a card shows before "Show all N". Board B shows four and says no more. */
 export const CARD_ROWS = 5;
@@ -42,43 +44,41 @@ const FindingRow = memo(function FindingRow({
 }) {
   const title = itemTitle(item);
   return (
-    <li
-      className="flex h-6 min-w-0 items-center gap-2"
-      data-testid="sc-finding"
-      data-item={item.id}
-    >
-      {fixing ? (
-        <Hint label="Agent working">
-          <span className="flex">
-            <FixingMark />
-          </span>
-        </Hint>
-      ) : (
-        <Checkbox
-          checked={checked}
-          label={title}
-          testId="sc-finding-check"
-          onChange={(next) => onToggle(item.id, next)}
-        />
-      )}
-      {item.priority !== null ? <PriorityChip priority={item.priority} /> : null}
-      <button
-        type="button"
-        onClick={() => onOpen(item)}
-        title={title}
-        className={cx(
-          "min-w-0 flex-1 cursor-pointer truncate border-0 bg-transparent p-0 text-start text-[12px] leading-4 hover:underline",
-          item.priority !== null && item.priority >= 2
-            ? "text-muted-foreground"
-            : "text-foreground",
+    <Item asChild size="row" className="min-w-0" data-testid="sc-finding" data-item={item.id}>
+      <li>
+        {fixing ? (
+          <Hint label="Agent working">
+            <span className="flex">
+              <FixingMark />
+            </span>
+          </Hint>
+        ) : (
+          <Checkbox
+            checked={checked}
+            label={title}
+            testId="sc-finding-check"
+            onChange={(next) => onToggle(item.id, next)}
+          />
         )}
-      >
-        {title}
-      </button>
-      <span className="shrink-0 font-mono text-[11px] leading-4 text-(--tertiary-foreground)">
-        {placeLabel(item.anchor)}
-      </span>
-    </li>
+        {item.priority !== null ? <PriorityChip priority={item.priority} /> : null}
+        <button
+          type="button"
+          onClick={() => onOpen(item)}
+          title={title}
+          className={cx(
+            "min-w-0 flex-1 cursor-pointer truncate border-0 bg-transparent p-0 text-start text-[12px] leading-4 hover:underline",
+            item.priority !== null && item.priority >= 2
+              ? "text-muted-foreground"
+              : "text-foreground",
+          )}
+        >
+          {title}
+        </button>
+        <span className="shrink-0 font-mono text-[11px] leading-4 text-(--tertiary-foreground)">
+          {placeLabel(item.anchor)}
+        </span>
+      </li>
+    </Item>
   );
 });
 
@@ -112,7 +112,7 @@ export function FindingList({
   const shown = all ? items : items.slice(0, CARD_ROWS);
   return (
     <div className={cx("flex min-w-0 flex-col", className)}>
-      <ul className="m-0 flex list-none flex-col p-0">
+      <ul className="m-0 -mx-2 flex list-none flex-col p-0">
         {shown.map((item) => (
           <FindingRow
             key={item.id}
@@ -224,11 +224,7 @@ export const FindingsCard = memo(function FindingsCard({
         >
           {fixLabel(fix)}
         </CompactButton>
-        {fix.error ? (
-          <span role="alert" className="min-w-0 truncate text-[12px] leading-4 text-warning">
-            {fix.error}
-          </span>
-        ) : null}
+        {fix.error ? <FieldError className="min-w-0 truncate">{fix.error}</FieldError> : null}
         <span className="min-w-0 flex-1" />
         <CompactButton
           size="sm"

@@ -39,6 +39,7 @@ import { BotIcon } from "./page/ask-panel.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button, CompactButton } from "./components/ui/button.tsx";
 import { EmptyState } from "./components/ui/empty-state.tsx";
+import { FieldError } from "./components/ui/field.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -497,11 +498,7 @@ function AskToFix({ threadId }: { threadId: string }) {
         {mutation.isPending ? <Pending pending /> : <BotIcon size={13} />}
         Ask agent to fix
       </CompactButton>
-      {error ? (
-        <span role="alert" className="basis-full text-[12px] leading-4 text-warning">
-          {error}
-        </span>
-      ) : null}
+      {error ? <FieldError className="basis-full">{error}</FieldError> : null}
     </>
   );
 }

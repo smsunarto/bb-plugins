@@ -20,6 +20,7 @@ import { CardNote, CardSkeleton, ChangeCard, useSeen } from "./chat-card.tsx";
 import { cx } from "./format.ts";
 import { CompactButton } from "./components/ui/button.tsx";
 import { CARD_ACTION_CLASS, Pending } from "./ui.tsx";
+import { AlertDescription } from "./components/ui/alert.tsx";
 
 /**
  * Ship it: one message asking the thread's agent to commit and publish its
@@ -165,17 +166,17 @@ export function ThreadCard({ threadId }: { threadId: string }) {
   else if (row?.state === "checkout" && row.local.problem)
     body = (
       <CardNote testId="sc-card-failed">
-        <p role="alert" className="m-0 text-[13px] leading-5 text-muted-foreground">
+        <AlertDescription>
           {connection === "connected" ? describeProblem(row.local.problem) : "Offline."}
-        </p>
+        </AlertDescription>
       </CardNote>
     );
   else if (query.error && !row)
     body = (
       <CardNote testId="sc-card-failed">
-        <p role="alert" className="m-0 text-[13px] leading-5 text-muted-foreground">
+        <AlertDescription>
           Couldn't read this thread's changes. {query.error.message}
-        </p>
+        </AlertDescription>
         <div>
           <CompactButton size="sm" variant="outline" onClick={() => void query.refetch()}>
             Try again

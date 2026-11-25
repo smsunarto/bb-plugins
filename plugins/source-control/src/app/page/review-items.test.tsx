@@ -682,7 +682,8 @@ test("the rail and the tray list the reader's drafts, and a pick shows each on t
   const item = within(rail)
     .getAllByTestId("sc-review-row")
     .find((row) => row.dataset.item === comment(1, 2).id)!;
-  expect(item.className).toContain("bg-border-hairline");
+  // The kit Item draws the focused row's selected fill from aria-current.
+  expect(item.getAttribute("aria-current")).toBe("true");
 });
 
 test("Escape with the tray open closes the tray and goes no further", async () => {

@@ -31,6 +31,7 @@ import { Button } from "../components/ui/button.tsx";
 import { useEscapeLayer } from "../escape.ts";
 import { cx } from "../format.ts";
 import { Hint } from "../ui.tsx";
+import { Alert, AlertDescription } from "../components/ui/alert.tsx";
 
 /** Where a question comes from: the header's button, or a diff line with its text. */
 export type AskRequest = {
@@ -375,9 +376,9 @@ function AskPanel({
         </output>
       ) : null}
       {problem ? (
-        <p role="alert" className="m-0 shrink-0 px-3 pt-2 text-[12px] leading-4 text-warning">
-          {problem}
-        </p>
+        <Alert variant="warning" className="mx-3 mt-2 w-auto shrink-0">
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
       ) : null}
       {threadId ? (
         <ThreadChat

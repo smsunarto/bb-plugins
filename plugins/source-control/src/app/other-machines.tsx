@@ -35,6 +35,7 @@ import {
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { DISCLOSURE, DisclosureChevron, Pending } from "./ui.tsx";
 import { EmptyState } from "./components/ui/empty-state.tsx";
+import { Item, ItemActions, ItemContent, ItemFooter, ItemMedia } from "./components/ui/item.tsx";
 
 type Checkout = { path: string; repo: string | null };
 type Host = { hostId: string; name: string; checkouts: Checkout[] };
@@ -62,21 +63,20 @@ function BranchRow({
   openReview: OpenReview;
 }) {
   return (
-    <li className="flex min-w-0 border-t border-border-hairline first:border-t-0">
-      <button
-        type="button"
-        className="flex min-h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1 text-start hover:bg-surface-raised"
-        title={row.title}
-        onClick={() => openReview({ key: row.key })}
-      >
-        <StateBadge state={row.state} className="h-4 leading-3" />
-        <span className="min-w-0 truncate text-[12px] leading-4 text-foreground" translate="no">
-          {row.number !== null ? `#${row.number} · ${row.branch}` : row.branch}
-        </span>
-        {mine ? (
-          <span className="shrink-0 text-[11px] leading-4 text-muted-foreground">This change</span>
-        ) : null}
-      </button>
+    <li className="flex min-w-0 border-t border-border-hairline px-1 first:border-t-0">
+      <Item asChild size="row" className="min-h-8 min-w-0 flex-1 cursor-pointer">
+        <button type="button" title={row.title} onClick={() => openReview({ key: row.key })}>
+          <StateBadge state={row.state} className="h-4 leading-3" />
+          <span className="min-w-0 truncate text-[12px] leading-4 text-foreground" translate="no">
+            {row.number !== null ? `#${row.number} · ${row.branch}` : row.branch}
+          </span>
+          {mine ? (
+            <span className="shrink-0 text-[11px] leading-4 text-muted-foreground">
+              This change
+            </span>
+          ) : null}
+        </button>
+      </Item>
     </li>
   );
 }
@@ -122,21 +122,20 @@ function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Check
     }
   };
   return (
-    <li
-      className="flex min-w-0 flex-col gap-1 border-t border-border-hairline px-3 py-2"
-      data-testid="sc-other-checkout"
-    >
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="flex min-w-0 flex-[1_1_8rem] items-center gap-1" title={checkout.path}>
+    <li className="min-w-0 border-t border-border-hairline px-0.5" data-testid="sc-other-checkout">
+      <Item size="xs" className="min-w-0 gap-x-2 gap-y-1">
+        <ItemMedia>
           <Icon name="Folder" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        </ItemMedia>
+        <ItemContent className="basis-32" title={checkout.path}>
           <code
             className="min-w-0 truncate font-mono text-[11px] leading-4 text-muted-foreground"
             translate="no"
           >
             {leaf(checkout.path)}
           </code>
-        </span>
-        <span className="flex shrink-0 gap-1">
+        </ItemContent>
+        <ItemActions className="shrink-0 gap-1">
           <CompactButton
             size="sm"
             variant="ghost"
@@ -159,11 +158,15 @@ function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Check
             <Pending pending={opening === "chat"} icon="MessageSquarePlus" />
             New chat
           </CompactButton>
-        </span>
-      </div>
-      {reason ? (
-        <output className="m-0 block text-[11px] leading-4 text-muted-foreground">{reason}</output>
-      ) : null}
+        </ItemActions>
+        {reason ? (
+          <ItemFooter>
+            <output className="m-0 block text-[11px] leading-4 text-muted-foreground">
+              {reason}
+            </output>
+          </ItemFooter>
+        ) : null}
+      </Item>
     </li>
   );
 }

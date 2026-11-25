@@ -29,6 +29,7 @@ import { Skeleton } from "../components/ui/skeleton.tsx";
 import type { Go } from "./hooks.ts";
 import { CheckIcon, Chevron, StackIcon } from "./icons.tsx";
 import { EmptyState } from "../components/ui/empty-state.tsx";
+import { Item } from "../components/ui/item.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
 type StackEntry = NonNullable<Ready["stack"]>[number];
@@ -74,35 +75,33 @@ const StackRow = memo(function StackRow({
 }) {
   return (
     <li className="min-w-0">
-      <button
-        type="button"
-        aria-current={entry.current ? "page" : undefined}
-        onClick={() => onOpen(entry.key)}
-        className={cx(
-          "flex w-full min-w-0 cursor-pointer flex-col gap-1 rounded-[6px] border-0 bg-transparent p-2 text-start hover:bg-border-hairline",
-          entry.current && "bg-border-hairline",
-        )}
-      >
-        <span className="flex w-full min-w-0 items-center gap-2">
-          <span
-            className={cx(
-              "min-w-0 flex-1 truncate font-mono text-[13px] leading-5",
-              entry.current ? "font-semibold text-foreground" : "text-muted-foreground",
-            )}
-          >
-            {entry.branch}
+      <Item asChild size="xs" className="min-w-0 cursor-pointer flex-col items-stretch gap-1">
+        <button
+          type="button"
+          aria-current={entry.current ? "page" : undefined}
+          onClick={() => onOpen(entry.key)}
+        >
+          <span className="flex w-full min-w-0 items-center gap-2">
+            <span
+              className={cx(
+                "min-w-0 flex-1 truncate font-mono text-[13px] leading-5",
+                entry.current ? "font-semibold text-foreground" : "text-muted-foreground",
+              )}
+            >
+              {entry.branch}
+            </span>
+            <StateBadge state={entry.state} className="h-5" />
           </span>
-          <StateBadge state={entry.state} className="h-5" />
-        </span>
-        <span className="text-[12px] leading-4 text-(--tertiary-foreground)">
-          {[
-            entry.number !== null ? `#${entry.number}` : null,
-            `${entry.commits} ${entry.commits === 1 ? "commit" : "commits"}`,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </span>
-      </button>
+          <span className="text-[12px] leading-4 text-(--tertiary-foreground)">
+            {[
+              entry.number !== null ? `#${entry.number}` : null,
+              `${entry.commits} ${entry.commits === 1 ? "commit" : "commits"}`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        </button>
+      </Item>
     </li>
   );
 });
@@ -179,16 +178,15 @@ function CheckLine({
         />
       ) : null}
       {check.url ? (
-        <a
-          href={check.url}
-          target="_blank"
-          rel="noreferrer"
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-[6px] px-2 py-1 no-underline hover:bg-surface-raised"
-        >
-          {body}
-        </a>
+        <Item asChild size="row" className="min-w-0 flex-1 no-underline">
+          <a href={check.url} target="_blank" rel="noreferrer">
+            {body}
+          </a>
+        </Item>
       ) : (
-        <span className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1">{body}</span>
+        <Item size="row" className="min-w-0 flex-1">
+          {body}
+        </Item>
       )}
     </li>
   );
