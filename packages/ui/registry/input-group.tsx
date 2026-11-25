@@ -6,12 +6,15 @@ import { Button } from "./button";
 import { Input } from "./input";
 import { Textarea } from "./textarea";
 
-/** Vega's input group: one field edge around an input or textarea and its addons. The edge
- * and focus halo match the kit's Input. */
+/** Vega's input group: one field edge around an input or textarea and its addons. The edge,
+ * fill and focus halo match the kit's Input. */
 function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="input-group"
+      // A theme gives fields their fill through this role, as it does the kit's Input; a
+      // caller's own fill opts out.
+      data-bb-control={/(^|\s)bg-/.test(className ?? "") ? undefined : "field"}
       role="group"
       className={cn(
         "group/input-group relative flex h-9 w-full min-w-0 items-center rounded-md border border-input shadow-xs transition-[color,box-shadow] outline-none has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-3 has-[[data-slot=input-group-control]:focus-visible]:ring-ring/50 has-[[data-slot][aria-invalid=true]]:border-destructive has-[[data-slot][aria-invalid=true]]:ring-3 has-[[data-slot][aria-invalid=true]]:ring-destructive/20 has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-start]]:h-auto has-[>[data-align=block-start]]:flex-col has-[>textarea]:h-auto has-[>[data-align=block-end]]:[&>input]:pt-3 has-[>[data-align=block-start]]:[&>input]:pb-3 has-[>[data-align=inline-end]]:[&>input]:pr-1.5 has-[>[data-align=inline-start]]:[&>input]:pl-1.5 max-md:pointer-coarse:h-10",

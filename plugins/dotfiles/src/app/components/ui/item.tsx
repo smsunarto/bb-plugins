@@ -33,9 +33,9 @@ function ItemSeparator({ className, ...props }: React.ComponentProps<typeof Sepa
 
 /** Vega's item. `row` is the kit's dense list or tree row: 28px tall, and a link or button row
  * is 44px under a coarse pointer. An item rendered as a link or button (`asChild`) hovers with the state colour, and
- * `aria-pressed`, `aria-selected` or `aria-current` marks it selected. */
+ * `aria-pressed`, `aria-selected` or `aria-current` marks it selected, which hover keeps. */
 const itemVariants = cva(
-  `group/item flex w-full flex-wrap items-center rounded-md border text-sm ${LIST_HOVER_TRANSITION} outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 [a]:hover:bg-state-hover [button]:text-left [button]:hover:bg-state-hover [button]:disabled:pointer-events-none [button]:disabled:opacity-50 aria-pressed:bg-state-active aria-selected:bg-state-active aria-[current=page]:bg-state-active aria-[current=true]:bg-state-active`,
+  `group/item flex w-full flex-wrap items-center rounded-md border text-sm ${LIST_HOVER_TRANSITION} outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 [a]:hover:bg-state-hover [button]:text-left [button]:hover:bg-state-hover [button]:disabled:pointer-events-none [button]:disabled:opacity-50 aria-pressed:bg-state-active aria-selected:bg-state-active aria-[current=page]:bg-state-active aria-[current=true]:bg-state-active aria-pressed:hover:bg-state-active aria-selected:hover:bg-state-active aria-[current=page]:hover:bg-state-active aria-[current=true]:hover:bg-state-active`,
   {
     variants: {
       variant: {
