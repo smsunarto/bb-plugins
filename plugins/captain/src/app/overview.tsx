@@ -31,7 +31,10 @@ import {
 import { age, isSending, orderQueue, type QueueItem } from "../contract/queue.ts";
 import { captainContract, type CaptainTaskItem, type DriveFileItem } from "../contract/rpc.ts";
 import { ActionButton, OtherAnswer, TAP, itemActions, useItemCommands, useNow } from "./banner.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 import { Button } from "./components/ui/button.tsx";
+import { EmptyState } from "./components/ui/empty-state.tsx";
+import { Item } from "./components/ui/item.tsx";
 import { cn } from "./lib/utils.ts";
 import { Preview } from "./preview.tsx";
 import { NewRoutineButton, RoutinesBody } from "./routines.tsx";
@@ -356,32 +359,30 @@ function Section({
   return (
     <section aria-label={title} data-section={id} className="flex min-w-0 flex-col gap-1">
       <div className="flex min-h-8 min-w-0 items-center rounded-lg bg-muted/60 pe-1 pointer-coarse:min-h-11">
-        <button
-          type="button"
-          aria-expanded={!collapsed}
-          aria-controls={body}
-          data-overview-toggle=""
-          onClick={() => onToggle(id)}
-          className={cn(
-            TAP,
-            "flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-start outline-none focus-visible:outline-1",
-          )}
-        >
-          <span className="truncate leading-5 font-medium text-foreground">{title}</span>
-          <span
-            className={cn(
-              "leading-5 text-muted-foreground tabular-nums",
-              count === undefined && "invisible",
-            )}
+        <Item asChild size="row" className={cn(TAP, "min-h-8 min-w-0 flex-1")}>
+          <button
+            type="button"
+            aria-expanded={!collapsed}
+            aria-controls={body}
+            data-overview-toggle=""
+            onClick={() => onToggle(id)}
           >
-            {count ?? 0}
-          </span>
-          <Icon
-            name={collapsed ? "ChevronRight" : "ChevronDown"}
-            aria-hidden
-            className="size-4 shrink-0 text-muted-foreground"
-          />
-        </button>
+            <span className="truncate leading-5 font-medium text-foreground">{title}</span>
+            <span
+              className={cn(
+                "leading-5 text-muted-foreground tabular-nums",
+                count === undefined && "invisible",
+              )}
+            >
+              {count ?? 0}
+            </span>
+            <Icon
+              name={collapsed ? "ChevronRight" : "ChevronDown"}
+              aria-hidden
+              className="size-4 shrink-0 text-muted-foreground"
+            />
+          </button>
+        </Item>
         {action}
       </div>
       <div id={body} hidden={collapsed}>
@@ -443,31 +444,29 @@ function AskRow({ captainId, item, now }: { captainId: string; item: QueueItem; 
   }, []);
   return (
     <li ref={row} className="flex min-w-0 flex-col">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={panel}
-        onClick={() => setOpen(!open)}
-        className={cn(
-          TAP,
-          "flex min-w-0 items-start gap-2 rounded-lg px-2 py-2 text-start outline-none hover:bg-muted/40 focus-visible:outline-1",
-        )}
-      >
-        <AskIcon item={item} />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="leading-5 font-medium break-words text-foreground [unicode-bidi:plaintext]">
-            {title}
+      <Item asChild size="xs" className={cn(TAP, "min-w-0 flex-nowrap items-start")}>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={panel}
+          onClick={() => setOpen(!open)}
+        >
+          <AskIcon item={item} />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="leading-5 font-medium break-words text-foreground [unicode-bidi:plaintext]">
+              {title}
+            </span>
+            <span className="truncate text-xs leading-4 text-muted-foreground" title={sub}>
+              {sub}
+            </span>
           </span>
-          <span className="truncate text-xs leading-4 text-muted-foreground" title={sub}>
-            {sub}
-          </span>
-        </span>
-        {item.since === null ? null : (
-          <span className="shrink-0 text-xs leading-5 text-muted-foreground tabular-nums">
-            {age(now, item.since)}
-          </span>
-        )}
-      </button>
+          {item.since === null ? null : (
+            <span className="shrink-0 text-xs leading-5 text-muted-foreground tabular-nums">
+              {age(now, item.since)}
+            </span>
+          )}
+        </button>
+      </Item>
       {open ? <Answer id={panel} captainId={captainId} item={item} /> : null}
     </li>
   );
@@ -554,7 +553,11 @@ function Answer({ id, captainId, item }: { id: string; captainId: string; item: 
           </Button>
         ) : null}
       </div>
-      {error ? <p className="m-0 min-w-0 break-words text-destructive">{error}</p> : null}
+      {error ? (
+        <Alert variant="destructive" role="none">
+          <AlertDescription className="break-words">{error}</AlertDescription>
+        </Alert>
+      ) : null}
     </div>
   );
 }
@@ -671,20 +674,19 @@ function TaskRow({ task }: { task: CaptainTaskItem }) {
   const tooltip = `${task.key} ${task.title}\n${sub}`;
   return (
     <li className="flex min-w-0 items-center">
-      <a
-        href={`/plugins/scott-tasks/tasks/task/${encodeURIComponent(task.key)}`}
-        title={tooltip}
-        className={cn(
-          TAP,
-          "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-start no-underline outline-none hover:bg-muted/40 focus-visible:outline-1",
-        )}
+      <Item
+        asChild
+        size="xs"
+        className={cn(TAP, "min-w-0 flex-1 flex-nowrap items-center text-start no-underline")}
       >
-        <TaskStatusGlyph status={task.status} ready={task.ready} />
-        <span className="min-w-0 flex-1 truncate leading-5 text-foreground">
-          <span className="text-muted-foreground tabular-nums">{task.key}</span>{" "}
-          <span className="[unicode-bidi:plaintext]">{task.title}</span>
-        </span>
-      </a>
+        <a href={`/plugins/scott-tasks/tasks/task/${encodeURIComponent(task.key)}`} title={tooltip}>
+          <TaskStatusGlyph status={task.status} ready={task.ready} />
+          <span className="min-w-0 flex-1 truncate leading-5 text-foreground">
+            <span className="text-muted-foreground tabular-nums">{task.key}</span>{" "}
+            <span className="[unicode-bidi:plaintext]">{task.title}</span>
+          </span>
+        </a>
+      </Item>
       {crew === null ? null : (
         // Button takes no title, so this wrapper gives the button the row's tooltip.
         <span title={tooltip} className="me-1 flex shrink-0">
@@ -883,8 +885,8 @@ function MoreInDrive({
   );
 }
 
-function Empty({ children }: { children: ReactNode }) {
-  return <p className="m-0 px-2 py-2 text-xs leading-4 text-muted-foreground">{children}</p>;
+function Empty({ children }: { children: string }) {
+  return <EmptyState message={children} className="m-2" />;
 }
 
 /**
@@ -904,22 +906,22 @@ function Placeholder({
     <div aria-busy className="flex flex-col">
       {Array.from({ length: rows }, (_, index) =>
         line ? (
-          // A loaded one-line row: 8 + a 20px line + 8, and 44px on a coarse pointer.
-          <div key={index} className={cn(TAP, "flex items-center gap-2 px-2 py-2")}>
+          // A loaded one-line row: 8 + a 20px line + 8 inside its edge, and 44px on a coarse pointer.
+          <Item key={index} size="xs" className={cn(TAP, "flex-nowrap items-center")}>
             <span className="size-4 shrink-0 animate-pulse rounded bg-muted" />
             <span className="flex h-5 flex-1 items-center">
               <span className="h-4 w-3/4 animate-pulse rounded bg-muted" />
             </span>
-          </div>
+          </Item>
         ) : (
-          // A loaded two-line row: 8 + a 20px title + a 16px subline + 8.
-          <div key={index} className="flex items-start gap-2 px-2 py-2">
+          // A loaded two-line row: 8 + a 20px title + a 16px subline + 8 inside its edge.
+          <Item key={index} size="xs" className="flex-nowrap items-start">
             <span className="mt-0.5 size-4 shrink-0 animate-pulse rounded bg-muted" />
             <span className="flex flex-1 flex-col gap-2">
               <span className="h-4 w-3/4 animate-pulse rounded bg-muted" />
               <span className="h-3 w-1/2 animate-pulse rounded bg-muted" />
             </span>
-          </div>
+          </Item>
         ),
       )}
       {cards ? (

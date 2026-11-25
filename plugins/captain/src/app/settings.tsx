@@ -13,6 +13,8 @@ import {
 import { useCallback } from "react";
 import { MAX_RUNGS, type LadderRole, type Rung } from "../contract/ladder.ts";
 import { captainContract } from "../contract/rpc.ts";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
+import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 
@@ -59,7 +61,9 @@ export function CrewModelsSettings() {
             <div key={index} className="h-24 animate-pulse rounded-md bg-muted" />
           ))
         ) : (
-          <p className="text-sm text-destructive">Ladders not loaded: {ladders.error.message}</p>
+          <Alert variant="destructive" role="none">
+            <AlertDescription>Ladders not loaded: {ladders.error.message}</AlertDescription>
+          </Alert>
         )}
       </div>
     );
@@ -74,7 +78,9 @@ export function CrewModelsSettings() {
         <RoleSection key={entry.role} ladder={entry} onChange={write} />
       ))}
       {save.error === null ? null : (
-        <p className="text-sm text-destructive">Not saved: {save.error.message}</p>
+        <Alert variant="destructive" role="none">
+          <AlertDescription>Not saved: {save.error.message}</AlertDescription>
+        </Alert>
       )}
     </div>
   );
@@ -100,9 +106,7 @@ function RoleSection({
     <section className="flex flex-col gap-2" aria-label={`${ladder.label} ladder`}>
       <header className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-medium">{ladder.label}</h3>
-        <span className="text-xs text-muted-foreground">
-          {ladder.custom ? "custom" : "default"}
-        </span>
+        <Badge variant="outline">{ladder.custom ? "custom" : "default"}</Badge>
         {ladder.custom ? (
           <Button
             variant="ghost"
