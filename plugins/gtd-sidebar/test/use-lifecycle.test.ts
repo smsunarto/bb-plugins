@@ -921,6 +921,81 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
       }
     });
 
+    it.each(["parent", "other"])("keeps Undo in click order before snoozing %s", async (next) => {
+      const until = snoozeUntilTomorrow(new Date());
+      const child = { ...thread("child"), parentThreadId: "parent" };
+      const threads = [thread("parent"), child, thread("other")];
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      let rows: ThreadLifecycleRow[] = [];
+      function FamilyProbe() {
+        const lifecycle = useLifecycle(threads);
+        return createElement(
+          Fragment,
+          null,
+          createElement("span", { role: "status" }, lifecycle.shelfFor(child)),
+          ...["child", next].map((id) =>
+            createElement(
+              "button",
+              { key: id, type: "button", onClick: () => lifecycle.snooze(id, until) },
+              "Snooze " + id,
+            ),
+          ),
+          createElement(Toaster),
+        );
+      }
+
+      const slot = renderSlot(
+        { component: FamilyProbe },
+        {},
+        {
+          rpc: {
+            listLifecycle: () => ({ rows }),
+            snooze: async ({ threadId }: { threadId: string }) => {
+              if (threadId === "child") await pending;
+              const family = threadId === "parent" ? ["parent", "child"] : [threadId];
+              rows = [
+                ...rows.filter((row) => !family.includes(row.threadId)),
+                ...family.map((threadId) => ({
+                  threadId,
+                  snoozedUntil: until,
+                  snoozedAt: Date.now(),
+                })),
+              ];
+              return { ok: true, rows };
+            },
+            unsnooze: () => {
+              rows = rows.filter((row) => row.threadId !== "child");
+              return { ok: true, rows };
+            },
+          } as never,
+        },
+      );
+      await flush();
+      fireEvent.click(slot.getByRole("button", { name: "Snooze child" }));
+      await settle();
+      fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+      fireEvent.click(slot.getByRole("button", { name: "Snooze " + next }));
+      finish();
+      await settle();
+      await slot.behavior.experimental_invalidateRpc(["lifecycle"]);
+      await flush();
+
+      assert.deepEqual(
+        slot.inspection.rpcCalls
+          .filter(({ method }) => method !== "listLifecycle")
+          .map(({ method, input }) => [method, input]),
+        [
+          ["snooze", { threadId: "child", snoozedUntil: until }],
+          ...(next === "parent" ? [] : [["unsnooze", { threadId: "child" }]]),
+          ["snooze", { threadId: next, snoozedUntil: until }],
+        ],
+      );
+      assert.equal(slot.getByRole("status").textContent, next === "parent" ? "snoozed" : "active");
+    });
+
     // A refused snooze (a Captain stays open) writes nothing: the toast says
     // why, with no Undo, and the thread stays on the active shelf.
     it("rolls back a refused snooze and shows the reason", async () => {
