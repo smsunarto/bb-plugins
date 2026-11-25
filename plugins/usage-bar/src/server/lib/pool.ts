@@ -75,8 +75,13 @@ export interface MenuAccount {
   windows: MenuWindow[];
 }
 
-export interface MenuProvider {
-  id: "codex" | "claude" | "antigravity";
+/** The providers the Codex and Claude source reads. Antigravity is read apart. */
+export type SourceProviderId = "codex" | "claude";
+
+export interface MenuProvider<
+  Id extends SourceProviderId | "antigravity" = SourceProviderId | "antigravity",
+> {
+  id: Id;
   name: string;
   accounts: MenuAccount[];
   /** Antigravity's own read failure, since it is read apart from the Codex and Claude source. */
@@ -94,10 +99,13 @@ export type SnapshotAccount = MenuAccount & AccountExtras;
 export interface MenuSnapshot {
   providers: (Omit<MenuProvider, "accounts"> & {
     accounts: SnapshotAccount[];
-    /** This provider's copy of `error`. Antigravity is read apart, so it never has one. */
+    /**
+     * Why this provider's last read failed, shown dimmed like CodexBar's stale state:
+     * the source's error for Codex and Claude, Antigravity's own for Antigravity.
+     */
     error: string | null;
   })[];
-  /** Why the last Codex and Claude read failed, shown dimmed like CodexBar's stale state. */
+  /** The Codex and Claude source's error. Tests read it; the helper reads the per-provider copy. */
   error: string | null;
 }
 
@@ -107,11 +115,19 @@ const PROVIDERS = [
 ] as const;
 
 const WINDOW_LABELS: Record<number, string> = { 300: "Session", 1440: "Daily", 10080: "Weekly" };
-const WEEK_MINUTES = 10080;
+export const WEEK_MINUTES = 10080;
 
 /** 0..1 → 0..100, rounded to hundredths so 0.58 reads 58 rather than 57.99…. */
-function percent(utilization: number): number {
+export function percent(utilization: number): number {
   return Math.min(100, Math.max(0, Math.round(utilization * 10_000) / 100));
+}
+
+/** Shortest window first; a window of unknown length goes last. */
+export function byWindowLength(left: MenuWindow, right: MenuWindow): number {
+  return (
+    (left.windowMinutes ?? Number.POSITIVE_INFINITY) -
+    (right.windowMinutes ?? Number.POSITIVE_INFINITY)
+  );
 }
 
 function windowLabel(minutes: number): string {
@@ -146,11 +162,7 @@ function codexWindows(account: AccountSummary): MenuWindow[] {
         },
       ];
     })
-    .sort(
-      (left, right) =>
-        (left.windowMinutes ?? Number.POSITIVE_INFINITY) -
-        (right.windowMinutes ?? Number.POSITIVE_INFINITY),
-    );
+    .sort(byWindowLength);
 }
 
 /**
@@ -208,7 +220,7 @@ function currentAccountId(accounts: AccountSummary[]): string | null {
   return current?.id ?? null;
 }
 
-export function poolProviders(accounts: AccountSummary[]): MenuProvider[] {
+export function poolProviders(accounts: AccountSummary[]): MenuProvider<SourceProviderId>[] {
   return PROVIDERS.flatMap(({ id, name }) => {
     const owned = accounts
       .filter((account) => account.provider === id)

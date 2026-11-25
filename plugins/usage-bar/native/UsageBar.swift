@@ -330,11 +330,13 @@ struct UsageRow: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .fixedSize()
             } : nil
             // A label too long to share its line, such as Antigravity's "Claude/GPT weekly",
-            // puts the reset under it instead of truncating.
+            // puts the reset under it instead of truncating. The Spacer alone sets the 8 pt
+            // gap, so a row stacks only when label and reset cannot fit 8 pt apart.
             ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
                     label.fixedSize()
                     Spacer(minLength: 8)
                     reset

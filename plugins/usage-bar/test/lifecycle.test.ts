@@ -538,3 +538,142 @@ test("Refresh works again after Account Pooler never answers a refresh", async (
 async function waitFor(condition: () => boolean) {
   for (let attempt = 0; attempt < 200 && !condition(); attempt += 1) await sleep(5);
 }
+
+const antigravityProvider: MenuProvider = { id: "antigravity", name: "Antigravity", accounts: [] };
+const drawsAntigravity = (harness: Awaited<ReturnType<typeof startMenu>>["harness"]) =>
+  harness.inspection.experimental_hostRpcCalls.some(({ input }) =>
+    (input as RenderInput).snapshot.providers.some((provider) => provider.id === "antigravity"),
+  );
+
+test("polls read Antigravity from cache and Refresh asks for a fresh read", async () => {
+  const asked: boolean[] = [];
+  const { harness, stop } = await startMenu(
+    {
+      dataDir: "/srv/bb",
+      sdk: { hosts: { list: async () => [mac] }, plugins: pool(async () => null) },
+      experimental_callHostRpc: () => ({ status: "ok" }),
+    },
+    async (_signal, refresh) => {
+      asked.push(refresh);
+      return null;
+    },
+  );
+  try {
+    await waitFor(() => asked.length >= 1);
+    expect(asked).toStrictEqual([false]);
+    await harness.behavior.experimental_emitHostSignal("mac", "menu", { type: "refresh" });
+    await waitFor(() => asked.length >= 2);
+    expect(asked).toStrictEqual([false, true]);
+  } finally {
+    await stop();
+  }
+});
+
+test("a hung Antigravity read never holds Refresh", async () => {
+  jest.useFakeTimers();
+  let reads = 0;
+  const menu = await startMenu(
+    {
+      dataDir: "/srv/bb",
+      sdk: { hosts: { list: async () => [mac] }, plugins: pool(async () => null) },
+      experimental_callHostRpc: () => ({ status: "ok" }),
+    },
+    (_signal, refresh) => {
+      reads += 1;
+      return refresh ? new Promise(() => {}) : Promise.resolve(null);
+    },
+  );
+  try {
+    await settle();
+    await menu.harness.behavior.experimental_emitHostSignal("mac", "menu", { type: "refresh" });
+    await settle();
+    expect(renders(menu.harness, "mac").at(-1)?.refreshing).toBe(true);
+    await advance(16_000);
+    expect(renders(menu.harness, "mac").at(-1)?.refreshing).toBe(false);
+    const before = reads;
+    await menu.harness.behavior.experimental_emitHostSignal("mac", "menu", { type: "refresh" });
+    await settle();
+    expect(reads).toBe(before + 1);
+  } finally {
+    await menu.stop();
+    jest.useRealTimers();
+  }
+});
+
+test("Refresh reads Antigravity while Account Pooler is still refreshing", async () => {
+  let fresh = false;
+  const { harness, stop } = await startMenu(
+    {
+      dataDir: "/srv/bb",
+      sdk: { hosts: { list: async () => [mac] }, plugins: pool(() => new Promise(() => {})) },
+      experimental_callHostRpc: () => ({ status: "ok" }),
+    },
+    async (_signal, refresh) => {
+      if (refresh) fresh = true;
+      return null;
+    },
+  );
+  try {
+    await waitFor(() => renders(harness, "mac").length > 0);
+    await harness.behavior.experimental_emitHostSignal("mac", "menu", { type: "refresh" });
+    await waitFor(() => fresh);
+    expect(fresh).toBe(true);
+    expect(renders(harness, "mac").at(-1)?.refreshing).toBe(true);
+  } finally {
+    await stop();
+  }
+});
+
+test("a background Antigravity read is drawn as soon as it lands", async () => {
+  let land: (provider: MenuProvider) => void = () => {};
+  const { harness, stop } = await startMenu(
+    {
+      dataDir: "/srv/bb",
+      sdk: { hosts: { list: async () => [mac] }, plugins: pool(async () => null) },
+      experimental_callHostRpc: () => ({ status: "ok" }),
+    },
+    async (_signal, _refresh, onUpdate) => {
+      land = (provider) => onUpdate?.(provider);
+      return null;
+    },
+  );
+  try {
+    await waitFor(() => renders(harness, "mac").length > 0);
+    expect(drawsAntigravity(harness)).toBe(false);
+    land(antigravityProvider);
+    // Well before the next 15 s poll.
+    await waitFor(() => drawsAntigravity(harness));
+    expect(drawsAntigravity(harness)).toBe(true);
+  } finally {
+    await stop();
+  }
+});
+
+test("with no Mac that can draw the menu, polls never run agy", async () => {
+  jest.useFakeTimers();
+  let reads = 0;
+  const menu = await startMenu(
+    {
+      dataDir: "/srv/bb",
+      sdk: {
+        hosts: { list: async () => [makeHostResponse({ id: "linux", status: "connected" })] },
+        plugins: pool(async () => null),
+      },
+      experimental_callHostRpc: () => ({ status: "unsupported" }),
+    },
+    async () => {
+      reads += 1;
+      return null;
+    },
+  );
+  try {
+    await settle();
+    // The first poll runs before the host has answered that it cannot draw.
+    expect(reads).toBe(1);
+    await advance(60_000);
+    expect(reads).toBe(1);
+  } finally {
+    await menu.stop();
+    jest.useRealTimers();
+  }
+});

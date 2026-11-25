@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import {
   type AntigravityProbe,
   createAntigravityReader,
@@ -114,6 +114,35 @@ test("a run that was not the /usage command is unsafe; a malformed one only fail
   ).toBe("failed");
 });
 
+test("a null command or odd field types still read as unsafe", () => {
+  expect(
+    parseAntigravityUsage({ conversation_id: "c1", status: "SUCCESS", num_turns: 1, command: null })
+      .kind,
+  ).toBe("unsafe");
+  expect(parseAntigravityUsage({ status: "SUCCESS", command: null }).kind).toBe("unsafe");
+  expect(parseAntigravityUsage({ ...(recorded as object), num_turns: "1" }).kind).toBe("unsafe");
+  expect(parseAntigravityUsage({ ...(recorded as object), command: "usage" }).kind).toBe("unsafe");
+});
+
+test("window ids from the CLI never reach Object.prototype", () => {
+  const body = (window: string) => ({
+    status: "SUCCESS",
+    command: {
+      name: "usage",
+      data: {
+        groups: [{ name: "Gemini", buckets: [{ name: "Odd", window, remaining_fraction: 0.5 }] }],
+      },
+    },
+  });
+  for (const window of ["__proto__", "toString", "constructor", "hasOwnProperty"]) {
+    const parsed = parseAntigravityUsage(body(window));
+    if (parsed.kind !== "ok") throw new Error(parsed.kind);
+    expect(parsed.windows).toStrictEqual([
+      { label: "Gemini Odd", usedPercent: 50, resetAt: null, windowMinutes: null, model: null },
+    ]);
+  }
+});
+
 test("only agy 1.1.12 and later is asked for /usage", () => {
   expect(supportedVersion("1.5.17\n")).toBe(true);
   expect(supportedVersion("1.1.12")).toBe(true);
@@ -214,6 +243,67 @@ test("a poll answers from the last reading while the CLI is still running", asyn
   expect((await read(signal, false))?.id).toBe("antigravity");
 });
 
+test("a background read publishes when it lands, not at the next poll", async () => {
+  let finish: (result: AntigravityProbe) => void = () => {};
+  const updates: (string | null)[] = [];
+  const read = createAntigravityReader(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  expect(await read(signal, false, (provider) => updates.push(provider?.id ?? null))).toBeNull();
+  expect(updates).toStrictEqual([]);
+  finish({ status: "ok", body: recorded });
+  await tick();
+  expect(updates).toStrictEqual(["antigravity"]);
+});
+
+test("absent or signed-out answers back off background checks; Refresh still checks", async () => {
+  const fake = scripted(Array.from({ length: 12 }, () => ({ status: "absent" as const })));
+  const read = createAntigravityReader(fake.probe, fake.now);
+  const pollAt = async (ms: number) => {
+    fake.advance(ms);
+    await read(signal, false);
+    await tick();
+  };
+  await pollAt(0);
+  expect(fake.calls).toBe(1);
+  // 5, then 10, 20, 40 minutes, then hourly.
+  for (const [wait, calls] of [
+    [5, 2],
+    [9, 2],
+    [1, 3],
+    [20, 4],
+    [40, 5],
+    [59, 5],
+    [1, 6],
+    [60, 7],
+  ] as const) {
+    await pollAt(wait * 60_000);
+    expect(fake.calls).toBe(calls);
+  }
+  await read(signal, true);
+  expect(fake.calls).toBe(8);
+});
+
+test("a good reading resets the back-off", async () => {
+  const fake = scripted([
+    { status: "signed-out" },
+    { status: "signed-out" },
+    { status: "ok", body: recorded },
+    { status: "ok", body: recorded },
+  ]);
+  const read = createAntigravityReader(fake.probe, fake.now);
+  await read(signal, true);
+  await read(signal, true);
+  await read(signal, true);
+  fake.advance(5 * 60_000);
+  await read(signal, false);
+  await tick();
+  expect(fake.calls).toBe(4);
+});
+
 test("an unsafe answer turns the reader off for good", async () => {
   const warnings: string[] = [];
   const fake = scripted([
@@ -221,7 +311,10 @@ test("an unsafe answer turns the reader off for good", async () => {
     { status: "ok", body: { conversation_id: "c", status: "SUCCESS", num_turns: 1 } },
     { status: "ok", body: recorded },
   ]);
-  const read = createAntigravityReader(fake.probe, fake.now, (message) => warnings.push(message));
+  const read = createAntigravityReader(fake.probe, fake.now, {
+    warn: (message) => warnings.push(message),
+    debug: () => {},
+  });
   expect(await read(signal, true)).not.toBeNull();
   expect(await read(signal, true)).toBeNull();
   fake.advance(3_600_000);
@@ -332,6 +425,19 @@ test("Antigravity follows Codex and Claude, survives their failure, and never re
   expect(changes).toBe(before);
 });
 
+test("a source account named like Antigravity's never lends it extras", async () => {
+  const state = createMenuState(signal, () => {});
+  const source = codexSource([]);
+  source.providers[0]!.accounts[0]!.id = "antigravity";
+  state.setSource(source);
+  await state.refresh(true);
+  const read = createAntigravityReader(async () => ({ status: "ok", body: recorded }));
+  state.setAntigravity(await read(signal, true));
+  const [codex, antigravity] = state.snapshot().providers;
+  expect(codex?.accounts[0]?.extraUsage).toStrictEqual({ kind: "balance", balance: 5 });
+  expect(antigravity?.accounts[0]).toMatchObject(NO_EXTRAS);
+});
+
 agyProbeTests();
 
 /** probeAntigravity against fake `agy` scripts, never the machine's real one. */
@@ -351,19 +457,66 @@ function agyProbeTests() {
     await writeFile(agy, `#!/bin/sh\n${body}\n`);
     await chmod(agy, 0o755);
   };
-  const probe = () => probeAntigravity(signal, () => agy);
+  const probe = (on = signal, timeoutMs?: number) => probeAntigravity(on, () => agy, timeoutMs);
 
-  test("probe: a supported agy answers /usage with JSON and no stray flags", async () => {
+  test("probe: a supported agy answers /usage with JSON, no stray flags, and a narrow env", async () => {
+    // Openers on the server's PATH that would log a browser launch.
+    const bin = join(dir, "bin");
+    await mkdir(bin);
+    for (const name of ["open", "xdg-open"])
+      await writeFile(join(bin, name), `#!/bin/sh\ntouch "${dir}/browser"\n`, { mode: 0o755 });
+    const saved = { ...process.env };
+    Object.assign(process.env, {
+      PATH: `${bin}${delimiter}${process.env.PATH}`,
+      SSH_CONNECTION: "1.2.3.4 1234 5.6.7.8 22",
+      BROWSER: "firefox",
+      BB_TEST_SECRET: "x",
+    });
     await writeFile(join(dir, "usage.json"), JSON.stringify(recorded));
     await fakeAgy(`
 if [ "$1" = "--version" ]; then echo 1.5.17; exit 0; fi
-[ "$AGY_CLI_DISABLE_AUTO_UPDATE" = 1 ] || exit 9
-case "$(command -v open):$(command -v xdg-open)" in *bb-usage-bar-agy-*/open:*bb-usage-bar-agy-*/xdg-open) ;; *) exit 7 ;; esac
+[ "$AGY_CLI_DISABLE_AUTO_UPDATE" = true ] || exit 9
 open "https://accounts.google.com/o/oauth2/auth" || exit 6
-[ -z "$SSH_CONNECTION" ] || exit 5
+xdg-open "https://accounts.google.com/o/oauth2/auth" || exit 6
+[ -z "$SSH_CONNECTION$BROWSER$BB_TEST_SECRET" ] || exit 5
+[ -n "$HOME" ] || exit 4
+[ "$(pwd -P)" != "$(cd "${process.cwd()}" && pwd -P)" ] || exit 3
 [ "$*" = "-p /usage --output-format json --log-file /dev/null" ] || exit 8
 cat "${dir}/usage.json"`);
-    expect(await probe()).toStrictEqual({ status: "ok", body: recorded });
+    try {
+      expect(await probe()).toStrictEqual({ status: "ok", body: recorded });
+    } finally {
+      process.env = saved;
+    }
+    expect(existsSync(join(dir, "browser"))).toBe(false);
+  });
+
+  test("probe: an already aborted read runs nothing", async () => {
+    await fakeAgy(`touch "${dir}/ran"`);
+    expect(await probe(AbortSignal.abort())).toStrictEqual({ status: "failed" });
+    expect(existsSync(join(dir, "ran"))).toBe(false);
+  });
+
+  test("probe: an agy that ignores SIGTERM and leaves its pipes open still settles", async () => {
+    await fakeAgy(`
+if [ "$1" = "--version" ]; then echo 1.5.17; exit 0; fi
+trap "" TERM
+sleep 4`);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 100);
+    const started = Date.now();
+    expect(await probe(controller.signal)).toStrictEqual({ status: "failed" });
+    // SIGKILL after 1 s, then at most 0.5 s for the orphaned sleep's pipes.
+    expect(Date.now() - started).toBeLessThan(3_000);
+  });
+
+  test("probe: a timed-out agy that exits 2 on SIGTERM is a failure, not absent", async () => {
+    await fakeAgy(`
+if [ "$1" = "--version" ]; then echo 1.5.17; exit 0; fi
+trap "exit 2" TERM
+sleep 4 &
+wait`);
+    expect(await probe(signal, 300)).toStrictEqual({ status: "failed" });
   });
 
   test("probe: an old agy is never asked for /usage", async () => {

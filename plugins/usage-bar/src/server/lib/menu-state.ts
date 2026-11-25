@@ -58,14 +58,20 @@ export function createMenuState(signal: AbortSignal, changed: () => void, now = 
         : source?.providers;
       return {
         error,
-        providers: (providers ?? []).map((provider) =>
-          Object.assign({}, provider, {
-            error: provider === antigravity ? (antigravity.error ?? null) : error,
+        providers: (providers ?? []).map((provider) => {
+          // Extras are keyed by source account id, which an Antigravity id could collide with.
+          const own = provider === antigravity;
+          return Object.assign({}, provider, {
+            error: own ? (provider.error ?? null) : error,
             accounts: provider.accounts.map((account) =>
-              Object.assign({}, account, extras.get(account.id)?.value ?? NO_EXTRAS),
+              Object.assign(
+                {},
+                account,
+                (own ? undefined : extras.get(account.id)?.value) ?? NO_EXTRAS,
+              ),
             ),
-          }),
-        ),
+          });
+        }),
       };
     },
     setSource(next: Source) {

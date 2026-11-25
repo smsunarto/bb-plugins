@@ -5,6 +5,7 @@ import { z } from "zod";
 import { menuHostContract, menuHostSignals } from "../../shared/host-contract.ts";
 import { type AntigravityReader, createAntigravityReader } from "./antigravity.ts";
 import { createMenuState } from "./menu-state.ts";
+import type { MenuProvider } from "./pool.ts";
 import { POOL_PLUGIN_ID, createSourceReader } from "./sources.ts";
 
 /** Reading the pool is a local store read; quota itself moves on proxied traffic. */
@@ -40,6 +41,36 @@ function singleFlight<A>(read: () => Promise<A>): Effect.Effect<A, SdkError> {
   );
 }
 
+/** Whether a connected host can draw the menu bar. */
+function canDraw(hostIds: string[], unsupported: Set<string>): boolean {
+  return hostIds.some((hostId) => !unsupported.has(hostId));
+}
+
+/**
+ * Antigravity into the menu state. A poll answers from the reader's cache and
+ * starts a background read when stale, which publishes when it lands; Refresh
+ * waits for a fresh one. Polls run agy only while a Mac that can draw the menu
+ * is connected (`hosts.drawable`). The reader never rejects and its probe is bounded,
+ * but the wait here is bounded too, so a stuck agy never holds Refresh or shutdown.
+ */
+function antigravityPublisher(
+  read: AntigravityReader,
+  signal: AbortSignal,
+  set: (provider: MenuProvider | null) => void,
+  hosts: { drawable: boolean },
+) {
+  const publish = (provider: MenuProvider | null) => {
+    if (!signal.aborted) set(provider);
+  };
+  return (refresh: boolean) =>
+    refresh || hosts.drawable
+      ? Effect.promise(() => read(signal, refresh, publish)).pipe(
+          Effect.timeout(POLL_MS),
+          Effect.match({ onSuccess: publish, onFailure: () => {} }),
+        )
+      : Effect.void;
+}
+
 /**
  * Read quota for the lifetime of the background service and push the menu to
  * every connected host. Each Mac's host entry draws it in that Mac's menu bar,
@@ -47,9 +78,7 @@ function singleFlight<A>(read: () => Promise<A>): Effect.Effect<A, SdkError> {
  */
 export const menuBar = Effect.fn("menuBar")(function* (
   bb: BbPluginApi,
-  readAntigravity: AntigravityReader = createAntigravityReader(undefined, undefined, (message) =>
-    bb.log.warn(message),
-  ),
+  readAntigravity: AntigravityReader = createAntigravityReader(undefined, undefined, bb.log),
 ) {
   // Dev bb instances auto-install workspace plugins and would each draw duplicate items.
   if (
@@ -81,6 +110,8 @@ export const menuBar = Effect.fn("menuBar")(function* (
   /** One render in flight per host; a newer menu waits for it, then goes out. */
   const inFlight = new Set<string>();
   const pending = new Set<string>();
+  /** Whether a connected Mac can draw the menu, so background agy reads have a reader. */
+  const hosts = { drawable: true };
 
   const draw = (hostId: string) =>
     sdkCall((signal) =>
@@ -92,7 +123,10 @@ export const menuBar = Effect.fn("menuBar")(function* (
     ).pipe(
       Effect.match({
         onSuccess: (result) => {
-          if (result.status === "unsupported") unsupported.add(hostId);
+          if (result.status === "unsupported") {
+            unsupported.add(hostId);
+            hosts.drawable = canDraw(hostIds, unsupported);
+          }
           const problem = result.status === "needs-configuration" ? result.message : undefined;
           if (problem !== undefined && problems.get(hostId) !== problem) {
             bb.log.warn(`usage-bar: host ${hostId}: ${problem}`);
@@ -128,8 +162,9 @@ export const menuBar = Effect.fn("menuBar")(function* (
   };
   const listHosts = singleFlight(() => bb.sdk.hosts.list({ signal })).pipe(
     Effect.match({
-      onSuccess: (hosts) => {
-        hostIds = hosts.filter((host) => host.status === "connected").map((host) => host.id);
+      onSuccess: (list) => {
+        hostIds = list.filter((host) => host.status === "connected").map((host) => host.id);
+        hosts.drawable = canDraw(hostIds, unsupported);
       },
       onFailure: (error) => bb.log.debug(`usage-bar: listing hosts failed: ${String(error.cause)}`),
     }),
@@ -140,19 +175,21 @@ export const menuBar = Effect.fn("menuBar")(function* (
   const pollRead = singleFlight(() => readSource(signal, false));
   const refreshRead = singleFlight(() => readSource(signal, true));
 
-  // A poll answers from the reader's cache and starts a background read when stale;
-  // Refresh waits for a fresh one. The reader never rejects.
-  const readAntigravityInto = async (refresh: boolean) => {
-    const provider = await readAntigravity(signal, refresh);
-    if (!signal.aborted) state.setAntigravity(provider);
-  };
-  const publish = (refresh: boolean) =>
+  const publishAntigravity = antigravityPublisher(
+    readAntigravity,
+    signal,
+    state.setAntigravity,
+    hosts,
+  );
+  const publishSource = (refresh: boolean) =>
     Effect.promise(() =>
-      Promise.all([
-        state.publish(() => runPromise(refresh ? refreshRead : pollRead), refresh),
-        readAntigravityInto(refresh),
-      ]),
+      state.publish(() => runPromise(refresh ? refreshRead : pollRead), refresh),
     );
+  const publish = (refresh: boolean) =>
+    Effect.all([publishSource(refresh), publishAntigravity(refresh)], {
+      concurrency: "unbounded",
+      discard: true,
+    });
 
   const refreshPool = Effect.suspend(() => {
     const source = state.source;
@@ -180,8 +217,14 @@ export const menuBar = Effect.fn("menuBar")(function* (
     if (refreshing) return Effect.void;
     refreshing = true;
     render();
-    return refreshPool.pipe(
-      Effect.andThen(publish(true)),
+    // Antigravity does not go through Account Pooler, so it refreshes alongside it.
+    return Effect.all(
+      [refreshPool.pipe(Effect.andThen(publishSource(true))), publishAntigravity(true)],
+      {
+        concurrency: "unbounded",
+        discard: true,
+      },
+    ).pipe(
       Effect.ensuring(
         Effect.sync(() => {
           refreshing = false;
