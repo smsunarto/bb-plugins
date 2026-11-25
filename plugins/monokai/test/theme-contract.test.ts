@@ -546,7 +546,21 @@ describe("bb Monokai contract audit", () => {
 
   test("keeps phone text fields at the 16px iOS zoom floor", () => {
     expect(theme).toContain(
-      '@media (max-width: 767px) and (pointer: coarse) {\n  .dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror,\n  .dark .bb-markdown-prose[contenteditable="true"],\n  .dark input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),\n  .dark textarea,\n  .dark select {\n    font-size: 16px;',
+      '@media (max-width: 767px) and (pointer: coarse) {\n  .dark .bb-markdown-prose[contenteditable="true"],\n  .dark input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),\n  .dark textarea,\n  .dark select {\n    font-size: 16px;',
+    );
+    const phoneRules = styleRules(theme).filter((rule) =>
+      rule.atRules.includes("@media (max-width: 767px) and (pointer: coarse)"),
+    );
+    expect(
+      phoneRules.find((rule) => rule.selector === ":where(.dark) [data-promptbox]")?.body,
+    ).toContain("--bb-composer-editor-base-font-size: 16px;");
+    expect(
+      phoneRules.find(
+        (rule) =>
+          rule.selector === ".dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror",
+      )?.body,
+    ).toContain(
+      "font-size: calc(var(--bb-composer-editor-base-font-size) * var(--bb-ios-font-scale, 1));",
     );
   });
 
