@@ -1013,7 +1013,7 @@ describe("the Merge gate: only the Captain or the user acts for a Captain", () =
     "Seats.",
   ];
 
-  test("crew cannot record a verdict, open an ask or answer one, with or without --captain", async () => {
+  test("crew cannot record a verdict or open an ask, with or without --captain", async () => {
     const { host, captainId, as } = await crewHost();
     await as(verdictArgs);
     const crew = await dispatched(as, "BBPLUGINS-2", "Implement");
@@ -1096,6 +1096,22 @@ describe("the Merge gate: only the Captain or the user acts for a Captain", () =
     expect(fromUser.exitCode).toBe(0);
   });
 
+  test("released crew stay refused by new; a thread bb cannot read still starts a Captain", async () => {
+    const { host, captainId, as } = await crewHost();
+    const released = await dispatched(as, "BBPLUGINS-2", "Implement");
+    host.updateThread(released, { parentThreadId: null });
+
+    const fromReleased = await run(host, ["new", "--name", "Ex", "--repo", "rampage"], released);
+    const fromGhost = await run(host, ["new", "--name", "Ghost", "--repo", "rampage"], "thr_ghost");
+
+    expect(fromReleased.exitCode).toBe(1);
+    expect(fromReleased.stderr).toContain(`${released} is crew of the Plugins Captain`);
+    expect(fromReleased.stderr).toContain(captainId);
+    expect(fromReleased.stderr).not.toContain("--captain");
+    expect(fromGhost.exitCode).toBe(0);
+    expect(host.server.registry.byName("Ghost")).not.toBeNull();
+  });
+
   test("a verdict supersedes the task's open ship asks across Captains", async () => {
     const { host, captainId, as } = await crewHost();
     await as(verdictArgs);
@@ -1118,8 +1134,44 @@ describe("the Merge gate: only the Captain or the user acts for a Captain", () =
     expect(
       host.tasks.comments
         .filter((comment) => comment.body.startsWith("Superseded: a1"))
-        .map((comment) => [comment.authorName, comment.threadId]),
-    ).toEqual([["Plugins Captain", captainId]]);
+        .map((comment) => [comment.body, comment.authorName, comment.threadId]),
+    ).toEqual([
+      [
+        `Superseded: a1, the Plugins Captain's ship ask, does not match the recorded review passed at ${second}; a Merge on it grants nothing.`,
+        "Shadow Captain",
+        shadow,
+      ],
+    ]);
+    // The owning Captain hears its ask closed; the recording one hears nothing.
+    expect(host.server.store.ask("a1")?.answerDeliveredAt).not.toBeNull();
+    expect(host.sent.filter((message) => message.text.includes("Superseded"))).toEqual([
+      {
+        threadId: captainId,
+        text: expect.stringContaining('[captain] a1 answered "Superseded" · BBPLUGINS-1'),
+        mode: "steer-if-active",
+      },
+    ]);
+  });
+
+  test("a failed send of a cross-Captain supersede is left for the background check", async () => {
+    const { host, captainId, as } = await crewHost();
+    await as(verdictArgs);
+    const shadow = await newCaptain(host, ["--name", "Shadow", "--repo", "bb-plugins"]);
+    host.sendFails.add(captainId);
+
+    const result = await run(
+      host,
+      ["verdict", "BBPLUGINS-1", "review", "findings", "--head", head],
+      shadow,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("a1: answer not delivered to the Captain");
+    expect(host.server.store.ask("a1")).toMatchObject({
+      answer: "Superseded",
+      answerDeliveredAt: null,
+      deliveryAttempts: 1,
+    });
   });
 
   test("a calling thread bb does not know is refused with a blocker", async () => {

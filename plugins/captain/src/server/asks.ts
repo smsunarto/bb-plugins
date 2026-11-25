@@ -176,8 +176,10 @@ function shipAskHead(detail: string): string | null {
  * every one when the verdict is not ship-ready, else each that names another
  * head. A Merge on such an ask would cover commits no review approved. The
  * review field is the task's, so this covers every Captain's asks on it, not
- * only the recording Captain's. Each is answered `Superseded` without a send,
- * and the task gets a comment from the ask's own Captain.
+ * only the recording Captain's. Each is answered `Superseded` and the task
+ * gets a comment from the recording Captain. Another Captain's ask is sent its
+ * answer as a resolved ask is, so that Captain stops waiting on a Merge; the
+ * background check retries a failed send. The recording Captain gets no send.
  */
 export async function supersedeShipAsks(
   deps: CommandDeps,
@@ -196,15 +198,27 @@ export async function supersedeShipAsks(
   for (const ask of stale) {
     const at = deps.now();
     deps.store.answerAsk(ask.id, SUPERSEDED, "captain", at);
-    deps.store.markAnswerDelivered(ask.id, at);
+    const own = ask.captainId === captain.threadId;
+    // The recording Captain knows; another Captain hears it, so it stops waiting on a Merge.
+    if (own) deps.store.markAnswerDelivered(ask.id, at);
+    const owner = own
+      ? null
+      : (deps.registry.get(ask.captainId) ?? deps.store.captain(ask.captainId));
+    const whose = owner === null ? "" : `, the ${owner.name} Captain's ship ask,`;
     const warning = await captainComment(
       deps,
-      deps.registry.get(ask.captainId) ?? captain,
+      captain,
       task.id,
-      `${SUPERSEDED}: ${ask.id} does not match the recorded ${recorded}; a Merge on it grants nothing.`,
+      `${SUPERSEDED}: ${ask.id}${whose} does not match the recorded ${recorded}; a Merge on it grants nothing.`,
     );
     notes.push(`${ask.id} superseded: it does not match the recorded ${recorded}`);
     if (warning !== null) notes.push(`warning: ${warning}`);
+    const answered = own ? null : deps.store.ask(ask.id);
+    if (answered !== null && answered.answer !== null && answered.answerDeliveredAt === null) {
+      const failed = await deliverAnswer(deps, { ...answered, answer: answered.answer });
+      if (failed !== null)
+        notes.push(`warning: ${ask.id}: ${failed}; the background check retries it`);
+    }
   }
   if (stale.length > 0) {
     const owners = new Set(stale.map((ask) => ask.captainId));

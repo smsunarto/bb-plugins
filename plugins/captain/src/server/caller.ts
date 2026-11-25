@@ -15,7 +15,7 @@ export type Acting = { captain: Captain; crew: boolean };
 type CallerDeps = {
   bb: Pick<BbPluginApi, "sdk">;
   registry: Registry;
-  store: Pick<Store, "captain">;
+  store: Pick<Store, "captain" | "crewRole">;
 };
 
 /**
@@ -26,7 +26,8 @@ type CallerDeps = {
 type ThreadRole =
   | { kind: "captain"; captain: Captain }
   | { kind: "crew"; captain: Captain; live: boolean }
-  | { kind: "other" };
+  | { kind: "other" }
+  | { kind: "unreadable"; message: string };
 
 async function threadRole(deps: CallerDeps, threadId: string): Promise<ThreadRole> {
   const own = deps.registry.get(threadId);
@@ -35,12 +36,7 @@ async function threadRole(deps: CallerDeps, threadId: string): Promise<ThreadRol
   try {
     parentId = (await deps.bb.sdk.threads.get({ threadId })).parentThreadId ?? null;
   } catch (error) {
-    throw new Refusal([
-      {
-        reason: `could not read the calling thread ${threadId}: ${(error as Error).message}`,
-        fix: "run it from a bb thread bb knows, or from your terminal with --captain <thread-id>",
-      },
-    ]);
+    return { kind: "unreadable", message: (error as Error).message };
   }
   if (parentId === null) return { kind: "other" };
   const live = deps.registry.get(parentId);
@@ -63,15 +59,23 @@ function crewRefusal(threadId: string, captain: Captain, action: string): Refusa
   ]);
 }
 
-/** Refuse a call from a crew thread; the user's terminal and every other thread pass. */
+/**
+ * Refuse a call from a crew thread: a child of a Captain, or any thread ever
+ * dispatched as crew, so released crew stay refused. The user's terminal, a
+ * thread bb cannot read and every other thread pass.
+ */
 export async function refuseCrew(
   deps: CallerDeps,
   ctx: PluginCliContext,
   action: string,
 ): Promise<void> {
-  if (ctx.threadId === undefined) return;
-  const role = await threadRole(deps, ctx.threadId);
-  if (role.kind === "crew") throw crewRefusal(ctx.threadId, role.captain, action);
+  const threadId = ctx.threadId;
+  if (threadId === undefined) return;
+  const recorded = deps.store.crewRole(threadId);
+  const recordedCaptain = recorded === null ? null : deps.store.captain(recorded.captainId);
+  if (recordedCaptain !== null) throw crewRefusal(threadId, recordedCaptain, action);
+  const role = await threadRole(deps, threadId);
+  if (role.kind === "crew") throw crewRefusal(threadId, role.captain, action);
 }
 
 /**
@@ -110,6 +114,14 @@ export async function actingFor(
     return { captain, crew: false };
   }
   const role = await threadRole(deps, threadId);
+  if (role.kind === "unreadable") {
+    throw new Refusal([
+      {
+        reason: `could not read the calling thread ${threadId}: ${role.message}`,
+        fix: "run it from a bb thread bb knows, or from your terminal with --captain <thread-id>",
+      },
+    ]);
+  }
   if (role.kind === "other") {
     throw new Refusal([
       {
