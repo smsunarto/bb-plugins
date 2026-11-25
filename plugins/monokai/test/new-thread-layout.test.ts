@@ -157,18 +157,18 @@ for (const [width, height] of [
   [440, 956],
   [390, 844],
 ] as const) {
-  test(`uses one scroll column for the composer and long recents at ${width}×${height}`, async () => {
+  test(`centers the composer above scrollable recents at ${width}×${height}`, async () => {
     const page = await browser.newPage({ viewport: { width, height } });
     try {
-      await page.setContent(homeMarkup(true, false, { recentCount: 15 }));
+      await page.setContent(homeMarkup(true, false, { recentCount: 18 }));
       await page.addStyleTag({ content: theme + ".composer { height: 240px; }" });
       const home = page.getByTestId("root-compose-compact-home");
       const composer = await page.getByTestId("root-compose-compact-composer").boundingBox();
       const recents = page.locator("[data-root-compose-mobile-recents]");
       const top = await recents.boundingBox();
       if (!composer || !top) throw new Error("Missing composer or recents");
-      expect(composer.y).toBeCloseTo(104, 0);
-      expect(top.y).toBeCloseTo(composer.y + composer.height, 0);
+      expect(composer.y + composer.height / 2).toBeCloseTo((56 + height) / 2, 0);
+      expect(top.y).toBeCloseTo(height, 0);
       expect(await home.evaluate((element) => getComputedStyle(element).maskImage)).toContain(
         "linear-gradient",
       );
