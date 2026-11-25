@@ -24,14 +24,14 @@ const Slider = React.forwardRef<React.ComponentRef<typeof SliderPrimitive.Root>,
       )}
       {...props}
     >
-      <SliderPrimitive.Track className="relative h-1 w-full grow overflow-hidden rounded-full bg-muted">
+      <SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-muted">
         <SliderPrimitive.Range className="absolute h-full bg-primary" />
       </SliderPrimitive.Track>
       <SliderPrimitive.Thumb
         aria-label={thumbLabel}
         aria-labelledby={thumbLabelledBy}
         aria-valuetext={thumbValueText}
-        className="block size-4 cursor-pointer rounded-full border border-border bg-background shadow-sm transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 active:scale-110 disabled:pointer-events-none"
+        className="block size-4 shrink-0 cursor-pointer rounded-full border border-border bg-background shadow-sm ring-ring/50 transition-[color,box-shadow,transform] select-none hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden active:scale-110 disabled:pointer-events-none"
       />
     </SliderPrimitive.Root>
   ),

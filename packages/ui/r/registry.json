@@ -621,9 +621,6 @@
       "dependencies": [
         "@radix-ui/react-radio-group"
       ],
-      "registryDependencies": [
-        "@bb-plugins/icon"
-      ],
       "docs": "Imports the plugin's `utils` from @bb-plugins/ui; add @bb-plugins/utils only to a plugin that lacks it, since a plugin's copy may export extra helpers.",
       "files": [
         {
