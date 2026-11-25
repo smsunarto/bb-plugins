@@ -5,7 +5,7 @@
 // send, waiting, download) with status and size, failures marked. The header
 // gives the total and the critical path, which can dim everything else.
 import { useId, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
+import { Button, CompactButton } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
@@ -262,17 +262,19 @@ function Row({
         >
           <div className="flex h-5 min-w-0 items-center gap-1 @md:h-7" style={{ paddingLeft: indent }}>
             {span.children.length > 0 ? (
-              <button
-                type="button"
+              <CompactButton
+                variant="plain"
+                size="icon-2xs"
                 aria-expanded={!collapsed}
                 aria-label={`${collapsed ? "Expand" : "Collapse"} ${span.name}`}
                 onClick={onToggle}
-                className={cn("flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground hover:text-foreground", FOCUS_RING)}
+                // The kit sizes a button's glyph at 16px; the chevron stays 12px.
+                className="shrink-0 [&_svg]:size-3"
               >
                 <Icon name="ChevronRight" className={cn("size-3 transition-transform duration-200 motion-reduce:transition-none", !collapsed && "rotate-90")} />
-              </button>
+              </CompactButton>
             ) : (
-              <span className="size-4 shrink-0" />
+              <span className="size-5 shrink-0" />
             )}
             <button
               type="button"

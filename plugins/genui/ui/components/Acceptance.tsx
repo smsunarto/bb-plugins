@@ -11,6 +11,7 @@
 import { useContext, useId, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Markdown, UrlLink } from "@get-bb/plugin-sdk/app";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/ui/icon";
 import { Item } from "@/components/ui/item";
 import { cn } from "@/lib/utils";
@@ -608,7 +609,11 @@ function RowName({ criterion, open, onToggle, controls }: { criterion: Criterion
       <span className="flex min-w-0 flex-col">
         <span className={cn("text-[13px] leading-5 text-foreground underline-offset-2 [overflow-wrap:anywhere]", onToggle !== null && "decoration-muted-foreground/60 group-hover/name:underline", open && "font-medium")}>
           {criterion.name}
-          {criterion.required ? null : <span className="ml-1 rounded-sm bg-surface-recessed px-1 text-[10.5px] font-normal text-muted-foreground">optional</span>}
+          {criterion.required ? null : (
+            <Badge variant="secondary" size="sm" className="ml-1">
+              optional
+            </Badge>
+          )}
         </span>
         {criterion.detail === null ? null : <span className="text-xs leading-4 text-muted-foreground [overflow-wrap:anywhere]">{criterion.detail}</span>}
         {criterion.stated === null ? null : (

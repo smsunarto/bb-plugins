@@ -26,6 +26,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
+import { Item } from "@/components/ui/item";
 import { cn } from "@/lib/utils";
 import { CardDepthContext, useUiRuntime } from "../runtime";
 import { list, optionalText, text, type Props } from "../values";
@@ -376,41 +377,39 @@ function SourceRow({ link, onOpen }: { link: Extract<SourceLink, { ok: true }>; 
   const ref = useEntrance<HTMLLIElement>(RISE);
   return (
     <li ref={ref} className="min-w-0">
-      <a
-        href={link.href}
-        title={link.href}
-        onClick={onOpen}
-        className={cn(
-          "group/source grid min-w-0 grid-cols-[1.25rem_minmax(0,1fr)_auto] items-start gap-x-2 rounded-sm py-2 text-foreground no-underline",
-          FOCUS_RING,
-        )}
+      <Item
+        asChild
+        size="inline"
+        className="group/source grid min-w-0 grid-cols-[1.25rem_minmax(0,1fr)_auto] items-start gap-x-2 text-foreground no-underline"
       >
-        <span
-          className={cn(
-            MARKER,
-            "bg-surface-recessed text-muted-foreground transition-colors duration-150 group-hover/source:bg-foreground group-hover/source:text-background group-hover/source:duration-0 motion-reduce:transition-none",
-          )}
-        >
-          {link.number}
-        </span>
-        <span className="flex min-w-0 flex-col gap-1">
-          <span className="truncate text-sm font-medium leading-5 underline-offset-2 group-hover/source:underline">
-            {link.title}
+        <a href={link.href} title={link.href} onClick={onOpen}>
+          <span
+            className={cn(
+              MARKER,
+              "bg-surface-recessed text-muted-foreground transition-colors duration-150 group-hover/source:bg-foreground group-hover/source:text-background group-hover/source:duration-0 motion-reduce:transition-none",
+            )}
+          >
+            {link.number}
           </span>
-          <span className="flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
-            <Icon name="Globe" aria-hidden className="size-3 shrink-0" />
-            <span className="truncate">{link.path === null ? link.domain : `${link.domain}/${link.path}`}</span>
+          <span className="flex min-w-0 flex-col gap-1">
+            <span className="truncate text-sm font-medium leading-5 underline-offset-2 group-hover/source:underline">
+              {link.title}
+            </span>
+            <span className="flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
+              <Icon name="Globe" aria-hidden className="size-3 shrink-0" />
+              <span className="truncate">{link.path === null ? link.domain : `${link.domain}/${link.path}`}</span>
+            </span>
+            {link.note === null ? null : (
+              <span className="line-clamp-2 text-xs leading-4 text-muted-foreground">{link.note}</span>
+            )}
           </span>
-          {link.note === null ? null : (
-            <span className="line-clamp-2 text-xs leading-4 text-muted-foreground">{link.note}</span>
-          )}
-        </span>
-        <Icon
-          name="ExternalLink"
-          aria-hidden
-          className="mt-0.5 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/source:opacity-100 group-focus-visible/source:opacity-100 pointer-coarse:hidden"
-        />
-      </a>
+          <Icon
+            name="ExternalLink"
+            aria-hidden
+            className="mt-0.5 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/source:opacity-100 group-focus-visible/source:opacity-100 pointer-coarse:hidden"
+          />
+        </a>
+      </Item>
     </li>
   );
 }
