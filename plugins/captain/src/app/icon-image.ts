@@ -87,28 +87,44 @@ const SVG_DRAW_SIDE = ICON_IMAGE_SIDE * 2;
 /**
  * Give an SVG an explicit pixel size from its viewBox, so the browser draws
  * the whole drawing instead of a default 300x150 viewport cropped from it. The
- * shorter side becomes `SVG_DRAW_SIDE`. Null when the text is not an SVG.
+ * shorter side becomes `SVG_DRAW_SIDE`. Null if the SVG cannot be sized.
  */
 export function sizeSvg(text: string): { text: string; width: number; height: number } | null {
   const document = new DOMParser().parseFromString(text, "image/svg+xml");
   const root = document.documentElement;
   if (root.localName !== "svg" || document.getElementsByTagName("parsererror").length > 0)
     return null;
+  const style = root instanceof SVGSVGElement ? root.style : undefined;
+  const { width, height, hasViewBox } = svgDimensions(root, style);
+  const scale = SVG_DRAW_SIDE / Math.min(width, height);
+  const drawn = { width: Math.round(width * scale), height: Math.round(height * scale) };
+  if (!Number.isFinite(drawn.width) || !Number.isFinite(drawn.height)) return null;
+  if (!hasViewBox) root.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  for (const axis of ["width", "height"] as const) {
+    root.setAttribute(axis, String(drawn[axis]));
+    // Inline CSS overrides the corresponding SVG presentation attribute.
+    if (style?.getPropertyValue(axis)) {
+      style.setProperty(axis, `${drawn[axis]}px`, style.getPropertyPriority(axis));
+    }
+  }
+  root.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  return { text: new XMLSerializer().serializeToString(root), ...drawn };
+}
+
+function svgDimensions(root: Element, style: CSSStyleDeclaration | undefined) {
   const box = (root.getAttribute("viewBox") ?? "")
     .trim()
     .split(/[\s,]+/u)
     .map(Number);
-  const [boxWidth, boxHeight] = [box[2] ?? Number.NaN, box[3] ?? Number.NaN];
-  const fromBox = box.length === 4 && boxWidth > 0 && boxHeight > 0;
-  const width = fromBox ? boxWidth : (pixels(root.getAttribute("width")) ?? SVG_DRAW_SIDE);
-  const height = fromBox ? boxHeight : (pixels(root.getAttribute("height")) ?? SVG_DRAW_SIDE);
-  const scale = SVG_DRAW_SIDE / Math.min(width, height);
-  const drawn = { width: Math.round(width * scale), height: Math.round(height * scale) };
-  if (!fromBox) root.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  root.setAttribute("width", String(drawn.width));
-  root.setAttribute("height", String(drawn.height));
-  root.setAttribute("preserveAspectRatio", "xMidYMid meet");
-  return { text: new XMLSerializer().serializeToString(root), ...drawn };
+  const [, , boxWidth = 0, boxHeight = 0] = box;
+  if (box.length === 4 && boxWidth > 0 && boxHeight > 0) {
+    return { width: boxWidth, height: boxHeight, hasViewBox: true };
+  }
+  return {
+    width: pixels(style?.width || root.getAttribute("width")) ?? SVG_DRAW_SIDE,
+    height: pixels(style?.height || root.getAttribute("height")) ?? SVG_DRAW_SIDE,
+    hasViewBox: false,
+  };
 }
 
 const PIXELS_PER_UNIT = new Map([
