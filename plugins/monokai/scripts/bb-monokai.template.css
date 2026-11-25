@@ -1648,25 +1648,96 @@
   }
 }
 
-/* Center the new-thread composer in the page, as Capy's home does, with the
- * column's bottom padding lifting it a tenth of the viewport above center.
- * Current home wraps it in root-compose-compact-composer; older layouts put
- * the prompt shell directly inside the column's child. Move that outer
- * wrapper so additional composer wrappers do not break the alignment.
- * Homepage sections stay above it. */
-#root-compose-main-panel .\@container\/page > .mx-auto.flex-col {
-  min-height: 100%;
-  padding-bottom: calc(0.5rem + 10dvh);
+/* BB switches to its compact home at max-width: 767px. The marked desktop
+ * wrapper fills BB's scroll viewport inside either a standalone or split pane. */
+@media (width > 767px) {
+  [data-monokai-compose-viewport] {
+    display: flex;
+    flex-direction: column;
+    min-block-size: 100%;
+  }
+
+  [data-testid="root-compose-compact-home"] {
+    flex: 1 0 auto;
+    padding-block: 3.5rem;
+    justify-content: safe center;
+  }
+
+  [data-testid="root-compose-compact-home"] > [data-testid="root-compose-compact-composer"] {
+    order: 1;
+  }
 }
 
-#root-compose-main-panel [data-testid="root-compose-compact-composer"],
-#root-compose-main-panel
-  .\@container\/page
-  > div
-  > [data-promptbox-shell] {
-  order: 1;
-  margin-top: auto;
-  margin-bottom: auto;
+/* BB nests homepage sections with recents. Flatten those boxes into one
+ * scrollable column. Center the sections and composer in the visible area
+ * below the chrome, and let recents extend past the last grid line. */
+@media (max-width: 767px) {
+  [data-testid="root-compose-compact-home"] {
+    --monokai-home-chrome: 3.5rem;
+    --monokai-home-menu-room: 6rem;
+    --monokai-home-fade: 1.5rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    /* Reserve the typeahead's 5rem minimum and room for its gap above the editor. */
+    grid-template-rows:
+      minmax(var(--monokai-home-menu-room), 1fr) max-content max-content minmax(0, 1fr) 0;
+    margin-block-start: var(--monokai-home-chrome);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* The fade softens a partial row. The list padding clears it at the end. */
+    mask-image: linear-gradient(to bottom, black calc(100% - var(--monokai-home-fade)), transparent);
+  }
+
+  [data-testid="root-compose-compact-home"] > [data-testid="root-compose-compact-composer"] {
+    position: relative;
+    grid-row: 3;
+  }
+
+  /* BB's inline editor cap already budgets for its chrome. Use the same
+   * measured cap, reserving the larger menu gap and the fade on short screens. */
+  [data-testid="root-compose-compact-home"]
+    [data-promptbox]:not([data-promptbox-compact])
+    [data-promptbox-editor-scroll] {
+    max-height: min(
+      calc(var(--bb-shell-height, 100dvh) * 0.7 - 3rem),
+      calc(
+        var(--composer-editor-available-height, 100dvh) + var(--monokai-home-chrome) -
+          var(--monokai-home-menu-room) - var(--monokai-home-fade)
+      )
+    ) !important;
+  }
+
+  [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-scroll-viewport"],
+  [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-scroll-content"],
+  [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-leading-spacer"] + div {
+    display: contents;
+  }
+
+  [data-testid="root-compose-compact-home"] [data-testid="plugin-homepage-sections"],
+  [data-testid="root-compose-compact-home"] [data-root-compose-mobile-recents] {
+    inline-size: 100%;
+    max-inline-size: var(--md-content-w, 760px);
+    margin-inline: auto;
+    padding-inline: 1rem;
+  }
+
+  [data-testid="root-compose-compact-home"] [data-testid="plugin-homepage-sections"] {
+    grid-row: 2;
+  }
+
+  [data-testid="root-compose-compact-home"] [data-root-compose-mobile-recents] {
+    /* A zero-height track keeps the list out of the centering calculation.
+     * Start alignment lets it extend to its full height in the same scroller. */
+    grid-row: 5;
+    align-self: start;
+    padding-block-end: 3rem;
+  }
+
+  [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-leading-spacer"],
+  [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-bottom-spacer"],
+  [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-fade"] {
+    display: none;
+  }
 }
 
 /* Capy's halftone backdrop, held still: a 6px lattice of 2px squares in
@@ -1686,11 +1757,14 @@
   display: none;
 }
 
-/* The hidden marker section still sits in bb's homepage section list, whose
- * 24px top margin would push the centered composer down. The column's own
- * top padding already spaces any visible sections. */
-#root-compose-main-panel [data-testid="plugin-homepage-sections"] {
+/* Keep the empty homepage marker from reserving space. Each visible section
+ * has clearance below it before the next section or the composer. */
+[data-testid="root-compose-compact-home"] [data-testid="plugin-homepage-sections"] {
   margin-top: 0;
+}
+
+[data-testid="root-compose-compact-home"] [data-testid="plugin-homepage-sections"] > section {
+  padding-block-end: 1rem;
 }
 
 /* The macOS window's title bar strip belongs to the page and wears bb's

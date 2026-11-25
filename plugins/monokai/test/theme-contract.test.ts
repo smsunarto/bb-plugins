@@ -361,7 +361,7 @@ describe("bb Monokai contract audit", () => {
     );
   });
 
-  test("insets the unframed desktop page and centers the new-thread composer, as Capy does", () => {
+  test("insets the unframed desktop page and draws the new-thread backdrop", () => {
     const inset = styleRules(theme).filter(({ selector }) =>
       selector.includes('[data-testid="app-layout-root"]:not([data-framed])'),
     );
@@ -378,7 +378,6 @@ describe("bb Monokai contract audit", () => {
     );
     // The New thread screen drops that overlay.
     expect(theme).toContain(".dark[data-monokai-home] [data-app-content-shell]::after,");
-    expect(theme).toContain("order: 1;\n  margin-top: auto;\n  margin-bottom: auto;");
     // The halftone starts below the macOS title bar, which bb tints translucent.
     expect(theme).toContain(
       "[data-app-content-shell]::after {\n  position: absolute;\n  inset: var(--bb-window-frame-top, 0px) 0 0;",
