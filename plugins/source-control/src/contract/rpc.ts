@@ -255,6 +255,7 @@ export const sourceControlContract = defineRpcContract({
         keys: z.array(changeKeySchema).min(1).max(20),
         // A PR link checks its number against GitHub before opening the branch Review.
         prNumber: z.number().int().positive().optional(),
+        threadId: threadIdSchema.optional(),
       })
       .strict()
       .refine(({ keys, prNumber }) => prNumber === undefined || keys.length === 1),

@@ -12,7 +12,7 @@ import { Effect } from "effect";
 import type { Viewer } from "../core/items.ts";
 import { parseChangeKey } from "../core/review.ts";
 import { createBatches } from "./batches.ts";
-import type { ForgeSites } from "./forge-sites.ts";
+import type { ForgeHost, ForgeSites } from "./forge-sites.ts";
 import type { HostCalls } from "./host-calls.ts";
 import type { LocalReads } from "./local-read.ts";
 import { createReviewChange, localMatch } from "./review-change.ts";
@@ -41,6 +41,7 @@ export function createReview(deps: {
   /** Threads working on the Change's branch. */
   threadsOnChange: (key: ChangeKey) => string[];
   worktreeHost: WorktreeHost;
+  threadForgeHost: (threadId: string) => Effect.Effect<ForgeHost | null>;
 }) {
   const sources = createReviewSources({
     ...deps,

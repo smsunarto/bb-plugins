@@ -12,6 +12,7 @@ import {
   type Facet,
   type ForgeAction,
   type ForgeResult,
+  type ForgeRead,
   type ForgeValue,
   type Placement,
   type Problem,
@@ -206,6 +207,7 @@ export function createReviewChange(deps: {
   store: Store;
   sites: ForgeSites;
   share: Share;
+  threadForgeHost: (threadId: string) => Effect.Effect<ForgeHost | null>;
   inboxRow: (key: ChangeKey) => ChangeRow | null;
   invalidate: (tags: readonly string[]) => void;
   /** A Change's pull request was read: the threads showing it read again. */
@@ -217,13 +219,34 @@ export function createReviewChange(deps: {
   const { store } = deps;
   const attempts = new Map<ChangeKey, number>();
 
+  function saveForge(key: ChangeKey, read: { value: ForgeRead } | { problem: Problem }) {
+    const at = deps.now();
+    const forge =
+      "value" in read
+        ? succeeded(read.value.pullRequest, at)
+        : failed(store.forge(key), read.problem);
+    const checks =
+      "value" in read ? succeeded(read.value.checks, at) : failed(store.checks(key), read.problem);
+    const threads =
+      "value" in read
+        ? succeeded(read.value.threads ?? [], at)
+        : failed(store.threads(key), read.problem);
+    if (store.setForge(key, forge)) {
+      deps.invalidate([changeTag(key)]);
+      deps.forgeChanged(key);
+    }
+    if (store.setChecks(key, checks)) deps.invalidate([checksTag(key)]);
+    if (store.setThreads(key, threads)) deps.invalidate([reviewTag(key)]);
+    deps.forgeRead?.(key);
+  }
+
   /**
    * Read the Change's pull request by its key, from wherever an account can
    * see it; with `host`, on the server and that host only.
    */
-  const readForge = (key: ChangeKey, host?: ForgeHost, prNumber?: number) =>
+  const readForge = (key: ChangeKey, host?: ForgeHost) =>
     deps.share(
-      `forge:${key}`,
+      host ? `remembered-forge:${JSON.stringify([key, host.hostId])}` : `forge:${key}`,
       Effect.gen(function* () {
         const parsed = parseChangeKey(key);
         if (parsed?.kind !== "gh") return;
@@ -238,30 +261,18 @@ export function createReviewChange(deps: {
               repo,
               headOwner,
               branch,
-              ...(prNumber === undefined ? knownOpen(store.forge(key)) : { open: prNumber }),
+              ...knownOpen(store.forge(key)),
             },
             placements,
             host ? "only" : "any",
           )
           .pipe(Effect.result);
-        const at = deps.now();
-        const ok = answer._tag === "Success";
-        const forge = ok
-          ? succeeded(answer.success.pullRequest, at)
-          : failed(store.forge(key), answer.failure.problem);
-        const checks = ok
-          ? succeeded(answer.success.checks, at)
-          : failed(store.checks(key), answer.failure.problem);
-        if (store.setForge(key, forge)) {
-          deps.invalidate([changeTag(key)]);
-          deps.forgeChanged(key);
-        }
-        if (store.setChecks(key, checks)) deps.invalidate([checksTag(key)]);
-        const threads = ok
-          ? succeeded(answer.success.threads ?? [], at)
-          : failed(store.threads(key), answer.failure.problem);
-        if (store.setThreads(key, threads)) deps.invalidate([reviewTag(key)]);
-        deps.forgeRead?.(key);
+        saveForge(
+          key,
+          answer._tag === "Success"
+            ? { value: answer.success }
+            : { problem: answer.failure.problem },
+        );
       }),
     );
 
@@ -282,16 +293,37 @@ export function createReviewChange(deps: {
     detail(keys: readonly ChangeKey[]): Record<string, ChangeDetail> {
       return Object.fromEntries(keys.map((key) => [key, detailOf(key)]));
     },
-    /** A PR link must get a current forge verdict before it opens the branch. */
-    prLinkDetail: Effect.fnUntraced(function* (key: ChangeKey, prNumber: number) {
-      yield* readForge(key, undefined, prNumber);
-      const forge = store.forge(key);
-      const detail = detailOf(key);
-      // A forge refusal must not let the last-good PR pass validation.
-      const verified: ChangeDetail =
-        forge.problem || !forge.read?.value ? { state: "missing", problem: forge.problem } : detail;
-      return { [key]: verified };
-    }),
+    /** Refresh the branch's selected PR. The link number never picks what the branch stores. */
+    prLinkDetail: (key: ChangeKey, threadId?: string) =>
+      deps.share(
+        // A thread id scopes the pending read before its host is needed or known.
+        `pr-link-forge:${JSON.stringify([key, threadId ?? null])}`,
+        Effect.gen(function* () {
+          const parsed = parseChangeKey(key);
+          if (parsed?.kind !== "gh")
+            return { [key]: { state: "missing", problem: null } satisfies ChangeDetail };
+          const { repo, headOwner, branch } = parsed;
+          const answer = yield* deps.sites
+            .pullRequestVia(
+              { repo, headOwner, branch, ...knownOpen(store.forge(key)) },
+              [],
+              "only",
+              threadId ? deps.threadForgeHost(threadId) : undefined,
+            )
+            .pipe(Effect.result);
+          // A thread's connection or permission failure says nothing about the shared branch.
+          if (answer._tag === "Failure")
+            return {
+              [key]: { state: "missing", problem: answer.failure.problem } satisfies ChangeDetail,
+            };
+          saveForge(key, { value: answer.success });
+          return {
+            [key]: answer.success.pullRequest
+              ? detailOf(key)
+              : ({ state: "missing", problem: null } satisfies ChangeDetail),
+          };
+        }),
+      ),
     /** Read the Change's pull request now. */
     readForge,
     /** Whether the Change's pull request is due another read. */

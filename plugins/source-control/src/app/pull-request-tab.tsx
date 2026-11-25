@@ -13,6 +13,7 @@ import {
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { describeProblem } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import type { ChangeDetail } from "../core/review.ts";
 import { prKey, prLookup, prUrl, type PrRef } from "../core/watch.ts";
@@ -45,7 +46,7 @@ export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }
   const { data, error, isFetching, refetch } = useRpcQuery({
     contract: sourceControlContract,
     method: "changeDetail",
-    input: { keys, prNumber: pr.number },
+    input: { keys, prNumber: pr.number, threadId },
     enabled: key !== null,
   });
   const [validatedKey, setValidatedKey] = useState<ChangeKey | null>(null);
@@ -219,7 +220,12 @@ function start(lookup: string, threadId: string): Phase {
 /** Where a known Change's review sends this pull request's link. */
 function judge(detail: Exclude<ChangeDetail, { state: "pending" }>, number: number): Phase {
   if (detail.state === "missing")
-    return { at: "failed", problem: "Source Control doesn't know this pull request's branch." };
+    return {
+      at: "failed",
+      problem: detail.problem
+        ? describeProblem(detail.problem)
+        : "Source Control doesn't know this pull request's branch.",
+    };
   const shown = detail.row.number;
   if (shown === null)
     return { at: "failed", problem: "This branch has no pull request in Review." };

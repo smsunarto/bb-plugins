@@ -210,6 +210,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     now,
     deadlineMs: hostDeadlineMs,
     threadsOnChange: owners,
+    threadForgeHost: placements.threadForgeHost,
     worktreeHost: deps.worktreeHost,
   });
   checkoutRead = review.checkoutRead;

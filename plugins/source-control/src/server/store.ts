@@ -122,6 +122,10 @@ export const MIGRATIONS = [
   `DROP TABLE thread_change`,
   `CREATE TABLE thread_change (thread_id TEXT PRIMARY KEY, change_key TEXT NOT NULL, host_id TEXT NOT NULL, host_name TEXT NOT NULL)`,
   `CREATE INDEX forge_facet_by_branch ON forge_facet (${FORGE_BRANCH}, change_key) WHERE ${FORGE_GITHUB_KEY}`,
+  `ALTER TABLE thread_change ADD COLUMN inferred INTEGER NOT NULL DEFAULT 0`,
+  // An observed Change always has a thread_branch row, even after a detached read.
+  `UPDATE thread_change SET inferred = 1
+   WHERE NOT EXISTS (SELECT 1 FROM thread_branch WHERE thread_branch.thread_id = thread_change.thread_id)`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -355,35 +359,46 @@ function askTables(db: Database) {
 function threadChangeTables(db: Database) {
   const getLastChange = db.prepare<
     [string],
-    { change_key: string; host_id: string; host_name: string }
-  >(`SELECT change_key, host_id, host_name FROM thread_change WHERE thread_id = ?`);
+    { change_key: string; host_id: string; host_name: string; inferred: number }
+  >(`SELECT change_key, host_id, host_name, inferred FROM thread_change WHERE thread_id = ?`);
   const putLastChange = db.prepare(
-    `INSERT INTO thread_change (thread_id, change_key, host_id, host_name) VALUES (?, ?, ?, ?)
+    `INSERT INTO thread_change (thread_id, change_key, host_id, host_name, inferred) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT (thread_id) DO UPDATE SET change_key = excluded.change_key,
-       host_id = excluded.host_id, host_name = excluded.host_name`,
+       host_id = excluded.host_id, host_name = excluded.host_name, inferred = excluded.inferred
+     WHERE thread_change.inferred = 1 OR excluded.inferred = 0`,
   );
+  const forgetInference = db.prepare(
+    `DELETE FROM thread_change WHERE thread_id = ? AND inferred = 1`,
+  );
+
   return {
     /** The last GitHub Change the thread was read on, and its checkout's host. */
-    lastChange(threadId: string): { key: ChangeKey; host: ForgeHost } | null {
+    lastChange(threadId: string): { key: ChangeKey; host: ForgeHost; inferred: boolean } | null {
       const row = getLastChange.get(threadId);
       return row
         ? {
             key: row.change_key as ChangeKey,
+            inferred: row.inferred === 1,
             host: { hostId: row.host_id, hostName: row.host_name },
           }
         : null;
     },
     /** Returns whether the remembered Change moved; a new host name alone is stored quietly. */
-    rememberChange(threadId: string, key: ChangeKey, host: ForgeHost): boolean {
+    rememberChange(threadId: string, key: ChangeKey, host: ForgeHost, inferred = false): boolean {
       const before = getLastChange.get(threadId);
       if (
         before?.host_id !== host.hostId ||
         before.host_name !== host.hostName ||
-        before.change_key !== key
+        before.change_key !== key ||
+        before.inferred !== Number(inferred)
       )
-        putLastChange.run(threadId, key, host.hostId, host.hostName);
-      return before?.change_key !== key;
+        return (
+          putLastChange.run(threadId, key, host.hostId, host.hostName, Number(inferred)).changes >
+            0 && before?.change_key !== key
+        );
+      return false;
     },
+    forgetInference: (threadId: string): boolean => forgetInference.run(threadId).changes > 0,
   };
 }
 

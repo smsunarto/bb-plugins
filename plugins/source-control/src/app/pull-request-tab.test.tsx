@@ -217,7 +217,7 @@ test("a warm mapping still checks which pull request the Change shows", async ()
   expect(slot.inspection.rpcCalls).toContainEqual(
     expect.objectContaining({
       method: "changeDetail",
-      input: { keys: [KEY], prNumber: 12 },
+      input: { keys: [KEY], prNumber: 12, threadId: "thread-a" },
     }),
   );
 });
@@ -334,4 +334,13 @@ test("reconnect promotes the Change after a detail RPC error", async () => {
     { method: "openTab", options: { params: { key: KEY } } },
     { method: "closeTab" },
   ]);
+});
+
+test("report the forge failure when the branch is known", async () => {
+  const detail = vi.fn((): ChangeDetail => ({
+    state: "missing",
+    problem: { kind: "rate-limited", site: "GitHub", detail: "API rate limit exceeded" },
+  }));
+  const { slot } = render(found, 12, detail);
+  expect((await slot.findByRole("alert")).textContent).toMatch(/rate[- ]limit/i);
 });

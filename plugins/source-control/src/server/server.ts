@@ -293,11 +293,11 @@ function registerRpc(
       inbox: ({ keys }) => changes.review.inbox(keys),
       hostChanges: ({ keys }) => changes.review.hostChanges(keys),
       checkoutHosts: () => changes.review.checkoutHosts(),
-      changeDetail: ({ keys, prNumber }, context) =>
+      changeDetail: ({ keys, prNumber, threadId }, context) =>
         prNumber === undefined
           ? changes.review.detail(keys)
           : runtime.run(
-              changes.review.prLinkDetail(keys[0]!, prNumber),
+              changes.review.prLinkDetail(keys[0]!, threadId),
               context.experimental_signal,
             ),
       changeFiles: ({ key, revision }, context) =>

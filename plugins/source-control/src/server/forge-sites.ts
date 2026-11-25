@@ -474,6 +474,20 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
       });
     });
 
+  function readSources(
+    placements: readonly Placement[],
+    fallbackHost?: Effect.Effect<Placement | null>,
+  ) {
+    const sources = [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)];
+    if (fallbackHost)
+      sources.push(
+        fallbackHost.pipe(
+          Effect.flatMap((host) => (host ? hostAccesses(host) : Effect.succeed([]))),
+        ),
+      );
+    return sources;
+  }
+
   /**
    * The branch's pull request and checks: the account that read the
    * repository last, else each server account, else each of the host's,
@@ -492,11 +506,12 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
     query: PullRequestQuery,
     placements: readonly Placement[],
     scope: "any" | "only" = "any",
+    fallbackHost?: Effect.Effect<Placement | null>,
   ) =>
     withinDeadline(
       firstThatSees(
         repoName(query),
-        [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)],
+        readSources(placements, fallbackHost),
         (access) => readAt(access, query),
         { kind: "no-site", host: placements[0]?.hostName ?? SERVER_SITE_NAME },
         (access) =>
@@ -634,17 +649,10 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
   ): Effect.Effect<SiteOutcome<ReviewAnswer>> =>
     Effect.gen(function* () {
       if (login === null) {
-        const sources = [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)];
-        if (fallbackHost)
-          sources.push(
-            fallbackHost.pipe(
-              Effect.flatMap((host) => (host ? hostAccesses(host) : Effect.succeed([]))),
-            ),
-          );
         const answer = yield* withinDeadline(
           firstThatSees(
             repoName({ repo }),
-            sources,
+            readSources(placements, fallbackHost),
             (access) => reviewAt(access, read),
             { kind: "no-site", host: placements[0]?.hostName ?? SERVER_SITE_NAME },
             (access) =>

@@ -133,14 +133,24 @@ export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () 
         })),
       ),
     /** A PR lookup needs the selected machine, even before its checkout is ready. */
-    threadForgeHost: Effect.fnUntraced(function* (threadId: string) {
-      const environment = yield* threadEnvironment(threadId);
-      if (!environment) return null;
-      const { hostId } = environment;
-      const record = yield* lookup(hostId);
-      if (record === GONE) return null;
-      return { hostId, hostName: names.get(hostId) ?? record?.name ?? hostId } satisfies ForgeHost;
-    }),
+    threadForgeHost: Effect.fnUntraced(
+      function* (threadId: string) {
+        const environment = yield* threadEnvironment(threadId);
+        if (!environment) return null;
+        const { hostId } = environment;
+        const record = yield* lookup(hostId);
+        if (record === GONE) return null;
+        return {
+          hostId,
+          hostName: names.get(hostId) ?? record?.name ?? hostId,
+        } satisfies ForgeHost;
+      },
+      (effect) =>
+        effect.pipe(
+          Effect.timeout("2 seconds"),
+          Effect.orElseSucceed(() => null),
+        ),
+    ),
     forEnvironment,
     /**
      * Resolve and store the thread's placement; `changed` when the stored one

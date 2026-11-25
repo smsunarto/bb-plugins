@@ -249,15 +249,6 @@ export function createMoved(deps: {
     },
   };
 
-  function prLookupHost(threadId: string): Effect.Effect<ForgeHost | null> {
-    const stored = placementsOf(threadId)[0] ?? store.lastChange(threadId)?.host;
-    if (stored) return Effect.succeed(stored);
-    return deps.threadForgeHost(threadId).pipe(
-      Effect.timeout("2 seconds"),
-      Effect.orElseSucceed(() => null),
-    );
-  }
-
   /**
    * An old card's target, or a pull request link, as a Change: by the stored
    * mapping, the checkouts' rows, or a GitHub read on the server and the asking thread's host.
@@ -308,7 +299,7 @@ export function createMoved(deps: {
     legacyChange: async ({ keys, threadId }) => {
       let resolved: Promise<ForgeHost | null> | undefined;
       const host = threadId
-        ? Effect.promise(() => (resolved ??= deps.run(prLookupHost(threadId))))
+        ? Effect.promise(() => (resolved ??= deps.run(deps.threadForgeHost(threadId))))
         : undefined;
       return Object.fromEntries(
         await Promise.all(

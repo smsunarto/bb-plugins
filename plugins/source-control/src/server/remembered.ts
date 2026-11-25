@@ -9,7 +9,8 @@
  * read on no branch, as after a detached handoff, leaves it. A thread never
  * read on a checkout takes the Change its project's GitHub repository has on
  * the branch bb recorded for its environment, when that branch has a cached
- * read; with no repository, nothing. A merged pull request is not read
+ * read; that inference lasts only while the evidence identifies one head
+ * owner. With no repository, nothing. A merged pull request is not read
  * again.
  *
  * Its pull request is read on the server and the remembered host only: a
@@ -42,6 +43,9 @@ export function createRemembered(deps: {
   const { store } = deps;
   /** Threads shown a remembered Change: told of its reads, never counted among its owners. */
   const showing = new Map<ChangeKey, Set<string>>();
+  /** Inferred Changes also depend on forge reads of sibling forks of their branch. */
+  const inferenceReaders = new Map<string, Set<string>>();
+  const identity = ({ owner, name }: Repo, branch: string) => JSON.stringify([owner, name, branch]);
   /** When each thread with no checkout was last resolved. */
   const lookedAt = new Map<string, number>();
 
@@ -50,6 +54,14 @@ export function createRemembered(deps: {
     const remembered = store.lastChange(threadId);
     const parsed = remembered ? parseChangeKey(remembered.key) : null;
     if (!remembered || parsed?.kind !== "gh") return null;
+    if (remembered.inferred) {
+      const { repo, branch } = parsed;
+      const branchId = identity(repo, branch);
+      const readers = inferenceReaders.get(branchId) ?? new Set<string>();
+      readers.add(threadId);
+      inferenceReaders.set(branchId, readers);
+      if (store.knownBranchChange(repo, branch) !== remembered.key) return null;
+    }
     const threads = showing.get(remembered.key) ?? new Set<string>();
     threads.add(threadId);
     showing.set(remembered.key, threads);
@@ -59,16 +71,25 @@ export function createRemembered(deps: {
   /** A thread never read on a checkout: its project's Change on the recorded branch, if that branch was read. */
   const recover = Effect.fnUntraced(function* (threadId: string, recorded: RecordedEnvironment) {
     const repo = yield* deps.projectRepo(recorded.projectId);
-    if (!repo) return;
-    const key = store.knownBranchChange(repo, recorded.branchName);
-    if (!key) return;
-    const host = yield* deps.forgeHost(recorded.hostId);
-    if (store.rememberChange(threadId, key, host)) deps.announce([threadId]);
+    const key = repo ? store.knownBranchChange(repo, recorded.branchName) : null;
+    if (!key) {
+      if (store.forgetInference(threadId)) deps.announce([threadId]);
+      return;
+    }
+    const prior = store.lastChange(threadId);
+    const host =
+      prior?.host.hostId === recorded.hostId ? prior.host : yield* deps.forgeHost(recorded.hostId);
+    if (store.rememberChange(threadId, key, host, true)) deps.announce([threadId]);
   });
 
   return {
     /** Threads showing this Change from memory. */
-    threadsOf: (key: ChangeKey): Iterable<string> => showing.get(key) ?? [],
+    *threadsOf(key: ChangeKey): Iterable<string> {
+      yield* showing.get(key) ?? [];
+      const parsed = parseChangeKey(key);
+      if (parsed?.kind === "gh")
+        yield* inferenceReaders.get(identity(parsed.repo, parsed.branch)) ?? [];
+    },
     /** The thread's compact row: its remembered Change when it has no checkout. */
     status(threadId: string, row: ThreadChange): ThreadStatus {
       const change = row.state === "none" ? last(threadId) : null;
@@ -84,7 +105,8 @@ export function createRemembered(deps: {
     /** The thread has no checkout: read its remembered Change's pull request when due. */
     read: Effect.fnUntraced(function* (threadId: string, recorded: RecordedEnvironment | null) {
       lookedAt.set(threadId, deps.now());
-      if (!store.lastChange(threadId) && recorded) yield* recover(threadId, recorded);
+      if (recorded && (store.lastChange(threadId)?.inferred ?? true))
+        yield* recover(threadId, recorded);
       const change = last(threadId);
       if (!change || store.forge(change.key).read?.value?.state === "merged") return;
       if (deps.forgeDue(change.key)) yield* deps.readForge(change.key, change.host);
