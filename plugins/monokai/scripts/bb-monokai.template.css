@@ -1609,17 +1609,20 @@
   }
 }
 
-/* BB nests the homepage sections with recents in the compact viewport.
- * Flatten the layout wrappers so both can have their own grid rows. Keep the
- * sections with the composer, and let recents scroll below the group. */
+/* BB nests homepage sections with recents. Flatten those boxes into one
+ * scrollable column below the chrome. The outer tracks center short content
+ * and collapse when the list needs the full height. */
 @media (max-width: 767px) {
   [data-testid="root-compose-compact-home"] {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(0, max-content) auto minmax(auto, 1fr);
-    padding-top: 3.5rem;
-    /* A tall composer can push the recent row below the fold. */
+    /* Leave room for the upward-opening menu on a short form. */
+    grid-template-rows: minmax(3rem, 1fr) auto auto auto minmax(3rem, 1fr);
+    margin-block-start: 3.5rem;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    /* The fade softens a partial row. The last track clears it at the end. */
+    mask-image: linear-gradient(to bottom, black calc(100% - 1.5rem), transparent);
   }
 
   [data-testid="root-compose-compact-home"] > [data-testid="root-compose-compact-composer"] {
@@ -1636,12 +1639,9 @@
   [data-testid="root-compose-compact-home"] [data-testid="plugin-homepage-sections"],
   [data-testid="root-compose-compact-home"] [data-root-compose-mobile-recents] {
     inline-size: 100%;
-    min-block-size: 0;
     max-inline-size: var(--md-content-w, 760px);
     margin-inline: auto;
     padding-inline: 1rem;
-    overflow-y: auto;
-    overscroll-behavior: contain;
   }
 
   [data-testid="root-compose-compact-home"] [data-testid="plugin-homepage-sections"] {
@@ -1650,8 +1650,6 @@
 
   [data-testid="root-compose-compact-home"] [data-root-compose-mobile-recents] {
     grid-row: 4;
-    /* Keep the heading and one recent item reachable beside a long hint. */
-    min-block-size: 5.25rem;
   }
 
   [data-testid="root-compose-compact-home"] [data-testid="root-compose-compact-leading-spacer"],

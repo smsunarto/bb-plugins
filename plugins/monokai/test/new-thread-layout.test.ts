@@ -16,7 +16,7 @@ afterAll(async () => {
 function homeMarkup(
   compact: boolean,
   withHeading: boolean,
-  { split = false, hint = "Choose what to work on." } = {},
+  { split = false, hint = "Choose what to work on.", recentCount = 0 } = {},
 ) {
   const sections = `
     <div data-testid="plugin-homepage-sections">
@@ -41,11 +41,12 @@ function homeMarkup(
       .compact-viewport { position: absolute; inset: 56px 0 0; overflow-y: auto; }
       .compact-composer { position: absolute; inset: auto 0 0; }
       .composer { height: 160px; }
+      [data-root-compose-mobile-recents] h2 { position: sticky; top: 0; }
       h2, p { margin: 0; }
       li { height: 60px; }
     </style>
     <div data-test-pane ${split ? 'data-split-pane-id="left" style="width: 50%"' : 'id="root-compose-main-panel"'}>
-      ${compact ? compactHome(composer, sections) : desktopHome(composer, sections)}
+      ${compact ? compactHome(composer, sections, recentCount) : desktopHome(composer, sections)}
     </div>
   `;
 }
@@ -64,8 +65,8 @@ function desktopHome(composer: string, sections: string) {
   `;
 }
 
-function compactHome(composer: string, sections: string) {
-  const recents = "<li>Recent conversation</li>".repeat(12);
+function compactHome(composer: string, sections: string, recentCount: number) {
+  const recents = "<li>Recent conversation</li>".repeat(recentCount);
   return `
     <div class="page column compact-home">
       <div class="compact-home" data-testid="root-compose-compact-home">
@@ -73,7 +74,7 @@ function compactHome(composer: string, sections: string) {
           <div data-testid="root-compose-compact-scroll-content">
             <div data-testid="root-compose-compact-leading-spacer" style="height: 200px"></div>
             <div>
-              <section data-root-compose-mobile-recents><ul>${recents}</ul></section>
+              ${recents ? `<section data-root-compose-mobile-recents><h2>Recent</h2><ul>${recents}</ul></section>` : ""}
               ${sections}
             </div>
             <div data-testid="root-compose-compact-bottom-spacer" style="height: 160px"></div>
@@ -112,20 +113,6 @@ for (const { width, height, compact } of scenarios) {
         expect(composerBottom).toBeLessThanOrEqual(contentBottom);
         expect((groupStart + composerBottom) / 2).toBeCloseTo((contentTop + contentBottom) / 2, 0);
         if (withHeading) expect(composer.y - (sections.y + sections.height)).toBeCloseTo(0, 0);
-
-        if (compact) {
-          const recents = page.locator("[data-root-compose-mobile-recents]");
-          const bounds = await recents.boundingBox();
-          if (!bounds) throw new Error("Missing compact recents");
-          expect(bounds.y).toBeCloseTo(composerBottom, 0);
-          expect(bounds.y + bounds.height).toBeLessThanOrEqual(contentBottom);
-          expect(
-            await recents.evaluate((element) => {
-              element.scrollTop = element.scrollHeight;
-              return element.scrollTop;
-            }),
-          ).toBeGreaterThan(0);
-        }
       } finally {
         await page.close();
       }
@@ -147,19 +134,56 @@ test("centers the composer in a hosted pane without the root panel ID", async ()
   }
 });
 
-test("keeps recent items reachable below a tall compact heading", async () => {
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+test("keeps the hint and recents reachable below a large composer with a short viewport", async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 480 } });
   try {
-    await page.setContent(homeMarkup(true, true, { hint: "Long project hint. ".repeat(95) }));
+    await page.setContent(
+      homeMarkup(true, true, { hint: "Long project hint. ".repeat(95), recentCount: 12 }),
+    );
     await page.addStyleTag({ content: theme + ".composer { height: 240px; }" });
-    const recents = page.locator("[data-root-compose-mobile-recents]");
-    const bounds = await recents.boundingBox();
-    if (!bounds) throw new Error("Missing compact recents");
-    expect(bounds.height).toBeGreaterThanOrEqual(84);
-    expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
-    await recents.locator("li").last().scrollIntoViewIfNeeded();
-    expect(await recents.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    const sections = await page.getByTestId("plugin-homepage-sections").boundingBox();
+    expect(sections?.height).toBeGreaterThan(480);
+    const last = page.locator("[data-root-compose-mobile-recents] li").last();
+    await last.scrollIntoViewIfNeeded();
+    const bounds = await last.boundingBox();
+    expect(bounds?.y).toBeGreaterThanOrEqual(56);
+    expect((bounds?.y ?? 480) + (bounds?.height ?? 60)).toBeLessThanOrEqual(480);
   } finally {
     await page.close();
   }
 });
+
+for (const [width, height] of [
+  [440, 956],
+  [390, 844],
+] as const) {
+  test(`uses one scroll column for the composer and long recents at ${width}×${height}`, async () => {
+    const page = await browser.newPage({ viewport: { width, height } });
+    try {
+      await page.setContent(homeMarkup(true, false, { recentCount: 15 }));
+      await page.addStyleTag({ content: theme + ".composer { height: 240px; }" });
+      const home = page.getByTestId("root-compose-compact-home");
+      const composer = await page.getByTestId("root-compose-compact-composer").boundingBox();
+      const recents = page.locator("[data-root-compose-mobile-recents]");
+      const top = await recents.boundingBox();
+      if (!composer || !top) throw new Error("Missing composer or recents");
+      expect(composer.y).toBeCloseTo(104, 0);
+      expect(top.y).toBeCloseTo(composer.y + composer.height, 0);
+      expect(await home.evaluate((element) => getComputedStyle(element).maskImage)).toContain(
+        "linear-gradient",
+      );
+
+      await home.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      const last = await recents.locator("li").last().boundingBox();
+      if (!last) throw new Error("Missing recent item at the end");
+      expect(last.y + last.height).toBeLessThanOrEqual(height - 48);
+      const stickyHeading = await recents.getByRole("heading").boundingBox();
+      expect(stickyHeading?.y).toBeCloseTo(56, 0);
+      expect(await recents.evaluate((element) => element.scrollTop)).toBe(0);
+    } finally {
+      await page.close();
+    }
+  });
+}
