@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { COMPACT_VIEWPORT_QUERY } from "@/components/ui/hooks/use-compact-viewport";
 import type { Task } from "../../shared/contract.js";
 import { LIST_PREFERENCE_STORAGE_KEY } from "./list-preference.js";
+import { EMPTY_FILTERS } from "./filter-bar.js";
+import { listScrollScopeKey, writeListScroll } from "./scroll-restoration.js";
 import { makeTask, rpcInput } from "../../test-fixtures.js";
 
 window.matchMedia = (query: string) => ({
@@ -198,6 +200,228 @@ async function selectSort(slot: ReturnType<typeof renderProject>, label: string)
 }
 
 describe("list filter/sort preference persistence", () => {
+  it("restores focus when the anchor's row mounts in a 250-task virtual list", async () => {
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
+      function (this: HTMLElement) {
+        if (this.hasAttribute("data-task-key")) return 36;
+        return this.hasAttribute("data-status-group-header") ? 32 : 0;
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(450);
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(9032);
+    const rows = Array.from({ length: 250 }, (_, index) => task(PROJECT_A, index + 1, "todo"));
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: PROJECT_A },
+      {
+        rpc: baseRpc({
+          listTasks: (input: unknown) => ({ tasks: applyListFilters(rows, rpcInput(input)) }),
+          getTaskByKey: () => ({ task: rows[233] }),
+        }),
+      },
+    );
+    const region = slot.getByRole("region", { name: "Task list" });
+    await slot.findByRole("button", { name: /Open ALP-1:/ });
+    region.scrollTop = 32 + 36 * 230;
+    fireEvent.scroll(region);
+    const opened = await slot.findByRole("button", { name: /Open ALP-234:/ });
+    fireEvent.click(opened);
+    const Panel = app.navPanels[0]!.component;
+    slot.lifecycle.rerender(<Panel subPath="task/ALP-234" />);
+    writeListScroll(
+      listScrollScopeKey({
+        projectId: PROJECT_A,
+        activeOnly: false,
+        filters: EMPTY_FILTERS,
+        sort: "manual",
+      }),
+      0,
+    );
+    slot.lifecycle.rerender(<Panel subPath={PROJECT_A} />);
+    const restored = slot.getByRole("region", { name: "Task list" });
+    await waitFor(() => expect(restored.scrollTop).toBeGreaterThan(8000));
+    expect(slot.queryByRole("button", { name: /Open ALP-234:/ })).toBeNull();
+    fireEvent.scroll(restored);
+    const restoredRow = await slot.findByRole("button", { name: /Open ALP-234:/ });
+    expect(document.activeElement).toBe(restoredRow);
+    fireEvent.keyDown(restoredRow, { key: "j" });
+    expect(document.activeElement).toBe(slot.getByRole("button", { name: /Open ALP-235:/ }));
+  });
+
+  it("skips a queued bulk write when a later individual edit changes that task", async () => {
+    const rows = Array.from({ length: 8 }, (_, index) => task(PROJECT_A, index + 1, "todo"));
+    const releases: (() => void)[] = [];
+    let holdBatch = true;
+    const updateTask = vi.fn(async (raw: unknown) => {
+      const { taskId, status } = rpcInput(raw);
+      const original = rows.find(({ id }) => id === taskId)!;
+      if (status === "done" && holdBatch)
+        await new Promise<void>((resolve) => releases.push(resolve));
+      return { ok: true, task: { ...original, status } };
+    });
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: PROJECT_A },
+      {
+        rpc: baseRpc({
+          listTasks: (input: unknown) => ({ tasks: applyListFilters(rows, rpcInput(input)) }),
+          updateTask,
+        }),
+      },
+    );
+    for (const row of rows) {
+      fireEvent.click(await slot.findByRole("checkbox", { name: `Select ${row.key}` }));
+    }
+    fireEvent.click(slot.getByRole("button", { name: "Set status" }));
+    fireEvent.click(await slot.findByRole("menuitem", { name: "Done" }));
+    await waitFor(() => expect(updateTask).toHaveBeenCalledTimes(4));
+    try {
+      const edited = slot.getByRole("button", { name: /Open ALP-5:/ });
+      edited.focus();
+      fireEvent.keyDown(edited, { key: "s" });
+      const menu = await slot.findByRole("dialog", { name: "Change status" });
+      const inProgress = await within(menu).findByRole("menuitem", { name: /In Progress/ });
+      await act(async () => fireEvent.click(inProgress));
+      expect(updateTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskId: rows[4]!.id,
+          status: "in_progress",
+        }),
+      );
+    } finally {
+      holdBatch = false;
+      await act(async () => releases.splice(0).forEach((release) => release()));
+    }
+    await slot.findByText("ALP-5: Skipped because the task changed");
+    await waitFor(() => expect(updateTask).toHaveBeenCalledTimes(8));
+    expect(
+      updateTask.mock.calls
+        .map(([input]) => rpcInput(input))
+        .filter(({ taskId }) => taskId === rows[4]!.id),
+    ).toEqual([expect.objectContaining({ status: "in_progress" })]);
+  });
+
+  it("restores the originating list's collapsed groups, selection, and row focus", async () => {
+    const slot = renderProject(PROJECT_A);
+    const Panel = app.navPanels[0]!.component;
+    const done = await slot.findByRole("button", { name: /Done 1/ });
+    fireEvent.click(done);
+    fireEvent.click(slot.getByRole("checkbox", { name: "Select ALP-2" }));
+    fireEvent.click(slot.getByRole("button", { name: /Open ALP-1/ }));
+    slot.lifecycle.rerender(<Panel subPath="task/ALP-1" />);
+    slot.lifecycle.rerender(<Panel subPath={PROJECT_A} />);
+    const opened = await slot.findByRole("button", { name: /Open ALP-1/ });
+    await waitFor(() => expect(document.activeElement).toBe(opened));
+    expect(slot.getByRole("button", { name: /Done 1/ }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(slot.queryByRole("button", { name: /Open ALP-3/ })).toBeNull();
+    expect(slot.getByText("1 selected")).toBeDefined();
+  });
+
+  it("limits bulk status writes to four and reports a failure without stopping the queue", async () => {
+    const rows = Array.from({ length: 8 }, (_, index) => task(PROJECT_A, index + 1, "todo"));
+    const releases: (() => void)[] = [];
+    let active = 0;
+    let peak = 0;
+    const updateTask = vi.fn(
+      (input: unknown) =>
+        new Promise((resolve, reject) => {
+          const edited = rows.find(({ id }) => id === rpcInput(input).taskId)!;
+          active++;
+          peak = Math.max(peak, active);
+          releases.push(() => {
+            active--;
+            if (edited.number === 1) reject(new Error("Write refused"));
+            else resolve({ ok: true, task: { ...edited, status: "done" } });
+          });
+        }),
+    );
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: PROJECT_A },
+      {
+        rpc: baseRpc({
+          listTasks: (input: unknown) => ({ tasks: applyListFilters(rows, rpcInput(input)) }),
+          updateTask,
+        }),
+      },
+    );
+    for (const row of rows) {
+      fireEvent.click(await slot.findByRole("checkbox", { name: `Select ${row.key}` }));
+    }
+    fireEvent.click(slot.getByRole("button", { name: "Set status" }));
+    fireEvent.click(await slot.findByRole("menuitem", { name: "Done" }));
+    await waitFor(() => expect(updateTask).toHaveBeenCalledTimes(4));
+    await act(async () => releases.splice(0, 4).forEach((release) => release()));
+    await waitFor(() => expect(updateTask).toHaveBeenCalledTimes(8));
+    await act(async () => releases.splice(0, 4).forEach((release) => release()));
+    expect(peak).toBe(4);
+    await slot.findByText(/ALP-1:.*Write refused/);
+  });
+
+  it("resumes row navigation after closing a keyboard-opened property menu", async () => {
+    const matchMedia = window.matchMedia;
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      ...matchMedia(query),
+      matches: false,
+    }));
+    const slot = renderProject(PROJECT_A);
+    const first = await slot.findByRole("button", { name: /Open ALP-1/ });
+    first.focus();
+    fireEvent.keyDown(first, { key: "s" });
+    const menu = await slot.findByRole("menu");
+    fireEvent.keyDown(menu, { key: "Escape" });
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute("aria-keyshortcuts")).toBe("S"),
+    );
+    fireEvent.keyDown(document.activeElement!, { key: "l" });
+    const labels = await slot.findByRole("menu");
+    expect(within(labels).getByRole("menuitemcheckbox", { name: "Bug" })).toBeDefined();
+    fireEvent.keyDown(labels, { key: "Escape" });
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute("aria-keyshortcuts")).toBe("L"),
+    );
+    fireEvent.keyDown(document.activeElement!, { key: "j" });
+    expect(document.activeElement).toBe(slot.getByRole("button", { name: /Open ALP-2/ }));
+  });
+
+  it("discards selections when switching between project and workspace lists", async () => {
+    const slot = renderProject(PROJECT_A);
+    const Panel = app.navPanels[0]!.component;
+    fireEvent.click(await slot.findByRole("checkbox", { name: "Select ALP-1" }));
+    expect(slot.getByText("1 selected")).toBeDefined();
+    slot.lifecycle.rerender(<Panel subPath={PROJECT_B} />);
+    fireEvent.click(await slot.findByRole("checkbox", { name: "Select BET-1" }));
+    expect(slot.getByText("1 selected")).toBeDefined();
+    slot.lifecycle.rerender(<Panel subPath="all" />);
+    await slot.findByRole("button", { name: /Open ALP-1/ });
+    expect(slot.queryByText(/selected$/)).toBeNull();
+    for (const key of ["ALP-1", "BET-1"]) {
+      expect(
+        slot.getByRole("checkbox", { name: `Select ${key}` }).getAttribute("aria-checked"),
+      ).toBe("false");
+    }
+  });
+
+  it("isolates project Active filters from other projects and workspace Active", async () => {
+    const slot = renderProject(PROJECT_A + "?scope=active");
+    const Panel = app.navPanels[0]!.component;
+    await slot.findByText("ALP-9");
+    fireEvent.click(slot.getByRole("button", { name: "Filter" }));
+    fireEvent.click(slot.getByRole("button", { name: /^Priority/ }));
+    fireEvent.click(await slot.findByRole("menuitemcheckbox", { name: /Urgent/ }));
+    pageKeyboardEscape(slot);
+    await slot.findByText("No tasks match these filters");
+    slot.lifecycle.rerender(<Panel subPath={PROJECT_B + "?scope=active"} />);
+    await slot.findByText("BET-9");
+    slot.lifecycle.rerender(<Panel subPath="active" />);
+    await slot.findByText("ALP-9");
+    await slot.findByText("BET-9");
+    slot.lifecycle.rerender(<Panel subPath={PROJECT_A + "?scope=active"} />);
+    await slot.findByText("No tasks match these filters");
+  });
+
   // get-bb/bb#7056: one list instance serves All, Active, and every project.
   it("shows cached lists across project, all, and active navigation", async () => {
     const registration = app.navPanels[0]!;
@@ -284,6 +508,7 @@ describe("list filter/sort preference persistence", () => {
       expect(slot.getByRole("button", { name: /Sort/ }).textContent).toContain("Priority"),
     );
 
+    fireEvent.click(slot.getByRole("button", { name: "Filter" }));
     fireEvent.click(slot.getByRole("button", { name: /^Status/ }));
     const doneOption = await slot.findByRole("menuitemcheckbox", {
       name: /Done/,
@@ -417,6 +642,7 @@ describe("list filter/sort preference persistence", () => {
     const slot = renderSlot(registration, { subPath: PROJECT_A }, { rpc });
     await slot.findByText("ALP-1");
 
+    fireEvent.click(slot.getByRole("button", { name: "Filter" }));
     fireEvent.click(slot.getByRole("button", { name: /^Priority/ }));
     fireEvent.click(await slot.findByRole("menuitemcheckbox", { name: /Urgent/ }));
     pageKeyboardEscape(slot);

@@ -20,12 +20,17 @@ afterEach(() => {
 
 describe("listPreferenceScope", () => {
   it("maps list surfaces to independent scopes", () => {
-    expect(listPreferenceScope(null, false)).toBe("all");
-    expect(listPreferenceScope(null, true)).toBe("active");
-    expect(listPreferenceScope("01HZZZZZZZZZZZZZZZZZZZZZP1", false)).toBe(
+    expect(listPreferenceScope(null, undefined)).toBe("all");
+    expect(listPreferenceScope(null, "active")).toBe("active");
+    expect(listPreferenceScope("01HZZZZZZZZZZZZZZZZZZZZZP1", undefined)).toBe(
       "project:01HZZZZZZZZZZZZZZZZZZZZZP1",
     );
-    expect(listPreferenceScope("01HZZZZZZZZZZZZZZZZZZZZZP1", true)).toBe("active");
+    expect(listPreferenceScope("01HZZZZZZZZZZZZZZZZZZZZZP1", "active")).toBe(
+      "project:01HZZZZZZZZZZZZZZZZZZZZZP1:active",
+    );
+    expect(listPreferenceScope("01HZZZZZZZZZZZZZZZZZZZZZP1", "backlog")).toBe(
+      "project:01HZZZZZZZZZZZZZZZZZZZZZP1:backlog",
+    );
   });
 });
 

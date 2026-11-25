@@ -28,7 +28,7 @@ import {
   dropNeighborsForIndex,
   visibleBoardStatuses,
 } from "./drop-position.js";
-import { PriorityIcon, StatusIcon } from "./icons.js";
+import { PriorityIcon, StatusIcon } from "../list/icons.js";
 import { STATUS_LABELS } from "../list/lib.js";
 import { byManualOrder } from "../../shared/sort.js";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 const DRAG_THRESHOLD_PX = 5;
+const TOUCH_HOLD_MS = 400;
+const SCROLL_EDGE_PX = 48;
+const SCROLL_SPEED_PX_PER_MS = 0.8;
 
 interface BoardCardMeta {
   workingThreads: readonly TaskThread[];
@@ -145,8 +148,8 @@ interface TaskCardProps {
   meta: BoardCardMeta;
   ghost?: boolean;
   dragging?: boolean;
-  cardRef?: (element: HTMLDivElement | null) => void;
-  onPointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  cardRef?: (element: HTMLElement | null) => void;
+  onPointerDown?: (event: ReactPointerEvent<HTMLElement>) => void;
   onClick?: () => void;
 }
 
@@ -163,30 +166,34 @@ function TaskCard({
   const labels = task.labelIds
     .map((labelId) => labelsById.get(labelId))
     .filter((label): label is Label => label !== undefined);
+  const Card = ghost ? "div" : "button";
   return (
-    <div
+    <Card
       ref={cardRef}
+      type={ghost ? undefined : "button"}
       data-task-key={task.key}
+      aria-hidden={ghost || undefined}
+      aria-label={ghost ? undefined : `Open ${task.key}: ${task.title}`}
       onPointerDown={onPointerDown}
       onClick={onClick}
       className={cn(
-        "shrink-0 rounded-lg border border-border bg-card px-3 py-2 shadow-2xs select-none",
-        ghost ? "rotate-2 shadow-md" : "cursor-pointer touch-none hover:border-input",
+        "min-h-19 shrink-0 rounded-md bg-surface-recessed-solid px-3 py-2.5 text-left select-none",
+        ghost ? "shadow-md" : "cursor-pointer hover:bg-state-hover focus-visible:outline-ring",
         dragging && "opacity-40",
       )}
     >
-      <div className="flex items-center gap-1 text-2xs text-muted-foreground">
-        <span className="tabular-nums">{task.key}</span>
-        <WorkingAgentsChip threads={meta.workingThreads} />
-      </div>
-      <div className="mt-1 line-clamp-2 text-sm leading-snug font-medium">{task.title}</div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+      <span className="flex items-center gap-1.5 text-2xs text-muted-foreground">
         <PriorityIcon priority={task.priority} />
+        <span className="font-mono tabular-nums">{task.key}</span>
+        <WorkingAgentsChip threads={meta.workingThreads} />
+      </span>
+      <span className="mt-1 line-clamp-2 text-sm leading-snug font-medium">{task.title}</span>
+      <span className="mt-2 flex flex-wrap items-center gap-2">
         {labels.map((label) => (
           <Badge
             key={label.id}
             variant="outline"
-            className="h-5 gap-1 px-1 py-0 text-2xs font-normal text-muted-foreground"
+            className="h-5 gap-1 rounded-full px-1.5 py-0 text-2xs font-normal text-muted-foreground"
           >
             <span
               aria-hidden
@@ -209,8 +216,8 @@ function TaskCard({
             aria-label={`${meta.attachmentCount} attachments`}
           />
         ) : null}
-      </div>
-    </div>
+      </span>
+    </Card>
   );
 }
 
@@ -250,7 +257,7 @@ export function BoardView({ projectId }: BoardViewProps) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const boardRef = useRef<HTMLDivElement | null>(null);
   const columnRefs = useRef(new Map<TaskStatus, HTMLDivElement>());
-  const cardRefs = useRef(new Map<string, HTMLDivElement>());
+  const cardRefs = useRef(new Map<string, HTMLElement>());
   const suppressClickRef = useRef(false);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   useEffect(() => () => dragCleanupRef.current?.(), []);
@@ -306,46 +313,89 @@ export function BoardView({ projectId }: BoardViewProps) {
       .catch(() => {});
   };
 
-  const handleCardPointerDown = (event: ReactPointerEvent<HTMLDivElement>, task: Task) => {
-    if (event.button !== 0 || dragCleanupRef.current) return;
-    const rect = event.currentTarget.getBoundingClientRect();
+  const handleCardPointerDown = (event: ReactPointerEvent<HTMLElement>, task: Task) => {
+    if (event.button !== 0 || !event.isPrimary || dragCleanupRef.current) return;
+    const { pointerId, currentTarget: card, clientX, clientY } = event;
+    const touch = event.pointerType === "touch";
     const start = {
-      x: event.clientX,
-      y: event.clientY,
-      offsetX: event.clientX - rect.left,
-      offsetY: event.clientY - rect.top,
-      width: rect.width,
+      x: clientX,
+      y: clientY,
     };
-    let active = false;
+    let cardRect: DOMRect | null = null;
+    let hold: ReturnType<typeof setTimeout> | undefined;
+    let moved = false;
+    let scrollFrame: number | null = null;
+    let lastFrame: number | null = null;
+    let pointer = start;
 
-    const updateDrag = (moveEvent: PointerEvent) => {
-      const target = findDropTarget(moveEvent.clientX, moveEvent.clientY, task.id);
+    const updateDrag = (x: number, y: number) => {
+      if (!cardRect) return;
+      const target = findDropTarget(x, y, task.id);
       setDrag({
         taskId: task.id,
-        x: moveEvent.clientX,
-        y: moveEvent.clientY,
-        offsetX: start.offsetX,
-        offsetY: start.offsetY,
-        width: start.width,
+        x,
+        y,
+        offsetX: start.x - cardRect.left,
+        offsetY: start.y - cardRect.top,
+        width: cardRect.width,
         overStatus: target?.status ?? null,
         dropIndex: target?.index ?? 0,
       });
     };
 
-    const onMove = (moveEvent: PointerEvent) => {
-      if (!active) {
-        const distance = Math.hypot(moveEvent.clientX - start.x, moveEvent.clientY - start.y);
-        if (distance < DRAG_THRESHOLD_PX) return;
-        active = true;
+    const scrollAtEdge = (now: number) => {
+      scrollFrame = null;
+      const board = boardRef.current;
+      if (!board || !cardRect) return;
+      const { left, right, top, bottom } = board.getBoundingClientRect();
+      if (pointer.y < top || pointer.y > bottom || pointer.x < left || pointer.x > right) {
+        lastFrame = null;
+        return;
       }
+      const leftPressure = Math.max(0, 1 - (pointer.x - left) / SCROLL_EDGE_PX);
+      const rightPressure = Math.max(0, 1 - (right - pointer.x) / SCROLL_EDGE_PX);
+      const direction = rightPressure - leftPressure;
+      if (direction === 0) {
+        lastFrame = null;
+        return;
+      }
+      const previous = board.scrollLeft;
+      const elapsed = lastFrame === null ? 16 : Math.min(now - lastFrame, 32);
+      lastFrame = now;
+      const step = direction * SCROLL_SPEED_PX_PER_MS * elapsed;
+      // Scroll positions can be rounded to CSS pixels; even the edge of the zone must advance.
+      board.scrollLeft = previous + Math.sign(step) * Math.max(1, Math.abs(step));
+      if (board.scrollLeft === previous) {
+        lastFrame = null;
+        return;
+      }
+      updateDrag(pointer.x, pointer.y);
+      scrollFrame = requestAnimationFrame(scrollAtEdge);
+    };
+
+    const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const { clientX: x, clientY: y } = moveEvent;
+      if (!moved && Math.hypot(x - start.x, y - start.y) < DRAG_THRESHOLD_PX) return;
+      if (!cardRect) {
+        if (touch) {
+          // A swipe before the hold completes belongs to native scrolling.
+          finish(null);
+          return;
+        }
+        cardRect = card.getBoundingClientRect();
+      }
+      moved = true;
       moveEvent.preventDefault();
-      updateDrag(moveEvent);
+      pointer = { x, y };
+      updateDrag(x, y);
+      if (scrollFrame === null) scrollFrame = requestAnimationFrame(scrollAtEdge);
     };
     const finish = (upEvent: PointerEvent | null) => {
       dragCleanupRef.current?.();
       dragCleanupRef.current = null;
-      if (!active) return;
-      if (upEvent) {
+      if (!cardRect) return;
+      if (upEvent && moved) {
         const target = findDropTarget(upEvent.clientX, upEvent.clientY, task.id);
         if (target) commitDrop(task.id, target.status, target.index);
       }
@@ -355,17 +405,39 @@ export function BoardView({ projectId }: BoardViewProps) {
         suppressClickRef.current = false;
       }, 0);
     };
-    const onUp = (upEvent: PointerEvent) => finish(upEvent);
-    const onCancel = () => finish(null);
+    const onUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId === pointerId) finish(upEvent);
+    };
+    const onCancel = (cancelEvent: PointerEvent) => {
+      if (cancelEvent.pointerId === pointerId) finish(null);
+    };
+    const onTouchMove = (moveEvent: TouchEvent) => {
+      if (moveEvent.touches.length > 1) {
+        finish(null);
+      } else if (cardRect && moveEvent.cancelable) {
+        // Prevent native scrolling only once a card has been picked up.
+        moveEvent.preventDefault();
+      }
+    };
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
     dragCleanupRef.current = () => {
+      clearTimeout(hold);
+      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+      card.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
     };
+    if (touch) {
+      card.addEventListener("touchmove", onTouchMove, { passive: false });
+      hold = setTimeout(() => {
+        cardRect = card.getBoundingClientRect();
+        updateDrag(start.x, start.y);
+      }, TOUCH_HOLD_MS);
+    }
   };
 
   const openTask = (task: Task) => {
@@ -425,15 +497,15 @@ export function BoardView({ projectId }: BoardViewProps) {
     if (indicatorBeforeTaskId === null) children.push(indicator);
 
     return (
-      <div key={status} className="flex max-h-full w-58 shrink-0 flex-col">
-        <div className="flex items-center gap-2 px-1 pb-2 text-sm font-semibold">
+      <div key={status} className="group flex max-h-full w-64 shrink-0 snap-start flex-col">
+        <div className="flex min-h-10 items-center gap-2 px-2 text-xs font-medium">
           <StatusIcon status={status} />
           <span>{STATUS_LABELS[status]}</span>
           <span className="font-normal text-muted-foreground">{cards.length}</span>
           <Button
             variant="ghost"
             size="icon"
-            className="ml-auto size-6 text-muted-foreground"
+            className="ml-auto size-7 text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100 max-md:pointer-coarse:size-11 max-md:pointer-coarse:opacity-100"
             aria-label={`New ${STATUS_LABELS[status]} task`}
             onClick={() => openNewTask({ projectId, status })}
           >
@@ -447,7 +519,7 @@ export function BoardView({ projectId }: BoardViewProps) {
           }}
           data-board-column={status}
           className={cn(
-            "flex min-h-16 flex-col gap-2 overflow-y-auto rounded-lg p-1",
+            "flex min-h-16 flex-col gap-1.5 overflow-y-auto rounded-md pb-2",
             isDragOver && "bg-surface-selected outline-2 outline-dashed outline-input",
           )}
         >
@@ -461,8 +533,8 @@ export function BoardView({ projectId }: BoardViewProps) {
     <div
       ref={boardRef}
       className={cn(
-        "flex h-full items-start gap-3 overflow-x-auto p-4",
-        drag !== null && "cursor-grabbing",
+        "flex h-full items-start gap-4 overflow-x-auto px-3 py-3 @md:px-6 max-md:pointer-coarse:pb-22",
+        drag === null ? "snap-x" : "cursor-grabbing snap-none",
       )}
     >
       {visibleBoardStatuses(columns).map(renderColumn)}

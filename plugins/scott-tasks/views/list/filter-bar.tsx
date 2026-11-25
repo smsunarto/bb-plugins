@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   TASK_PRIORITIES,
   TASK_STATUSES,
@@ -40,7 +40,8 @@ const PRIORITY_OPTIONS: readonly ResourceOption[] = TASK_PRIORITIES.map((priorit
   leading: <PriorityIcon priority={priority} className="size-3" />,
 }));
 
-const FILTER_TRIGGER_CLASS = "h-6 max-w-64 max-md:pointer-coarse:h-8 [&>span]:truncate";
+const FILTER_TRIGGER_CLASS =
+  "h-7 max-w-52 shrink-0 gap-1.5 px-2 text-xs text-muted-foreground max-md:pointer-coarse:h-11 [&>span]:truncate";
 
 function FilterMenu({
   icon,
@@ -90,14 +91,15 @@ function SortMenu({ sort, onChange }: { sort: TaskSort; onChange: (sort: TaskSor
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <ResourceControlButton
-          label={`Sort: ${SORT_LABELS[sort]}`}
-          text={sort === "manual" ? "Sort" : SORT_LABELS[sort]}
-          icon="Sort"
-          active={sort !== "manual"}
-          open={open}
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Sort: ${SORT_LABELS[sort]}`}
           className={FILTER_TRIGGER_CLASS}
-        />
+        >
+          <Icon name="SlidersHorizontal" className="size-3.5" />
+          <span>{sort === "manual" ? "Display" : SORT_LABELS[sort]}</span>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44" mobileTitle="Sort tasks">
         <ResourceSortMenuItems
@@ -141,6 +143,7 @@ export function ListFilterBar({
   onSortChange,
   labelOptions,
   taskCount,
+  fixedStatus = false,
 }: {
   filters: ListFilterState;
   onChange: (filters: ListFilterState) => void;
@@ -148,7 +151,13 @@ export function ListFilterBar({
   onSortChange: (sort: TaskSort) => void;
   labelOptions: readonly LabelFilterOption[];
   taskCount: number | undefined;
+  fixedStatus?: boolean;
 }) {
+  const [showFilters, setShowFilters] = useState<boolean | null>(null);
+  const filterId = useId();
+  const filterCount =
+    filters.statuses.length + filters.priorities.length + filters.labelNames.length;
+  const filtersOpen = showFilters ?? filterCount > 0;
   const showLabelChip = labelOptions.length > 0 || filters.labelNames.length > 0;
   const labelMenuOptions: ResourceOption[] = [
     ...labelOptions.map((option) => ({
@@ -172,57 +181,81 @@ export function ListFilterBar({
       })),
   ];
   return (
-    <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border-hairline px-4 py-1 max-md:pointer-coarse:min-h-11">
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
-        <FilterMenu
-          icon="Circle"
-          label="Status"
-          options={STATUS_OPTIONS}
-          selectedValues={filters.statuses}
-          onChange={(values) =>
-            onChange({
-              ...filters,
-              statuses: TASK_STATUSES.filter((status) => values.includes(status)),
-            })
-          }
-        />
-        <FilterMenu
-          icon="ArrowUpDown"
-          label="Priority"
-          options={PRIORITY_OPTIONS}
-          selectedValues={filters.priorities}
-          onChange={(values) =>
-            onChange({
-              ...filters,
-              priorities: TASK_PRIORITIES.filter((priority) => values.includes(priority)),
-            })
-          }
-        />
-        {showLabelChip ? (
-          <FilterMenu
-            icon="ListTodo"
-            label="Label"
-            options={labelMenuOptions}
-            selectedValues={filters.labelNames}
-            onChange={(labelNames) => onChange({ ...filters, labelNames })}
-          />
-        ) : null}
-        {hasActiveFilters(filters) ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onChange(EMPTY_FILTERS)}
-            className="h-6 shrink-0 gap-1 border-dashed px-2 text-muted-foreground max-md:pointer-coarse:h-8"
-          >
-            <Icon name="X" className="size-3" />
-            Clear
-          </Button>
-        ) : null}
+    <div className="shrink-0 border-b border-border-hairline px-3 @md:px-6">
+      <div className="flex min-h-10 items-center gap-1.5">
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-expanded={filtersOpen}
+          aria-controls={filterId}
+          className={FILTER_TRIGGER_CLASS}
+          onClick={() => setShowFilters(!filtersOpen)}
+        >
+          <Icon name="Filter" className="size-3.5" />
+          <span>Filter</span>
+          {filterCount > 0 ? <span className="ml-1 tabular-nums">{filterCount}</span> : null}
+        </Button>
+        <span className="ml-auto hidden whitespace-nowrap text-2xs tabular-nums text-muted-foreground @md:inline">
+          {taskCount === undefined ? "" : `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`}
+        </span>
+        <div className="@max-md:ml-auto">
+          <SortMenu sort={sort} onChange={onSortChange} />
+        </div>
       </div>
-      <SortMenu sort={sort} onChange={onSortChange} />
-      <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-subtle-foreground">
-        {taskCount === undefined ? "" : `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`}
-      </span>
+      <div id={filterId} hidden={!filtersOpen}>
+        <div
+          role="group"
+          aria-label="Filter tasks"
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto pb-2"
+        >
+          {!fixedStatus ? (
+            <FilterMenu
+              icon="Circle"
+              label="Status"
+              options={STATUS_OPTIONS}
+              selectedValues={filters.statuses}
+              onChange={(values) =>
+                onChange({
+                  ...filters,
+                  statuses: TASK_STATUSES.filter((status) => values.includes(status)),
+                })
+              }
+            />
+          ) : null}
+          <FilterMenu
+            icon="ArrowUpDown"
+            label="Priority"
+            options={PRIORITY_OPTIONS}
+            selectedValues={filters.priorities}
+            onChange={(values) =>
+              onChange({
+                ...filters,
+                priorities: TASK_PRIORITIES.filter((priority) => values.includes(priority)),
+              })
+            }
+          />
+          {showLabelChip ? (
+            <FilterMenu
+              icon="ListTodo"
+              label="Label"
+              options={labelMenuOptions}
+              selectedValues={filters.labelNames}
+              onChange={(labelNames) => onChange({ ...filters, labelNames })}
+            />
+          ) : null}
+          {hasActiveFilters(filters) ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onChange(EMPTY_FILTERS)}
+              className="h-7 shrink-0 gap-1 px-2 text-muted-foreground max-md:pointer-coarse:h-11"
+            >
+              <Icon name="X" className="size-3" />
+              Clear
+            </Button>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

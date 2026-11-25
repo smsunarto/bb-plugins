@@ -10,6 +10,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuCheckboxItem,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
@@ -111,7 +112,67 @@ function PickerOption({
   );
 }
 
-const TRIGGER_CLASS = "relative z-10 size-5 rounded-sm max-md:pointer-coarse:size-8";
+const TRIGGER_CLASS = "relative z-10 size-5 rounded-sm max-md:pointer-coarse:size-11";
+
+export function LabelsEditor({
+  task,
+  labels,
+  onEdit,
+  open,
+  onOpenChange,
+  children,
+}: {
+  task: Task;
+  labels: readonly Label[];
+  onEdit: EditFn;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Edit task labels"
+          aria-keyshortcuts="L"
+          className="relative z-10 min-w-0 gap-1 px-1 pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:pb-4"
+        >
+          {children ?? <Icon name="Tag" className="size-3.5 text-subtle-foreground" />}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44" mobileTitle="Edit labels">
+        <MenuHeading label="Labels" shortcut="L" />
+        {labels.length === 0 ? (
+          <DropdownMenuItem disabled>No project labels</DropdownMenuItem>
+        ) : null}
+        {open &&
+          labels.map((label) => (
+            <DropdownMenuCheckboxItem
+              key={label.id}
+              checked={task.labelIds.includes(label.id)}
+              onSelect={(event) => event.preventDefault()}
+              onCheckedChange={(checked) =>
+                onEdit(task, {
+                  labelIds: checked
+                    ? [...task.labelIds, label.id]
+                    : task.labelIds.filter((id) => id !== label.id),
+                })
+              }
+            >
+              <span
+                aria-hidden
+                className="size-2 rounded-full"
+                style={{ backgroundColor: label.color }}
+              />
+              {label.name}
+            </DropdownMenuCheckboxItem>
+          ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 export function StatusEditor({
   task,
@@ -136,6 +197,7 @@ export function StatusEditor({
           variant="ghost"
           size="icon"
           aria-label={`Change status, currently ${STATUS_LABELS[task.status]}`}
+          aria-keyshortcuts="S"
           className={cn(TRIGGER_CLASS, className)}
         >
           <StatusIcon status={task.status} />
@@ -197,6 +259,7 @@ export function PriorityEditor({
           variant="ghost"
           size="icon"
           aria-label={`Set priority, currently ${PRIORITY_LABELS[task.priority]}`}
+          aria-keyshortcuts="P"
           className={cn(TRIGGER_CLASS, className)}
         >
           <PriorityIcon priority={task.priority} />
@@ -242,6 +305,8 @@ export function TaskContextMenu({
   projects,
   onMoveToProject,
   children,
+  selected = false,
+  onToggleSelection,
 }: {
   task: Task;
   onEdit: EditFn;
@@ -249,6 +314,8 @@ export function TaskContextMenu({
   projects: readonly Project[];
   onMoveToProject: (task: Task, projectId: string) => void;
   children: ReactNode;
+  selected?: boolean;
+  onToggleSelection?: () => void;
 }) {
   const toggleLabel = (labelId: string) => {
     const labelIds = task.labelIds.includes(labelId)
@@ -260,6 +327,15 @@ export function TaskContextMenu({
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="min-w-44">
+        {onToggleSelection ? (
+          <>
+            <ContextMenuCheckboxItem checked={selected} onCheckedChange={onToggleSelection}>
+              Select task
+              <ContextMenuShortcut>X</ContextMenuShortcut>
+            </ContextMenuCheckboxItem>
+            <ContextMenuSeparator />
+          </>
+        ) : null}
         <ContextMenuSub>
           <ContextMenuSubTrigger>
             <StatusIcon status={task.status} />

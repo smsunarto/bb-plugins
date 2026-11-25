@@ -77,13 +77,24 @@ export function selectedLabelIds(
   return options.filter((option) => selected.has(option.name)).flatMap((option) => option.labelIds);
 }
 
+const monthAndDay = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+const monthDayAndYear = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
+function formatRowDate(date: Date, today: Date): string {
+  if (Number.isNaN(date.getTime())) return "Invalid Date";
+  return (date.getFullYear() === today.getFullYear() ? monthAndDay : monthDayAndYear).format(date);
+}
+
 export function formatDueDate(dueDate: string, today = new Date()): string {
-  const date = new Date(`${dueDate}T00:00:00`);
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    ...(date.getFullYear() === today.getFullYear() ? {} : { year: "numeric" }),
-  });
+  return formatRowDate(new Date(`${dueDate}T00:00:00`), today);
+}
+
+export function formatUpdatedAt(updatedAt: string, today = new Date()): string {
+  return formatRowDate(new Date(updatedAt), today);
 }
 
 export function activeWorkLabel(threads: readonly { liveStatus: string }[]): string {

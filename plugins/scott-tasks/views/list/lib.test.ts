@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Label, Task } from "../../shared/contract.js";
 import {
   activeWorkLabel,
@@ -13,6 +13,19 @@ import { makeTask } from "../../test-fixtures.js";
 const ULID_A = "01ARZ3NDEKTSV4RRFFQ69G5FAA";
 const ULID_B = "01ARZ3NDEKTSV4RRFFQ69G5FAB";
 const ULID_C = "01ARZ3NDEKTSV4RRFFQ69G5FAC";
+
+it("formats update instants in the viewer's timezone and keeps due dates on their calendar day", async () => {
+  vi.stubEnv("TZ", "America/Los_Angeles");
+  vi.resetModules();
+  try {
+    const { formatDueDate, formatUpdatedAt } = await import("./lib.js");
+    const today = new Date("2026-11-26T12:00:00.000Z");
+    expect(formatUpdatedAt("2026-11-25T01:00:00.000Z", today)).toBe("Nov 24");
+    expect(formatDueDate("2026-11-25", today)).toBe("Nov 25");
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
 
 function task(overrides: Partial<Task> & Pick<Task, "id" | "status">): Task {
   return makeTask({

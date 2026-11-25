@@ -11,8 +11,7 @@ vi.mock("../../editor/tasks-editor.js", () => ({ TasksEditor: () => null }));
 vi.mock("../activity/task-activity.js", () => ({ TaskActivity: () => null }));
 vi.mock("./threads.js", () => ({ ThreadsSection: () => null }));
 vi.mock("./rail.js", () => ({
-  PropertiesRail: () => null,
-  InlineProperties: ({
+  PropertiesRail: ({
     task,
     onUpdate,
   }: {

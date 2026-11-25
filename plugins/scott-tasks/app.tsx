@@ -2,10 +2,12 @@ import { definePluginApp, experimental_THREAD_INFO_SECTION_GROUPS } from "@get-b
 import { TasksAppShell } from "./shell/app-shell.js";
 import { useTasksBadge } from "./shell/badge.js";
 import { TasksNavigationPanel } from "./shell/navigation-panel.js";
+import { mountTasksPageFrame } from "./shell/page-frame.js";
 import { TaskDirectiveCard, TaskEmbedPanel } from "./views/embed/index.js";
 import { TasksThreadInfoSection } from "./views/embed/thread-info.js";
 
 export default definePluginApp((app) => {
+  app.contentScripts.register({ id: "tasks-page-frame", mount: mountTasksPageFrame });
   app.slots.navPanel({
     id: "tasks",
     title: "Tasks",

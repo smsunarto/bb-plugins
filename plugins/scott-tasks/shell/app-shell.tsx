@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { useProjects } from "./data.js";
+import { subscribeToTaskRecords } from "./collections.js";
 import {
   parseTasksRoute,
+  tasksRouteToSubPath,
   useTasksNavigation,
   type ResolvedTasksRoute,
   type TasksNavigation,
@@ -10,7 +12,8 @@ import {
 } from "./routes.js";
 import { loadViewMode, storeViewMode } from "./view-preference.js";
 import { TasksTopbar } from "./topbar.js";
-import { ListView } from "../views/list/index.js";
+import { ListView, type ListResume } from "../views/list/index.js";
+import { DetailToasts, useDetailToasts } from "../views/detail/toast.js";
 import { BoardView } from "../views/board/index.js";
 import { DetailView } from "../views/detail/index.js";
 import { NewTaskDialog } from "../views/manage/new-task-dialog.js";
@@ -21,9 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { TasksDataRoot } from "./data-root.js";
 import { useTasksUi } from "./ui-store.js";
-import { observeSharedResize } from "@/lib/shared-resize-observer";
-
-const BOARD_MIN_WIDTH = 448;
+import { hasOpenOverlay } from "./keyboard.js";
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -34,36 +35,40 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-function hasOpenOverlay(): boolean {
-  return (
-    document.querySelector(
-      '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
-    ) !== null
-  );
-}
-
-function RouteOutlet({ route, boardUsable }: { route: ResolvedTasksRoute; boardUsable: boolean }) {
+function RouteOutlet({
+  route,
+  onOpenTask,
+  resume,
+  onError,
+}: {
+  route: ResolvedTasksRoute;
+  onOpenTask: (taskKey: string, resume: ListResume) => void;
+  resume: ListResume | null;
+  onError: (message: string) => void;
+}) {
+  const listProps = { onOpenTask, resume, onError };
   switch (route.kind) {
     case "all":
-      return <ListView projectId={null} />;
+      return <ListView projectId={null} {...listProps} />;
     case "active":
-      return <ListView projectId={null} activeOnly />;
+    case "backlog":
+      return <ListView projectId={null} scope={route.kind} {...listProps} />;
     case "manage":
       return <ManagePanel />;
     case "task":
       return <DetailView taskKey={route.taskKey} />;
     case "project":
-      return route.view === "board" && boardUsable ? (
+      return route.view === "board" ? (
         <BoardView projectId={route.projectId} />
       ) : (
-        <ListView projectId={route.projectId} />
+        <ListView projectId={route.projectId} scope={route.scope} {...listProps} />
       );
   }
 }
 
 function resolveRoute(route: TasksRoute): ResolvedTasksRoute {
   if (route.kind !== "project") return route;
-  return { ...route, view: route.view ?? loadViewMode(route.projectId) };
+  return { ...route, view: route.scope ? "list" : (route.view ?? loadViewMode(route.projectId)) };
 }
 
 function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
@@ -72,7 +77,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
   const navigation = useMemo<TasksNavigation>(
     () => ({
       go: (target, options) => {
-        if (target.kind === "project" && target.view !== null) {
+        if (target.kind === "project" && target.view !== null && target.scope === undefined) {
           storeViewMode(target.projectId, target.view);
         }
         tasksNavigation.go(target, options);
@@ -85,23 +90,39 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
   const closeNewTask = useTasksUi((state) => state.closeNewTask);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
 
-  const mainRef = useRef<HTMLElement>(null);
-  const [boardUsable, setBoardUsable] = useState(true);
-  useEffect(() => {
-    const main = mainRef.current;
-    if (!main || typeof ResizeObserver === "undefined") return;
-    const readUsable = () => {
-      const mainWidth = main.clientWidth;
-      return !(mainWidth > 0 && mainWidth < BOARD_MIN_WIDTH);
-    };
-    setBoardUsable(readUsable());
-    return observeSharedResize(main, { read: readUsable, write: setBoardUsable });
-  }, []);
   const projects = useProjects();
 
   const lastBrowseRouteRef = useRef<TasksRoute | null>(null);
+  const listResume = useRef<ListResume | null>(null);
+  const [pagerRows, setPagerRows] = useState<ListResume["orderedRows"] | null>(null);
+  const { toasts, push, dismiss } = useDetailToasts();
+  const openListTask = useCallback(
+    (taskKey: string, resume: ListResume) => {
+      // Retain what the user was browsing across detail-to-detail navigation.
+      listResume.current = resume;
+      setPagerRows(resume.orderedRows);
+      navigation.go({ kind: "task", taskKey });
+    },
+    [navigation],
+  );
+  useEffect(
+    () =>
+      subscribeToTaskRecords((id, key) => {
+        if (!listResume.current) return;
+        setPagerRows((rows) => {
+          const row = rows?.find((row) => row.id === id);
+          if (!rows || !row || row.key === key) return rows;
+          if (key === null) return rows.filter((row) => row.id !== id);
+          return rows.map((row) => (row.id === id ? { id, key } : row));
+        });
+      }),
+    [],
+  );
   useEffect(() => {
-    if (route.kind !== "task") lastBrowseRouteRef.current = route;
+    if (route.kind !== "task") {
+      lastBrowseRouteRef.current = route;
+      listResume.current = null;
+    }
     // oxlint-disable-next-line react/exhaustive-deps
   }, [subPath]);
   const backFromTask = () => navigation.go(lastBrowseRouteRef.current ?? { kind: "all" });
@@ -122,6 +143,15 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
 
   const noProjects = projects.data !== undefined && projects.data.length === 0;
   const newTaskProjectId = route.kind === "project" ? route.projectId : null;
+  const newTaskStatus =
+    route.kind === "backlog" || (route.kind === "project" && route.scope === "backlog")
+      ? "backlog"
+      : undefined;
+  const lastBrowseRoute = lastBrowseRouteRef.current;
+  const resume =
+    lastBrowseRoute && tasksRouteToSubPath(lastBrowseRoute) === tasksRouteToSubPath(route)
+      ? listResume.current
+      : null;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -130,18 +160,23 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
       if (isEditableTarget(event.target)) return;
       if (hasOpenOverlay()) return;
       event.preventDefault();
-      openNewTask({ projectId: newTaskProjectId });
+      openNewTask({ projectId: newTaskProjectId, status: newTaskStatus });
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openNewTask, newTaskProjectId]);
+  }, [openNewTask, newTaskProjectId, newTaskStatus]);
 
   return (
-    <div className="relative flex h-full min-h-0 bg-background text-foreground">
-      <main ref={mainRef} className="@container flex min-w-0 flex-1 flex-col">
+    <div
+      data-bb-plugin="scott-tasks"
+      data-scott-tasks-page=""
+      className="relative flex h-full min-h-0 bg-background text-foreground"
+    >
+      <main className="@container flex min-w-0 flex-1 flex-col">
         <TasksTopbar
           route={route}
           projects={projects.data}
+          pagerRows={listResume.current === null ? null : pagerRows}
           pagerScope={
             lastBrowseRouteRef.current === null
               ? null
@@ -153,7 +188,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
                 }
           }
           onNavigate={navigation.go}
-          onNewTask={() => openNewTask({ projectId: newTaskProjectId })}
+          onNewTask={() => openNewTask({ projectId: newTaskProjectId, status: newTaskStatus })}
           onBack={backFromTask}
         />
         <div className="min-h-0 flex-1 overflow-auto">
@@ -170,7 +205,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
               }
             />
           ) : (
-            <RouteOutlet route={route} boardUsable={boardUsable} />
+            <RouteOutlet route={route} onOpenTask={openListTask} resume={resume} onError={push} />
           )}
         </div>
       </main>
@@ -183,6 +218,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
         defaultStatus={newTask?.status}
       />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+      <DetailToasts toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }

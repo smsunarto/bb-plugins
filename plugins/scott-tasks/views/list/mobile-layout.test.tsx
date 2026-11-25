@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, within } from "@testing-library/react";
+import { fireEvent, cleanup, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { Label, Task, TaskThread } from "../../shared/contract.js";
@@ -96,6 +96,7 @@ describe("responsive list structure", () => {
     expect(count.closest(".overflow-x-auto")).toBeNull();
     const sortChip = slot.getByRole("button", { name: /Sort/ });
     expect(sortChip.closest(".overflow-x-auto")).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Filter" }));
     const statusChip = slot.getByRole("button", { name: "Status" });
     expect(statusChip.closest(".overflow-x-auto")).not.toBeNull();
   });

@@ -36,7 +36,7 @@ function isImeComposing(event: KeyboardEvent): boolean {
 const STYLE_MARKER = "data-bb-tasks-editor-styles";
 const EDITOR_CSS = `
 .bb-tasks-editor .tiptap {
-  outline: none; width: 100%; font-size: 14px; line-height: 1.65;
+  outline: none; width: 100%; font-size: var(--tasks-editor-font-size, 14px); line-height: 1.65;
   color: var(--foreground); caret-color: var(--foreground);
   overflow-wrap: break-word; -webkit-font-smoothing: antialiased;
 }

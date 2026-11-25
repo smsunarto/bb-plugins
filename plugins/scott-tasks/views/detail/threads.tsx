@@ -27,6 +27,7 @@ import { PR_STATE_META, THREAD_STATUS_META, formatRelativeTime, isActiveThread }
 import { PresetDialog, savePresetDraft } from "../manage/preset-dialog.js";
 import { ConfirmDialog } from "../../components/confirm-dialog.js";
 import { useTasksRpc } from "../../shell/data.js";
+import { useTasksUi } from "../../shell/ui-store.js";
 import { badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Hint } from "../../components/hint.js";
@@ -194,47 +195,47 @@ function ThreadCard({
   const navigate = useBbNavigate();
   const meta = THREAD_STATUS_META[thread.liveStatus];
   return (
-    <div className="mb-2 flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2 shadow-2xs">
-      <span
-        className={cn("flex shrink-0 items-center gap-1 text-xs font-medium", meta.textClassName)}
-      >
-        <span aria-hidden className={cn("size-1.5 rounded-full", meta.dotClassName)} />
-        {meta.label}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{thread.title}</div>
-        <div className="text-xs text-muted-foreground">
-          {thread.presetName} · attached {formatRelativeTime(thread.attachedAt)}
-        </div>
+    <div className="mb-2 min-w-0 rounded-md border border-border-hairline bg-card px-3 py-2">
+      <div className="wrap-anywhere text-sm font-medium">{thread.title}</div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        <span className={cn("flex shrink-0 items-center gap-1 font-medium", meta.textClassName)}>
+          <span aria-hidden className={cn("size-1.5 rounded-full", meta.dotClassName)} />
+          {meta.label}
+        </span>
+        <span>
+          {thread.presetName} · {formatRelativeTime(thread.attachedAt)}
+        </span>
       </div>
-      <ThreadPullRequestPill
-        status={pullRequest}
-        reviewable={thread.liveStatus !== "archived"}
-        openThread={() => navigate.toThread(thread.threadId)}
-        openOnGitHub={(url) => void navigate.openUrl(url)}
-        threadId={thread.threadId}
-      />
-      <Button
-        variant="link"
-        size="sm"
-        className="h-auto shrink-0 gap-1 p-0"
-        onClick={() => navigate.toThread(thread.threadId)}
-      >
-        Open thread
-        <Icon name="ArrowUpRight" className="size-3" />
-      </Button>
-      <Hint label="Detach from task">
+      <div className="mt-1 flex flex-wrap items-center gap-x-2">
+        <ThreadPullRequestPill
+          status={pullRequest}
+          reviewable={thread.liveStatus !== "archived"}
+          openThread={() => navigate.toThread(thread.threadId)}
+          openOnGitHub={(url) => void navigate.openUrl(url)}
+          threadId={thread.threadId}
+        />
         <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`Detach ${thread.title}`}
-          disabled={busy}
-          className="size-5 shrink-0 text-muted-foreground"
-          onClick={onDetach}
+          variant="link"
+          size="sm"
+          className="h-7 shrink-0 gap-1 p-0 max-md:pointer-coarse:h-11"
+          onClick={() => navigate.toThread(thread.threadId)}
         >
-          <Icon name="X" className="size-3" />
+          Open thread
+          <Icon name="ArrowUpRight" className="size-3" />
         </Button>
-      </Hint>
+        <Hint label="Detach from task">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Detach ${thread.title}`}
+            disabled={busy}
+            className="ml-auto size-7 shrink-0 text-muted-foreground max-md:pointer-coarse:size-11"
+            onClick={onDetach}
+          >
+            <Icon name="X" className="size-3" />
+          </Button>
+        </Hint>
+      </div>
     </div>
   );
 }
@@ -261,6 +262,7 @@ interface DispatchControlProps {
   onError: (message: string) => void;
   align?: "start" | "end";
   className?: string;
+  menu?: { open: boolean; onOpenChange: (open: boolean) => void };
 }
 
 export function DispatchControl({
@@ -269,28 +271,26 @@ export function DispatchControl({
   onError,
   align = "end",
   className,
+  menu,
 }: DispatchControlProps) {
   const rpc = useRpc<DelegationRpcContract>();
   const tasksRpc = useTasksRpc();
-  const [dispatching, setDispatching] = useState(false);
+  const dispatching = useTasksUi((state) => state.dispatchingTaskIds.has(taskId));
   const [lastPresetId, setLastPresetId] = useState(loadLastPresetId);
   const [createDialogKey, setCreateDialogKey] = useState<number | null>(null);
 
-  const dispatch = async (presetId: string) => {
-    setDispatching(true);
+  const pickPreset = async (preset: Preset) => {
+    const { beginDispatch, endDispatch } = useTasksUi.getState();
+    if (!beginDispatch(taskId)) return;
+    setLastPresetId(preset.id);
+    storeLastPresetId(preset.id);
     try {
-      await rpc.call("delegate", { taskId, presetId });
+      await rpc.call("delegate", { taskId, presetId: preset.id });
     } catch (error) {
       onError(errorMessage(error));
     } finally {
-      setDispatching(false);
+      endDispatch(taskId);
     }
-  };
-
-  const pickPreset = (preset: Preset) => {
-    setLastPresetId(preset.id);
-    storeLastPresetId(preset.id);
-    void dispatch(preset.id);
   };
 
   const primarySegment = "bg-primary text-primary-foreground hover:bg-primary/90";
@@ -300,18 +300,22 @@ export function DispatchControl({
       <>
         <Button
           size="sm"
-          className={cn("h-7 gap-1", primarySegment, className)}
+          className={cn("h-8 gap-1 max-md:pointer-coarse:h-11", primarySegment, className)}
+          aria-keyshortcuts="A"
           onClick={() => setCreateDialogKey(Date.now())}
         >
           <Icon name="Plus" className="size-3.5 shrink-0" />
           Add a preset…
         </Button>
-        {createDialogKey !== null ? (
+        {createDialogKey !== null || menu?.open ? (
           <PresetDialog
             key={createDialogKey}
             open
             onOpenChange={(open) => {
-              if (!open) setCreateDialogKey(null);
+              if (!open) {
+                setCreateDialogKey(null);
+                menu?.onOpenChange(false);
+              }
             }}
             editing={null}
             onSave={(draft) => savePresetDraft(tasksRpc, null, draft)}
@@ -331,22 +335,26 @@ export function DispatchControl({
         <Button
           size="sm"
           disabled={dispatching || !current}
-          className={cn("h-7 min-w-0 flex-1 gap-1 rounded-r-none", primarySegment)}
+          className={cn(
+            "h-8 min-w-0 flex-1 gap-1 rounded-r-none max-md:pointer-coarse:h-11",
+            primarySegment,
+          )}
           onClick={() => {
-            if (current) pickPreset(current);
+            if (current) void pickPreset(current);
           }}
         >
           <span className="truncate">
             {dispatching ? "Dispatching…" : (current?.name ?? "Dispatch")}
           </span>
         </Button>
-        <DropdownMenu>
+        <DropdownMenu {...menu} open={menu ? menu.open && !dispatching : undefined}>
           <DropdownMenuTrigger asChild disabled={dispatching || !current}>
             <Button
               size="sm"
               aria-label="Choose dispatch preset"
+              aria-keyshortcuts="A"
               className={cn(
-                "h-7 shrink-0 rounded-l-none border-l border-primary-foreground/25 px-1",
+                "h-8 shrink-0 rounded-l-none border-l border-primary-foreground/25 px-1 max-md:pointer-coarse:size-11",
                 primarySegment,
               )}
             >
@@ -354,9 +362,9 @@ export function DispatchControl({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align={align}>
-            <DropdownMenuLabel>Dispatch with preset</DropdownMenuLabel>
+            <DropdownMenuLabel>Dispatch with preset (A)</DropdownMenuLabel>
             {(presets ?? []).map((preset) => (
-              <DropdownMenuItem key={preset.id} onSelect={() => pickPreset(preset)}>
+              <DropdownMenuItem key={preset.id} onSelect={() => void pickPreset(preset)}>
                 <span className="min-w-0 flex-1 truncate">{preset.name}</span>
                 <span className="text-xs text-muted-foreground">{preset.modelId}</span>
                 {preset.id === current?.id ? <Icon name="Check" className="size-3.5" /> : null}

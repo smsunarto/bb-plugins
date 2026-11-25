@@ -1,8 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { eq } from "@tanstack/react-db";
-import { HugeiconsIcon } from "@hugeicons/react";
-import SmilePlusIcon from "@hugeicons/core-free-icons/SmilePlusIcon";
 import type { Task } from "../../shared/contract.js";
 import { errorMessage } from "../../shared/errors.js";
 import type { DelegationRpcContract } from "../../delegate/contract.js";
@@ -31,7 +29,7 @@ import { createDescriptionSaver, type DescriptionSaver } from "./description-sav
 import { StatusIcon } from "./meta.js";
 import { STATUS_LABELS } from "../list/lib.js";
 import { sortTasks } from "../../shared/sort.js";
-import { InlineProperties, PropertiesRail, type TaskPropertyUpdate } from "./rail.js";
+import { PropertiesRail, type TaskPropertyUpdate } from "./rail.js";
 import { ThreadsSection } from "./threads.js";
 import { DetailToasts, useDetailToasts } from "./toast.js";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
@@ -78,7 +76,7 @@ function EditableTitle({ task, onSave }: { task: Task; onSave: (title: string) =
       suppressContentEditableWarning
       role="textbox"
       aria-label="Task title"
-      className="mb-3 mt-1 text-2xl font-semibold leading-tight outline-none"
+      className="text-[1.75rem] font-semibold leading-tight tracking-tight outline-none focus-visible:underline focus-visible:decoration-ring focus-visible:underline-offset-4 @[45rem]:text-[2.125rem]"
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
@@ -323,9 +321,9 @@ function TaskDetail({ task }: { task: Task }) {
   const parentTask = parent.data ?? null;
 
   return (
-    <div className="@container flex min-h-full flex-col bg-surface-recessed-solid p-3">
-      <div className="flex flex-1 items-stretch rounded-lg border border-border bg-card shadow-2xs">
-        <div className="mx-auto w-full min-w-0 max-w-[55rem] flex-1 px-7 pb-16 pt-8 @3xl:px-13 @3xl:pt-11">
+    <div className="@container min-h-full bg-background">
+      <article className="grid min-h-full grid-cols-[minmax(0,1fr)] @[45rem]:grid-cols-[minmax(0,1fr)_16rem] @[45rem]:grid-rows-[auto_1fr] @[70rem]:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="mx-auto w-full min-w-0 max-w-[49rem] px-4 pb-4 pt-5 @[45rem]:col-start-1 @[45rem]:row-start-1 @[45rem]:px-8 @[45rem]:pb-7 @[45rem]:pt-12 @[70rem]:px-10">
           {parentTask || subtasks.data?.length ? (
             <div className="mb-4 flex flex-wrap items-center gap-2">
               {parentTask ? (
@@ -354,50 +352,55 @@ function TaskDetail({ task }: { task: Task }) {
           ) : null}
 
           <EditableTitle task={task} onSave={(title) => updateTask({ title })} />
-
-          <InlineProperties
-            task={task}
-            project={project}
-            projects={projects.data}
-            labels={labels}
-            presets={presets.data}
-            onUpdate={updateTask}
-            onMoveToProject={(projectId) => void moveToProject(projectId)}
-            onError={(message) => push(message)}
-            className="mb-4 @[45rem]:hidden"
-          />
-
+        </div>
+        <PropertiesRail
+          key={task.id}
+          task={task}
+          project={project}
+          projects={projects.data}
+          labels={labels}
+          threads={threads.data ?? []}
+          presets={presets.data}
+          onUpdate={updateTask}
+          onMoveToProject={(projectId) => void moveToProject(projectId)}
+          onError={(message) => push(message)}
+          className="mx-auto w-full max-w-[55rem] px-4 pb-4 @[45rem]:col-start-2 @[45rem]:row-span-2 @[45rem]:row-start-1 @[45rem]:max-w-none @[45rem]:p-0"
+        >
+          {(threads.data ?? []).length > 0 ? (
+            <div className="w-full @[45rem]:mt-4">
+              <ThreadsSection
+                threads={threads.data ?? []}
+                onDetach={async (thread) => {
+                  await delegationRpc.call("taskThreadsDetach", {
+                    taskId: task.id,
+                    threadId: thread.threadId,
+                  });
+                  await queryClient.invalidateQueries({ queryKey: ["taskThreads"] });
+                }}
+                onError={(message) => push(message)}
+              />
+            </div>
+          ) : null}
+        </PropertiesRail>
+        <div className="mx-auto w-full min-w-0 max-w-[49rem] px-4 pb-14 @[45rem]:col-start-1 @[45rem]:row-start-2 @[45rem]:px-8 @[70rem]:px-10">
           <TasksEditor
             value={descriptionValue}
             onChange={onDescriptionChange}
             variant="doc"
-            className="min-h-24"
-            placeholder="Add a description… rich text: headings, lists, code, checkboxes, @mentions"
+            className="min-h-20 @[45rem]:[--tasks-editor-font-size:15px]"
+            placeholder="Add a description…"
             onUploadImage={uploadForTask}
             mentionItems={mentionItems}
             onOpenThread={(threadId) => navigate.toThread(threadId)}
           />
 
           <div className="mb-1 mt-3 flex items-center gap-1">
-            <Hint label="Reactions coming soon">
-              <span className="inline-flex">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Add reaction"
-                  disabled
-                  className="size-7 text-muted-foreground"
-                >
-                  <HugeiconsIcon icon={SmilePlusIcon} className="size-4" />
-                </Button>
-              </span>
-            </Hint>
             <Hint label="Attach file">
               <Button
                 variant="ghost"
                 size="icon"
                 aria-label="Attach file"
-                className="size-7 text-muted-foreground"
+                className="size-7 text-muted-foreground max-md:pointer-coarse:size-11"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Icon name="Paperclip" className="size-4" />
@@ -435,40 +438,11 @@ function TaskDetail({ task }: { task: Task }) {
             onCreate={createSubtask}
           />
 
-          {(threads.data ?? []).length > 0 ? (
-            <div className="mt-6">
-              <ThreadsSection
-                threads={threads.data ?? []}
-                onDetach={async (thread) => {
-                  await delegationRpc.call("taskThreadsDetach", {
-                    taskId: task.id,
-                    threadId: thread.threadId,
-                  });
-                  await queryClient.invalidateQueries({ queryKey: ["taskThreads"] });
-                }}
-                onError={(message) => push(message)}
-              />
-            </div>
-          ) : null}
-
           <div className="mt-1">
             <TaskActivity taskId={task.id} />
           </div>
         </div>
-
-        <PropertiesRail
-          task={task}
-          project={project}
-          projects={projects.data}
-          labels={labels}
-          threads={threads.data ?? []}
-          presets={presets.data}
-          onUpdate={updateTask}
-          onMoveToProject={(projectId) => void moveToProject(projectId)}
-          onError={(message) => push(message)}
-          className="hidden @[45rem]:block"
-        />
-      </div>
+      </article>
       <DetailToasts toasts={toasts} onDismiss={dismiss} />
     </div>
   );
