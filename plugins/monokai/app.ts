@@ -7,31 +7,23 @@ import { mountArchiveToast } from "./app/archive-toast.ts";
 import { mountBbDomStyles } from "./app/bb-dom-styles.ts";
 import { mountPanelNewTab } from "./app/panel-new-tab.ts";
 import { mountProjectControl } from "./app/project-control.ts";
-// workaround:monokai/secondary-swipe-width-property begin
-import "./app/secondary-panel-resize.css";
-// workaround:monokai/secondary-swipe-width-property end
 import "./app/home-marker.css";
 import { mountDiffHeader } from "./app/diff-header.ts";
 import { mountPanelDepth } from "./app/panel-depth.ts";
 import { mountPanelTabHaptics } from "./app/panel-tab-haptics.ts";
 import { mountPanelTabGlide } from "./app/panel-tab-glide.ts";
-// workaround:monokai/context-card-late-layout begin
-import { mountContextCardState } from "./app/context-card-state.ts";
-// workaround:monokai/context-card-late-layout end
 
 import { mountTerminalAppearance } from "./app/terminal-appearance.ts";
+import { mountThreadHeaderRows } from "./app/thread-header-rows.ts";
 import { mountMonacoSyntaxTokens } from "./app/monaco-syntax-tokens.ts";
 import { UiFontBridge } from "./app/ui-font-bridge.ts";
 import { HomeMarker } from "./app/home-marker.ts";
-import {
-  THREAD_MARKER_TITLE,
-  ThreadMarker,
-  type LegacyThreadHeaderActionSlots,
-} from "./app/thread-marker.ts";
+import { ThreadMarker } from "./app/thread-marker.ts";
 
 export default definePluginApp((app) => {
   app.contentScripts.register({ id: "archive-toast", mount: mountArchiveToast });
   app.contentScripts.register({ id: "bb-dom-styles", mount: mountBbDomStyles });
+  app.contentScripts.register({ id: "thread-header-rows", mount: mountThreadHeaderRows });
   // Marks presses of the right panel's toggle and presses bb's new-tab button
   // when the thread marker's hook asks.
   app.contentScripts.register({ id: "panel-new-tab", mount: mountPanelNewTab });
@@ -43,9 +35,6 @@ export default definePluginApp((app) => {
   app.contentScripts.register({ id: "panel-tab-haptics", mount: mountPanelTabHaptics });
   // The tab pager's highlight slides between same-size tabs; see app/panel-tab-glide.ts.
   app.contentScripts.register({ id: "panel-tab-glide", mount: mountPanelTabGlide });
-  // workaround:monokai/context-card-late-layout begin
-  app.contentScripts.register({ id: "context-card-state", mount: mountContextCardState });
-  // workaround:monokai/context-card-late-layout end
   app.contentScripts.register({
     id: "terminal-appearance",
     mount: mountTerminalAppearance,
@@ -59,9 +48,8 @@ export default definePluginApp((app) => {
     title: "New thread screen marker",
     component: HomeMarker,
   });
-  (app.slots as unknown as LegacyThreadHeaderActionSlots).experimental_threadHeaderAction({
+  app.slots.experimental_threadHeaderRow({
     id: "thread-marker",
-    title: THREAD_MARKER_TITLE,
     component: ThreadMarker,
   });
   app.contentScripts.register({

@@ -429,27 +429,6 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain(
       '> aside[aria-hidden="true"] > div {\n    opacity: 0;\n    translate: 4px 0;\n    transition: none;',
     );
-    // workaround:monokai/context-card-late-layout begin
-    // The floating context card hides on the frame its overlay drops below bb's
-    // 1072px float width (1048px of content), not a ResizeObserver frame later.
-    const card = styleRules(theme).filter(({ selector }) =>
-      selector.includes("[data-thread-context-card]"),
-    );
-    expect(card.map(({ atRules }) => atRules)).toEqual([
-      ["@media (min-width: 768px)", "@container scroll-overlay (width < 1048px)"],
-    ]);
-    // The chat column's 312px shift follows bb's 1072-1383px band on the same frame.
-    const shift = styleRules(theme).filter(({ selector }) =>
-      selector.includes(".thread-scrollbar > div"),
-    );
-    expect(shift.map(({ atRules }) => atRules[1])).toEqual([
-      "@container thread-pane (width < 1072px) or (width >= 1384px)",
-      "@container thread-pane (1072px <= width < 1384px)",
-      "@container thread-pane (1072px <= width < 1384px)",
-    ]);
-    // A card collapsed by a narrow chat keeps its shift for the frame bb takes to remount it.
-    expect(theme).toContain('[data-monokai-context-card="was-shown"] .thread-scrollbar > div {');
-    // workaround:monokai/context-card-late-layout end
   });
 
   test("rejects an unknown template role", () => {
