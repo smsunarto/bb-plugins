@@ -34,6 +34,7 @@ import {
   annotationMentionLabelParts,
   annotationSourceLabel,
   withoutAnnotationMentions,
+  type AnnotationMentionLabelParts,
 } from "@/lib/staging-display.ts";
 import { broadcastType, sharedRequest } from "@/lib/shared-request.ts";
 import type { rpcContract } from "@/server.ts";
@@ -64,7 +65,6 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
     setActionState(next);
   };
   const refreshSequence = useRef(0);
-  const annotationDescriptionPrefix = useId();
   const anchor = useRef<HTMLSpanElement>(null);
   const chipSlot = useComposerContextSlot(anchor);
 
@@ -177,7 +177,6 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
     const location = annotationSourceLabel(annotation.bb, batch.threadTitles);
     return {
       id: annotation.id,
-      descriptionId: `${annotationDescriptionPrefix}-${annotation.id}`,
       label: annotationMentionLabel(annotation, location),
       parts: { ...annotationMentionLabelParts(annotation, location), comment: annotation.comment },
     };
@@ -458,9 +457,8 @@ function AnnotationsAction({
 type AnnotationsActionContentProps = {
   rows: readonly {
     id: string;
-    descriptionId: string;
     label: string;
-    parts: { location: string; target: string; comment: string };
+    parts: AnnotationMentionLabelParts;
   }[];
   action: Action;
   canSendOne: boolean;
@@ -539,13 +537,12 @@ function AnnotationsActionContent({
         className="flex flex-col border-t border-border [&>li+li]:border-t [&>li+li]:border-border"
         aria-busy={isMutating}
       >
-        {rows.map(({ id, label, parts, descriptionId }, index) => (
+        {rows.map(({ id, label, parts }, index) => (
           <AnnotationRow
             key={id}
             number={index + 1}
             label={label}
             parts={parts}
-            descriptionId={descriptionId}
             disabled={isMutating}
             isSending={action?.kind === "send" && action.id === id}
             isDiscarding={action?.kind === "discard" && action.id === id}
@@ -566,7 +563,6 @@ function AnnotationRow({
   number,
   label,
   parts,
-  descriptionId,
   disabled,
   isSending,
   isDiscarding,
@@ -576,8 +572,7 @@ function AnnotationRow({
 }: {
   number: number;
   label: string;
-  parts: { location: string; target: string; comment: string };
-  descriptionId: string;
+  parts: AnnotationMentionLabelParts;
   disabled: boolean;
   isSending: boolean;
   isDiscarding: boolean;
@@ -585,6 +580,7 @@ function AnnotationRow({
   onSend: (() => void) | null;
   onDiscard: () => void;
 }) {
+  const descriptionId = useId();
   const action = "size-7 shrink-0 text-muted-foreground hover:text-foreground";
   return (
     <li className="flex min-w-0 items-start gap-2 px-3 py-2">
