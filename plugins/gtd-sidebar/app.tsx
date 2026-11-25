@@ -56,7 +56,7 @@ export default definePluginApp((app) => {
   });
 
   // On a phone the thread list floats a New thread pill in place of bb's
-  // header row.
+  // New thread navigation row.
   app.contentScripts.register({
     id: "new-thread-fab-style",
     mount: ({ signal }) => mountNewThreadFabStyle(document, signal),

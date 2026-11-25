@@ -4,14 +4,14 @@ import { Button } from "../ui/button";
 import { nativeHaptic } from "../../lib/native-haptics";
 import { focusComposeEditorWithKeyboard } from "../../lib/compose-keyboard";
 
-/** Marks the pill; `new-thread-fab-style.ts` hides bb's header New thread while it shows. */
+/** Marks the pill; `new-thread-fab-style.ts` hides bb's New thread row while it shows. */
 export const NEW_THREAD_FAB_ATTRIBUTE = "data-gtd-new-thread-fab";
 
 /**
  * The phone drawer's New thread: a light pill floating over the list's
  * bottom-right corner, in reach of the thumb, lifted clear of the home
- * indicator when the theme runs the list under it. It replaces bb's New thread row
- * in the sidebar header. A tap ticks (BB's iOS app plays the haptic, honoring
+ * indicator when the theme runs the list under it. It replaces bb's New thread
+ * navigation row. A tap ticks (BB's iOS app plays the haptic, honoring
  * the device's Haptics switch), opens the composer, and brings up the
  * keyboard in it.
  */
