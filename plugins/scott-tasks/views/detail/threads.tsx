@@ -194,47 +194,47 @@ function ThreadCard({
   const navigate = useBbNavigate();
   const meta = THREAD_STATUS_META[thread.liveStatus];
   return (
-    <div className="mb-2 flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2 shadow-2xs">
-      <span
-        className={cn("flex shrink-0 items-center gap-1 text-xs font-medium", meta.textClassName)}
-      >
-        <span aria-hidden className={cn("size-1.5 rounded-full", meta.dotClassName)} />
-        {meta.label}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{thread.title}</div>
-        <div className="text-xs text-muted-foreground">
-          {thread.presetName} · attached {formatRelativeTime(thread.attachedAt)}
-        </div>
+    <div className="mb-2 min-w-0 rounded-md border border-border-hairline bg-card px-3 py-2">
+      <div className="wrap-anywhere text-sm font-medium">{thread.title}</div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        <span className={cn("flex shrink-0 items-center gap-1 font-medium", meta.textClassName)}>
+          <span aria-hidden className={cn("size-1.5 rounded-full", meta.dotClassName)} />
+          {meta.label}
+        </span>
+        <span>
+          {thread.presetName} · {formatRelativeTime(thread.attachedAt)}
+        </span>
       </div>
-      <ThreadPullRequestPill
-        status={pullRequest}
-        reviewable={thread.liveStatus !== "archived"}
-        openThread={() => navigate.toThread(thread.threadId)}
-        openOnGitHub={(url) => void navigate.openUrl(url)}
-        threadId={thread.threadId}
-      />
-      <Button
-        variant="link"
-        size="sm"
-        className="h-auto shrink-0 gap-1 p-0"
-        onClick={() => navigate.toThread(thread.threadId)}
-      >
-        Open thread
-        <Icon name="ArrowUpRight" className="size-3" />
-      </Button>
-      <Hint label="Detach from task">
+      <div className="mt-1 flex flex-wrap items-center gap-x-2">
+        <ThreadPullRequestPill
+          status={pullRequest}
+          reviewable={thread.liveStatus !== "archived"}
+          openThread={() => navigate.toThread(thread.threadId)}
+          openOnGitHub={(url) => void navigate.openUrl(url)}
+          threadId={thread.threadId}
+        />
         <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`Detach ${thread.title}`}
-          disabled={busy}
-          className="size-5 shrink-0 text-muted-foreground"
-          onClick={onDetach}
+          variant="link"
+          size="sm"
+          className="h-7 shrink-0 gap-1 p-0 max-md:pointer-coarse:h-11"
+          onClick={() => navigate.toThread(thread.threadId)}
         >
-          <Icon name="X" className="size-3" />
+          Open thread
+          <Icon name="ArrowUpRight" className="size-3" />
         </Button>
-      </Hint>
+        <Hint label="Detach from task">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Detach ${thread.title}`}
+            disabled={busy}
+            className="ml-auto size-7 shrink-0 text-muted-foreground max-md:pointer-coarse:size-11"
+            onClick={onDetach}
+          >
+            <Icon name="X" className="size-3" />
+          </Button>
+        </Hint>
+      </div>
     </div>
   );
 }
