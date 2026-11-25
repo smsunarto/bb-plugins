@@ -47,7 +47,23 @@ async function overviewHost(options: Parameters<typeof captainHost>[0] = {}) {
   const tasks = async () => (await rpc("tasks", { captainId })) as Listing;
   const drive = async () => (await rpc("drive", { captainId })) as Drive;
   const driveDir = join(host.storageRoot, captainId);
-  return { host, captainId, as, rpc, tasks, drive, driveDir, invalidations };
+  /** A task this Captain created: the Overview lists only its own tasks. */
+  const own = (
+    key: string,
+    overrides: Parameters<typeof host.addTask>[1] = {},
+    owner = captainId,
+  ) => {
+    const task = host.addTask(key, overrides);
+    host.server.store.recordTaskOwner({
+      captainId: owner,
+      taskId: task.id,
+      taskKey: key,
+      source: "created",
+      at: 0,
+    });
+    return task;
+  };
+  return { host, captainId, as, rpc, tasks, drive, driveDir, invalidations, own };
 }
 
 /** A second Captain on the same host, with two repos. */
@@ -60,7 +76,9 @@ async function overviewHostWithRepos(host: Awaited<ReturnType<typeof captainHost
     "--repo",
     "rampage",
   ]);
-  return async () => (await host.harness.behavior.callRpc("tasks", { captainId })) as Listing;
+  const tasks = async () =>
+    (await host.harness.behavior.callRpc("tasks", { captainId })) as Listing;
+  return Object.assign(tasks, { captainId });
 }
 
 async function dispatch(
@@ -90,14 +108,14 @@ const scanBaseline = () => {
 
 describe("tasks", () => {
   test("open tasks of the Captain's repos, waiting on the user first, with their crew", async () => {
-    const { host, as, tasks } = await overviewHost();
+    const { host, as, tasks, own } = await overviewHost();
     const passed = { value: "passed", head: null, writtenAt: new Date(0).toISOString() };
-    host.addTask("BBPLUGINS-1", { status: "backlog", updatedAt: "2026-01-05T00:00:00.000Z" });
-    host.addTask("BBPLUGINS-2", { status: "todo", updatedAt: "2026-01-04T00:00:00.000Z" });
+    own("BBPLUGINS-1", { status: "backlog", updatedAt: "2026-01-05T00:00:00.000Z" });
+    own("BBPLUGINS-2", { status: "todo", updatedAt: "2026-01-04T00:00:00.000Z" });
     host.addTask("BBPLUGINS-3", { status: "in_progress", updatedAt: "2026-01-01T00:00:00.000Z" });
-    host.addTask("BBPLUGINS-4", { status: "in_progress", updatedAt: "2026-01-03T00:00:00.000Z" });
+    own("BBPLUGINS-4", { status: "in_progress", updatedAt: "2026-01-03T00:00:00.000Z" });
     host.addTask("BBPLUGINS-5", { status: "in_review" });
-    host.addTask("BBPLUGINS-6", {
+    own("BBPLUGINS-6", {
       status: "in_review",
       fields: new Map([["review", passed]]),
     });
@@ -130,12 +148,12 @@ describe("tasks", () => {
   });
 
   test("pages past Tasks' page size and ranks the whole set before taking the rows", async () => {
-    const { host, tasks } = await overviewHost();
+    const { host, tasks, own } = await overviewHost();
     const passed = { value: "passed", head: null, writtenAt: new Date(0).toISOString() };
     for (let index = 1; index <= 600; index += 1) {
-      host.addTask(`BBPLUGINS-${index}`, { status: "backlog" });
+      own(`BBPLUGINS-${index}`, { status: "backlog" });
     }
-    host.addTask("BBPLUGINS-601", { status: "in_review", fields: new Map([["review", passed]]) });
+    own("BBPLUGINS-601", { status: "in_review", fields: new Map([["review", passed]]) });
     const listing = await tasks();
     expect(listing.tasks[0]).toMatchObject({ key: "BBPLUGINS-601", ready: true });
     expect(listing.tasks).toHaveLength(TASKS_SHOWN);
@@ -145,18 +163,18 @@ describe("tasks", () => {
   });
 
   test("exactly a page of tasks is not truncated; more than the read bound is", async () => {
-    const { host, tasks } = await overviewHost();
-    for (let index = 1; index <= 100; index += 1) host.addTask(`BBPLUGINS-${index}`);
+    const { tasks, own } = await overviewHost();
+    for (let index = 1; index <= 100; index += 1) own(`BBPLUGINS-${index}`);
     expect(await tasks()).toMatchObject({ total: 100, truncated: false });
     for (let index = 101; index <= TASKS_READ_MAX + 1; index += 1) {
-      host.addTask(`BBPLUGINS-${index}`);
+      own(`BBPLUGINS-${index}`);
     }
     expect(await tasks()).toMatchObject({ total: TASKS_READ_MAX, truncated: true });
   });
 
   test("restarts a stale continuation once and drops the abandoned page", async () => {
-    const { host, tasks } = await overviewHost();
-    for (let index = 1; index <= 501; index += 1) host.addTask(`BBPLUGINS-${index}`);
+    const { host, tasks, own } = await overviewHost();
+    for (let index = 1; index <= 501; index += 1) own(`BBPLUGINS-${index}`);
     host.tasks.staleTaskPages = 1;
     await expect(tasks()).resolves.toMatchObject({ total: 501, truncated: false, unavailable: [] });
     expect(
@@ -185,12 +203,12 @@ describe("tasks", () => {
   });
 
   test("a repo whose list fails is named, and the other repos' tasks stay", async () => {
-    const { host } = await overviewHost();
+    const { host, own } = await overviewHost();
     const two = await overviewHostWithRepos(host);
-    host.addTask("BBPLUGINS-1", { status: "todo" });
+    own("BBPLUGINS-1", { status: "todo" }, two.captainId);
     const failed = host.tasks.projects.find((project) => project.prefix !== "BBPLUGINS");
     if (failed === undefined) throw new Error("no second project");
-    host.addTask(`${failed.prefix}-1`, { status: "todo" });
+    own(`${failed.prefix}-1`, { status: "todo" }, two.captainId);
     host.tasks.failing.add(`listTasks:${failed.id}`);
     const listing = await two();
     expect(listing.tasks.map((task) => task.key)).toEqual(["BBPLUGINS-1"]);
@@ -326,8 +344,8 @@ describe("the shared crew read", () => {
 
 describe("the Tasks recheck", () => {
   test("refreshes when only the count changes from exact to truncated", async () => {
-    const { host, captainId, tasks, invalidations } = await overviewHost();
-    for (let index = 1; index <= TASKS_READ_MAX; index += 1) host.addTask(`BBPLUGINS-${index}`);
+    const { host, captainId, tasks, invalidations, own } = await overviewHost();
+    for (let index = 1; index <= TASKS_READ_MAX; index += 1) own(`BBPLUGINS-${index}`);
     expect(await tasks()).toMatchObject({ total: TASKS_READ_MAX, truncated: false });
     const stop = host.harness.behavior.experimental_watchRpc("tasks", { input: { captainId } });
     try {
@@ -441,7 +459,7 @@ describe("the Tasks recheck", () => {
   });
 
   test("refreshes from a new snapshot when a task edit overtakes an ordinary crew read", async () => {
-    const { host, as, captainId, tasks, invalidations } = await overviewHost({
+    const { host, as, captainId, tasks, invalidations, own } = await overviewHost({
       crewPollMs: 60_000,
     });
     host.addTask("BBPLUGINS-1", { status: "in_progress" });
@@ -462,7 +480,7 @@ describe("the Tasks recheck", () => {
       const original = tasks();
       await vi.waitFor(() => expect(snapshots()).toBe(before + 1));
       host.crewSnapshotHold.afterCapture = null;
-      const added = host.addTask("BBPLUGINS-2", { status: "in_progress" });
+      const added = own("BBPLUGINS-2", { status: "in_progress" });
       host.attach(added.id, threadId, "Captain Implement");
       await vi.waitFor(() => expect(invalidations().slice(notice)).toContain(crewTag(captainId)));
 
@@ -480,8 +498,8 @@ describe("the Tasks recheck", () => {
   });
 
   test("a task changed in Tasks refreshes a watched tasks read, and stops when unwatched", async () => {
-    const { host, captainId, invalidations } = await overviewHost({ crewPollMs: 60_000 });
-    const task = host.addTask("BBPLUGINS-1", { status: "todo" });
+    const { host, captainId, invalidations, own } = await overviewHost({ crewPollMs: 60_000 });
+    const task = own("BBPLUGINS-1", { status: "todo" });
     const stop = host.harness.behavior.experimental_watchRpc("tasks", { input: { captainId } });
     await settle();
     const before = invalidations().length;

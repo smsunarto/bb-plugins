@@ -11,6 +11,7 @@ import type { CommandDeps } from "./commands/deps.ts";
 import { ensureStorageRoot } from "./commands/deps.ts";
 import { type CrewThread, isActive, joinCrew } from "./crew.ts";
 import { DRIVE_FILES, isInside, readInside } from "./drive.ts";
+import type { OwnerBackfill, OwnersState } from "./owners.ts";
 import type { CrewSnapshot } from "./queue.ts";
 import { ROLE_SPECS, SHIP_READY_REVIEWS } from "./roles.ts";
 import { isStaleTasksCursor, type TasksTask } from "./tasks-client.ts";
@@ -37,11 +38,24 @@ export type CaptainTasks = {
   truncated: boolean;
   crewError: string | null;
   unavailable: string[];
+  /** Whether older tasks have been placed with their Captains yet (`owners.ts`). */
+  owners: OwnersState;
 };
 
+/** How long a tasks read waits on a running owner backfill before it answers as pending. */
+export const OWNERS_WAIT_MS = 5_000;
+
+/** The backfill as a tasks read sees it; with none, every owner is already recorded. */
+type Owners = Pick<OwnerBackfill, "ensure" | "state">;
+const NO_BACKFILL: Owners = { ensure: () => Promise.resolve(), state: () => "ready" };
+
 /**
- * The Captain's repos' open tasks (done and canceled left out), with the
- * crew thread on each. Ready to ship, then in review, in progress, todo and
+ * The open tasks the Captain owns in its repos (done and canceled left out),
+ * with the crew thread on each. A Captain owns the tasks it created through
+ * `bb captain create` or dispatched crew on (`owners.ts`); another Captain's
+ * tasks in a shared project are left out. The read waits up to
+ * `OWNERS_WAIT_MS` for the backfill that places tasks from before that record,
+ * and says in `owners` whether it has finished. Ready to ship, then in review, in progress, todo and
  * backlog; the most recently updated first within each. The whole set is
  * ranked, then its top rows returned. A repo whose list fails is named and
  * the others listed; Tasks failing for every repo fails the read. A crew
@@ -51,6 +65,7 @@ export async function captainTasks(
   deps: Pick<CommandDeps, "registry" | "store" | "tasks">,
   readCrew: (captainId: string) => CrewSnapshot,
   captainId: string,
+  owners: Owners = NO_BACKFILL,
 ): Promise<CaptainTasks> {
   const crewRead = readCrew(captainId);
   // The crew is read while Tasks answers; its failure is labelled, not fatal.
@@ -58,13 +73,17 @@ export async function captainTasks(
     ([threads, rows, error]) => ({ crew: joinCrew(deps, threads, rows), error }),
     (error: unknown) => ({ crew: [] as CrewThread[], error: (error as Error).message }),
   );
-  const read = await readOpenTasks(deps, captainId);
+  const [read] = await Promise.all([
+    readOpenTasks(deps, captainId),
+    settledWithin(owners.ensure(), OWNERS_WAIT_MS),
+  ]);
+  const owned = ownedOf(deps, captainId, read.tasks);
   const [fields, joined] = await Promise.all([
-    deps.tasks.fieldsOf(read.tasks.map((task) => task.id)),
+    deps.tasks.fieldsOf(owned.map((task) => task.id)),
     crew,
   ]);
   const crewOf = crewByTask(joined.crew);
-  const ranked = read.tasks
+  const ranked = owned
     .map((task): CaptainTaskItem => ({
       key: task.key,
       title: task.title,
@@ -82,7 +101,30 @@ export async function captainTasks(
     truncated: read.truncated,
     crewError: joined.error,
     unavailable: read.unavailable,
+    owners: owners.state(),
   };
+}
+
+/** The tasks of a read the Captain owns, in the read's order. */
+function ownedOf(
+  deps: Pick<CommandDeps, "store">,
+  captainId: string,
+  tasks: readonly TasksTask[],
+): TasksTask[] {
+  const owned = deps.store.ownedTaskIds(captainId);
+  return tasks.filter((task) => owned.has(task.id));
+}
+
+/** Wait for `promise` at most `ms`; never rejects. */
+async function settledWithin(promise: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    promise.catch(() => undefined),
+    new Promise((resolve) => {
+      timer = setTimeout(resolve, ms);
+    }),
+  ]);
+  clearTimeout(timer);
 }
 
 type OpenTasksRead = { tasks: TasksTask[]; truncated: boolean; unavailable: string[] };
@@ -124,7 +166,7 @@ async function readOpenTasks(
 }
 
 /** One project's open tasks, following Tasks' cursor up to `TASKS_READ_MAX`. */
-async function readProjectTasks(
+export async function readProjectTasks(
   deps: Pick<CommandDeps, "tasks">,
   projectId: string,
 ): Promise<{ tasks: TasksTask[]; truncated: boolean }> {
@@ -157,17 +199,20 @@ async function readProjectPages(
  * What the Tasks rows show from Tasks alone, as one string: a change made
  * outside the crew, such as in Tasks itself, changes it. A review verdict
  * moves the task's `updatedAt`, so it counts too, and so does a repo
- * becoming unreadable or readable again.
+ * becoming unreadable or readable again. Only the Captain's own tasks count,
+ * so a newly owned task changes it and another Captain's edits do not.
  */
 export async function openTasksSignature(
-  deps: Pick<CommandDeps, "registry" | "tasks">,
+  deps: Pick<CommandDeps, "registry" | "store" | "tasks">,
   captainId: string,
 ): Promise<string> {
   const read = await readOpenTasks(deps, captainId);
   return [
     read.truncated ? "+" : "",
     ...read.unavailable.map((name) => `!${name}`),
-    ...read.tasks.map((task) => `${task.key}\0${task.status}\0${task.title}\0${task.updatedAt}`),
+    ...ownedOf(deps, captainId, read.tasks).map(
+      (task) => `${task.key}\0${task.status}\0${task.title}\0${task.updatedAt}`,
+    ),
   ].join("\n");
 }
 

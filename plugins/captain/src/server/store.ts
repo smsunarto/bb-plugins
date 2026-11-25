@@ -192,6 +192,19 @@ export const MIGRATIONS: readonly string[] = [
   // answered before this column stay null and prove no answer's source.
   ASK_ANSWERER_MIGRATION,
   ...ROUTINE_RUN_MIGRATIONS,
+  // The tasks each Captain owns: ones it created through `bb captain create`,
+  // dispatched crew on, or claimed with `bb captain claim`, and ones its
+  // backfill inferred. Tasks records no creator, so the Overview's Tasks list
+  // reads its scope from here. Keyed by task id, which a move between
+  // projects keeps; a task may have two owners.
+  `CREATE TABLE task_owners (
+    captain_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    task_key TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('created', 'dispatched', 'claimed', 'inferred')),
+    recorded_at INTEGER NOT NULL,
+    PRIMARY KEY (captain_id, task_id)
+  )`,
 ];
 
 const ASK_ANSWERER_SLOT = MIGRATIONS.indexOf(ASK_ANSWERER_MIGRATION);
@@ -221,6 +234,9 @@ function migrationsFor(db: Database): string[] {
   return [...MIGRATIONS];
 }
 
+export const TASK_OWNER_SOURCES = ["created", "dispatched", "claimed", "inferred"] as const;
+export type TaskOwnerSource = (typeof TASK_OWNER_SOURCES)[number];
+
 /**
  * `notices` keys. Each names one condition once, so a plugin reload neither
  * repeats a once-only send nor restarts a clock.
@@ -246,6 +262,8 @@ export const NOTICE = {
   captainHealth: (captainId: string, since: number) => `health:${captainId}:${since}`,
   reportHealth: (commentId: string) => `health:report:${commentId}`,
   answerHealth: (askId: string) => `health:answer:${askId}`,
+  /** The one-time backfill of `task_owners`, marked sent once it ran to the end. */
+  ownerBackfill: "owner-backfill",
 } as const;
 
 /** Later and Skip on a banner row. */
@@ -659,9 +677,70 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         .all(captainId)
         .flatMap((row) => toCrewRole(row) ?? []);
     },
-    /** A pending adoption owns role setup until it finishes, even before its task is attached. */
-    backfillCrewRole(crew: CrewRoleInput): void {
-      if (selectPendingAdoption.get(crew.threadId, crew.captainId) !== undefined) return;
+    /** Every crew thread id this Captain ever recorded, rows whose role no longer parses included. */
+    crewThreadIdsOf(captainId: string): string[] {
+      return db
+        .prepare<[string], { thread_id: string }>(
+          "SELECT thread_id FROM crew_roles WHERE captain_id = ? ORDER BY rowid",
+        )
+        .all(captainId)
+        .map((row) => row.thread_id);
+    },
+    /** Record that a Captain owns a task; an existing row keeps its source and time. */
+    recordTaskOwner(owner: {
+      captainId: string;
+      taskId: string;
+      taskKey: string;
+      source: TaskOwnerSource;
+      at: number;
+    }): void {
+      db.prepare(
+        `INSERT INTO task_owners (captain_id, task_id, task_key, source, recorded_at)
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT (captain_id, task_id) DO NOTHING`,
+      ).run(owner.captainId, owner.taskId, owner.taskKey, owner.source, owner.at);
+    },
+    /** The ids of the tasks a Captain owns. */
+    ownedTaskIds(captainId: string): Set<string> {
+      return new Set(
+        db
+          .prepare<[string], { task_id: string }>(
+            "SELECT task_id FROM task_owners WHERE captain_id = ?",
+          )
+          .all(captainId)
+          .map((row) => row.task_id),
+      );
+    },
+    /** Every recorded owner, for the backfill's own inference. */
+    allTaskOwners(): { captainId: string; taskId: string; taskKey: string }[] {
+      return db
+        .prepare<[], { captain_id: string; task_id: string; task_key: string }>(
+          "SELECT captain_id, task_id, task_key FROM task_owners ORDER BY rowid",
+        )
+        .all()
+        .map((row) => ({ captainId: row.captain_id, taskId: row.task_id, taskKey: row.task_key }));
+    },
+    /** Whether the one-time owner backfill has run to the end: a `notices` marker. */
+    taskOwnerBackfilled(): boolean {
+      return this.noticeSentAt(NOTICE.ownerBackfill) !== null;
+    },
+    setTaskOwnerBackfilled(at: number): void {
+      this.markNoticeSent(NOTICE.ownerBackfill, at);
+    },
+    /** Drop a Captain's ownership of a task; false when it had none. */
+    releaseTaskOwner(captainId: string, taskId: string): boolean {
+      return (
+        db
+          .prepare("DELETE FROM task_owners WHERE captain_id = ? AND task_id = ?")
+          .run(captainId, taskId).changes > 0
+      );
+    },
+    /**
+     * Write a row only when the thread has none, as a backfill does. A pending
+     * adoption owns role setup until it finishes, even before its task is
+     * attached: then nothing is written and this returns false.
+     */
+    backfillCrewRole(crew: CrewRoleInput): boolean {
+      if (selectPendingAdoption.get(crew.threadId, crew.captainId) !== undefined) return false;
       db.prepare(
         `INSERT INTO crew_roles
            (thread_id, captain_id, role, report_due_since, contract_sent, rung, base_branch)
@@ -675,6 +754,7 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         crew.rung ?? null,
         crew.baseBranch ?? null,
       );
+      return true;
     },
     /** Move the report-due mark forward; a notifying comment is compared with it, never clears it. */
     setReportDue(threadId: string, at: number): void {

@@ -1,6 +1,7 @@
 import { defineCli } from "@get-bb/plugin-sdk";
 import { archiveCommand } from "./commands/archive.ts";
 import { askCommand, askResolveCommand, askShowCommand } from "./commands/ask.ts";
+import { claimCommand, createCommand, releaseCommand } from "./commands/create.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { driveReadCommand, driveWriteCommand } from "./commands/drive.ts";
 import { iconCommand } from "./commands/icon.ts";
@@ -34,6 +35,9 @@ export function captainCli(deps: CommandDeps) {
       "repo remove": repoRemoveCommand(deps),
       "drive read": driveReadCommand(deps),
       "drive write": driveWriteCommand(deps),
+      create: createCommand(deps),
+      claim: claimCommand(deps),
+      release: releaseCommand(deps),
       dispatch: dispatchCommand(deps),
       verdict: verdictCommand(deps),
       tell: tellCommand(deps),

@@ -90,7 +90,12 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     }
   });
   bb.cli.register(captainCli(deps));
-  registerRpc(deps, options.crewPollMs, options.driveScanMs, options.tasksPollMs);
+  const { ownersReady } = registerRpc(
+    deps,
+    options.crewPollMs,
+    options.driveScanMs,
+    options.tasksPollMs,
+  );
   check.register(bb);
   routines.register(bb);
 
@@ -128,6 +133,8 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     fieldsReady,
     audienceReady,
     titlesReady,
+    /** The one-time task-owner backfill; it logs its own failure and never rejects. */
+    ownersReady,
   };
 }
 

@@ -62,20 +62,28 @@ describe("Captain storage migration histories", () => {
   const routineRunId = "ALTER TABLE routine_runs ADD COLUMN automation_run_id TEXT";
   const routineRunIndex = `DROP INDEX routine_runs_by_routine;
    CREATE INDEX routine_runs_by_routine ON routine_runs (routine_id, at DESC, id DESC)`;
-  const mainOrder = [answerer, routineRunId, routineRunIndex];
-  const liveOrder = [routineRunId, routineRunIndex, answerer];
+  const taskOwners = MIGRATIONS.at(-1) ?? "";
+  const mainOrder = [answerer, routineRunId, routineRunIndex, taskOwners];
+  // Live: the routines branch ran at 21-22 before answered_by merged, which took 23.
+  const liveOrder = [routineRunId, routineRunIndex, answerer, taskOwners];
+
+  test("task_owners is the last migration, after the routines and answered_by", () => {
+    expect(taskOwners).toMatch(/^CREATE TABLE task_owners \(/u);
+    expect(MIGRATIONS.length).toBe(firstDivergentSlot + mainOrder.length);
+  });
 
   test.each([
     { name: "fresh", deployed: null, expected: mainOrder },
     { name: "main after #238", deployed: [answerer], expected: mainOrder },
-    { name: "live recovery", deployed: liveOrder, expected: liveOrder },
+    { name: "main before task_owners", deployed: mainOrder.slice(0, 3), expected: mainOrder },
+    { name: "live recovery", deployed: liveOrder.slice(0, 3), expected: liveOrder },
     {
       name: "routines before recovery",
       deployed: [routineRunId, routineRunIndex],
       expected: liveOrder,
     },
   ])(
-    "$name preserves migration slots, asks, routine runs and adoptions",
+    "$name preserves migration slots, asks, routine runs and adoptions, and ends with task_owners",
     ({ deployed, expected }) => {
       const { bb, harness } = createFakePluginHost({ pluginId: "captain" });
       onTestFinished(() => harness.lifecycle.dispose());
@@ -153,6 +161,13 @@ describe("Captain storage migration histories", () => {
         at: 6,
       });
       store.beginAdoption("thr_new", "thr_captain", { key: "BBP-2", id: "task_2" });
+      store.recordTaskOwner({
+        captainId: "thr_captain",
+        taskId: "task_3",
+        taskKey: "BBP-3",
+        source: "created",
+        at: 7,
+      });
 
       const reopened = openStore(bb);
       expect(ledger()).toEqual(upgraded);
@@ -162,6 +177,7 @@ describe("Captain storage migration histories", () => {
         taskId: "task_2",
         taskKey: "BBP-2",
       });
+      expect(reopened.ownedTaskIds("thr_captain")).toEqual(new Set(["task_3"]));
     },
   );
 });

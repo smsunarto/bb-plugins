@@ -75,7 +75,14 @@ function render(
     rpc: {
       captains: () => ({ ids: [captainId] }),
       asks: () => ({ items: [] }),
-      tasks: () => ({ tasks: [], total: 0, truncated: false, crewError: null, unavailable: [] }),
+      tasks: () => ({
+        tasks: [],
+        total: 0,
+        truncated: false,
+        crewError: null,
+        unavailable: [],
+        owners: "ready",
+      }),
       drive: () => ({ total: 0, truncated: false, files: [], folder: null }),
       routines: () => ({ routines: state.routines, serverTimezone: "UTC" }),
       routineRuns: (input: unknown) => (log("routineRuns", input), { runs: state.runs ?? [] }),

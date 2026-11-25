@@ -319,9 +319,10 @@ export const captainContract = defineRpcContract({
     tags: ({ captainId }) => [crewTag(captainId)],
   },
   /**
-   * The Overview's Tasks: its repos' open tasks, those waiting on the user
-   * first, each with its crew thread. Carries the crew tag, so a crew change
-   * refreshes it with the banner.
+   * The Overview's Tasks: the open tasks this Captain owns in its repos (ones it
+   * created, dispatched or claimed), those waiting on the user first, each with
+   * its crew thread. Carries the crew tag, so a crew change refreshes it with
+   * the banner.
    */
   tasks: {
     input: z.object({ captainId: threadId }).strict(),
@@ -329,7 +330,7 @@ export const captainContract = defineRpcContract({
       .object({
         /** The first rows of the whole ranked set. */
         tasks: z.array(captainTask),
-        /** Every open task read, of which `tasks` is the first slice. */
+        /** Every open task of this Captain's read, of which `tasks` is the first slice. */
         total: z.number().int().nonnegative(),
         /** A repo had more open tasks than its read bound: `total` is a floor. */
         truncated: z.boolean(),
@@ -337,6 +338,12 @@ export const captainContract = defineRpcContract({
         crewError: z.string().nullable(),
         /** Repos whose tasks could not be read, by Tasks project name; the others are listed. */
         unavailable: z.array(z.string()),
+        /**
+         * The one-time placing of older tasks with their Captains: `pending`
+         * while it runs, `failed` while it waits to retry. Until `ready`, older
+         * tasks may be missing from `tasks`.
+         */
+        owners: z.enum(["ready", "pending", "failed"]),
       })
       .strict(),
     tags: ({ captainId }) => [crewTag(captainId)],

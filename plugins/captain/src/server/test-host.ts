@@ -55,6 +55,7 @@ export type FakeTask = {
   status: string;
   updatedAt: string;
   description?: string;
+  priority?: string;
   fields: Map<string, { value: string; head: string | null; writtenAt: string }>;
   /** Keys the task had before a move; Tasks still answers them with the new key. */
   formerKeys?: string[];
@@ -321,6 +322,8 @@ export async function captainHost(options: FakeOptions = {}) {
     /** Methods that fail while listed; `listTasks:<projectId>` fails one project's list. */
     failing: new Set<string>(),
     staleTaskPages: 0,
+    /** `createTask` creates the task, then answers only after Captain's deadline. */
+    createTaskHangs: false,
   };
   const pushes: { method: string; input: unknown }[] = [];
   /** Messages sent into threads, in order, with the sender exactly as the send passed it. */
@@ -567,7 +570,13 @@ export async function captainHost(options: FakeOptions = {}) {
           title: String(input["title"]),
           description: String(input["description"] ?? ""),
           status: (input["status"] as string | undefined) ?? "backlog",
+          priority: (input["priority"] as string | undefined) ?? "none",
         });
+        if (tasks.createTaskHangs) {
+          await new Promise((_, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason as Error));
+          });
+        }
         return { ok: true, task: snapshotTask(task) };
       }
       case "updateTask": {
@@ -752,7 +761,9 @@ export async function captainHost(options: FakeOptions = {}) {
         get: async ({ threadId }) => {
           await threadHolds.get;
           const thread = threads.get(threadId);
-          if (thread === undefined) throw new Error(`thread ${threadId} not found`);
+          // As bb answers a thread it no longer has: HTTP 404.
+          if (thread === undefined)
+            throw Object.assign(new Error(`thread ${threadId} not found`), { status: 404 });
           return thread as never;
         },
         send: async (args) => {
@@ -901,6 +912,7 @@ export async function captainHost(options: FakeOptions = {}) {
   await server.ready;
   await server.fieldsReady;
   await server.audienceReady;
+  await server.ownersReady;
 
   /**
    * Reload the plugin as `bb plugin reload` does: same data.db, new instance.

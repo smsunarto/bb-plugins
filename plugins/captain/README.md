@@ -15,6 +15,9 @@ bb captain drive write NOTES.md --file ./notes.md
 bb captain icon Star                 # or --clear, or no argument to show it
 bb captain archive
 
+bb captain create --project PLUG --title "Fix the thing" --description-file brief.md [--status todo] [--priority low]
+bb captain claim PLUG-9 PLUG-10
+bb captain release PLUG-9
 bb captain dispatch PLUG-14 PLUG-15 --role Implement [--base-branch <ref>] [--rung <n>] [--again] [--dry-run]
 bb captain dispatch PLUG-14 --role Review
 bb captain dispatch PLUG-9 --role Implement --thread thr_abc
@@ -28,6 +31,8 @@ bb captain ask resolve a7 --answer Studio
 bb captain ask show a7
 bb captain status [--since <cursor>] [--all]
 ```
+
+The Overview's Tasks list shows only the Captain's own open tasks: ones it created with `create` (in one of its repos), dispatched crew on once the thread started, or claimed with `claim`; `release` drops a mistaken claim. Crew the background check adopts as children count as dispatched. Tasks records no creator, so Captain keeps that record in its `task_owners` table. Tasks from before the record are placed once, from the first start: by crew threads in `crew_roles`, by a brief's `You are a crew thread for the <name> Captain.` header, by a Tasks system line written from the Captain's thread, by a follow-up's `from <key>`, and last by a comment from the Captain's own thread. Crew and brief owners are written before any comment is read. A run that fails or cannot read a project is retried after 30 seconds, doubling to 10 minutes; until it finishes, the Tasks section says older tasks may be missing. A task none of these place belongs to nobody until a Captain claims or dispatches it.
 
 An ask's options are button labels, ≤12 columns each (wide characters count 2), with no ⭐/markers; the reasoning goes in `--detail-file`.
 

@@ -599,6 +599,14 @@ type TaskListing = {
   total: number;
   truncated: boolean;
   unavailable: string[];
+  owners: "ready" | "pending" | "failed";
+};
+
+/** What the owner backfill's state leaves out of the list, said above it. */
+const OWNERS_NOTICE: Record<TaskListing["owners"], string | null> = {
+  ready: null,
+  pending: "Matching older tasks to this Captain · some may be missing",
+  failed: "Couldn't match older tasks to this Captain yet · retrying",
 };
 
 /** The task rows, a line for each part that could not be read alongside them, and what they leave out. */
@@ -611,9 +619,15 @@ function TasksBody({ listing }: { listing: TaskListing }) {
           text={`Couldn't load ${listing.unavailable.join(", ")} · the other repos are listed`}
         />
       )}
+      {OWNERS_NOTICE[listing.owners] === null ? null : (
+        <Notice text={OWNERS_NOTICE[listing.owners] ?? ""} />
+      )}
       {listing.tasks.length === 0 ? (
         listing.unavailable.length === 0 ? (
-          <Empty>No open tasks in this Captain's repos.</Empty>
+          <Empty>
+            No open tasks for this Captain. Tasks it creates or dispatches show here; take one over
+            with bb captain claim.
+          </Empty>
         ) : null
       ) : (
         <ul className="m-0 flex list-none flex-col p-0">

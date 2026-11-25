@@ -11,6 +11,7 @@ import { ROLE_SPECS, roleOfPreset } from "./roles.ts";
 import { age, crewState } from "./status.ts";
 import { NOTICE } from "./store.ts";
 import type { CrewRow } from "./tasks-client.ts";
+import { recordCrewTasks } from "./owners.ts";
 
 /**
  * The background check: one pass a minute while any Captain has live crew or
@@ -261,19 +262,23 @@ function backfillRoles(
   for (const thread of threads) {
     // A row whose role was retired is kept as it is, not backfilled again.
     if (deps.store.hasCrewRow(thread.id)) continue;
-    const attachment = rows
+    const own = rows
       .filter((row) => row.threadId === thread.id)
-      .sort((a, b) => b.attachedAt.localeCompare(a.attachedAt))[0];
+      .sort((a, b) => b.attachedAt.localeCompare(a.attachedAt));
+    const attachment = own[0];
     if (attachment === undefined) continue;
     const role = roleOfPreset(attachment.presetName);
     if (role === null) continue;
-    deps.store.backfillCrewRole({
+    const wrote = deps.store.backfillCrewRole({
       threadId: thread.id,
       captainId: captain.threadId,
       role,
       reportDueSince: thread.createdAt,
       contractSent: true,
     });
+    // Crew attached outside dispatch: its tasks are this Captain's, as a dispatch's are.
+    // A pending adoption records its task itself once the attach succeeds.
+    if (wrote) recordCrewTasks(deps, captain.threadId, own);
   }
 }
 

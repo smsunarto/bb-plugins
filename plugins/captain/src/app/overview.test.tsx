@@ -77,6 +77,8 @@ type State = {
   crewError?: string | null;
   /** Repos whose tasks could not be read. */
   unavailable?: string[];
+  /** The owner backfill's state; ready when unset. */
+  owners?: "ready" | "pending" | "failed";
   files: DriveFileItem[];
   /** Every file in the Drive, when more than the cards. */
   total?: number;
@@ -124,6 +126,7 @@ function render(
             truncated: state.tasksTruncated ?? false,
             crewError: state.crewError ?? null,
             unavailable: state.unavailable ?? [],
+            owners: state.owners ?? "ready",
           };
         },
         routines: () => {
@@ -462,6 +465,19 @@ test("Tasks counts every open task, and says how many the rows leave out", async
   expect(tasks.textContent).toContain("Tasks140");
 });
 
+test("an owner backfill still running is said above the tasks", async () => {
+  const { slot } = render({ ...seeded, owners: "pending" });
+  const tasks = await section(slot, "Tasks");
+  await within(tasks).findByText("Matching older tasks to this Captain · some may be missing");
+  expect(within(tasks).getByText("Fix the sidebar")).not.toBeNull();
+});
+
+test("an owner backfill waiting to retry is said, not shown as an empty list alone", async () => {
+  const { slot } = render({ ...seeded, tasks: [], owners: "failed" });
+  const tasks = await section(slot, "Tasks");
+  await within(tasks).findByText("Couldn't match older tasks to this Captain yet · retrying");
+});
+
 test("a repo that could not be read is named above the others' tasks", async () => {
   const { slot } = render({ ...seeded, unavailable: ["rampage"] });
   const tasks = await section(slot, "Tasks");
@@ -535,7 +551,14 @@ function answering(rpc: { asks: () => QueueItem[]; resolveAsk: (input: unknown) 
     rpc: {
       captains: () => ({ ids: [CAPTAIN] }),
       asks: () => ({ items: rpc.asks() }),
-      tasks: () => ({ tasks: [], total: 0, truncated: false, crewError: null, unavailable: [] }),
+      tasks: () => ({
+        tasks: [],
+        total: 0,
+        truncated: false,
+        crewError: null,
+        unavailable: [],
+        owners: "ready",
+      }),
       drive: () => ({ total: 0, truncated: false, files: [], folder: null }),
       resolveAsk: rpc.resolveAsk,
     } as never,
@@ -629,7 +652,7 @@ test("the Drive says how many files the cards leave out, with + past the walk's 
 test("each section has an empty state", async () => {
   const { slot } = render({ asks: [], tasks: [], files: [] });
   await slot.findByText("Nothing needs you.");
-  await slot.findByText("No open tasks in this Captain's repos.");
+  await slot.findByText(/No open tasks for this Captain\..*bb captain claim/u);
   await slot.findByText("The Drive is empty.");
   await slot.findByText(/Ask the Captain to set a routine/u);
 });
@@ -658,7 +681,7 @@ test("a hidden tab reads nothing", async () => {
       asks: () => (calls.push("asks"), { items: [] }),
       tasks: () => (
         calls.push("tasks"),
-        { tasks: [], total: 0, truncated: false, crewError: null, unavailable: [] }
+        { tasks: [], total: 0, truncated: false, crewError: null, unavailable: [], owners: "ready" }
       ),
       drive: () => (calls.push("drive"), { total: 0, truncated: false, files: [], folder: null }),
       routines: () => (calls.push("routines"), { routines: [], serverTimezone: "UTC" }),

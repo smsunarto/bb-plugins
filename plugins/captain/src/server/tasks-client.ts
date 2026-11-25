@@ -294,6 +294,7 @@ export function createTasksClient(
       title: string;
       description: string;
       status: string;
+      priority?: string;
     }): Promise<TasksTask> {
       return await mutate("createTask", input);
     },
@@ -384,20 +385,44 @@ export function createTasksClient(
         )
       ).comment;
     },
-    async listComments(
-      taskId: string,
-    ): Promise<{ id: string; body: string; authorName: string }[]> {
-      return (
-        await call(
-          "listComments",
-          { taskId },
-          z.object({
-            comments: z.array(
-              z.object({ id: z.string(), body: z.string(), authorName: z.string() }),
-            ),
-          }),
-        )
-      ).comments;
+    /**
+     * A task's comments. `kind` is Tasks' source kind (user, agent or system)
+     * and `threadId` the thread that wrote an agent comment, else null.
+     */
+    async listComments(taskId: string): Promise<
+      {
+        id: string;
+        body: string;
+        authorName: string;
+        kind: string;
+        threadId: string | null;
+      }[]
+    > {
+      const { comments } = await call(
+        "listComments",
+        { taskId },
+        z.object({
+          comments: z.array(
+            z.object({
+              id: z.string(),
+              body: z.string(),
+              authorName: z.string(),
+              source: z
+                .object({ kind: z.string().optional(), threadId: z.string().optional() })
+                .partial()
+                .optional()
+                .catch(undefined),
+            }),
+          ),
+        }),
+      );
+      return comments.map((comment) => ({
+        id: comment.id,
+        body: comment.body,
+        authorName: comment.authorName,
+        kind: comment.source?.kind ?? "",
+        threadId: comment.source?.threadId ?? null,
+      }));
     },
   };
 }

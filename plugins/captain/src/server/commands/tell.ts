@@ -18,6 +18,7 @@ import type { CrewRule } from "../store.ts";
 import { adoptionContract } from "./dispatch.ts";
 import { textOption } from "./ask.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
+import { recordCrewTasks } from "../owners.ts";
 
 const THREAD_ID = /^thr_[A-Za-z0-9_-]+$/u;
 
@@ -279,12 +280,15 @@ function markReportDue(deps: CommandDeps, captainId: string, member: CrewThread)
   }
   // A child with no row yet: backfill it from its preset's role, when it names one.
   if (member.role !== null) {
-    deps.store.backfillCrewRole({
+    const wrote = deps.store.backfillCrewRole({
       threadId: member.thread.id,
       captainId,
       role: member.role,
       reportDueSince: now,
       contractSent: true,
     });
+    // Crew attached outside dispatch: its tasks are this Captain's, as a dispatch's are.
+    // A pending adoption records its task itself once the attach succeeds.
+    if (wrote) recordCrewTasks(deps, captainId, member.rows);
   }
 }

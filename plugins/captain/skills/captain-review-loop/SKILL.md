@@ -38,7 +38,7 @@ Review checks a change against its brief through blind lens subagents and report
 
 ## Stop
 
-- Stop when a round finds only rare edge cases. File those as follow-up tasks with `bb tasks create`, then record `review passed`.
+- Stop when a round finds only rare edge cases. File those as follow-up tasks with `bb captain create`, then record `review passed`.
 - Stop and ask the user, with `bb captain ask`, when the same finding survives two fix rounds. Keep options ≤12 columns (wide characters count 2) with no ⭐/markers, such as `Fix again` or `Accept`; the finding goes in `--detail-file`.
 
 The loop is done when the task's `review` verdict is `passed` or `skipped`.

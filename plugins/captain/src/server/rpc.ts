@@ -21,6 +21,7 @@ import { resolveAsk } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { listChildren } from "./crew.ts";
 import { DEFAULT_LADDERS, roleLadder } from "./ladder.ts";
+import { createOwnerBackfill, type OwnerBackfill } from "./owners.ts";
 import { ROLE_SPECS } from "./roles.ts";
 import { Refusal } from "./output.ts";
 import { StaleRoutine } from "./routines.ts";
@@ -62,7 +63,7 @@ export function registerRpc(
   crewPollMs: number = CREW_POLL_MS,
   driveScanMs?: number,
   tasksPollMs: number = TASKS_POLL_MS,
-): void {
+): { ownersReady: Promise<void> } {
   const { bb } = deps;
   const live = (captainId: string) => {
     if (deps.registry.get(captainId) === null)
@@ -75,6 +76,9 @@ export function registerRpc(
     if (crewUnavailable.delete(captainId)) bb.rpc.experimental_invalidate([crewTag(captainId)]);
   };
   const primaryHost = createPrimaryHost(deps);
+  const owners = createOwnerBackfill(deps);
+  // Started now so the first Overview read rarely waits; that read awaits it too.
+  const ownersReady = owners.ensure();
   const ladderOf = (role: LadderRole) => ({
     role,
     label: ROLE_SPECS[role].label,
@@ -101,7 +105,7 @@ export function registerRpc(
     },
     tasks: async ({ captainId }) => {
       live(captainId);
-      const listing = await captainTasks(deps, readCrew, captainId);
+      const listing = await captainTasks(deps, readCrew, captainId, owners);
       if (listing.crewError === null) crewRecovered(captainId);
       else crewUnavailable.add(captainId);
       return listing;
@@ -188,11 +192,13 @@ export function registerRpc(
         crewReads,
         crewUnavailable,
         crewRecovered,
+        owners,
       }),
   );
   registerDriveScan(deps, captainOf, driveScanMs);
 
   registerEvents(deps, crewReads.changed);
+  return { ownersReady };
 }
 
 /**
@@ -233,16 +239,20 @@ async function watchTasks(
     crewReads,
     crewUnavailable,
     crewRecovered,
+    owners,
   }: {
     crewReads: CrewReads;
     crewUnavailable: ReadonlySet<string>;
     crewRecovered: (id: string) => void;
+    owners: Pick<OwnerBackfill, "ensure">;
   },
 ): Promise<void> {
   // The first check's outcome is the baseline: the read just ran against the same Tasks.
   let last: { ok: true; signature: string } | { ok: false } | null = null;
   let recovery: CrewSnapshot | undefined;
   while (!signal.aborted) {
+    // A pending or failed owner backfill is retried while watched; its end refreshes the read.
+    void owners.ensure();
     // Keep one recovery probe in flight while task signatures continue to publish.
     if (recovery === undefined && crewUnavailable.has(captainId)) {
       recovery = crewReads.read(captainId);

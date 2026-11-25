@@ -19,6 +19,7 @@ import {
   type PoolView,
   type RungChoice,
 } from "../ladder.ts";
+import { recordDispatched } from "../owners.ts";
 import { setPushLevel } from "../push.ts";
 import type { Captain } from "../registry.ts";
 import { isDispatchable, parseRole, ROLE_SPECS, type Role } from "../roles.ts";
@@ -466,10 +467,13 @@ async function dispatchUnit(
   const notes: string[] = [];
   const [existing] = crewOnTask(crew, unit.task.key, unit.role);
   if (existing !== undefined && !flags.again) {
-    if (!flags.dryRun)
+    if (!flags.dryRun) {
+      // The task already has this Captain's thread on it, so it is this Captain's.
+      recordDispatched(deps, captain, unit.task);
       notes.push(
         ...(await converge(deps, captain, unit, existing.thread.id, existing.thread.createdAt)),
       );
+    }
     return { item: unitItem(unit, "exists", { thread: existing.thread.id }), notes };
   }
   const choice = unit.choice;
@@ -512,6 +516,8 @@ async function dispatchUnit(
       known: new Set(crew.map((member) => member.thread.id)),
     });
     notes.push(...started.notes);
+    // Owned only once a thread started: a refused spawn leaves the task unowned.
+    recordDispatched(deps, captain, unit.task);
     return {
       item: unitItem(unit, "started", { thread: started.threadId, detail: rungDetail(choice) }),
       notes,
@@ -734,6 +740,7 @@ async function adopt(
     });
     return { item, notes: [] };
   }
+  recordDispatched(deps, captain, unit.task);
   const prior = deps.store.crewRole(threadId);
   const newCaptain = prior?.captainId !== captain.threadId;
   const newRole = newCaptain || prior?.role !== unit.role;
