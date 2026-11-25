@@ -13,10 +13,17 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyStatePanel } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
@@ -24,6 +31,7 @@ import { broadcastType, sharedRequest } from "@/lib/shared-request.ts";
 import type { rpcContract } from "@/server.ts";
 import type {
   AnnotationRouting,
+  AnnotationSeverity,
   AnnotationStatus,
   SessionSummary,
   StoredAnnotation,
@@ -40,20 +48,20 @@ const statusFilters = [
 
 type FilterId = (typeof statusFilters)[number]["id"];
 
-const statusTone: Record<AnnotationStatus, string> = {
-  pending: "text-foreground",
-  acknowledged: "text-primary",
-  resolved: "text-muted-foreground",
-  dismissed: "text-muted-foreground",
+type BadgeVariant = NonNullable<BadgeProps["variant"]>;
+
+const statusBadge: Record<AnnotationStatus, BadgeVariant> = {
+  pending: "warning",
+  acknowledged: "info",
+  resolved: "success",
+  dismissed: "secondary",
 };
 
-function Pill({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <Badge variant="outline" className={cn("rounded-full text-muted-foreground", className)}>
-      {children}
-    </Badge>
-  );
-}
+const severityBadge: Record<AnnotationSeverity, BadgeVariant> = {
+  blocking: "danger",
+  important: "warning",
+  suggestion: "outline",
+};
 
 function useAnnotations(filter: FilterId) {
   const rpc = useRpc<typeof rpcContract>();
@@ -203,16 +211,20 @@ function AnnotationCard({
     <div className={cn("rounded-lg border border-border bg-card p-3", isClosed && "opacity-60")}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-xs text-foreground">{annotation.element}</span>
-        <Pill className={statusTone[annotation.status]}>{annotation.status}</Pill>
+        <Badge variant={statusBadge[annotation.status]}>{annotation.status}</Badge>
         {routing ? (
-          <Pill>
+          <Badge variant={routing.state === "assigned" ? "info" : "secondary"}>
             {routing.state === "assigned" ? `assigned: ${routing.threadId}` : routing.state}
-          </Pill>
+          </Badge>
         ) : null}
-        {annotation.severity ? <Pill>{annotation.severity}</Pill> : null}
-        {annotation.intent ? <Pill>{annotation.intent}</Pill> : null}
-        <Pill>{annotation.bb.pluginId ? `plugin: ${annotation.bb.pluginId}` : "bb shell"}</Pill>
-        {annotation.bb.surface ? <Pill>{annotation.bb.surface}</Pill> : null}
+        {annotation.severity ? (
+          <Badge variant={severityBadge[annotation.severity]}>{annotation.severity}</Badge>
+        ) : null}
+        {annotation.intent ? <Badge variant="outline">{annotation.intent}</Badge> : null}
+        <Badge variant="outline">
+          {annotation.bb.pluginId ? `plugin: ${annotation.bb.pluginId}` : "bb shell"}
+        </Badge>
+        {annotation.bb.surface ? <Badge variant="outline">{annotation.bb.surface}</Badge> : null}
       </div>
 
       <p className="mt-2 text-sm text-foreground">{annotation.comment}</p>
@@ -243,21 +255,24 @@ function AnnotationCard({
       </dl>
 
       {annotation.thread.length > 0 ? (
-        <ul className="mt-2 flex flex-col gap-1 border-l border-border pl-3">
-          {annotation.thread.map((message) => (
-            <li key={message.id} className="text-xs">
-              <span
-                className={cn(
-                  "font-medium",
-                  message.role === "agent" ? "text-primary" : "text-muted-foreground",
-                )}
-              >
-                {message.role}
-              </span>
-              <span className="text-foreground"> {message.content}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="mt-2 flex gap-3">
+          <Separator orientation="vertical" />
+          <ul className="flex min-w-0 flex-1 flex-col gap-1">
+            {annotation.thread.map((message) => (
+              <li key={message.id} className="text-xs">
+                <span
+                  className={cn(
+                    "font-medium",
+                    message.role === "agent" ? "text-primary" : "text-muted-foreground",
+                  )}
+                >
+                  {message.role}
+                </span>
+                <span className="text-foreground"> {message.content}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       {annotation.resolution ? (
@@ -333,7 +348,7 @@ function AnnotationCard({
       </div>
 
       <form
-        className="mt-2 flex items-center gap-2"
+        className="mt-2"
         onSubmit={(event) => {
           event.preventDefault();
           const message = reply.trim();
@@ -348,25 +363,26 @@ function AnnotationCard({
           }, "Could not post the reply");
         }}
       >
-        <Input
-          value={reply}
-          placeholder={
-            assigned
-              ? "Reply in the assigned thread…"
-              : "Send this annotation to a thread before replying"
-          }
-          className="h-8 text-xs"
-          disabled={!assigned || isBusy}
-          onChange={(event) => setReply(event.target.value)}
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          type="submit"
-          disabled={!assigned || isBusy || reply.trim().length === 0}
-        >
-          Reply
-        </Button>
+        <InputGroup data-disabled={!assigned || isBusy}>
+          <InputGroupInput
+            value={reply}
+            placeholder={
+              assigned
+                ? "Reply in the assigned thread…"
+                : "Send this annotation to a thread before replying"
+            }
+            disabled={!assigned || isBusy}
+            onChange={(event) => setReply(event.target.value)}
+          />
+          <InputGroupAddon align="inline-end">
+            <InputGroupButton
+              type="submit"
+              disabled={!assigned || isBusy || reply.trim().length === 0}
+            >
+              Reply
+            </InputGroupButton>
+          </InputGroupAddon>
+        </InputGroup>
       </form>
     </div>
   );
@@ -414,7 +430,9 @@ export function AnnotationPanel() {
         </ToggleGroup>
 
         {error ? (
-          <p className="text-sm text-destructive">{error}</p>
+          <Alert variant="destructive" role="none">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         ) : isLoading ? (
           <div className="flex flex-col gap-2" aria-busy="true" aria-label="Loading annotations">
             <Skeleton className="h-20 w-full" />
@@ -437,10 +455,10 @@ export function AnnotationPanel() {
                   <h2 className="truncate text-sm font-medium text-foreground">
                     {session?.route ?? sessionId}
                   </h2>
-                  <span className="shrink-0 text-xs text-muted-foreground">
+                  <Badge variant="count">
                     {sessionAnnotations.length} annotation
                     {sessionAnnotations.length === 1 ? "" : "s"}
-                  </span>
+                  </Badge>
                 </header>
                 <div className="flex flex-col gap-2">
                   {sessionAnnotations.map((annotation) => (
@@ -495,7 +513,7 @@ export function AnnotationPanelHeader() {
 
   return (
     <div className="flex items-center gap-2">
-      {pending > 0 ? <span className="text-xs text-muted-foreground">{pending} open</span> : null}
+      {pending > 0 ? <Badge variant="count">{pending} open</Badge> : null}
     </div>
   );
 }
