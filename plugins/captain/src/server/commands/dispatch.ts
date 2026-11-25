@@ -548,7 +548,7 @@ async function converge(
 ): Promise<string[]> {
   if (deps.store.crewRole(threadId) !== null) return [];
   // A backfilled thread owes a report from its creation, so one that never reports reads as stalled.
-  deps.store.ensureCrewRole({
+  deps.store.backfillCrewRole({
     threadId,
     captainId: captain.threadId,
     role: unit.role,
@@ -710,7 +710,7 @@ async function adopt(
     return { item, notes: [] };
   }
 
-  deps.store.beginAdoption(threadId, captain.threadId, unit.task.key);
+  deps.store.beginAdoption(threadId, captain.threadId, unit.task);
   if (thread.parentThreadId !== captain.threadId || thread.parentNotifications !== "stuck") {
     await deps.bb.sdk.threads.update({
       threadId,

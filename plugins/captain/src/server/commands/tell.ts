@@ -279,7 +279,7 @@ function markReportDue(deps: CommandDeps, captainId: string, member: CrewThread)
   }
   // A child with no row yet: backfill it from its preset's role, when it names one.
   if (member.role !== null) {
-    deps.store.ensureCrewRole({
+    deps.store.backfillCrewRole({
       threadId: member.thread.id,
       captainId,
       role: member.role,

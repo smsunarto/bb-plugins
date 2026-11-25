@@ -400,8 +400,15 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
   db.exec(`CREATE TABLE IF NOT EXISTS pending_adoptions (
     thread_id TEXT PRIMARY KEY,
     captain_id TEXT NOT NULL,
-    task_key TEXT NOT NULL
+    task_key TEXT NOT NULL,
+    task_id TEXT
   )`);
+  const adoptionColumns = db
+    .prepare<[], { name: string }>("PRAGMA table_info(pending_adoptions)")
+    .all();
+  if (!adoptionColumns.some(({ name }) => name === "task_id")) {
+    db.exec("ALTER TABLE pending_adoptions ADD COLUMN task_id TEXT");
+  }
 
   const reposOf = db.prepare<[string], RepoRecord>(
     "SELECT * FROM captain_repos WHERE captain_id = ? ORDER BY rowid",
@@ -425,6 +432,12 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
   );
   const selectCrewRole = db.prepare<[string], CrewRoleRecord>(
     "SELECT * FROM crew_roles WHERE thread_id = ?",
+  );
+  const selectPendingAdoption = db.prepare<
+    [string, string],
+    { taskId: string | null; taskKey: string }
+  >(
+    "SELECT task_id AS taskId, task_key AS taskKey FROM pending_adoptions WHERE thread_id = ? AND captain_id = ?",
   );
   const toCrewRole = (row: CrewRoleRecord): CrewRole | null => {
     const role = parseRole(row.role);
@@ -570,20 +583,15 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
       return selectCrewRole.get(threadId) !== undefined;
     },
     /** The task an interrupted adoption was attaching under this Captain. */
-    pendingAdoption(threadId: string, captainId: string): string | null {
-      const row = db
-        .prepare<[string, string], { task_key: string }>(
-          "SELECT task_key FROM pending_adoptions WHERE thread_id = ? AND captain_id = ?",
-        )
-        .get(threadId, captainId);
-      return row?.task_key ?? null;
+    pendingAdoption(threadId: string, captainId: string) {
+      return selectPendingAdoption.get(threadId, captainId) ?? null;
     },
-    beginAdoption(threadId: string, captainId: string, taskKey: string): void {
+    beginAdoption(threadId: string, captainId: string, task: { id: string; key: string }): void {
       db.prepare(
-        `INSERT INTO pending_adoptions (thread_id, captain_id, task_key) VALUES (?, ?, ?)
+        `INSERT INTO pending_adoptions (thread_id, captain_id, task_key, task_id) VALUES (?, ?, ?, ?)
          ON CONFLICT (thread_id) DO UPDATE SET captain_id = excluded.captain_id,
-           task_key = excluded.task_key`,
-      ).run(threadId, captainId, taskKey);
+           task_key = excluded.task_key, task_id = excluded.task_id`,
+      ).run(threadId, captainId, task.key, task.id);
     },
     finishAdoption(threadId: string, crew: CrewRoleInput | null, rulesSeen: number | null): void {
       db.transaction(() => {
@@ -601,8 +609,9 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         .all(captainId)
         .flatMap((row) => toCrewRole(row) ?? []);
     },
-    /** Write a row only when the thread has none, as a backfill does. */
-    ensureCrewRole(crew: CrewRoleInput): void {
+    /** A pending adoption owns role setup until it finishes, even before its task is attached. */
+    backfillCrewRole(crew: CrewRoleInput): void {
+      if (selectPendingAdoption.get(crew.threadId, crew.captainId) !== undefined) return;
       db.prepare(
         `INSERT INTO crew_roles
            (thread_id, captain_id, role, report_due_since, contract_sent, rung, base_branch)
