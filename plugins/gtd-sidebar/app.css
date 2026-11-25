@@ -162,6 +162,7 @@
   /* Leave room to scroll the last row above the floating New pill. */
   --gtd-thread-end-padding: calc(5rem + var(--gtd-thread-bottom-inset));
   --gtd-thread-fade-length: 1.5rem;
+  container-type: size;
   overflow-y: auto;
 }
 
@@ -173,12 +174,13 @@
 }
 
 /* Measure the clipped part of a strip ending at the last row plus the
-   footer inset. The strip takes no space from the rows or clearance. */
+   footer inset. Cap it to the scrollport so the intersection ratio
+   keeps changing for as long as the clipped depth changes. */
 [data-gtd-thread-scroll-end] {
   position: absolute;
   bottom: calc(100% - var(--gtd-thread-bottom-inset));
   width: 1px;
-  height: var(--gtd-thread-fade-length);
+  height: min(var(--gtd-thread-fade-length), 100cqh);
 }
 
 [data-gtd-thread-more-below] {
