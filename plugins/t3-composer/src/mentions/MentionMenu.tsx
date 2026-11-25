@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Pill } from "@/components/ui/pill";
+import { Spinner } from "@/components/ui/spinner";
 import { TruncateStart } from "@/components/ui/truncate-start";
 import { cn } from "@/lib/utils";
 import { commandMentionTarget } from "../editor/composer-mentions";
@@ -288,7 +289,7 @@ function MenuSectionHeader({
           aria-label={refreshing ? "Updating results" : undefined}
           className={cn("flex", !refreshing && "invisible")}
         >
-          <Icon name="Spinner" className="size-3 animate-spin" aria-hidden />
+          <Spinner className="size-3" />
         </output>
       </span>
       {onDismiss ? <CloseSuggestionsButton onDismiss={onDismiss} /> : null}
@@ -498,7 +499,7 @@ export function MentionMenu({ state, selectedIndex, onApply, onDismiss }: Mentio
           </MenuStatusRow>
         ) : innerState.kind === "loading" ? (
           <MenuStatusRow onDismiss={onDismiss} className="text-muted-foreground">
-            <Icon name="Spinner" className="size-3.5 animate-spin" />
+            <Spinner />
             <span>
               {state.trigger === "command" ? "Searching commands…" : "Searching mentions…"}
             </span>
