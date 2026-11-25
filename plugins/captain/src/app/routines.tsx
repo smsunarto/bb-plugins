@@ -33,8 +33,11 @@ import {
 } from "../contract/routines.ts";
 import { captainContract, type RoutineDraft, type RoutineRow } from "../contract/rpc.ts";
 import { TAP } from "./banner.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 import { Button } from "./components/ui/button.tsx";
+import { FieldDescription, FieldLabel, Field as KitField } from "./components/ui/field.tsx";
 import { Input } from "./components/ui/input.tsx";
+import { Item } from "./components/ui/item.tsx";
 import {
   Select,
   SelectContent,
@@ -472,56 +475,54 @@ function RoutineRow({
   return (
     <li className="flex min-w-0 flex-col" data-routine={routine.id}>
       <div className="flex min-w-0 items-start">
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={panel}
-          onClick={() => {
-            // Closing a row forgets its Test request; its runs stay listed.
-            const { [routine.id]: _, ...tests } = uiStates.get(captainId)?.tests ?? {};
-            patchUi(captainId, { open: open ? null : routine.id, confirm: null, tests });
-          }}
-          className={cn(
-            TAP,
-            "flex min-w-0 flex-1 items-start gap-2 rounded-lg px-2 py-2 text-start outline-none hover:bg-muted/40 focus-visible:outline-1",
-          )}
-        >
-          <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center">
-            <Icon
-              name="Clock"
-              aria-hidden
-              className={cn(
-                "size-4",
-                state.enabled === true ? "text-foreground" : "text-muted-foreground",
-              )}
-            />
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate leading-5 font-medium text-foreground [unicode-bidi:plaintext]">
-              {routine.name}
+        <Item asChild size="xs" className={cn(TAP, "min-w-0 flex-1 flex-nowrap items-start")}>
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={panel}
+            onClick={() => {
+              // Closing a row forgets its Test request; its runs stay listed.
+              const { [routine.id]: _, ...tests } = uiStates.get(captainId)?.tests ?? {};
+              patchUi(captainId, { open: open ? null : routine.id, confirm: null, tests });
+            }}
+          >
+            <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center">
+              <Icon
+                name="Clock"
+                aria-hidden
+                className={cn(
+                  "size-4",
+                  state.enabled === true ? "text-foreground" : "text-muted-foreground",
+                )}
+              />
             </span>
-            <span
-              className={cn(
-                "truncate text-xs leading-4",
-                state.problem ? "text-destructive" : "text-muted-foreground",
-              )}
-              title={state.line}
-            >
-              {state.line}
-            </span>
-            {last === null ? null : (
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate leading-5 font-medium text-foreground [unicode-bidi:plaintext]">
+                {routine.name}
+              </span>
               <span
                 className={cn(
                   "truncate text-xs leading-4",
-                  last.failed ? "text-destructive" : "text-muted-foreground",
+                  state.problem ? "text-destructive" : "text-muted-foreground",
                 )}
-                title={last.text}
+                title={state.line}
               >
-                {last.text}
+                {state.line}
               </span>
-            )}
-          </span>
-        </button>
+              {last === null ? null : (
+                <span
+                  className={cn(
+                    "truncate text-xs leading-4",
+                    last.failed ? "text-destructive" : "text-muted-foreground",
+                  )}
+                  title={last.text}
+                >
+                  {last.text}
+                </span>
+              )}
+            </span>
+          </button>
+        </Item>
         {/* The track sits in a 32px cell on the Overview's grid; the switch's
             ::after grows its hit area to that cell, and to 44px on a coarse pointer. */}
         <span className="me-1 inline-flex size-8 shrink-0 items-center justify-center self-center pointer-coarse:size-11">
@@ -558,12 +559,11 @@ function RoutineRow({
         </div>
       ) : null}
       {error === null ? null : (
-        <p
-          role="alert"
-          className="m-0 min-w-0 ps-8 pe-2 pb-2 text-xs leading-4 break-words text-destructive"
-        >
-          {error}
-        </p>
+        <div className="min-w-0 ps-8 pe-2 pb-2">
+          <Alert variant="destructive" role="alert">
+            <AlertDescription className="break-words">{error}</AlertDescription>
+          </Alert>
+        </div>
       )}
     </li>
   );
@@ -602,8 +602,10 @@ function RoutineDetails({
   return (
     <>
       {routine.automationError === null ? null : (
-        <div className="flex min-w-0 items-center gap-2 text-destructive">
-          <span className="min-w-0 flex-1 break-words">{routine.automationError}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <Alert variant="destructive" role="none" className="w-auto min-w-0 flex-1">
+            <AlertDescription className="break-words">{routine.automationError}</AlertDescription>
+          </Alert>
           <Button
             type="button"
             size="sm"
@@ -746,7 +748,9 @@ function RoutineRuns({ runs }: { runs: RunsRead }) {
     return runs.error === null ? (
       <span aria-busy className="h-4 w-1/2 animate-pulse rounded bg-muted" />
     ) : (
-      <p className="m-0 text-destructive">Couldn't load runs · {runs.error.message}</p>
+      <Alert variant="destructive" role="none">
+        <AlertDescription>Couldn't load runs · {runs.error.message}</AlertDescription>
+      </Alert>
     );
   }
   if (runs.data.runs.length === 0)
@@ -970,7 +974,6 @@ function DraftForm({
       focus: { field: "name", start: null, end: null },
     });
   };
-  const label = "text-xs leading-4 font-medium text-muted-foreground";
   const field = cn(TAP, "h-8 text-sm");
   return (
     <form
@@ -988,10 +991,8 @@ function DraftForm({
     >
       {/* Fields lock while a save is on its way: an edit typed meanwhile would not be the one saved. */}
       <fieldset disabled={draft.saving} className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
-        <div className="flex min-w-0 flex-col gap-1">
-          <label htmlFor={`${id}-name`} className={label}>
-            Name
-          </label>
+        <KitField className="min-w-0 gap-1">
+          <FieldLabel htmlFor={`${id}-name`}>Name</FieldLabel>
           <Input
             id={`${id}-name`}
             value={draft.name}
@@ -1004,11 +1005,9 @@ function DraftForm({
             }}
             {...track("name")}
           />
-        </div>
-        <div className="flex min-w-0 flex-col gap-1">
-          <label htmlFor={`${id}-instruction`} className={label}>
-            Instruction
-          </label>
+        </KitField>
+        <KitField className="min-w-0 gap-1">
+          <FieldLabel htmlFor={`${id}-instruction`}>Instruction</FieldLabel>
           <Textarea
             id={`${id}-instruction`}
             value={draft.instruction}
@@ -1022,14 +1021,12 @@ function DraftForm({
             }}
             {...track("instruction")}
           />
-          <span className="self-end text-muted-foreground tabular-nums">
+          <FieldDescription className="self-end tabular-nums">
             {draft.instruction.length} / {ROUTINE_INSTRUCTION_MAX}
-          </span>
-        </div>
-        <div className="flex min-w-0 flex-col gap-1">
-          <label htmlFor={`${id}-preset`} className={label}>
-            Schedule
-          </label>
+          </FieldDescription>
+        </KitField>
+        <KitField className="min-w-0 gap-1">
+          <FieldLabel htmlFor={`${id}-preset`}>Schedule</FieldLabel>
           <Select
             value={draft.preset}
             onValueChange={(preset) =>
@@ -1084,12 +1081,10 @@ function DraftForm({
               {...track("at")}
             />
           ) : null}
-        </div>
+        </KitField>
         {draft.preset === ONCE ? null : (
-          <div className="flex min-w-0 flex-col gap-1">
-            <label htmlFor={`${id}-timezone`} className={label}>
-              Time zone
-            </label>
+          <KitField className="min-w-0 gap-1">
+            <FieldLabel htmlFor={`${id}-timezone`}>Time zone</FieldLabel>
             <Input
               id={`${id}-timezone`}
               value={draft.timezone}
@@ -1107,7 +1102,7 @@ function DraftForm({
                 <option key={zone} value={zone} aria-label={zone} />
               ))}
             </datalist>
-          </div>
+          </KitField>
         )}
       </fieldset>
       <output
@@ -1121,16 +1116,12 @@ function DraftForm({
         {words.problem ? words.text : `When to run · ${words.text}`}
       </output>
       {draft.refusal.length === 0 ? null : (
-        <div
-          role="alert"
-          aria-label="Not saved"
-          className="flex min-w-0 flex-col gap-1 text-destructive"
-        >
+        <Alert variant="destructive" role="alert" aria-label="Not saved">
           {draft.stale ? (
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="min-w-0 break-words">
+              <AlertDescription className="min-w-0 break-words">
                 Not saved · changed elsewhere since you opened it
-              </span>
+              </AlertDescription>
               {latest === null ? null : (
                 <Button
                   type="button"
@@ -1145,12 +1136,12 @@ function DraftForm({
             </div>
           ) : (
             draft.refusal.map((reason) => (
-              <p key={reason} className="m-0 min-w-0 break-words">
+              <AlertDescription key={reason} className="min-w-0 break-words">
                 Not saved · {reason}
-              </p>
+              </AlertDescription>
             ))
           )}
-        </div>
+        </Alert>
       )}
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Button
