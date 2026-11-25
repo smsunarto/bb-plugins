@@ -35,7 +35,7 @@ import { cx, plural, shortRef } from "../format.ts";
 import { useOpenGuide } from "../guide-data.ts";
 import { MergeButton, mergeTarget, useChangeMerge } from "../merge.tsx";
 import { useChangeReview } from "../review-data.ts";
-import { SendControls } from "../send.tsx";
+import { SendControls, useDraftExclusions } from "../send.tsx";
 import { DETAIL_TONE, ShipPath } from "../status.tsx";
 import { Badge } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
@@ -746,11 +746,13 @@ function ReviewReady({
   detail,
   width,
   focus,
+  draftExclusions,
 }: {
   location: Here;
   detail: Ready;
   width: number;
   focus: ReviewFocus;
+  draftExclusions: ReturnType<typeof useDraftExclusions>;
 }) {
   const { key } = location;
   const go = useGo();
@@ -780,6 +782,7 @@ function ReviewReady({
       number={detail.row.number}
       isDraft={detail.row.state === "draft"}
       head={detail.head}
+      draftExclusions={draftExclusions}
     />
   );
   // On a phone every tab carries the send controls in a bottom bar (board E); the guide draws its own.
@@ -789,6 +792,7 @@ function ReviewReady({
       number={detail.row.number}
       isDraft={detail.row.state === "draft"}
       head={detail.head}
+      draftExclusions={draftExclusions}
       size="bar"
     />
   ) : null;
@@ -847,6 +851,7 @@ function Review({ location, width }: { location: Here; width: number }) {
   const go = useGo();
   // One per Change (this component is keyed by it): the rail's pick, and the diff that shows it.
   const [focus] = useState(() => new ReviewFocus());
+  const draftExclusions = useDraftExclusions();
   // The one place a guide run starts: this page opening the Change, once per mount.
   useOpenGuide(key, detail?.state === "change");
   useLayoutEffect(
@@ -875,7 +880,15 @@ function Review({ location, width }: { location: Here; width: number }) {
     return <HeaderSkeleton />;
   }
   if (detail.state === "missing") return <Missing problem={detail.problem} />;
-  return <ReviewReady location={location} detail={detail} width={width} focus={focus} />;
+  return (
+    <ReviewReady
+      location={location}
+      detail={detail}
+      width={width}
+      focus={focus}
+      draftExclusions={draftExclusions}
+    />
+  );
 }
 
 function NoSelection() {

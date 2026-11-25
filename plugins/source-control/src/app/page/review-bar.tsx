@@ -19,7 +19,7 @@ import { surface } from "../components/ui/surface.ts";
 import { cx, plural } from "../format.ts";
 import { useChangeReview } from "../review-data.ts";
 import { Chevron } from "./icons.tsx";
-import { FocusContext } from "./review-focus.ts";
+import { FocusContext, type PagerDirection } from "./review-focus.ts";
 
 /** The bar's height plus its gap from the bottom, set on the bar's host while the bar shows. */
 const SPACE = "--sc-review-bar-space";
@@ -97,17 +97,20 @@ function Step({
   direction,
   onClick,
   label,
+  buttonRef,
 }: {
-  direction: -1 | 1;
-  onClick: () => void;
+  direction: PagerDirection;
+  onClick: (direction: PagerDirection, button: HTMLButtonElement) => void;
   label: string;
+  buttonRef: RefObject<HTMLButtonElement | null>;
 }) {
   return (
     <Button
+      ref={buttonRef}
       size="sm"
       variant="ghost"
       aria-label={label}
-      onClick={onClick}
+      onClick={(event) => onClick(direction, event.currentTarget)}
       // 32px drawn; a finger gets 44px, out to the pill's edge. Any coarse pointer, not only a
       // phone's: the bar shows by its container's width, so a tablet's narrow panel has it too.
       className="relative size-8 px-0 pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5"
@@ -154,12 +157,26 @@ export function ReviewBar({
   );
   const focused = useSyncExternalStore(subscribe, () => focus?.getFocused() ?? null);
   const at = items.findIndex((item) => item.id === focused);
-  const go = (step: -1 | 1) => {
+  const go = (step: PagerDirection, button: HTMLButtonElement) => {
     if (items.length === 0) return;
     const next =
       at < 0 ? (step > 0 ? 0 : items.length - 1) : (at + step + items.length) % items.length;
-    focus?.reveal(items[next]!);
+    focus?.reveal(items[next]!, button.ownerDocument.activeElement === button ? step : null);
   };
+
+  const previousButton = useRef<HTMLButtonElement>(null);
+  const nextButton = useRef<HTMLButtonElement>(null);
+  const hasPager = items.length > 0;
+  useLayoutEffect(() => {
+    if (!hasPager) return;
+    const direction = focus?.takePagerFocus();
+    if (!direction) return;
+    const button = (direction < 0 ? previousButton : nextButton).current;
+    // Restore the pager's focus if removing the old bar dropped it to the page.
+    if (button && button.ownerDocument.activeElement === button.ownerDocument.body) {
+      button.focus({ preventScroll: true });
+    }
+  }, [focus, hasPager]);
 
   const float = useRef<HTMLDivElement>(null);
   useReserveSpace(float);
@@ -183,16 +200,16 @@ export function ReviewBar({
           "pointer-events-auto flex w-fit max-w-full flex-col items-center gap-x-2 gap-y-1.5 rounded-xl bg-popover p-1.5 text-popover-foreground shadow-lg pointer-coarse:gap-y-3 @[389px]:flex-row @[389px]:flex-wrap @[389px]:justify-center",
         )}
       >
-        {items.length > 0 ? (
+        {hasPager ? (
           <div className="flex shrink-0 items-center">
-            <Step direction={-1} label="Previous item" onClick={() => go(-1)} />
+            <Step direction={-1} label="Previous item" onClick={go} buttonRef={previousButton} />
             <span
               className="px-1 text-[13px] leading-5 whitespace-pre text-foreground tabular-nums"
               data-testid="sc-review-bar-position"
             >
               {at < 0 ? plural(items.length, "item") : `${at + 1} of ${items.length}`}
             </span>
-            <Step direction={1} label="Next item" onClick={() => go(1)} />
+            <Step direction={1} label="Next item" onClick={go} buttonRef={nextButton} />
           </div>
         ) : null}
         {children}

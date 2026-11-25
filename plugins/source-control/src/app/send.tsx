@@ -1021,10 +1021,27 @@ function sendLabel(pending: boolean, agent: boolean, count: number): string {
   return agent ? `Send ${count}` : `Submit ${count}`;
 }
 
-/** The checked items and pending drafts a send would carry, and the drafts taken out of it. */
-function useTraySelection(stable: StableReview, destination: Destination) {
-  // Drafts the reader took out of this send; they stay drafts.
+/** Drafts taken out of the next send, scoped to the open Change across tabs. */
+export function useDraftExclusions() {
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
+  return useMemo(
+    () => ({
+      ids: excluded,
+      exclude: (id: string) => setExcluded((old) => new Set(old).add(id)),
+      reset: () => setExcluded(new Set()),
+    }),
+    [excluded],
+  );
+}
+
+type DraftExclusions = ReturnType<typeof useDraftExclusions>;
+
+/** The checked items and pending drafts a send would carry. */
+function useTraySelection(
+  stable: StableReview,
+  destination: Destination,
+  excluded: ReadonlySet<string>,
+) {
   const items = useMemo(
     () =>
       stable.items.filter(
@@ -1040,9 +1057,7 @@ function useTraySelection(stable: StableReview, destination: Destination) {
     () => sendableDrafts(stable.drafts).filter((draft) => !excluded.has(draft.id)),
     [stable.drafts, excluded],
   );
-  const onExclude = useCallback((id: string) => setExcluded((old) => new Set(old).add(id)), []);
-  const reset = useCallback(() => setExcluded(new Set()), []);
-  return { items, drafts, onExclude, reset };
+  return { items, drafts };
 }
 
 /** The Send button's words; in the bar its toggle sits beside it and already names the destination. */
@@ -1069,12 +1084,14 @@ export const SendControls = memo(function SendControls({
   number,
   isDraft,
   head,
+  draftExclusions,
   size = "row",
 }: {
   changeKey: ChangeKey;
   number: number | null;
   isDraft: boolean;
   head: string | null;
+  draftExclusions: DraftExclusions;
   size?: ControlSize;
 }) {
   const { review, stable } = useChangeReview(changeKey);
@@ -1085,7 +1102,7 @@ export const SendControls = memo(function SendControls({
   const blocked = githubBlocked(number, review?.forge.problem ?? null);
   const destination: Destination =
     stable.tray.destination === "github" && blocked === null ? "github" : "agent";
-  const { items, drafts, onExclude, reset } = useTraySelection(stable, destination);
+  const { items, drafts } = useTraySelection(stable, destination, draftExclusions.ids);
   const batch = latestBatch(stable.batches);
   const commands = useBatchCommands(send, batch);
   const count = items.length + drafts.length;
@@ -1153,10 +1170,10 @@ export const SendControls = memo(function SendControls({
               head={head}
               items={items}
               drafts={drafts}
-              onExclude={onExclude}
+              onExclude={draftExclusions.exclude}
               onSent={() => {
                 setOpen(false);
-                reset();
+                draftExclusions.reset();
               }}
               onClose={onClose}
             />
