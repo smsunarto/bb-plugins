@@ -69,6 +69,9 @@ export function registerRpc(
   const crewReads = createCrewReads(deps);
   const readCrew = (captainId: string) => crewReads.read(captainId);
   const crewUnavailable = new Set<string>();
+  const crewRecovered = (captainId: string) => {
+    if (crewUnavailable.delete(captainId)) bb.rpc.experimental_invalidate([crewTag(captainId)]);
+  };
   const primaryHost = createPrimaryHost(deps);
   const ladderOf = (role: LadderRole) => ({
     role,
@@ -94,7 +97,7 @@ export function registerRpc(
     tasks: async ({ captainId }) => {
       live(captainId);
       const listing = await captainTasks(deps, readCrew, captainId);
-      if (listing.crewError === null) crewUnavailable.delete(captainId);
+      if (listing.crewError === null) crewRecovered(captainId);
       else crewUnavailable.add(captainId);
       return listing;
     },
@@ -176,7 +179,11 @@ export function registerRpc(
     captainOf,
     createCrewWatch(deps, crewPollMs, crewReads.changed),
     (captainId, signal) =>
-      watchTasks(deps, captainId, signal, tasksPollMs, { crewReads, crewUnavailable }),
+      watchTasks(deps, captainId, signal, tasksPollMs, {
+        crewReads,
+        crewUnavailable,
+        crewRecovered,
+      }),
   );
   registerDriveScan(deps, captainOf, driveScanMs);
 
@@ -217,27 +224,39 @@ async function watchTasks(
   captainId: string,
   signal: AbortSignal,
   pollMs: number,
-  { crewReads, crewUnavailable }: { crewReads: CrewReads; crewUnavailable: Set<string> },
+  {
+    crewReads,
+    crewUnavailable,
+    crewRecovered,
+  }: {
+    crewReads: CrewReads;
+    crewUnavailable: ReadonlySet<string>;
+    crewRecovered: (id: string) => void;
+  },
 ): Promise<void> {
   // The first check's outcome is the baseline: the read just ran against the same Tasks.
   let last: { ok: true; signature: string } | { ok: false } | null = null;
+  let checkingCrew = false;
   while (!signal.aborted) {
-    const [now, crewAvailable] = await Promise.all([
-      openTasksSignature(deps, captainId).then(
-        (signature) => ({ ok: true as const, signature }),
-        () => ({ ok: false as const }),
-      ),
-      crewUnavailable.has(captainId)
-        ? crewReads.read(captainId).rowsError.then(
-            (error) => error === null,
-            () => false,
-          )
-        : false,
-    ]);
+    // Keep one recovery probe in flight while task signatures continue to publish.
+    if (!checkingCrew && crewUnavailable.has(captainId)) {
+      checkingCrew = true;
+      void crewReads.read(captainId).rowsError.then(
+        (error) => {
+          checkingCrew = false;
+          if (!signal.aborted && error === null) crewRecovered(captainId);
+        },
+        () => {
+          checkingCrew = false;
+        },
+      );
+    }
+    const now = await openTasksSignature(deps, captainId).then(
+      (signature) => ({ ok: true as const, signature }),
+      () => ({ ok: false as const }),
+    );
     if (signal.aborted) return;
-    const recovered = crewAvailable && crewUnavailable.delete(captainId);
-    if (recovered || (last !== null && tasksMoved(last, now))) {
-      crewReads.changed(captainId);
+    if (last !== null && tasksMoved(last, now)) {
       deps.bb.rpc.experimental_invalidate([crewTag(captainId)]);
     }
     last = now;

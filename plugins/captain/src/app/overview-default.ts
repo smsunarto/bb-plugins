@@ -111,14 +111,12 @@ export function observe(
   next: ExperimentalPanelTabs,
   isCaptain: boolean | null,
   now: number,
-  // workaround:captain/panel-new-tab-intent begin
-  click = newTabClick,
-  // workaround:captain/panel-new-tab-intent end
 ): { watch: Watch; action: OnOpen } {
   const previous = prior?.threadId === threadId ? prior : null;
   const overview = next.tabs.find((tab) => isOverview(pluginId, tab));
   // workaround:captain/panel-new-tab-intent begin
-  const explicitNewTab = previous !== null && previous.newTabClick !== click && isNewTab(next);
+  const explicitNewTab =
+    previous !== null && previous.newTabClick !== newTabClick && isNewTab(next);
   const pending = explicitNewTab ? null : settle(previous, next, overview, isCaptain, now);
   // workaround:captain/panel-new-tab-intent end
   const watch: Watch = {
@@ -128,7 +126,7 @@ export function observe(
     lastOpenKey: next.open ? next.selectedKey : (previous?.lastOpenKey ?? null),
     pending,
     // workaround:captain/panel-new-tab-intent begin
-    newTabClick: click,
+    newTabClick,
     // workaround:captain/panel-new-tab-intent end
   };
   const showing = overview !== undefined && overview.key === next.selectedKey;

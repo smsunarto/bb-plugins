@@ -159,6 +159,14 @@ describe("tasks", () => {
     for (let index = 1; index <= 501; index += 1) host.addTask(`BBPLUGINS-${index}`);
     host.tasks.staleTaskPages = 1;
     await expect(tasks()).resolves.toMatchObject({ total: 501, truncated: false, unavailable: [] });
+    expect(
+      host.tasks.calls.filter((call) => call.method === "listTasks").map(({ input }) => input),
+    ).toEqual([
+      expect.not.objectContaining({ cursor: expect.anything() }),
+      expect.objectContaining({ cursor: expect.any(String) }),
+      expect.not.objectContaining({ cursor: expect.anything() }),
+      expect.objectContaining({ cursor: expect.any(String) }),
+    ]);
 
     host.tasks.staleTaskPages = 3;
     await expect(tasks()).rejects.toThrow(/task-list data changed/u);
@@ -351,6 +359,84 @@ describe("the Tasks recheck", () => {
       });
     } finally {
       stop();
+    }
+  });
+
+  test("a successful Retry broadcasts recovery to other watchers", async () => {
+    const { host, as, captainId, tasks, invalidations } = await overviewHost({
+      tasksPollMs: 60_000,
+    });
+    host.addTask("BBPLUGINS-1", { status: "in_progress" });
+    const threadId = await dispatch(as, "BBPLUGINS-1");
+    host.tasks.failing.add("crewSnapshot");
+    expect(await tasks()).toMatchObject({ crewError: expect.stringContaining("crewSnapshot") });
+    const stop = host.harness.behavior.experimental_watchRpc("tasks", { input: { captainId } });
+    try {
+      await settle();
+      const before = invalidations().length;
+      host.tasks.failing.delete("crewSnapshot");
+      expect(await tasks()).toMatchObject({
+        crewError: null,
+        tasks: [expect.objectContaining({ crew: expect.objectContaining({ threadId }) })],
+      });
+      expect(invalidations().slice(before)).toEqual([crewTag(captainId)]);
+      await tasks();
+      expect(invalidations().slice(before)).toEqual([crewTag(captainId)]);
+    } finally {
+      stop();
+    }
+  });
+
+  test("publishes task edits while a recovery probe is held and shares that probe", async () => {
+    const { host, as, captainId, tasks, invalidations } = await overviewHost({
+      crewPollMs: 60_000,
+    });
+    const task = host.addTask("BBPLUGINS-1", { status: "in_progress" });
+    const threadId = await dispatch(as, task.key);
+    host.tasks.failing.add("crewSnapshot");
+    expect(await tasks()).toMatchObject({ crewError: expect.stringContaining("crewSnapshot") });
+    const stop = host.harness.behavior.experimental_watchRpc("tasks", { input: { captainId } });
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const snapshots = () =>
+      host.tasks.calls.filter((call) => call.method === "crewSnapshot").length;
+    const pages = () => host.tasks.calls.filter((call) => call.method === "listTasks").length;
+    const tag = crewTag(captainId);
+    try {
+      await settle();
+      const before = invalidations().length;
+      const held = snapshots() + 1;
+      host.crewSnapshotHold.gate = gate;
+      host.tasks.failing.delete("crewSnapshot");
+      task.title = "Edited while crew is unavailable";
+      await vi.waitFor(() => {
+        expect(snapshots()).toBe(held);
+        expect(invalidations().slice(before)).toEqual([tag]);
+      });
+      task.title = "Edited again while crew is unavailable";
+      await vi.waitFor(() => expect(invalidations().slice(before)).toEqual([tag, tag]));
+
+      const beforeRefresh = pages();
+      const refreshed = tasks();
+      await vi.waitFor(() => expect(pages()).toBeGreaterThan(beforeRefresh));
+      expect(snapshots()).toBe(held);
+      release();
+      expect(await refreshed).toMatchObject({
+        crewError: null,
+        tasks: [
+          expect.objectContaining({
+            title: "Edited again while crew is unavailable",
+            crew: expect.objectContaining({ threadId }),
+          }),
+        ],
+      });
+      expect(snapshots()).toBe(held);
+      expect(invalidations().slice(before)).toEqual([tag, tag, tag]);
+    } finally {
+      stop();
+      release();
     }
   });
 

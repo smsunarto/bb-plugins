@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
 import type { ExperimentalPanelTab, ExperimentalPanelTabs } from "@get-bb/plugin-sdk/app";
-import { describe, expect, test } from "vitest";
+import { loadPluginApp, mountPluginContentScripts } from "@get-bb/plugin-sdk/testing/app";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { classifyOpen, observe, SETTLE_MS, type Watch } from "./overview-default.ts";
 
 const info: ExperimentalPanelTab = {
@@ -47,12 +49,8 @@ const panel = (open: boolean, selectedKey: string | null, tabs = STRIP): Experim
 
 /** The panel as last seen: closed on `selectedKey`, which bb 0.50 keeps reporting while closed. */
 const seen = (selectedKey: string | null, extra: Partial<Watch> = {}): Watch => ({
-  threadId: "t1",
-  open: false,
-  selectedKey,
+  ...observe("captain", null, "t1", panel(false, selectedKey), true, 0).watch,
   lastOpenKey: selectedKey,
-  pending: null,
-  newTabClick: 0,
   ...extra,
 });
 
@@ -66,12 +64,13 @@ function steps(
     tabs: ExperimentalPanelTabs;
     isCaptain?: boolean | null;
     at?: number;
-    click?: number;
+    click?: () => void;
   }[],
 ) {
   let watch = start;
   let clock = 0;
   return frames.map((frame) => {
+    frame.click?.();
     clock = frame.at ?? clock + 1;
     const step = observe(
       "captain",
@@ -80,7 +79,6 @@ function steps(
       frame.tabs,
       frame.isCaptain === undefined ? true : frame.isCaptain,
       clock,
-      frame.click,
     );
     watch = step.watch;
     return step;
@@ -116,13 +114,33 @@ describe("classifyOpen", () => {
   });
 });
 
-describe("a toggle on a Captain thread lands on Overview", () => {
+describe("the registered New Tab click listener", () => {
+  const app = loadPluginApp(() => import("./app.tsx"));
+  let scripts: Awaited<ReturnType<typeof mountPluginContentScripts>>;
+  let button: HTMLButtonElement;
+  let glyph: HTMLSpanElement;
+
+  beforeEach(async () => {
+    scripts = await mountPluginContentScripts(await app, { pluginId: "captain" });
+    button = document.createElement("button");
+    button.setAttribute("data-panel-new-tab", "");
+    glyph = button.appendChild(document.createElement("span"));
+    document.body.append(button);
+  });
+
+  afterEach(async () => {
+    await scripts.lifecycle.dispose();
+    button.remove();
+  });
+
+  const click = () => glyph.click();
+
   test("an immediate + click keeps New tab selected during the settle window", () => {
     const run = steps(seen(info.key), [
       { tabs: panel(true, info.key) },
       { tabs: panel(true, overview.key) },
-      { tabs: panel(true, newTab.key), click: 1, at: 250 },
-      { tabs: panel(true, newTab.key), click: 1, at: 350 },
+      { tabs: panel(true, newTab.key), click, at: 250 },
+      { tabs: panel(true, newTab.key), at: 350 },
     ]);
     expect(actions(run)).toEqual([selectOverview, none, none, none]);
   });
@@ -130,12 +148,24 @@ describe("a toggle on a Captain thread lands on Overview", () => {
   test("a + click on New tab survives the Captain lookup", () => {
     const run = steps(seen(info.key), [
       { tabs: panel(true, newTab.key), isCaptain: null },
-      { tabs: panel(true, newTab.key), click: 1, isCaptain: null },
-      { tabs: panel(true, newTab.key), click: 1 },
+      { tabs: panel(true, newTab.key), click, isCaptain: null },
+      { tabs: panel(true, newTab.key) },
     ]);
     expect(actions(run)).toEqual([none, none, none]);
   });
 
+  test("disposing the content script stops handling clicks", async () => {
+    await scripts.lifecycle.dispose();
+    const run = steps(seen(info.key), [
+      { tabs: panel(true, info.key) },
+      { tabs: panel(true, overview.key) },
+      { tabs: panel(true, newTab.key), click, at: 250 },
+    ]);
+    expect(actions(run)).toEqual([selectOverview, none, selectOverview]);
+  });
+});
+
+describe("a toggle on a Captain thread lands on Overview", () => {
   test("onto Info: selected at once", () => {
     expect(actions(steps(seen("info"), [{ tabs: panel(true, "info") }]))).toEqual([selectOverview]);
   });
