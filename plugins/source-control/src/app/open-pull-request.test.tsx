@@ -6,7 +6,6 @@ import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { changeKeySchema } from "../core/ids.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import {
-  knownPullRequest,
   PullRequestLink,
   rememberChange,
   rememberMiss,
@@ -60,15 +59,15 @@ test("a plain click opens a Review tab for the pull request at once, without wai
       options: {
         tab: { id: "review", context: { kind: "thread" }, availability: "action" },
         params: { pr: "acme/api#12" },
-        title: "Review · #12",
+        title: "#12 · Review",
       },
     },
   ]);
   expect(browser).toEqual([]);
 });
 
-test("a pull request this window has opened opens its Change's own tab", () => {
-  rememberChange(LOOKUP, KEY);
+test("a warm mapping still opens the PR-specific tab for validation", () => {
+  rememberChange(LOOKUP, KEY, "thread-a");
   const slot = render(PR);
   fireEvent.click(slot.getByRole("link", { name: "#12" }));
   expect(slot.inspection.experimental_panelCalls).toEqual([
@@ -76,15 +75,15 @@ test("a pull request this window has opened opens its Change's own tab", () => {
       method: "openTab",
       options: {
         tab: { id: "review", context: { kind: "thread" }, availability: "action" },
-        params: { key: KEY },
-        title: "Review · scott/route",
+        params: { pr: "acme/api#12" },
+        title: "#12 · Review",
       },
     },
   ]);
 });
 
 test("a pull request Source Control just failed to show opens on GitHub inside the click", () => {
-  rememberMiss(LOOKUP, "No access.");
+  rememberMiss(LOOKUP, "thread-a", "No access.");
   const slot = render(PR);
   fireEvent.click(slot.getByRole("link", { name: "#12" }));
   expect(browser).toEqual([PR]);
@@ -144,12 +143,18 @@ test("asking for one pull request twice reads it once, from the asking thread's 
   ]);
 });
 
-test("a failed read is a miss with its reason, and a miss is kept only for a while", async () => {
-  const { client } = rpc(async () => {
-    throw new Error("offline");
-  });
-  expect(await resolvePullRequest(client, LOOKUP, "thread-a")).toEqual({ problem: "offline" });
-  rememberMiss(LOOKUP, "offline", 1_000);
-  expect(knownPullRequest(LOOKUP, 1_000)).toEqual({ problem: "offline" });
-  expect(knownPullRequest(LOOKUP, 1_000 + 60_000)).toBeNull();
+test("a lookup on another thread can use its own host while the first is still pending", async () => {
+  let firstAnswer: (value: unknown) => void = () => {};
+  const { client: firstClient } = rpc(
+    () =>
+      new Promise((resolve) => {
+        firstAnswer = resolve;
+      }),
+  );
+  const { client: secondClient } = rpc(async () => ({ [LOOKUP]: { key: KEY, problem: null } }));
+  const first = resolvePullRequest(firstClient, LOOKUP, "thread-a");
+  const second = resolvePullRequest(secondClient, LOOKUP, "thread-b");
+  firstAnswer({ [LOOKUP]: { key: null, problem: "No access on host A." } });
+  expect(await first).toEqual({ problem: "No access on host A." });
+  expect(await second).toEqual({ key: KEY });
 });

@@ -36,13 +36,15 @@ import {
   onKnownPullRequestsChange,
   useOpenPullRequest,
 } from "./open-pull-request.tsx";
-import type { OpenReviewOptions } from "./open-review.ts";
+import {
+  pendingReviewThread,
+  retirePendingReview,
+  settlePendingReview,
+  waitForReview,
+  type OpenPullRequest,
+} from "./pending-review-request.ts";
 
-/** How long an ask waits for its thread to come into view before the caller opens GitHub. */
-export const PENDING_MS = 10_000;
-
-type Open = (href: string, options?: OpenReviewOptions) => boolean;
-type Opener = { readonly threadId: string; readonly open: Open };
+type Opener = { readonly threadId: string; readonly open: OpenPullRequest };
 
 /** The opener of the thread in view, lent by that thread's pane. */
 let lent: Opener | null = null;
@@ -52,35 +54,6 @@ let availabilityChanged: (() => void) | null = null;
 function lend(opener: Opener | null): void {
   lent = opener;
   availabilityChanged?.();
-}
-
-/**
- * The latest ask taken for a thread not yet in view: the caller is opening
- * the thread. A newer ask replaces it, since the reader asked for something
- * else since. It ends once: its thread's pane opens the Review, or the
- * caller's fallback offers GitHub.
- */
-let waiting: {
-  readonly threadId: string;
-  readonly url: string;
-  readonly fallback: () => void;
-  readonly timer: ReturnType<typeof setTimeout>;
-} | null = null;
-
-/** Ends the waiting ask: opens it with `open`, or else falls back. */
-function settle(open: Open | null): void {
-  const ask = waiting;
-  if (!ask) return;
-  waiting = null;
-  clearTimeout(ask.timer);
-  // Inside a pane, never the review page: the caller's fallback offers GitHub instead.
-  if (!open?.(ask.url, { page: false })) ask.fallback();
-}
-
-/** Forgets the waiting ask without opening anything: a newer ask replaced it. */
-function supersede(): void {
-  if (waiting) clearTimeout(waiting.timer);
-  waiting = null;
 }
 
 /**
@@ -96,7 +69,7 @@ export function usePullRequestLinks({ threadId }: ExperimentalThreadContextSegme
     if (!inView) return;
     const mine: Opener = { threadId, open };
     lend(mine);
-    if (waiting?.threadId === threadId) settle(open);
+    if (pendingReviewThread() === threadId) settlePendingReview(open);
     return () => {
       if (lent === mine) lend(null);
     };
@@ -120,13 +93,12 @@ export function takeReviewRequest({
   const ref = parsePrLink(url);
   if (!ref) return false;
   // Whatever this ask ends in, the reader asked for something else than the waiting ask since.
-  supersede();
-  if (lent?.threadId === threadId) return lent.open(url, { page: false });
+  retirePendingReview();
+  if (lent?.threadId === threadId) return lent.open(url);
   if (!navigating || !fallback) return false;
-  const known = knownPullRequest(prLookup(ref));
+  const known = knownPullRequest(prLookup(ref), threadId);
   if (known && "problem" in known) return false;
-  const timer = setTimeout(() => settle(null), PENDING_MS);
-  waiting = { threadId, url, fallback, timer };
+  waitForReview({ threadId, url, fallback });
   return true;
 }
 
@@ -140,7 +112,7 @@ function reviewAvailable(threadId: string, url: string | null): boolean {
   if (url === null) return true;
   const ref = parsePrLink(url);
   if (!ref) return false;
-  const known = knownPullRequest(prLookup(ref));
+  const known = knownPullRequest(prLookup(ref), threadId);
   return !(known && "problem" in known);
 }
 
@@ -157,7 +129,7 @@ export function mountPullRequestLinks(document: Document, signal: AbortSignal): 
     availabilityChanged = null;
     stop.abort();
     // Stopped mid-ask: the caller still offers GitHub. And Review is no longer available anywhere.
-    settle(null);
+    settlePendingReview(null);
     changed?.();
   };
   signal.addEventListener("abort", stopAll, { once: true });
@@ -170,7 +142,7 @@ export function mountPullRequestLinks(document: Document, signal: AbortSignal): 
     if (anchor.closest(ASKS_ITSELF)) return;
     if (!parsePrLink(anchor.href)) return;
     // A newer ask: the waiting one ends unopened, wherever this one goes.
-    supersede();
+    retirePendingReview();
     if (!lent.open(anchor.href)) return;
     // bb's Markdown link opens the URL without checking defaultPrevented: stop it reaching React.
     event.preventDefault();

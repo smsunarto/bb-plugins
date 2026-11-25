@@ -7,7 +7,12 @@ import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { changeKeySchema } from "../core/ids.ts";
 import type { ChangeDetail, ChangeRow } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { knownPullRequest, resetKnownPullRequests, RESOLVE_MS } from "./open-pull-request.tsx";
+import {
+  knownPullRequest,
+  rememberChange,
+  resetKnownPullRequests,
+  RESOLVE_MS,
+} from "./open-pull-request.tsx";
 import { resetPlaces } from "./open-review.ts";
 
 const app = await loadPluginApp(() => import("./app.tsx"));
@@ -85,6 +90,7 @@ function detailShowing(number: number | null): ChangeDetail {
 function render(
   legacyChange: (input: { keys: string[]; threadId?: string }) => unknown,
   shown: number | null = 12,
+  changeDetail = vi.fn((): ChangeDetail | Promise<ChangeDetail> => detailShowing(shown)),
 ) {
   const asked: unknown[] = [];
   const slot = renderSlot(
@@ -99,8 +105,9 @@ function render(
           asked.push(input);
           return legacyChange(input);
         },
-        changeDetail: ({ keys }: { keys: string[] }) =>
-          Object.fromEntries(keys.map((key) => [key, detailShowing(shown)])),
+        changeDetail: async ({ keys }: { keys: string[] }) => ({
+          [keys[0]!]: await changeDetail(),
+        }),
       } as never,
     },
   );
@@ -126,7 +133,7 @@ test("the tab says it is looking, then opens the Change's own tab and closes its
     ]),
   );
   expect(asked).toEqual([{ keys: [LOOKUP], threadId: "thread-a" }]);
-  expect(knownPullRequest(LOOKUP)).toEqual({ key: KEY });
+  expect(knownPullRequest(LOOKUP, "thread-a")).toEqual({ key: KEY });
 });
 
 test("a pull request Source Control cannot read says why and offers GitHub, a click away", async () => {
@@ -134,7 +141,8 @@ test("a pull request Source Control cannot read says why and offers GitHub, a cl
   expect((await slot.findByRole("alert")).textContent).toContain("gh has no access.");
   const github = slot.getByRole("link", { name: "Open #12 on GitHub" });
   expect(github.getAttribute("href")).toBe("https://github.com/acme/api/pull/12");
-  expect(knownPullRequest(LOOKUP)).toEqual({ problem: "gh has no access." });
+  expect(knownPullRequest(LOOKUP, "thread-a")).toEqual({ problem: "gh has no access." });
+  expect(knownPullRequest(LOOKUP, "thread-b")).toBeNull();
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
 });
 
@@ -162,7 +170,7 @@ test("when the branch's review now shows another pull request, the link's goes t
   expect((await slot.findByRole("alert")).textContent).toContain("shows #9 now");
   expect(slot.getByRole("link", { name: "Open #12 on GitHub" })).toBeTruthy();
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
-  expect(knownPullRequest(LOOKUP)).toMatchObject({ problem: expect.any(String) });
+  expect(knownPullRequest(LOOKUP, "thread-a")).toMatchObject({ problem: expect.any(String) });
 });
 
 test("a tab closed before the answer opens nothing", async () => {
@@ -171,4 +179,76 @@ test("a tab closed before the answer opens nothing", async () => {
   slot.unmount();
   await act(async () => answer(found()));
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("Try again reads a previously missing Change again even when the mapping is unchanged", async () => {
+  const detail = vi
+    .fn((): ChangeDetail => detailShowing(12))
+    .mockReturnValueOnce({ state: "missing", problem: null });
+  const { slot } = render(found, 12, detail);
+  await slot.findByRole("alert");
+  fireEvent.click(slot.getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(detail).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(slot.inspection.experimental_panelCalls).toMatchObject([
+      { method: "openTab", options: { params: { key: KEY } } },
+      { method: "closeTab" },
+    ]),
+  );
+  expect(knownPullRequest(LOOKUP, "thread-a")).toEqual({ key: KEY });
+});
+
+test("a warm mapping still checks which pull request the Change shows", async () => {
+  rememberChange(LOOKUP, KEY, "thread-a");
+  const { slot, asked } = render(found, 13);
+  expect((await slot.findByRole("alert")).textContent).toContain("shows #13 now");
+  expect(asked).toEqual([]);
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("a thrown lookup records a temporary miss", async () => {
+  const { slot } = render(async () => {
+    throw new Error("offline");
+  });
+  expect((await slot.findByRole("alert")).textContent).toContain("offline");
+  expect(knownPullRequest(LOOKUP, "thread-a")).toEqual({
+    problem: expect.stringContaining("offline"),
+  });
+  expect(knownPullRequest(LOOKUP, "thread-a", Date.now() + 60_000)).toBeNull();
+});
+
+test("a slow Change read names the Review in its timeout", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const detail = vi.fn((): Promise<ChangeDetail> => new Promise(() => {}));
+  const { slot } = render(found, 12, detail);
+  await waitFor(() => expect(detail).toHaveBeenCalled());
+  await act(async () => vi.advanceTimersByTime(RESOLVE_MS));
+  expect(slot.getByRole("alert").textContent).toContain("The Review didn't load in time.");
+});
+
+test("a slow GitHub lookup can return its server failure after eight seconds", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const { slot, asked } = render(
+    () =>
+      new Promise((resolve) => {
+        setTimeout(
+          () => resolve({ [LOOKUP]: { key: null, problem: "Repository is unavailable." } }),
+          14_000,
+        );
+      }),
+  );
+  await waitFor(() => expect(asked).toHaveLength(1));
+  await act(async () => vi.advanceTimersByTimeAsync(14_000));
+  expect(slot.getByRole("alert").textContent).toContain("Repository is unavailable.");
+});
+
+test("loading and error keep the PR heading top-aligned and state the branch error once", async () => {
+  const detail = vi.fn((): ChangeDetail => ({ state: "missing", problem: null }));
+  const { slot } = render(found, 12, detail);
+  const frame = slot.getByTestId("sc-pull-request-tab");
+  expect(frame.classList.contains("justify-center")).toBe(false);
+  expect((await slot.findByRole("alert")).textContent).toBe(
+    "Source Control doesn't know this pull request's branch.",
+  );
+  expect(slot.getByTestId("sc-pull-request-tab")).toBe(frame);
 });

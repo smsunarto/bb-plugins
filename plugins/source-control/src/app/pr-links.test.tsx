@@ -12,10 +12,15 @@ import {
   pullRequestUrlKey,
   requestPullRequestReview,
 } from "@bb-plugins/review-request";
-import { rememberChange, rememberMiss, resetKnownPullRequests } from "./open-pull-request.tsx";
+import {
+  PullRequestLink,
+  rememberChange,
+  rememberMiss,
+  resetKnownPullRequests,
+} from "./open-pull-request.tsx";
 import { parsePrLink, prKey } from "../core/watch.ts";
 import { setPlace } from "./open-review.ts";
-import { PENDING_MS } from "./pr-links.ts";
+import { PENDING_MS } from "./pending-review-request.ts";
 
 // The app's own registrations: the script that takes the click, and the segment that lends it a panel.
 const app = await loadPluginApp(() => import("./app.tsx"));
@@ -87,23 +92,23 @@ test("a plain click on a message's pull request link opens a Review tab for it b
       options: {
         tab: { id: "review", context: { kind: "thread" }, availability: "action" },
         params: { pr: "acme/api#12" },
-        title: "Review · #12",
+        title: "#12 · Review",
       },
     },
   ]);
 });
 
-test("a pull request this window has opened opens its Change's tab at once", () => {
-  rememberChange("pr:acme/api#12", KEY);
+test("a warm mapping still opens the PR-specific tab", () => {
+  rememberChange("pr:acme/api#12", KEY, "thr_a");
   const slot = pane();
   fireEvent.click(markdownLink(PR));
   expect(slot.inspection.experimental_panelCalls).toMatchObject([
-    { method: "openTab", options: { params: { key: KEY } } },
+    { method: "openTab", options: { params: { pr: "acme/api#12" } } },
   ]);
 });
 
 test("a pull request Source Control just failed to show goes straight to GitHub", () => {
-  rememberMiss("pr:acme/api#12", "No access.");
+  rememberMiss("pr:acme/api#12", "thr_a", "No access.");
   const slot = pane();
   fireEvent.click(markdownLink(PR));
   expect(reachedBb).toEqual([PR]);
@@ -259,8 +264,26 @@ test("a message link that opens at once retires an older waiting ask too", () =>
   expect(older.github).toEqual([]);
 });
 
+test("a Source Control-owned PR link retires an older waiting Tasks ask", () => {
+  vi.useFakeTimers();
+  const older = opener("thr_a");
+  const slot = renderSlot(
+    { component: PullRequestLink as never },
+    { threadId: "thr_b", href: PR, children: "#12" } as never,
+    {
+      pluginId: "source-control",
+      experimental_panel: { openTab: () => true },
+    },
+  );
+  fireEvent.click(slot.getByRole("link", { name: "#12" }));
+  expect(slot.inspection.experimental_panelCalls).toMatchObject(OPENS_PR_TAB);
+  vi.advanceTimersByTime(PENDING_MS);
+  expect(older.github).toEqual([]);
+  expect(pane("thr_a").inspection.experimental_panelCalls).toEqual([]);
+});
+
 test("a declined tab keeps the place the thread's Review last showed", () => {
-  rememberChange("pr:acme/api#12", KEY);
+  rememberChange("pr:acme/api#12", KEY, "thr_a");
   setPlace("thr_a", { key: KEY, tab: "files", path: "src/index.ts", line: 42 });
   const ask = opener();
   pane("thr_a", () => false);
@@ -278,7 +301,7 @@ test("a pull request Source Control just failed to show is not advertised as ope
   pane();
   changes.mockClear();
   expect(isPullRequestReviewAvailable("thr_a", PR)).toBe(true);
-  rememberMiss("pr:acme/api#12", "No access.");
+  rememberMiss("pr:acme/api#12", "thr_a", "No access.");
   expect(changes).toHaveBeenCalled();
   expect(isPullRequestReviewAvailable("thr_a", PR)).toBe(false);
   expect(isPullRequestReviewAvailable("thr_a", "https://github.com/acme/api/pull/13")).toBe(true);
@@ -287,7 +310,7 @@ test("a pull request Source Control just failed to show is not advertised as ope
 });
 
 test("a cached pull request whose pane declines the tab falls back like any other", () => {
-  rememberChange("pr:acme/api#12", KEY);
+  rememberChange("pr:acme/api#12", KEY, "thr_a");
   const ask = opener();
   expect(ask.taken).toBe(true);
   const slot = pane("thr_a", () => false);
@@ -331,7 +354,7 @@ test("asks Source Control cannot take go to GitHub: no pull request, a recent mi
     fallback: () => {},
   });
   expect(files).toBe(false);
-  rememberMiss("pr:acme/api#12", "No access.");
+  rememberMiss("pr:acme/api#12", "thr_a", "No access.");
   expect(opener().taken).toBe(false);
   resetKnownPullRequests();
   pane("thr_a", () => false);
@@ -378,6 +401,6 @@ test("callers and Source Control agree on which links are a pull request itself"
   }
 });
 
-test("routing adds no invisible context segment", () => {
-  expect(app.threadContextSegments.map((item) => item.id)).toEqual(["change"]);
+test("the existing Change segment lends the PR opener", () => {
+  expect(segment.useVisible).toBeTypeOf("function");
 });

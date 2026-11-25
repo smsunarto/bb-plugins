@@ -3796,6 +3796,24 @@ describe("create PR", () => {
 });
 
 describe("pull request links", () => {
+  test("a cold thread-routed miss leaves unrelated checkout hosts alone", async () => {
+    const world = twoHosts();
+    world.serverAccounts = [];
+    world.hosts["host-a"]!.ghAccounts = ["smsunarto"];
+    world.hosts["host-a"]!.forgeLive = true;
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    world.hostForge = [];
+    const key = "pr:acme/web#8";
+    const result = await harness.behavior.callRpc("legacyChange", {
+      keys: [key],
+      threadId: "thread-b",
+    });
+    expect(result).toMatchObject({ [key]: { key: null, problem: expect.any(String) } });
+    expect(world.hostForge).not.toContain("host-a:prHead");
+  });
+
   test("a cold read of a linked pull request asks the clicking thread's host first", async () => {
     const world = twoHosts();
     world.serverAccounts = [];
@@ -3814,5 +3832,6 @@ describe("pull request links", () => {
     };
     expect(await firstHost("pr:acme/api#7")).toBe("host-a:prHead");
     expect(await firstHost("pr:acme/web#8", "thread-b")).toBe("host-b:prHead");
+    expect(world.hostForge?.filter((each) => each.endsWith(":prHead"))).toEqual(["host-b:prHead"]);
   });
 });

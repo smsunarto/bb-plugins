@@ -5,6 +5,7 @@ import type {
 } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-plugins/instructions";
 import { makePluginRuntime, type PluginRuntime } from "@bb-plugins/effect-bridge";
+import { FORGE_DEADLINE_MS } from "../core/deadlines.ts";
 import { Effect } from "effect";
 import { z } from "zod";
 import {
@@ -24,12 +25,7 @@ import { createAsk, type Ask } from "./ask.ts";
 import { createPublish, type Publish } from "./publish.ts";
 import { createFixChecks, type FixChecks } from "./fix-checks.ts";
 import { createCheckoutChat } from "./checkout-chat.ts";
-import {
-  createForgeSites,
-  FORGE_DEADLINE_MS,
-  MERGE_DEADLINE_MS,
-  type HostForge,
-} from "./forge-sites.ts";
+import { createForgeSites, MERGE_DEADLINE_MS, type HostForge } from "./forge-sites.ts";
 import {
   createGuides,
   type Guides,

@@ -33,7 +33,7 @@ import {
 import type { sourceControlContract } from "../contract/rpc.ts";
 import type { ReviewAnswer, ReviewRead } from "../forge/review.ts";
 import { createCutover, legacyBranchId } from "./cutover.ts";
-import type { SiteOutcome } from "./forge-sites.ts";
+import type { ForgeSites, SiteOutcome } from "./forge-sites.ts";
 import type { HostCalls } from "./host-calls.ts";
 import { createLanded, SHARE_LANDED } from "./landed.ts";
 import { createLegacy, LEGACY_PLUGIN } from "./legacy.ts";
@@ -44,12 +44,7 @@ import type { Store } from "./store.ts";
 
 const files = instructionFiles(import.meta.url);
 
-type BackgroundRead = (
-  login: string | null,
-  repo: { owner: string; name: string },
-  read: ReviewRead,
-  placements: readonly Placement[],
-) => Effect.Effect<SiteOutcome<ReviewAnswer>>;
+type BackgroundRead = ForgeSites["backgroundRead"];
 
 const quiet = new Set(["side-chat", "review"]);
 const answering = /^(Arena|Review) \((Claude|Codex)\)(?: — .+)?$/;
@@ -252,9 +247,16 @@ export function createMoved(deps: {
     },
   };
 
+  function prLookupHosts(threadId: string | null) {
+    // Old cards without a thread keep their existing lookup across checkouts.
+    if (!threadId) return store.checkouts();
+    const host = placementsOf(threadId)[0] ?? store.lastChange(threadId)?.host;
+    return host ? [host] : [];
+  }
+
   /**
    * An old card's target, or a pull request link, as a Change: by the stored
-   * mapping, the checkouts' rows, or GitHub, read first from `threadId`'s host.
+   * mapping, the checkouts' rows, or a GitHub read on the server and the asking thread's host.
    */
   async function legacyChange(
     lookup: string,
@@ -274,12 +276,14 @@ export function createMoved(deps: {
     }
     const ref = parsePrReference(lookup.replace(/^pr:/, ""));
     if (!ref) return { key: null, problem: "This card names no pull request." };
-    // The thread's own host first, then every other checkout: a link can name any repository.
-    const placements = threadId
-      ? [...placementsOf(threadId), ...store.checkouts()]
-      : store.checkouts();
     const outcome = await deps.run(
-      deps.read(null, repoOf(ref), { kind: "prHead", ref }, placements),
+      deps.read(
+        null,
+        repoOf(ref),
+        { kind: "prHead", ref },
+        prLookupHosts(threadId),
+        threadId ? "only" : "any",
+      ),
     );
     if (!outcome.ok || outcome.value.kind !== "prHead")
       return {

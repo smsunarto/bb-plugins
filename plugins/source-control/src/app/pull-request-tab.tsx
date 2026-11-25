@@ -26,7 +26,7 @@ import {
   rememberMiss,
   resolvePullRequest,
 } from "./open-pull-request.tsx";
-import { REVIEW_TAB, useOpenReview } from "./open-review.ts";
+import { prTabParams, REVIEW_TAB, useOpenReview } from "./open-review.ts";
 
 type Phase =
   | { at: "looking"; key: ChangeKey | null }
@@ -37,34 +37,54 @@ type Phase =
 export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }) {
   const lookup = prLookup(pr);
   const rpc = useRpc<typeof sourceControlContract>();
-  const [state, setPhase] = useState<Phase>(() => start(lookup));
+  const [state, setPhase] = useState<Phase>(() => start(lookup, threadId));
   const key = state.at === "looking" ? state.key : null;
   const needsLookup = state.at === "looking" && key === null;
 
   const keys = useMemo(() => (key ? [key] : []), [key]);
-  const detail = useRpcKeyedQuery({
+  const { data, error, refetchKeys } = useRpcKeyedQuery({
     contract: sourceControlContract,
     method: "changeDetail",
     keys,
     enabled: key !== null,
-  }).data?.[key ?? ""];
-  // Once the Change's review has loaded, it decides where the tab goes.
-  const verdict = key && detail && detail.state !== "pending" ? judge(detail, pr.number) : null;
+  });
+  const [validatedKey, setValidatedKey] = useState<ChangeKey | null>(null);
+  const detail = key && validatedKey === key ? data?.[key] : undefined;
+  const reviewProblem = key && validatedKey === key ? error?.message : undefined;
+  const verdict = useMemo(() => {
+    if (reviewProblem) return { at: "failed" as const, problem: reviewProblem };
+    return detail && detail.state !== "pending" ? judge(detail, pr.number) : null;
+  }, [reviewProblem, detail, pr.number]);
   const phase = verdict ?? state;
-  const looking = phase.at === "looking";
 
-  // One deadline per attempt, for the lookup and the Change's first read together.
+  // The shared cache can hold a missing or superseded row. Every attempt
+  // waits for a current read before judging it, then watches for pending detail.
+  useEffect(() => {
+    if (!key) return;
+    let live = true;
+    void (async () => {
+      await refetchKeys([key]);
+      if (live) setValidatedKey(key);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [key, refetchKeys]);
+
+  // Give the GitHub lookup and the first Change read their own deadlines.
+  const looking = phase.at === "looking";
   useEffect(() => {
     if (!looking) return;
     const timer = setTimeout(
       () =>
-        setPhase((now) =>
-          now.at === "looking" ? { at: "failed", problem: "GitHub didn't answer in time." } : now,
-        ),
+        setPhase({
+          at: "failed",
+          problem: key ? "The Review didn't load in time." : "GitHub didn't answer in time.",
+        }),
       RESOLVE_MS,
     );
     return () => clearTimeout(timer);
-  }, [looking]);
+  }, [looking, key]);
 
   // Find the Change. A result for a closed tab, a later attempt, or after the deadline is dropped.
   useEffect(() => {
@@ -73,7 +93,7 @@ export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }
     void (async () => {
       const resolution = await resolvePullRequest(rpc, lookup, threadId);
       if (!live) return;
-      if ("problem" in resolution) rememberMiss(lookup, resolution.problem);
+      if ("problem" in resolution) rememberMiss(lookup, threadId, resolution.problem);
       setPhase((now) => {
         if (now.at !== "looking") return now;
         return "key" in resolution
@@ -88,37 +108,38 @@ export function PullRequestTab({ threadId, pr }: { threadId: string; pr: PrRef }
 
   const openReview = useOpenReview(threadId);
   const panel = useAppPanel();
-  const acted = useRef<string | null>(null);
+  const ownPr = prTabParams(pr).pr;
+  const acted = useRef(false);
 
-  // Act on the verdict once per Change: open its own tab and close this one, or remember the miss.
   useEffect(() => {
-    if (!key || !verdict) {
-      acted.current = null;
-      return;
-    }
-    if (acted.current === key) return;
-    acted.current = key;
-    if (verdict.at === "failed") return rememberMiss(lookup, verdict.problem);
+    if (!key || !verdict || acted.current) return;
+    acted.current = true;
+    if (verdict.at === "failed") return rememberMiss(lookup, threadId, verdict.problem);
     if (verdict.at === "elsewhere")
-      return rememberMiss(lookup, `This branch's review shows #${verdict.number} now.`);
-    rememberChange(lookup, key);
-    openReview({ key });
+      return rememberMiss(lookup, threadId, `This branch's review shows #${verdict.number} now.`);
+    rememberChange(lookup, key, threadId);
+    if (!openReview({ key })) return;
     const self = panel
       .getTabs()
       .tabs.find(
         (tab) =>
           tab.detail.kind === "plugin" &&
+          tab.detail.pluginId === "source-control" &&
           tab.detail.tab.id === REVIEW_TAB.id &&
-          isPrParams(tab.detail.params, prKey(pr).toLowerCase()),
+          isPrParams(tab.detail.params, ownPr),
       );
     if (self) panel.closeTab(self.key);
-  }, [key, verdict, lookup, pr, openReview, panel]);
+  }, [key, verdict, lookup, threadId, ownPr, openReview, panel]);
 
   return (
     <PullRequestTabView
       pr={pr}
       phase={phase}
-      onRetry={() => setPhase({ at: "looking", key: null })}
+      onRetry={() => {
+        acted.current = false;
+        setValidatedKey(null);
+        setPhase({ at: "looking", key: null });
+      }}
     />
   );
 }
@@ -137,9 +158,12 @@ function PullRequestTabView({
     <div
       data-bb-plugin="source-control"
       data-testid="sc-pull-request-tab"
-      className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center"
+      className="flex h-full flex-col items-center gap-3 overflow-auto p-8 text-center"
     >
-      <p className="m-0 text-[13px] leading-5 font-medium text-foreground" translate="no">
+      <p
+        className="m-0 w-full [overflow-wrap:anywhere] text-[13px] leading-5 font-medium text-foreground"
+        translate="no"
+      >
         {prKey(pr)}
       </p>
       {phase.at === "opened" ? (
@@ -154,7 +178,7 @@ function PullRequestTabView({
           <p role="alert" className="m-0 max-w-sm text-[13px] leading-5 text-muted-foreground">
             {phase.at === "elsewhere"
               ? `This branch's review shows #${phase.number} now, so #${pr.number} is on GitHub.`
-              : `Source Control can't show this pull request. ${phase.problem}`}
+              : phase.problem}
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             <Button size="sm" variant="outline" className="pointer-coarse:h-11" asChild>
@@ -173,8 +197,8 @@ function PullRequestTabView({
 }
 
 /** Where a tab starts: at the Change when this window knows it, else looking. Retry ignores a recent miss. */
-function start(lookup: string): Phase {
-  const known = knownPullRequest(lookup);
+function start(lookup: string, threadId: string): Phase {
+  const known = knownPullRequest(lookup, threadId);
   if (known && "problem" in known) return { at: "failed", problem: known.problem };
   return { at: "looking", key: known?.key ?? null };
 }

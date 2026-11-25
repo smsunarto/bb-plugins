@@ -13,6 +13,7 @@ import { Effect, Schema } from "effect";
 import { problemSchema, type ForgeRead, type ForgeResult, type Problem } from "../core/change.ts";
 import type { ForgeAccount, HostFailure } from "../contract/host.ts";
 import { runReviewRead, type ReviewAnswer, type ReviewRead } from "../forge/review.ts";
+import { FORGE_DEADLINE_MS } from "../core/deadlines.ts";
 import type { Repo } from "../core/ids.ts";
 import type { MergePolicy } from "../core/merge.ts";
 import { mergeAt, type MergeWrite } from "../forge/merge.ts";
@@ -34,7 +35,6 @@ import {
 
 export const SERVER_SITE_NAME = "the bb server";
 const PROBE_TTL_MS = 5 * 60_000;
-export const FORGE_DEADLINE_MS = 15_000;
 /** A merge may take GitHub longer than a read; past this its outcome is unknown. */
 export const MERGE_DEADLINE_MS = 60_000;
 
@@ -628,6 +628,7 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
     repo: { owner: string; name: string },
     read: ReviewRead,
     placements: readonly Placement[],
+    scope: "any" | "only" = "any",
   ): Effect.Effect<SiteOutcome<ReviewAnswer>> =>
     Effect.gen(function* () {
       if (login === null) {
@@ -637,6 +638,10 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
             [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)],
             (access) => reviewAt(access, read),
             { kind: "no-site", host: placements[0]?.hostName ?? SERVER_SITE_NAME },
+            (access) =>
+              scope === "any" ||
+              access.hostId === null ||
+              placements.some((each) => each.hostId === access.hostId),
           ),
         ).pipe(Effect.result);
         if (answer._tag === "Success") {

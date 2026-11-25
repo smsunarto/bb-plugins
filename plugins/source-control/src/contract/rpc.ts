@@ -445,7 +445,7 @@ export const sourceControlContract = defineRpcContract({
     input: z
       .object({
         keys: z.array(z.string().min(1).max(300)).min(1).max(25),
-        /** The thread asking: a cold GitHub read tries its host first. */
+        /** With a thread, read GitHub only on the server and that thread’s host. */
         threadId: threadIdSchema.optional(),
       })
       .strict(),

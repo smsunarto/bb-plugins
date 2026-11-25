@@ -5,7 +5,6 @@
  * pull request's head branch is, beside the thread. Every decision is made
  * inside the click, so no click is lost to a popup blocker:
  *
- * - a pull request this window has opened before opens its Review at once;
  * - one Source Control recently could not show goes to GitHub at once;
  * - any other opens a Review tab for the pull request itself, which shows
  *   that it is looking, then gives way to the Change's own tab, or says why
@@ -15,24 +14,21 @@
  * A modified or middle click, a deep link (a comment, a file), and an
  * explicit "Open on GitHub" still go to github.com.
  *
- * Lookups are shared: a pull request read once, or being read, is not read
- * again. The server keeps each pull request's Change too (`legacyChange`).
+ * Concurrent lookups are shared. A known mapping still needs to check
+ * which pull request its Change shows before opening the Change tab.
  */
-import {
-  experimental_useAppPanel as useAppPanel,
-  UrlLink,
-  type PluginRpcClient,
-  type UrlLinkProps,
-} from "@get-bb/plugin-sdk/app";
+import { UrlLink, type PluginRpcClient, type UrlLinkProps } from "@get-bb/plugin-sdk/app";
 import { isPlainClick } from "@bb-plugins/review-request";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback } from "react";
 import type { ChangeKey } from "../core/ids.ts";
-import { parsePrLink, parsePrReference, prKey, prLookup, type PrRef } from "../core/watch.ts";
+import { parsePrLink, parsePrReference, prLookup, type PrRef } from "../core/watch.ts";
 import type { sourceControlContract } from "../contract/rpc.ts";
-import { REVIEW_TAB, useOpenReview, type OpenReviewOptions } from "./open-review.ts";
+import { useOpenReview } from "./open-review.ts";
+import type { OpenPullRequest } from "./pending-review-request.ts";
+import { FORGE_DEADLINE_MS } from "../core/deadlines.ts";
 
 /** How long a Review tab looks for a pull request's Change before it offers GitHub. */
-export const RESOLVE_MS = 8_000;
+export const RESOLVE_MS = FORGE_DEADLINE_MS + 3_000;
 /** How long a pull request Source Control could not show goes straight to GitHub. */
 export const MISS_MS = 60_000;
 
@@ -47,13 +43,19 @@ const found = new Map<string, ChangeKey>();
 const missed = new Map<string, { problem: string; until: number }>();
 const reading = new Map<string, Promise<Resolution>>();
 
-/** What a click can act on now: the Change, a recent miss, or nothing known yet. */
-export function knownPullRequest(lookup: string, now = Date.now()): Resolution | null {
-  const key = found.get(lookup);
-  if (key) return { key };
-  const miss = missed.get(lookup);
+// Lookup failures and pending reads depend on which thread's host can answer.
+const lookupSlot = (lookup: string, threadId: string) => `${threadId}\n${lookup}`;
+
+/** What a click can act on now: a recent miss, the Change, or nothing known yet. */
+export function knownPullRequest(
+  lookup: string,
+  threadId: string,
+  now = Date.now(),
+): Resolution | null {
+  const miss = missed.get(lookupSlot(lookup, threadId));
   if (miss && miss.until > now) return { problem: miss.problem };
-  return null;
+  const key = found.get(lookup);
+  return key ? { key } : null;
 }
 
 const knownListeners = new Set<() => void>();
@@ -68,35 +70,45 @@ export function onKnownPullRequestsChange(listener: () => void, signal: AbortSig
   signal.addEventListener("abort", () => knownListeners.delete(listener), { once: true });
 }
 
-/** The Review tab confirmed the Change shows this pull request: open it directly from now on. */
-export function rememberChange(lookup: string, key: ChangeKey): void {
-  const wasMiss = missed.delete(lookup);
+/** The Review tab confirmed the mapping. Keep it so later clicks can check the Change directly. */
+export function rememberChange(lookup: string, key: ChangeKey, threadId: string): void {
+  const wasMiss = missed.delete(lookupSlot(lookup, threadId));
   found.set(lookup, key);
   if (wasMiss) knownChanged();
 }
 
 /** Source Control cannot show this pull request: send its links to GitHub for a while. */
-export function rememberMiss(lookup: string, problem: string, now = Date.now()): void {
-  found.delete(lookup);
+export function rememberMiss(
+  lookup: string,
+  threadId: string,
+  problem: string,
+  now = Date.now(),
+): void {
+  const slot = lookupSlot(lookup, threadId);
+  const previous = missed.get(slot);
+  if (previous && previous.until > now && previous.problem === problem) return;
   const until = now + MISS_MS;
-  missed.set(lookup, { problem, until });
+  missed.set(slot, { problem, until });
   knownChanged();
   // When the miss lapses, its links may open in Review again.
   setTimeout(() => {
-    if (missed.get(lookup)?.until === until) knownChanged();
+    if (missed.get(slot)?.until !== until) return;
+    missed.delete(slot);
+    knownChanged();
   }, until - Date.now());
 }
 
 /**
  * The pull request's Change as the server reads it, one read per pull
- * request however many tabs or clicks ask. A failed call is a miss.
+ * request per thread however many tabs or clicks ask. A failed call is a miss.
  */
 export function resolvePullRequest(
   rpc: Rpc,
   lookup: string,
   threadId: string,
 ): Promise<Resolution> {
-  const pending = reading.get(lookup);
+  const slot = lookupSlot(lookup, threadId);
+  const pending = reading.get(slot);
   if (pending) return pending;
   const read = rpc
     .call("legacyChange", { keys: [lookup], threadId })
@@ -109,8 +121,8 @@ export function resolvePullRequest(
     .catch((error: unknown): Resolution => ({
       problem: error instanceof Error ? error.message : "Source Control could not ask GitHub.",
     }))
-    .finally(() => reading.delete(lookup));
-  reading.set(lookup, read);
+    .finally(() => reading.delete(slot));
+  reading.set(slot, read);
   return read;
 }
 
@@ -137,32 +149,19 @@ export function pullRequestTabParams(params: unknown): { ref: PrRef } | null {
  * took the link: false for anything that is not a link to a pull request
  * itself, for one Source Control recently could not show, and where there
  * is no side panel, so the caller lets the link go to GitHub. Never waits.
- * With `page: false` a known pull request also returns false where there is
- * no side panel, instead of opening the review page. One stable function.
+ * One stable function.
  */
-export function useOpenPullRequest(
-  threadId: string,
-): (href: string, options?: OpenReviewOptions) => boolean {
+export function useOpenPullRequest(threadId: string): OpenPullRequest {
   const openReview = useOpenReview(threadId);
-  const panel = useAppPanel();
-  const latest = useRef(panel);
-  useLayoutEffect(() => {
-    latest.current = panel;
-  });
-  return useMemo(
-    () => (href: string, options?: OpenReviewOptions) => {
+  return useCallback(
+    (href) => {
       const ref = parsePrLink(href);
       if (!ref) return false;
-      const known = knownPullRequest(prLookup(ref));
+      const known = knownPullRequest(prLookup(ref), threadId);
       if (known && "problem" in known) return false;
-      if (known) return openReview({ key: known.key }, options);
-      return latest.current.openTab({
-        tab: REVIEW_TAB,
-        params: { pr: prKey(ref).toLowerCase() },
-        title: `Review · #${ref.number}`,
-      });
+      return openReview({ pr: ref });
     },
-    [openReview],
+    [openReview, threadId],
   );
 }
 
