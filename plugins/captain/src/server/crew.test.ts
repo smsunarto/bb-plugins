@@ -1,7 +1,7 @@
 import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { captainHost, newCaptain, type CaptainHost, type FakeOptions } from "./test-host.ts";
 
 const run = (host: CaptainHost, argv: string[], threadId?: string) =>
@@ -715,6 +715,57 @@ describe("bb captain verdict", () => {
 });
 
 describe("bb captain ask", () => {
+  test("a detail-file refusal includes option blockers for an unmatched ask", async () => {
+    const { host, captainId, as } = await crewHost();
+    const result = await as([
+      "ask",
+      "Pick a label",
+      "--kind",
+      "improve",
+      "--option",
+      "Very long option",
+      "--option",
+      "Red",
+      "--detail-file",
+      "-",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(json(result.stdout).blockers.map(({ reason }) => reason)).toEqual([
+      "a file option cannot read stdin here",
+      expect.stringContaining('option "Very long option" is 16 columns'),
+    ]);
+    expect(host.server.store.asksOf(captainId)).toEqual([]);
+  });
+
+  test("a new ask looks up its open match once after resolving the task", async () => {
+    const { host, as } = await crewHost();
+    const read = host.server.store.findOpenAsk;
+    const findOpenAsk = vi.spyOn(host.server.store, "findOpenAsk").mockImplementation((...args) => {
+      expect(host.tasks.calls).toContainEqual({
+        method: "getTaskByKey",
+        input: { taskKey: "BBPLUGINS-1" },
+      });
+      return read(...args);
+    });
+    const result = await as([
+      "ask",
+      "Pick a label",
+      "--task",
+      "BBPLUGINS-1",
+      "--option",
+      "Red",
+      "--option",
+      "Blue",
+      "--detail",
+      "Red matches the rest.",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(findOpenAsk).toHaveBeenCalledTimes(1);
+  });
+
   test("a decision needs its task and two options; an ask is one line of at most 80 characters", async () => {
     const { host, as } = await crewHost();
 

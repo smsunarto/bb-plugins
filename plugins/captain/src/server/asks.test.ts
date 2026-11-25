@@ -3,11 +3,11 @@ import { ASK_OPTION_COLUMNS, askBlockers, optionLabelBlockers } from "./asks.ts"
 import { clip, displayWidth } from "./width.ts";
 
 const reasons = (...options: string[]) => optionLabelBlockers(options).map((b) => b.reason);
-/** The blockers every ask's options meet, new or rerun, for one option beside "Hold". */
+/** Answer-field blockers for a new or changed option beside "Hold". */
 const lineBlockers = (option: string, kind: "decision" | "ship" = "decision") =>
   askBlockers({
     kind,
-    taskKey: "BBPLUGINS-1",
+    hasTask: true,
     text: "Pick one",
     detail: "d",
     options: [option, "Hold"],
@@ -80,7 +80,24 @@ describe("an ask's option labels", () => {
   });
 });
 
-describe("the rules every option meets, new or rerun", () => {
+describe("the answer-field rules for new asks and reruns with changed options", () => {
+  test.each([
+    ["multiline", "Keep\nthe cache"],
+    ["81-unit", "x".repeat(81)],
+  ])("a %s tenth option only triggers the count blocker", (_label, option) => {
+    const options = Array.from({ length: 9 }, (_, index) => "Choice " + (index + 1));
+    const blockers = askBlockers({
+      kind: "decision",
+      hasTask: true,
+      text: "Pick one",
+      detail: "Choose a cache.",
+      options: [...options, option],
+    });
+    expect(blockers).toEqual([
+      { reason: "an ask takes at most 9 options", fix: "keep the options that matter" },
+    ]);
+  });
+
   test("over 80 UTF-16 units is refused, so the label stays a valid answer, and the echo stays short", () => {
     const stacked = `a${"\u0301".repeat(100_000)}`;
     expect(displayWidth(stacked)).toBe(1);

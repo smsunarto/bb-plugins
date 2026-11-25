@@ -37,15 +37,15 @@ const OPTIONS_MAX = 9;
 
 export type AskDraft = {
   kind: AskKind;
-  task: TasksTask | null;
+  task: TasksTask | Blocker | null;
   text: string;
-  detail: string;
+  detail: string | Refusal;
   options: string[];
 };
 
 /** Draft blockers other than the new ask's column limit and task lookup. */
 export function askBlockers(
-  draft: Omit<AskDraft, "task"> & { taskKey: string | null },
+  draft: Omit<AskDraft, "task"> & { hasTask: boolean },
   storedOptions?: readonly string[],
 ): Blocker[] {
   const blockers: Blocker[] = [];
@@ -56,13 +56,15 @@ export function askBlockers(
       fix: 'shorten it, such as "Pick the Unity account for cloud crew"; put the rest in --detail',
     });
   }
-  if (draft.detail.trim() === "") {
+  if (draft.detail instanceof Refusal) {
+    blockers.push(...draft.detail.blockers);
+  } else if (draft.detail.trim() === "") {
     blockers.push({
       reason: "an ask needs detail: what is blocked and why you recommend the first option",
       fix: "pass --detail <text> or --detail-file <path>",
     });
   }
-  if ((draft.kind === "decision" || draft.kind === "ship") && draft.taskKey === null) {
+  if ((draft.kind === "decision" || draft.kind === "ship") && !draft.hasTask) {
     blockers.push({ reason: `a ${draft.kind} ask needs its task`, fix: "pass --task <key>" });
   }
   const options = draft.options.map((option) => option.trim());
@@ -139,11 +141,6 @@ export function optionLabelBlockers(options: readonly string[]): Blocker[] {
       },
     ];
   });
-}
-
-function refuseUnlessLabelsFit(options: readonly string[]): void {
-  const blockers = optionLabelBlockers(options);
-  if (blockers.length > 0) throw new Refusal(blockers);
 }
 
 /** An option quoted for a blocker, bounded in size however long it is. */
@@ -241,25 +238,21 @@ export async function supersedeShipAsks(
   return notes;
 }
 
-/**
- * Open an ask, or return the open one with the same kind, task and text, so a
- * rerun opens nothing twice. A new ask is posted on its task as an `Asked:`
- * comment and sends one push; the push is retried on a rerun until it is sent.
- * Throws a Refusal if a new ask's labels exceed the column limit.
- */
-export async function openAsk(
-  deps: CommandDeps,
-  captain: Captain,
-  draft: AskDraft,
-): Promise<{ item: Item; notes: string[] }> {
-  const notes: string[] = [];
+/** Validate against the open match and record a new ask in the same synchronous step. */
+function recordAsk(deps: CommandDeps, captain: Captain, draft: AskDraft) {
   const text = draft.text.trim();
-  const taskKey = draft.task?.key ?? null;
+  const target = draft.task;
+  const resolved = target === null || "key" in target;
+  const task = resolved ? target : null;
+  const taskKey = task?.key ?? null;
   const options = draft.kind === "ship" ? [...SHIP_OPTIONS] : draft.options.map((o) => o.trim());
-  const existing = deps.store.findOpenAsk(captain.threadId, draft.kind, taskKey, text);
-  // No await between this lookup and the insert, so the ask a rerun matches
-  // cannot be answered in between and let a new ask skip the column rule.
-  if (existing === null) refuseUnlessLabelsFit(options);
+  const existing = resolved
+    ? deps.store.findOpenAsk(captain.threadId, draft.kind, taskKey, text)
+    : null;
+  const blockers = askBlockers({ ...draft, hasTask: target !== null }, existing?.options);
+  if (!resolved) blockers.push(target);
+  if (existing === null) blockers.push(...optionLabelBlockers(options));
+  if (blockers.length > 0 || draft.detail instanceof Refusal) throw new Refusal(blockers);
   const ask =
     existing ??
     deps.store.openAsk({
@@ -271,7 +264,24 @@ export async function openAsk(
       options,
       askedAt: deps.now(),
     });
-  if (existing === null && draft.task !== null) {
+  return { ask, existing, task, options };
+}
+
+/**
+ * Open an ask, or return the open one with the same kind, task and text, so a
+ * rerun opens nothing twice. A new ask is posted on its task as an `Asked:`
+ * comment and sends one push; the push is retried on a rerun until it is sent.
+ * Throws a Refusal with the blockers to opening or rerunning the ask.
+ */
+export async function openAsk(
+  deps: CommandDeps,
+  captain: Captain,
+  draft: AskDraft,
+): Promise<{ item: Item; notes: string[] }> {
+  const { ask, existing, task, options } = recordAsk(deps, captain, draft);
+  const { text, taskKey } = ask;
+  const notes: string[] = [];
+  if (existing === null && task !== null) {
     const body = [
       `Asked: ${text} (${ask.id})`,
       options.length === 0
@@ -283,7 +293,7 @@ export async function openAsk(
     ]
       .filter((part) => part !== null)
       .join("\n\n");
-    const warning = await captainComment(deps, captain, draft.task.id, body);
+    const warning = await captainComment(deps, captain, task.id, body);
     if (warning !== null) notes.push(`warning: ${warning}`);
   }
   if (existing === null) deps.bb.rpc.experimental_invalidate([asksTag(captain.threadId)]);

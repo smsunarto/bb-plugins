@@ -1,13 +1,5 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
-import {
-  ASK_OPTION_COLUMNS,
-  askBlockers,
-  askItem,
-  askOrRefuse,
-  openAsk,
-  optionLabelBlockers,
-  resolveAsk,
-} from "../asks.ts";
+import { ASK_OPTION_COLUMNS, askItem, askOrRefuse, openAsk, resolveAsk } from "../asks.ts";
 import { actingFor, readCallerFile } from "../caller.ts";
 import { resolveTask, tasksBlocker } from "../crew.ts";
 import { guard, Refusal, render } from "../output.ts";
@@ -83,7 +75,10 @@ export function askCommand(deps: CommandDeps) {
           input.options.detail,
           input.options["detail-file"],
           "--detail-stdin",
-        );
+        ).catch((error: unknown) => {
+          if (error instanceof Refusal) return error;
+          throw error;
+        });
         const taskKey = input.options.task?.trim().toUpperCase() || null;
         const resolved =
           taskKey === null
@@ -92,21 +87,13 @@ export function askCommand(deps: CommandDeps) {
                 if (error instanceof TasksError) return { blocker: tasksBlocker(error) };
                 throw error;
               });
-        const task = "task" in resolved ? resolved.task : null;
-        const text = input.positionals.text.trim();
-        const options = input.options.option.map((option) => option.trim());
-        const existing =
-          "task" in resolved
-            ? deps.store.findOpenAsk(captain.threadId, kind, task?.key ?? null, text)
-            : null;
-        const draft = { kind, task, text, detail, options };
-        const blockers = askBlockers({ ...draft, taskKey }, existing?.options);
-        if ("blocker" in resolved) blockers.push(resolved.blocker);
-        if (blockers.length > 0) {
-          if (existing === null) blockers.push(...optionLabelBlockers(options));
-          throw new Refusal(blockers);
-        }
-        const { item, notes } = await openAsk(deps, captain, draft);
+        const { item, notes } = await openAsk(deps, captain, {
+          kind,
+          task: "task" in resolved ? resolved.task : resolved.blocker,
+          text: input.positionals.text,
+          detail,
+          options: input.options.option,
+        });
         return render([item], json, notes);
       });
     },
