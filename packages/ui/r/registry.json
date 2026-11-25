@@ -810,6 +810,16 @@
           "type": "registry:lib"
         }
       ]
+    },
+    {
+      "name": "shared-resize-observer",
+      "type": "registry:lib",
+      "files": [
+        {
+          "path": "registry/lib/shared-resize-observer.ts",
+          "type": "registry:lib"
+        }
+      ]
     }
   ]
 }

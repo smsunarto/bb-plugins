@@ -1,5 +1,7 @@
 import { flushSync } from "react-dom";
 
+// From get-bb/bb packages/plugin-registry (shared-resize-observer, #7635).
+
 export interface SharedResizePhases<T> {
   read: (entry: ResizeObserverEntry | undefined) => T;
   write: (value: T) => void;

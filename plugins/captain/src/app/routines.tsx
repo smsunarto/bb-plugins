@@ -43,7 +43,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select.tsx";
-import { Switch } from "./components/overview-switch.tsx";
+import { Switch } from "./components/ui/switch.tsx";
 import { Textarea } from "./components/ui/textarea.tsx";
 import { cn } from "./lib/utils.ts";
 
@@ -522,13 +522,17 @@ function RoutineRow({
             )}
           </span>
         </button>
-        <Switch
-          checked={state.enabled === true}
-          disabled={state.enabled === null || pendingAction !== undefined}
-          aria-label={`${routine.name}: ${state.enabled === true ? "active" : "paused"}`}
-          className="me-1 self-center"
-          onCheckedChange={(checked) => run(checked ? "resume" : "pause")}
-        />
+        {/* The track sits in a 32px cell on the Overview's grid; the switch's
+            ::after grows its hit area to that cell, and to 44px on a coarse pointer. */}
+        <span className="me-1 inline-flex size-8 shrink-0 items-center justify-center self-center pointer-coarse:size-11">
+          <Switch
+            checked={state.enabled === true}
+            disabled={state.enabled === null || pendingAction !== undefined}
+            aria-label={`${routine.name}: ${state.enabled === true ? "active" : "paused"}`}
+            className="relative after:absolute after:-inset-x-0.5 after:-inset-y-2 pointer-coarse:after:-inset-x-2 pointer-coarse:after:-inset-y-3.5"
+            onCheckedChange={(checked) => run(checked ? "resume" : "pause")}
+          />
+        </span>
       </div>
       {open ? (
         <div

@@ -11,10 +11,9 @@ test("the built registry matches its source", () => {
   expect(stale()).toEqual([]);
 });
 
-// Configured is not the same as installable: shadcn resolves the `ui` alias
-// through tsconfig paths, which agent-instructions maps to src/ and
-// gtd-sidebar and traces lack, so their installs land outside components/ui.
-test("every plugin configures the @bb-plugins registry", () => {
+// Plugins take kit files only from this registry; bb's @bb registry would
+// reintroduce copies the style contract cannot keep in sync.
+test("every plugin configures the @bb-plugins registry and no other", () => {
   for (const id of readdirSync("plugins")) {
     const path = join("plugins", id, "components.json");
     let config: { registries?: Record<string, string> };
@@ -23,7 +22,7 @@ test("every plugin configures the @bb-plugins registry", () => {
     } catch {
       continue;
     }
-    expect(config.registries?.["@bb-plugins"], path).toBe(registryUrl);
+    expect(config.registries, path).toEqual({ "@bb-plugins": registryUrl });
   }
 });
 
