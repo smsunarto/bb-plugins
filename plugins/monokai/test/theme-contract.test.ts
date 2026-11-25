@@ -1,3 +1,5 @@
+import { SEARCH_FIELDS_CSS } from "../app/search-fields.ts";
+import { NEW_TAB_LAUNCHER_CSS } from "../app/new-tab-launcher.ts";
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -244,17 +246,18 @@ describe("bb Monokai contract audit", () => {
       ".dark img[data-markdown-image], .dark button.cursor-zoom-in.border", // an img covers an inset ring
     ]);
     expect(theme).not.toMatch(/inset 0 0 0 var\(--hairline-width\)/);
-    expect(theme).toContain("--hairline-ring-width: 1px;");
+    expect(theme).toContain("--hairline-ring-width: var(--monokai-device-pixel, 1px);");
     const ringWidths = rules.filter((rule) => rule.body.includes("--hairline-ring-width:"));
     expect(ringWidths.map((rule) => [rule.atRules.join(" "), rule.body.trim()])).toContainEqual([
       "@media (min-resolution: 2.5dppx)",
-      "--hairline-ring-width: calc(1px / 3);\n    --hairline-rings: 1;",
+      "--hairline-ring-width: var(--monokai-device-pixel, calc(1px / 3));\n    --hairline-rings: 1;",
     ]);
     const neutral = rules.find(
       (rule) =>
         rule.selector.includes(".border:is(") &&
         rule.atRules.includes("@media (min-resolution: 2.5dppx)"),
     );
+    expect(neutral?.atRules).toContain("@layer utilities");
     expect(neutral?.body).toContain("border-width: 0;");
     expect(neutral?.body).toContain("inset 0 0 0 var(--hairline-ring-width) var(--monokai-edge)");
     expect(neutral?.body).toContain("var(--tw-shadow, 0 0 transparent)");
@@ -262,11 +265,9 @@ describe("bb Monokai contract audit", () => {
     // A radio's primary circle and the shadcn checkbox, whose checked fill
     // swaps its edge to the foreground, are rings too; @bb-plugins/ui opts in
     // through --hairline-rings.
+    expect(neutral?.selector).toContain(".border-primary.rounded-full");
     expect(neutral?.selector).toContain(
-      ':where(.dark) :where(button, input, textarea, select, [role="radio"], [role="checkbox"]).border.border-primary.rounded-full:not([class*=":border-"])',
-    );
-    expect(neutral?.selector).toContain(
-      ':where(.dark) :where(button, input, textarea, select, [role="radio"], [role="checkbox"]).border.border-input[class~="data-[state=checked]:border-foreground"]',
+      '.border-input[class~="data-[state=checked]:border-foreground"]',
     );
     expect(theme).toMatch(
       /\[class~="data-\[state=checked\]:border-foreground"\]\[data-state="checked"\] \{\s*--monokai-edge: var\(--foreground\);/,
@@ -399,10 +400,11 @@ describe("bb Monokai contract audit", () => {
 
   test("moves the outer sidebars on Capy's timing, desktop only", () => {
     const motion = styleRules(theme).filter(
-      ({ selector }) =>
-        selector.includes('[data-side="left"]') ||
-        selector.includes('[id^="thread-detail-timeline-panel"]') ||
-        selector.includes('[id^="thread-detail-secondary-panel"]'),
+      ({ selector, body }) =>
+        /\b(?:transition|animation)(?:-[\w-]+)?:/.test(body) &&
+        (selector.includes('[data-side="left"]') ||
+          selector.includes('[id^="thread-detail-timeline-panel"]') ||
+          selector.includes('[id^="thread-detail-secondary-panel"]')),
     );
     expect(motion.length).toBeGreaterThan(0);
     for (const rule of motion) expect(rule.atRules[0]).toStartWith("@media (min-width: 768px)");
@@ -706,6 +708,14 @@ describe("bb Monokai selector cost", () => {
     // (app/diff-header.ts, app/terminal-appearance.ts).
     for (const css of [theme, diffHeaderCss])
       expect(css.replace(/\/\*[\s\S]*?\*\//g, "").match(/[^\n]*:has\([^\n]*/g)).toBeNull();
+  });
+
+  test("allows only the direct child search label exception in injected CSS", () => {
+    expect(NEW_TAB_LAUNCHER_CSS).not.toContain(":has(");
+    const exception =
+      'label:has(> input[aria-label^="Search"]:not([data-bb-control], [data-t3-model-search]))';
+    expect(SEARCH_FIELDS_CSS).toContain(exception);
+    expect(SEARCH_FIELDS_CSS.replaceAll(exception, "")).not.toContain(":has(");
   });
 });
 

@@ -17,7 +17,8 @@
  *   frame becomes the field; its input stays bare.
  * - label > input[aria-label^="Search"]: a search row that wraps its icon and
  *   input in a label, such as Settings' sidebar search. The label becomes the
- *   field (a child-only :has(), checked against the label alone).
+ *   field. The selector-cost test allows this child-only :has() on labels:
+ *   it avoids a page observer and only rechecks labels with a direct input.
  *
  * The rules reach plugin roots too, since bb's own pickers (its shared model
  * picker, the branch picker, built-in plugins) render inside them. A plugin

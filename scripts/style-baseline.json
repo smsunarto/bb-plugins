@@ -1732,16 +1732,6 @@
   {
     "file": "plugins/t3-composer/app.css",
     "rule": "hairline-literal",
-    "source": "--tw-ring-shadow: 0 0 0 0.5px var(--t3-composer-hairline);"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
-    "source": "0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
     "source": "border-right: 0.5px solid color-mix(in srgb, var(--foreground) 8%, transparent);"
   },
   {
@@ -1756,41 +1746,6 @@
   },
   {
     "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
-    "source": "box-shadow: 0 0 0 0.5px var(--t3-composer-hairline);"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
-    "source": "box-shadow: inset 0 -0.5px 0 var(--t3-composer-hairline);"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
     "rule": "raw-color",
     "source": "--t3-composer-hairline: color-mix(in srgb, var(--foreground) 18%, var(--background));"
   },
@@ -1798,11 +1753,6 @@
     "file": "plugins/t3-composer/app.css",
     "rule": "raw-color",
     "source": "--t3-composer-hairline: color-mix(in srgb, var(--foreground) 8%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "raw-color",
-    "source": "0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));"
   },
   {
     "file": "plugins/t3-composer/app.css",
@@ -1908,31 +1858,6 @@
     "file": "plugins/t3-composer/app.css",
     "rule": "raw-color",
     "source": "border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "raw-color",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "raw-color",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "raw-color",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "raw-color",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "raw-color",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));"
   },
   {
     "file": "plugins/t3-composer/app.css",

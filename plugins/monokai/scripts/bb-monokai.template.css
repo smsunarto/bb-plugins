@@ -251,7 +251,7 @@
    * at 1x, 2x, and 3x (see Hairline rings). */
   --border: {{solid.hairline}};
   --hairline-width: 0.5px;
-  --hairline-ring-width: 1px;
+  --hairline-ring-width: var(--monokai-device-pixel, 1px);
   --border-hairline: {{solid.hairline}};
 
   /* ---- Text ladder -----------------------------------------------------
@@ -894,9 +894,49 @@
       border-bottom-width: 0;
     }
   }
+  /* GenUI's editable rows, gallery search action, and provenance connector. */
+  @container (width >= 32rem) {
+    :where(.dark) .\@lg\:border-b:not(z) {
+      border-bottom-width: var(--hairline-width);
+    }
+  }
+  @container (width >= 36rem) {
+    :where(.dark) .\@xl\:border:not(z) {
+      border-width: var(--hairline-width);
+    }
+  }
   @container (width >= 42rem) {
+    :where(.dark) .\@2xl\:border-t:not(z) {
+      border-top-width: var(--hairline-width);
+    }
     :where(.dark) .\@2xl\:border-l-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
       border-left-width: 0;
+    }
+  }
+
+  :where(.dark) .not-first\:border-t:not(:first-child):not(z),
+  :where(.dark) .\[\&\:not\(\:first-child\)\]\:border-t:not(:first-child):not(z),
+  :where(.dark) .\[\&\>li\+li\]\:border-t > li + li:not(z) {
+    border-top-width: var(--hairline-width);
+  }
+  :where(.dark) .first\:border-l:first-child:not(z) {
+    border-left-width: var(--hairline-width);
+  }
+  /* The mobile drawer's unlayered border reset still takes precedence. */
+  :where(.dark) .data-\[side\=left\]\:border-r[data-side="left"]:not(z),
+  :where(.dark) :where(.group)[data-side="left"] .group-data-\[side\=left\]\:border-r:not(z) {
+    border-right-width: var(--hairline-width);
+  }
+  :where(.dark) .divide-y > div:not(:last-child):not(z),
+  :where(.dark) .divide-y > li:not(:last-child):not(z),
+  :where(.dark) .divide-y > tr:not(:last-child):not(z),
+  :where(.dark) .divide-y > section:not(:last-child):not(z) {
+    border-block-start-width: calc(var(--hairline-width) * var(--tw-divide-y-reverse, 0));
+    border-block-end-width: calc(var(--hairline-width) * (1 - var(--tw-divide-y-reverse, 0)));
+  }
+  @container plugin-detail (width >= 28rem) {
+    :where(.dark) .\@min-\[28rem\]\/plugin-detail\:border-r:not(z) {
+      border-right-width: var(--hairline-width);
     }
   }
 
@@ -931,7 +971,8 @@
  * or checkbox with a border-border (or /60), input, sidebar, hairline, or seam
  * colour, and a round primary one, such as a radio's circle. bb's Input
  * carries file:border-0, which the variant guard would read as a border
- * variant, so it is named on its own. Only controls: tables,
+ * variant, so it is named on its own. Breakpoint border variants still opt
+ * out, even when the Input carries that file-button class. Only controls: tables,
  * code blocks, message bubbles, toasts, and sheets restyle their own edges, and
  * a ring keyed on a utility class would draw over those rules. Every other
  * border keeps --hairline-width, two device pixels at 3x. --hairline-rings opts
@@ -939,19 +980,21 @@
  * joins Tailwind's box-shadow stack, so shadow, ring, and inset utilities
  * still draw beside it. A control that opens a side (border-t-0 and the like),
  * takes a dashed, dotted, or wider border, or changes its border on a variant
- * keeps its border: a ring has one width, one colour, and no style. The shadcn
+ * keeps its border: a ring has one width, one colour, and no style. Radio
+ * cards keep their border so selection colours can change without reflow.
+ * Attachment zoom buttons already draw their frame below. The shadcn
  * checkbox is the one state variant ringed: its ring takes the checked fill's
  * foreground. A ring per side is not reliable: offset insets drop edges as
  * borders do. */
 @media (min-resolution: 1.5dppx) {
   html.dark {
-    --hairline-ring-width: 0.5px;
+    --hairline-ring-width: var(--monokai-device-pixel, 0.5px);
   }
 }
 
 @media (min-resolution: 2.5dppx) {
   html.dark {
-    --hairline-ring-width: calc(1px / 3);
+    --hairline-ring-width: var(--monokai-device-pixel, calc(1px / 3));
     --hairline-rings: 1;
   }
 
@@ -988,30 +1031,43 @@
         .border-sidebar-border,
         .border-border-hairline,
         .border-border-seam,
-        .border-border\/60
+        .border-border\/60,
+        .border-primary.rounded-full
+      ):is(
+        :not([class*=":border-"]),
+        input.border-input[class~="file:border-0"]:not(
+          [class*="focus-visible:border-"],
+          [class*="hover:border-"],
+          [class*="invalid:border-"],
+          [class*="xs:border"],
+          [class*="sm:border"],
+          [class*="md:border"],
+          [class*="lg:border"],
+          [class*="xl:border"],
+          [class*="]:border-"]
+        ),
+        .border-input[class~="data-[state=checked]:border-foreground"]
       ):not(
-        .border-t-0,
-        .border-r-0,
-        .border-b-0,
-        .border-l-0,
-        .border-x-0,
-        .border-y-0,
-        .border-s-0,
-        .border-e-0,
+        .cursor-zoom-in,
+        [role="radio"]:not(.rounded-full),
+        .border-0,
         .border-2,
+        .border-4,
+        .border-8,
         .border-dashed,
         .border-dotted,
-        [class*=":border-"]
-      ),
-    :where(.dark)
-      input.border.border-input[class~="file:border-0"]:not(
-        [class*="focus-visible:border-"],
-        [class*="hover:border-"],
-        [class*="invalid:border-"],
-        [class*="]:border-"]
-      ),
-    :where(.dark) :where(button, input, textarea, select, [role="radio"], [role="checkbox"]).border.border-primary.rounded-full:not([class*=":border-"]),
-    :where(.dark) :where(button, input, textarea, select, [role="radio"], [role="checkbox"]).border.border-input[class~="data-[state=checked]:border-foreground"] {
+        .border-double,
+        .border-hidden,
+        .border-none,
+        [class*="border-t-"],
+        [class*="border-r-"],
+        [class*="border-b-"],
+        [class*="border-l-"],
+        [class*="border-x-"],
+        [class*="border-y-"],
+        [class*="border-s-"],
+        [class*="border-e-"]
+      ) {
       border-width: 0;
       box-shadow:
         var(--tw-inset-shadow, 0 0 transparent), var(--tw-inset-ring-shadow, 0 0 transparent),
@@ -1194,12 +1250,14 @@
  * away. Only the size changes: the box keeps its own fill, so the hover, drag,
  * and focus-visible fills of bb's splitters still show. */
 .dark .h-px.bg-border,
-.dark .h-px.bg-sidebar-border {
+.dark .h-px.bg-sidebar-border,
+.dark [data-testid="sc-ship-path"] > li > span.h-px.bg-success {
   height: var(--hairline-width);
 }
 
 .dark .w-px.bg-border,
-.dark .w-px.bg-sidebar-border {
+.dark .w-px.bg-sidebar-border,
+.dark [data-bb-plugin="genui"] span.absolute.inset-y-0.w-px.bg-border\/45 {
   width: var(--hairline-width);
 }
 
@@ -1438,6 +1496,7 @@
   background-color: var(--control-background);
   background-clip: padding-box;
   border-color: var(--input);
+  --monokai-edge: var(--input);
 }
 
 /* Native option sheets must occlude the page, just like portalled menus. */
@@ -3235,6 +3294,20 @@ diffs-container {
   margin-inline-start: var(--agent-md-table-shift);
 }
 
+/* BB's services grid uses row borders in the collapsed model. WebKit rounds
+ * those differently from cell borders. With zero spacing, each row's cells
+ * can paint the same hairline as its column rule. */
+.dark table[aria-label="Background services"] {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.dark table[aria-label="Background services"] thead > tr > th,
+.dark table[aria-label="Background services"] tbody > tr:not(:last-child) > th,
+.dark table[aria-label="Background services"] tbody > tr:not(:last-child) > td {
+  border-bottom: var(--hairline-width) solid var(--border);
+}
+
 /* T3's redesign tables: row rules only, a 600-weight header that does not
  * wrap, outer columns flush with the prose, and cells one step under body
  * size. */
@@ -3242,7 +3315,8 @@ diffs-container {
 .dark .bb-markdown-prose table {
   min-width: var(--md-content-w, 100%);
   border: 0;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: calc(var(--agent-md-rem) * 0.875);
 }
 

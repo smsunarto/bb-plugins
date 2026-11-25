@@ -15,9 +15,10 @@
  *                   > button[aria-roledescription="sortable"] (hidden)
  *   > div                                    Recent (hidden), or search results
  *
- * bb renders the Actions only while the query is empty, so the sibling after
- * them is always Recent; search results follow the search directly. Hiding the
- * reorder handle removes drag-to-reorder; a stored order still applies.
+ * bb renders Actions only while the query is empty. The following block can
+ * contain Recent or a file search status. Hide the Recent group, hint, and
+ * expansion button by their markup and leave status messages visible.
+ * Hiding the reorder handle removes drag-to-reorder; a stored order still applies.
  */
 export const NEW_TAB_LAUNCHER_CSS = `
 [data-panel-new-tab-page] > div {
@@ -32,7 +33,9 @@ export const NEW_TAB_LAUNCHER_CSS = `
 [data-panel-new-tab-page] [data-testid="new-tab-actions"] {
   margin-block: auto;
 }
-[data-testid="new-tab-actions"] + div,
+[data-testid="new-tab-actions"] + div > [role="listbox"] > section[aria-label="Recent"],
+[data-testid="new-tab-actions"] + div > section,
+[data-testid="new-tab-actions"] + div > button[data-panel-new-tab-item][aria-expanded],
 [data-testid="new-tab-actions"] > section > div:first-child,
 [data-testid="new-tab-actions"] button[aria-roledescription="sortable"] {
   display: none;

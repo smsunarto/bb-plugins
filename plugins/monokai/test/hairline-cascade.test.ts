@@ -19,6 +19,26 @@ const tailwind = `
   .border-0 { border-width: 0px; }
   .border-t-0 { border-top-width: 0px; }
   .border-b { border-bottom-width: 1px; }
+  .not-first\\:border-t:not(:first-child) { border-top-width: 1px; }
+  .first\\:border-l:first-child { border-left-width: 1px; }
+  .\\[\\&\\>li\\+li\\]\\:border-t > li + li { border-top-width: 1px; }
+  .\\[\\&\\:not\\(\\:first-child\\)\\]\\:border-t:not(:first-child) { border-top-width: 1px; }
+  .data-\\[side\\=left\\]\\:border-r[data-side="left"] { border-right-width: 1px; }
+  @media (width < 48rem) {
+    .max-md\\:border-0 { border-width: 0; }
+  }
+  @container (width >= 32rem) {
+    .\\@lg\\:border-b { border-bottom-width: 1px; }
+    .\\@lg\\:last\\:border-b-0:last-child { border-bottom-width: 0; }
+  }
+  @container (width >= 36rem) {
+    .\\@xl\\:border { border-width: 1px; }
+  }
+  @container (width >= 42rem) {
+    .\\@2xl\\:border-t { border-top-width: 1px; }
+    .\\@2xl\\:border-l-0 { border-left-width: 0; }
+  }
+  .divide-y > :not(:last-child) { border-block-end-width: 1px; }
   .border-b-0 { border-bottom-width: 0px; }
   .border-t-\\[0\\.5px\\] { border-top-width: 0.5px; }
   .h-px { height: 1px; }
@@ -30,7 +50,7 @@ const tailwind = `
 }`;
 
 type Rule = { selector: string; atRules: string[]; body: string; sheet: number; order: number };
-type Context = { dppx: number; container: number };
+type Context = { dppx: number; container: number; viewport?: number };
 
 function styleRules(css: string, sheet: number): Rule[] {
   const rules: Rule[] = [];
@@ -95,8 +115,11 @@ function applies(atRules: string[], context: Context): boolean {
     if (min) return context.dppx >= Number(min[1]);
     const below = /resolution\s*<\s*([\d.]+)dppx/.exec(at);
     if (below) return context.dppx < Number(below[1]);
-    const container = /@container plugin-detail \(width\s*>=\s*([\d.]+)rem\)/.exec(at);
+    const container = /@container(?: plugin-detail)? \(width\s*>=\s*([\d.]+)rem\)/.exec(at);
     if (container) return context.container >= Number(container[1]) * 16;
+    const viewport = /@media \(width\s*<\s*([\d.]+)(rem|px)\)/.exec(at);
+    if (viewport)
+      return (context.viewport ?? 1024) < Number(viewport[1]) * (viewport[2] === "rem" ? 16 : 1);
     return false;
   });
 }
@@ -117,19 +140,40 @@ const LONGHANDS: Record<string, string[]> = {
     "border",
   ],
   "box-shadow": ["box-shadow"],
+  "--monokai-edge": ["--monokai-edge"],
+  "border-block-end-width": ["border-block-end-width"],
+  "border-left-width": ["border-left-width", "border-width"],
+  "border-right-width": ["border-right-width", "border-width"],
   height: ["height"],
   "background-color": ["background-color", "background"],
 };
 
-function matches(node: Element, selector: string): boolean {
-  return selector.split(/,(?![^()]*\))/).some((part) => {
-    try {
-      return node.matches(part.trim());
-    } catch {
-      return false;
+// Only split top-level commas. A ring predicate can nest selector lists
+// inside :is() and :not(), and escaped commas can be part of a utility name.
+function selectorList(selector: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote: string | undefined;
+  let start = 0;
+  for (let index = 0; index < selector.length; index++) {
+    const char = selector[index];
+    if (char === "\\") index++;
+    else if (quote !== undefined) {
+      if (char === quote) quote = undefined;
+    } else if (char === '"' || char === "'") quote = char;
+    else if (char === "(" || char === "[") depth++;
+    else if (char === ")" || char === "]") depth--;
+    else if (char === "," && depth === 0) {
+      parts.push(selector.slice(start, index).trim());
+      start = index + 1;
     }
-  });
+  }
+  parts.push(selector.slice(start).trim());
+  return parts;
 }
+
+// Tailwind declares these layers in this order, independently of sheet order.
+const LAYERS = ["properties", "theme", "base", "components", "utilities"];
 
 type Key = [number, number, number, number, number, number];
 
@@ -141,13 +185,20 @@ function candidates(
   rule: Rule,
 ): Array<{ value: string; key: Key }> {
   if (!applies(rule.atRules, context)) return [];
-  const parts = rule.selector.split(/,(?![^()]*\))/).filter((part) => matches(node, part));
+  const parts = selectorList(rule.selector).filter((part) => {
+    try {
+      return node.matches(part);
+    } catch {
+      return false;
+    }
+  });
   if (parts.length === 0) return [];
   const spec = parts
     .map((part) => specificity(part.trim()))
     .reduce((max, s) => (compare(s, max) > 0 ? s : max));
-  const layered = rule.atRules.some((at) => at.startsWith("@layer")) ? 0 : 1;
-  const key: Key = [layered, ...spec, rule.sheet, rule.order];
+  const layer = rule.atRules.find((at) => at.startsWith("@layer "))?.slice("@layer ".length);
+  const priority = layer === undefined ? LAYERS.length : LAYERS.indexOf(layer);
+  const key: Key = [priority, ...spec, rule.sheet, rule.order];
   return [...rule.body.matchAll(/([\w-]+)\s*:\s*([^;]+);/g)]
     .filter(([, name = ""]) => LONGHANDS[property]?.includes(name.trim()))
     .map(([, , value = ""]) => ({ value: value.trim(), key }));
@@ -232,7 +283,7 @@ describe("bb Monokai hairline cascade", () => {
     const field = element("input", BB_INPUT);
     const select = element("button", "h-7 w-full justify-between border border-border/60 bg-card");
     for (const control of [radio, checkbox, field, select]) {
-      expect(cascade(control, "box-shadow", AT_3X)).toMatch(RING);
+      expect(cascade(control, "box-shadow", AT_3X) ?? "", control.outerHTML).toMatch(RING);
       expect(cascade(control, "border-top-width", AT_3X)).toBe("0");
       expect(cascade(control, "box-shadow", AT_2X) ?? "").not.toMatch(RING);
     }
@@ -248,6 +299,82 @@ describe("bb Monokai hairline cascade", () => {
       expect(cascade(surface, "box-shadow", AT_3X) ?? "").not.toMatch(RING);
       expect(cascade(surface, "border-top-width", AT_3X)).toBe("var(--hairline-width)");
     }
+  });
+
+  test("rings only uniform controls and keeps settings triggers on the input edge", () => {
+    for (const [tag, className, attributes] of [
+      ["button", "cursor-zoom-in border border-border", {}],
+      ["div", "rounded-md border border-border", { role: "radio" }],
+      ["button", "rounded-lg border border-border", { role: "radio" }],
+      ["input", `${BB_INPUT} border-dashed`, {}],
+      ["input", `${BB_INPUT} border-t-0`, {}],
+      ["button", "border border-border hover:border-primary", {}],
+    ] as const) {
+      const control = element(tag, className, attributes);
+      expect(cascade(control, "box-shadow", AT_3X) ?? "", control.outerHTML).not.toMatch(RING);
+    }
+    const trigger = element("button", "border border-border/60 bg-card");
+    expect(cascade(trigger, "--monokai-edge", AT_3X)).toBe("var(--input)");
+  });
+
+  test("sizes positional and child divider utilities in either load order", () => {
+    const group = element("ul", "divide-y [&>li+li]:border-t");
+    const first = element("li", "first:border-l not-first:border-t");
+    const second = element("li", "not-first:border-t");
+    group.append(first, second);
+    expect(cascade(first, "border-left-width", AT_3X)).toBe("var(--hairline-width)");
+    expect(cascade(first, "border-top-width", AT_3X)).toBeUndefined();
+    expect(cascade(second, "border-top-width", AT_3X)).toBe("var(--hairline-width)");
+    second.className = "";
+    expect(cascade(second, "border-top-width", AT_3X)).toBe("var(--hairline-width)");
+    expect(cascade(first, "border-block-end-width", AT_3X)).toContain("var(--hairline-width)");
+    expect(cascade(second, "border-block-end-width", AT_3X)).toBeUndefined();
+  });
+
+  test("sizes responsive GenUI borders and preserves the last row's reset", () => {
+    const table = element("div", "");
+    const row = element("div", "@lg:border-b @lg:last:border-b-0");
+    const last = element("div", row.className);
+    table.append(row, last);
+    const search = element("button", "@xl:border");
+    const connector = element("span", "border-l @2xl:border-l-0 @2xl:border-t");
+    expect(cascade(row, "border-bottom-width", { ...AT_2X, container: 511 })).toBeUndefined();
+    expect(cascade(row, "border-bottom-width", { ...AT_2X, container: 512 })).toBe(
+      "var(--hairline-width)",
+    );
+    expect(cascade(last, "border-bottom-width", { ...AT_2X, container: 512 })).toBe("0");
+    expect(cascade(search, "border-top-width", { ...AT_2X, container: 575 })).toBeUndefined();
+    expect(cascade(search, "border-top-width", { ...AT_2X, container: 576 })).toBe(
+      "var(--hairline-width)",
+    );
+    expect(cascade(connector, "border-left-width", { ...AT_2X, container: 671 })).toBe(
+      "var(--hairline-width)",
+    );
+    expect(cascade(connector, "border-left-width", { ...AT_2X, container: 672 })).toBe("0");
+    expect(cascade(connector, "border-top-width", { ...AT_2X, container: 672 })).toBe(
+      "var(--hairline-width)",
+    );
+  });
+
+  test("sizes arbitrary and data-side variants without restoring the phone drawer border", () => {
+    const group = element("div", "");
+    const conditional = element("div", "[&:not(:first-child)]:border-t");
+    group.append(element("div", ""), conditional);
+    expect(cascade(conditional, "border-top-width", AT_2X)).toBe("var(--hairline-width)");
+
+    const side = element("div", "data-[side=left]:border-r", { "data-side": "left" });
+    expect(cascade(side, "border-right-width", AT_2X)).toBe("var(--hairline-width)");
+    side.setAttribute("data-sidebar", "panel");
+    side.setAttribute("data-vaul-drawer-direction", "left");
+    expect(cascade(side, "border-right-width", { ...AT_2X, viewport: 402 })).toBe("0");
+  });
+
+  test("leaves the border width of a responsive Input to Tailwind", () => {
+    const input = element("input", `${BB_INPUT} max-md:border-0`);
+    const narrow = { ...AT_3X, viewport: 600 };
+    expect(cascade(input, "border-top-width", narrow)).toBe("0");
+    expect(cascade(input, "box-shadow", narrow) ?? "").not.toMatch(RING);
+    expect(cascade(input, "border-top-width", AT_3X)).toBe("var(--hairline-width)");
   });
 
   test("keeps a box's own widths and a hairline box's open side", () => {

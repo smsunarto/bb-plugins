@@ -514,7 +514,7 @@ const darkExpected = declarationMap({
   "--border-seam-vertical": "var(--border-seam)",
   "--border": roleValues["solid.hairline"],
   "--hairline-width": "0.5px",
-  "--hairline-ring-width": "1px",
+  "--hairline-ring-width": "var(--monokai-device-pixel, 1px)",
   "--border-hairline": roleValues["solid.hairline"],
   "--foreground": palette.shell.ink,
   "--muted-foreground": palette.shell.secondary,

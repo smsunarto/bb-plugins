@@ -4,6 +4,7 @@ import "./app/monaco-syntax-tokens.css";
 import "./app/diff-header.css";
 import "./app/project-control.css";
 import { mountArchiveToast } from "./app/archive-toast.ts";
+import { mountHairlineDensity } from "./app/hairline-density.ts";
 import { mountBbDomStyles } from "./app/bb-dom-styles.ts";
 import { mountPanelNewTab } from "./app/panel-new-tab.ts";
 import { mountProjectControl } from "./app/project-control.ts";
@@ -22,6 +23,7 @@ import { ThreadMarker } from "./app/thread-marker.ts";
 
 export default definePluginApp((app) => {
   app.contentScripts.register({ id: "archive-toast", mount: mountArchiveToast });
+  app.contentScripts.register({ id: "hairline-density", mount: mountHairlineDensity });
   app.contentScripts.register({ id: "bb-dom-styles", mount: mountBbDomStyles });
   app.contentScripts.register({ id: "thread-header-rows", mount: mountThreadHeaderRows });
   // Marks presses of the right panel's toggle and presses bb's new-tab button
