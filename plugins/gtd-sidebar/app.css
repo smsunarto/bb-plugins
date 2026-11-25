@@ -442,6 +442,39 @@
   width: 16px;
   height: 16px;
 }
+/* New Captain sits left of the +, 2px apart, and reveals with it. Where both
+   are static, they sit side by side and the offset must not apply. */
+.gtd-project-group-captain {
+  right: 30px;
+}
+@media (hover: none) {
+  .gtd-project-group-captain {
+    position: relative;
+    right: auto;
+  }
+}
+.gtd-project-group-header-touch .gtd-project-group-captain {
+  position: relative;
+  right: auto;
+}
+/* A finger gets a 44px target around the glyph, the HIG minimum: the button
+   itself is 44px wide, so the + beside it cannot cover any of it, and the
+   pseudo-element adds the height the row does not have. */
+@media (pointer: coarse) {
+  .gtd-project-group-captain,
+  .gtd-project-group-header-touch .gtd-project-group-captain {
+    width: 44px;
+  }
+  .gtd-project-group-captain::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+}
 /* Move thread content, disclosures, and tree guides together inside groups.
    The 4px under the header is the first row's own top margin. */
 .gtd-project-group-rows {

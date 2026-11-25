@@ -1,6 +1,7 @@
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   AlarmClockIcon,
+  AnchorIcon,
   ArrowDataTransferHorizontalIcon,
   Archive02Icon,
   ArrowDown01Icon,
@@ -87,6 +88,7 @@ import { cn } from "../../lib/utils";
 
 const ICON_MAP = {
   AlarmClock: AlarmClockIcon,
+  Anchor: AnchorIcon,
   ArrowTurnBackward: ArrowTurnBackwardIcon,
   Atom: Atom01Icon,
   Bell: Notification01Icon,

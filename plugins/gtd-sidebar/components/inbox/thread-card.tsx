@@ -68,6 +68,8 @@ interface ThreadCardProps {
   drag?: SidebarDragApi;
   /** Whether the row being dragged may drop here, per the tree's cycle guard. */
   dropAllowed: boolean;
+  /** Items in this Captain's Needs you banner; 0 for every other thread. */
+  needsYou: number;
 }
 
 export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
@@ -150,6 +152,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
   nestIsDragging,
   nestIsOver,
   setNestRef,
+  needsYou,
 }: ThreadCardProps & {
   isOpenInSplit: boolean;
   isFocusedInSplit: boolean | undefined;
@@ -275,6 +278,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
             isUnread={isUnread}
             shortcut={shortcut}
             activity={thread.activity}
+            needsYou={needsYou}
             statusId={statusId}
           />
         ) : (
@@ -288,6 +292,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
             showActions={showActions}
             canPark={canPark}
             activity={thread.activity}
+            needsYou={needsYou}
             statusId={statusId}
           />
         )}
@@ -443,6 +448,7 @@ function MobileThreadSummary({
   isUnread,
   shortcut,
   activity,
+  needsYou,
   statusId,
 }: {
   title: ReactNode;
@@ -452,6 +458,7 @@ function MobileThreadSummary({
   isUnread: boolean;
   shortcut: PluginSidebarThreadShortcut | null;
   activity: PluginSidebarThread["activity"];
+  needsYou: number;
   /** The slot's id, which the row's link names as its description. */
   statusId: string;
 }) {
@@ -460,6 +467,7 @@ function MobileThreadSummary({
       {title}
       {metadata}
       <span className="gtd-rest-signals flex shrink-0 items-center gap-1">
+        <NeedsYouCount count={needsYou} />
         <ActivityCounts activity={activity} isCompactViewport />
         <span id={statusId} className={STATUS_SLOT_CLASS}>
           <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} isCompactViewport />
@@ -664,6 +672,7 @@ function DesktopThreadSummary({
   showActions,
   canPark,
   activity,
+  needsYou,
   statusId,
 }: {
   title: ReactNode;
@@ -676,6 +685,7 @@ function DesktopThreadSummary({
   showActions: boolean;
   canPark: boolean;
   activity: PluginSidebarThread["activity"];
+  needsYou: number;
   /** The slot's id, which the row's link names as its description. */
   statusId: string;
 }) {
@@ -686,6 +696,7 @@ function DesktopThreadSummary({
       {title}
       {metadata}
       <span className="gtd-rest-signals flex shrink-0 items-center gap-1">
+        <NeedsYouCount count={needsYou} />
         <ActivityCounts activity={activity} isCompactViewport={false} />
         <span id={statusId} className={STATUS_SLOT_CLASS}>
           <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} />
@@ -785,6 +796,23 @@ function ActivityCounts({
         />
       ) : null}
     </>
+  );
+}
+
+/**
+ * A Captain's Needs you count: the items its banner holds, in the attention
+ * color the project header uses for its own needs-you count. Nothing at 0.
+ */
+function NeedsYouCount({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      data-gtd-needs-you={count}
+      aria-label={`${count} ${count === 1 ? "needs" : "need"} you`}
+      className="shrink-0 rounded bg-muted px-1 font-mono text-2xs text-attention"
+    >
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }
 

@@ -9,7 +9,7 @@ import {
   ContextMenuTrigger,
 } from "../ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
-import { Icon } from "../ui/icon";
+import { Icon, type IconName } from "../ui/icon";
 import { cn } from "../../lib/utils";
 import { FadingText } from "./thread-details";
 import { MenuSurface, openMenuFromKeyboard } from "./menu-surface";
@@ -36,8 +36,9 @@ export function SortableProjectGroup(props: ProjectGroupProps) {
  * header carries only the project name. The count shows while the group is
  * folded, where it is the group's whole footprint: `needs-you / total` when
  * something in it asks for the user, the total alone otherwise. Hovering the
- * header trades the count for a new-thread button. Compact viewports keep
- * both the count and the new-thread button visible for touch access.
+ * header trades the count for a new-thread button, and a New Captain button
+ * beside it while the Captain plugin runs. Compact viewports keep the count
+ * and both buttons visible for touch access.
  *
  * Right-clicking the header offers "Move up" / "Move down", and a sortable
  * group drags by its header — both reorder the project in bb's own order,
@@ -58,6 +59,7 @@ export function ProjectGroup({
   expanded,
   onToggle,
   onNewThread,
+  onNewCaptain,
   onMoveUp,
   onMoveDown,
   isCompactViewport,
@@ -136,8 +138,19 @@ export function ProjectGroup({
           </span>
         )}
       </button>
-      <NewThreadButton
-        name={name}
+      {onNewCaptain === undefined ? null : (
+        <HeaderButton
+          label={`New Captain directing ${name}`}
+          icon="Anchor"
+          className="gtd-project-group-new gtd-project-group-captain"
+          onClick={() => onNewCaptain(projectId)}
+          onFocusVisibleChange={setNewFocusVisible}
+        />
+      )}
+      <HeaderButton
+        label={`New thread in ${name}`}
+        icon="Plus"
+        className="gtd-project-group-new"
         onClick={() => onNewThread(projectId)}
         onFocusVisibleChange={setNewFocusVisible}
       />
@@ -188,13 +201,20 @@ function spokenCount(families: number, attention: number) {
   return `${threads}, ${attention} ${attention === 1 ? "needs" : "need"} you`;
 }
 
-/** The header's new-thread button, reporting keyboard focus so the header can hide its count. */
-function NewThreadButton({
-  name,
+/**
+ * One of the header's start buttons, New thread or New Captain, reporting
+ * keyboard focus so the header can hide its count.
+ */
+function HeaderButton({
+  label,
+  icon,
+  className,
   onClick,
   onFocusVisibleChange,
 }: {
-  name: string;
+  label: string;
+  icon: IconName;
+  className: string;
   onClick: () => void;
   onFocusVisibleChange: (focusVisible: boolean) => void;
 }) {
@@ -203,16 +223,16 @@ function NewThreadButton({
       <TooltipTrigger asChild>
         <button
           type="button"
-          aria-label={`New thread in ${name}`}
+          aria-label={label}
           onClick={onClick}
           onFocus={(event) => onFocusVisibleChange(event.currentTarget.matches(":focus-visible"))}
           onBlur={() => onFocusVisibleChange(false)}
-          className="gtd-project-group-new"
+          className={className}
         >
-          <Icon name="Plus" className="size-3" />
+          <Icon name={icon} className="size-3" />
         </button>
       </TooltipTrigger>
-      <TooltipContent>New thread in {name}</TooltipContent>
+      <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   );
 }
@@ -226,6 +246,8 @@ export interface ProjectGroupProps extends HeaderMeasureProps {
   expanded: boolean;
   onToggle: () => void;
   onNewThread: (projectId: string) => void;
+  /** Opens New Captain with this project picked; absent while Captain is not running. */
+  onNewCaptain?: (projectId: string) => void;
   /** Move handlers, absent where the move cannot run (edge groups, personal). */
   onMoveUp?: () => void;
   onMoveDown?: () => void;
