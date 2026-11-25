@@ -97,8 +97,10 @@ export function buildThreadActionPlan(lifecycle: RowLifecycleState): ThreadActio
 }
 
 /**
- * The plan for a row on `shelf`. The row draws its hover buttons from it and
- * the list's shared menu leads with it, so both offer the same moves.
+ * The plan for a row on `shelf`. The list's shared menu leads with it, and a
+ * row's hover buttons pick Snooze and Settle out of it. A thread that stays
+ * open (`stayOpenReason`) draws no hover buttons, so only the menu shows the
+ * two moves, disabled with the reason.
  */
 export function rowActionPlan(
   shelf: "active" | "snoozed" | "settled",

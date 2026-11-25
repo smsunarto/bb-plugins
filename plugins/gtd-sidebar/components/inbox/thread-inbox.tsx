@@ -399,7 +399,6 @@ function InboxList({
         branchName={branchName}
         isActive={thread.id === activeThreadId}
         canPark={canParkFamily(row.node, lifecycle)}
-        stayOpenReason={stayOpenReason(thread)}
         isCompactViewport={isCompactViewport}
         command={command}
         drag={drag}

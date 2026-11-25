@@ -34,6 +34,7 @@ import { STATUS_SLOT_CLASS, StatusOrTime, useRowDescribedBy } from "./status-slo
 import { FadingText, HostLead, NAMING_TITLE_CLASS, ThreadDetails } from "./thread-details";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { useNestRow, type SidebarDragApi } from "../../hooks/use-nest-drag";
+import { isLongLivedThread } from "../../lib/long-lived";
 
 /** Horizontal step per nesting level, in px. Mirrors --gtd-depth-step in app.css. */
 const DEPTH_STEP = 16;
@@ -61,8 +62,6 @@ interface ThreadCardProps {
   isNaming?: boolean;
   /** False while the thread is working or blocked on the user. */
   canPark: boolean;
-  /** Why the family may not be settled or snoozed (lib/long-lived), or null. */
-  stayOpenReason: string | null;
   isCompactViewport: boolean;
   command: DispatchRowCommand;
   /** Sidebar drag state; absent on compact viewports, where there is no drag. */
@@ -140,7 +139,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
   isActive,
   isNaming = false,
   canPark,
-  stayOpenReason,
   isCompactViewport,
   command,
   drag,
@@ -167,7 +165,9 @@ const ThreadCardBody = memo(function ThreadCardBody({
   const menuState = useRowMenuState(thread.id);
 
   const shortcut = useSidebarThreadShortcut(thread.id);
-  const showActions = shelf === "nextAction" || canPark;
+  // A Captain stays open (lib/long-lived), so its row offers no Snooze or
+  // Settle at all; the right-click menu still lists them, disabled with why.
+  const showActions = !isLongLivedThread(thread) && (shelf === "nextAction" || canPark);
   const relation = parentTitle
     ? `Child of ${parentTitle}`
     : childCount > 0
@@ -284,7 +284,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
             thread={statusThread}
             isUnread={isUnread}
             shortcut={shortcut}
-            plan={rowActionPlan("active", thread.id, canPark, command, stayOpenReason)}
+            plan={rowActionPlan("active", thread.id, canPark, command)}
             showActions={showActions}
             canPark={canPark}
             activity={thread.activity}
@@ -681,7 +681,6 @@ function DesktopThreadSummary({
 }) {
   const snoozeAction = findThreadAction(plan, "snooze-tomorrow");
   const settleAction = findThreadAction(plan, "settle");
-  const snoozeHint = snoozeAction?.disabledReason ?? IDLE_SNOOZE_HINT;
   return (
     <>
       {title}
@@ -697,16 +696,14 @@ function DesktopThreadSummary({
           <ParkButton
             label={SNOOZE_TOMORROW_LABEL}
             icon="Clock"
-            disabled={!canPark || snoozeAction?.disabledReason !== undefined}
-            disabledHint={snoozeHint}
+            disabled={!canPark}
+            disabledHint={IDLE_SNOOZE_HINT}
             onActivate={() => snoozeAction?.execute()}
           />
           {settleAction ? (
             <ParkButton
               label={settleAction.label}
               icon={settleAction.icon}
-              disabled={settleAction.disabledReason !== undefined}
-              disabledHint={settleAction.disabledReason}
               onActivate={settleAction.execute}
             />
           ) : null}

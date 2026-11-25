@@ -1625,6 +1625,54 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.equal(screen.queryByRole("menuitem", { name: "Snooze until tomorrow" }), null);
     });
 
+    it("draws no hover Snooze or Settle on a Captain row, and both on others", () => {
+      const view = mount(
+        hostState([thread("captain", { originPluginId: "captain" }), thread("crew")]),
+      );
+      const card = (id: string) => row(view.slot, id).parentElement!;
+      const hoverActions = (id: string) =>
+        Array.from(card(id).querySelectorAll(".gtd-trailing-actions button"), (button) =>
+          button.getAttribute("aria-label"),
+        );
+      assert.deepEqual(hoverActions("crew"), ["Snooze until tomorrow", "Settle"]);
+      assert.equal(card("crew").getAttribute("data-action-count"), "2");
+      assert.deepEqual(hoverActions("captain"), []);
+      assert.equal(card("captain").querySelector(".gtd-trailing-actions"), null);
+      // No count, so app.css reserves no hover padding for absent buttons.
+      assert.equal(card("captain").getAttribute("data-action-count"), "0");
+    });
+
+    it("lists a Captain's Settle and Snooze in its menu, disabled with the reason", async () => {
+      const view = mount(
+        hostState([thread("captain", { originPluginId: "captain" }), thread("crew")]),
+      );
+      const parkItems = async (id: string) => {
+        fireEvent.contextMenu(row(view.slot, id));
+        await act(async () => {});
+        const items = ["Settle", "Snooze until tomorrow"].map((label) => {
+          const item = screen
+            .getAllByRole("menuitem")
+            .find((entry) => entry.textContent?.startsWith(label));
+          assert.ok(item, `${id} menu lists ${label}`);
+          return {
+            disabled: item.getAttribute("aria-disabled") === "true",
+            text: item.textContent,
+          };
+        });
+        fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+        await act(async () => {});
+        return items;
+      };
+      assert.deepEqual(await parkItems("captain"), [
+        { disabled: true, text: "SettleCaptain threads stay open" },
+        { disabled: true, text: "Snooze until tomorrowCaptain threads stay open" },
+      ]);
+      assert.deepEqual(await parkItems("crew"), [
+        { disabled: false, text: "Settle" },
+        { disabled: false, text: "Snooze until tomorrow" },
+      ]);
+    });
+
     it("publishes focused split state independently of the parent route", () => {
       const host = {
         ...hostState([thread("root"), thread("child", { parentThreadId: "root" })]),
