@@ -1,5 +1,12 @@
 import { cliCommand } from "@get-bb/plugin-sdk";
-import { ASK_TEXT_MAX, captainComment, openAsk, shipBlockers } from "../asks.ts";
+import {
+  ASK_TEXT_MAX,
+  captainComment,
+  FULL_SHA,
+  openAsk,
+  shipBlockers,
+  supersedeShipAsks,
+} from "../asks.ts";
 import { callerCaptain } from "../caller.ts";
 import { resolveTask, tasksOrRefuse } from "../crew.ts";
 import { guard, Refusal, render, type Blocker, type Item } from "../output.ts";
@@ -33,12 +40,12 @@ export function verdictCommand(deps: CommandDeps) {
         type: "string",
         placeholder: "sha",
         description:
-          "The commit the verdict judged, from the report; shipping compares the PR head with it",
+          "The commit the verdict judged, from the report; shipping compares the PR or branch head with it",
       },
       ship: {
         type: "boolean",
         description:
-          "Also open the task's ship ask (Merge or Hold); needs review passed or skipped",
+          "Also open the task's ship ask (Merge or Hold); needs review passed or skipped and the full --head",
       },
       captain: CAPTAIN_OPTION,
       json: JSON_OPTION,
@@ -52,7 +59,8 @@ export function verdictCommand(deps: CommandDeps) {
         const { role, value: rawValue } = input.positionals;
         const value = rawValue.trim().toLowerCase();
         const reason = input.options.reason?.trim() || null;
-        const head = input.options.head?.trim() || null;
+        const rawHead = input.options.head?.trim() || null;
+        const head = input.options.ship && rawHead !== null ? rawHead.toLowerCase() : rawHead;
         const field = parseVerdictField(role);
         const blockers: Blocker[] = [];
         if (field === null) {
@@ -74,6 +82,15 @@ export function verdictCommand(deps: CommandDeps) {
         }
         if (input.options.ship && field !== null && field !== "review") {
           blockers.push({ reason: "--ship follows a review verdict", fix: "drop --ship" });
+        }
+        if (input.options.ship && (head === null || !FULL_SHA.test(head))) {
+          blockers.push({
+            reason:
+              head === null
+                ? "--ship needs the head the review judged"
+                : `--ship needs the full 40-character head, not ${JSON.stringify(rawHead)}`,
+            fix: "pass --head <sha> with the full sha from the report, as git rev-parse HEAD prints it",
+          });
         }
         const resolved = await tasksOrRefuse(() =>
           resolveTask(deps, captain, input.positionals.task),
@@ -122,15 +139,18 @@ export function verdictCommand(deps: CommandDeps) {
             data: { field, value, head, reason },
           },
         ];
-        if (input.options.ship) {
+        if (field === "review") {
+          notes.push(...(await supersedeShipAsks(deps, captain, task, { value, head })));
+        }
+        if (input.options.ship && head !== null) {
           const opened = await openAsk(deps, captain, {
             kind: "ship",
             task,
             text: shipText(task.key, task.title),
             detail: [
-              `Review ${value}${head === null ? "" : ` at ${head}`}.`,
+              `Review ${value} at ${head}.`,
               reason,
-              "Merge lets the Captain merge this PR at that head; Hold keeps it open.",
+              "Merge lets the Captain ship it at that head: merge its PR, or fast-forward the target branch for a direct-ship repo. Hold keeps it open.",
             ]
               .filter((part) => part !== null)
               .join(" "),

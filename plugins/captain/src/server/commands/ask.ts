@@ -1,14 +1,7 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
-import {
-  ASK_OPTION_COLUMNS,
-  askBlockers,
-  askItem,
-  openAsk,
-  resolveAsk,
-  shipBlockers,
-} from "../asks.ts";
+import { ASK_OPTION_COLUMNS, askBlockers, askItem, openAsk, resolveAsk } from "../asks.ts";
 import { callerCaptain, readCallerFile } from "../caller.ts";
-import { resolveTask, taskFields, tasksOrRefuse } from "../crew.ts";
+import { resolveTask, tasksOrRefuse } from "../crew.ts";
 import { guard, Refusal, render, type Blocker } from "../output.ts";
 import { ASK_KINDS, type AskKind } from "../../contract/queue.ts";
 import type { TasksTask } from "../tasks-client.ts";
@@ -21,7 +14,8 @@ export function askCommand(deps: CommandDeps) {
       {
         name: "text",
         required: true,
-        description: 'One imperative line of at most 80 characters, such as "Merge PLUG-14"',
+        description:
+          'One imperative line of at most 80 characters, such as "Pick the Unity account for cloud crew"',
       },
     ],
     options: {
@@ -29,18 +23,19 @@ export function askCommand(deps: CommandDeps) {
         type: "enum",
         values: ASK_KINDS,
         default: "decision",
-        description: "decision, ship, access or improve",
+        description:
+          "decision, access or improve; a ship ask opens only through bb captain verdict --ship",
       },
       task: {
         type: "string",
         placeholder: "key",
-        description: "The task it blocks; required for decision and ship asks",
+        description: "The task it blocks; required for decision asks",
       },
       option: {
         type: "string",
         repeatable: true,
         placeholder: "answer",
-        description: `A button label of ≤${ASK_OPTION_COLUMNS} columns (wide characters count 2) with no ⭐ or other marker, the recommended one first; repeat it. A decision ask needs two or more; a ship ask takes none (Merge and Hold)`,
+        description: `A button label of ≤${ASK_OPTION_COLUMNS} columns (wide characters count 2) with no ⭐ or other marker, the recommended one first; repeat it. A decision ask needs two or more`,
       },
       detail: {
         type: "string",
@@ -64,6 +59,16 @@ export function askCommand(deps: CommandDeps) {
           captain: input.options.captain,
         });
         const kind = input.options.kind as AskKind;
+        if (kind === "ship") {
+          // A ship ask must name the head its review judged, which only verdict records.
+          const key = input.options.task?.trim().toUpperCase() || "<task>";
+          throw new Refusal([
+            {
+              reason: "a ship ask opens only with the review verdict that names its head",
+              fix: `once Review has passed: bb captain verdict ${key} review passed --head <sha> --ship`,
+            },
+          ]);
+        }
         const detail = await textOption(
           deps,
           ctx,
@@ -84,10 +89,6 @@ export function askCommand(deps: CommandDeps) {
           const resolved = await tasksOrRefuse(() => resolveTask(deps, captain, taskKey));
           if ("blocker" in resolved) blockers.push(resolved.blocker);
           else task = resolved.task;
-        }
-        if (kind === "ship" && task !== null) {
-          const fields = await tasksOrRefuse(() => taskFields(deps, task));
-          blockers.push(...shipBlockers(task.key, fields.get("review")?.value ?? null));
         }
         if (blockers.length > 0) throw new Refusal(blockers);
         const { item, notes } = await openAsk(deps, captain, {

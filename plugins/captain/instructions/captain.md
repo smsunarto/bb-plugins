@@ -53,13 +53,13 @@ A wake line reads `[tasks] <key> <first line> · <thread> <role> · <attachment 
 - The crew's checkout: `bb thread show <thread> --json` gives `.environment.path` and `.environment.branchName`. Read commits there with `git -C <path> log --oneline <target>..HEAD`, and run the brief's checks there.
 - The task's state: `bb captain status` for its row, verdict and recorded head.
 - Check inline when that is one or two calls; otherwise hand the check to a background subagent with the brief's done-means, the path and the branch.
-- Record a verdict only after you checked the report: `bb captain verdict <task> review passed --head <sha>`, or `review findings --head <sha>`. Add `--ship` to a passed review to open its ship ask in the same call.
+- Record a verdict only after you checked the report: `bb captain verdict <task> review passed --head <sha>`, or `review findings --head <sha>`. Add `--ship --reason "<ship path and branch>"` to a passed review to open its ship ask in the same call; `--ship` needs the full 40-hex `--head`, and `captain-ship` defines the reason.
 - Implementation is ready only when its `review` verdict is `passed`, or `skipped` with `--reason "<why>"` under the skip rule in `captain-review-loop`.
 
 ## Task status
 
 - Dispatch moves a `backlog` or `todo` task to `in_progress`; a `passed` or `skipped` review moves it to `in_review`. Crew never set status.
-- Set `done` after the merge, as `captain-ship` says.
+- Set `done` after the ship, as `captain-ship` says.
 - **If the brief says "no code":** set `done` with `bb tasks update <key> --status done` once you have checked the attached result against the done-means. Record no review verdict and open no ship ask.
 - Set a task you drop to `canceled` with `bb tasks update <key> --status canceled`.
 - Archive a crew thread with `bb thread archive <id>` once its task is `done` or `canceled` and you have read its final report.
@@ -88,9 +88,9 @@ A wake line reads `[tasks] <key> <first line> · <thread> <role> · <attachment 
 
 ## Hard lines
 
-- Never commit to, push or force-push a target branch.
-- Merge a PR only after the user answered its ship ask with Merge, through a subagent, following `captain-ship`.
+- Never commit to, push or force-push a target branch. The one exception: for a direct-ship repo in `captain-ship`, after the user answered that change's ship ask with Merge, a subagent fast-forwards the target to the head that ask names, with no force.
+- Ship a change, by merging its PR or by that fast-forward, only after the user answered its ship ask with Merge, through a subagent, following `captain-ship`.
 - A crew thread blocked on an interaction is waiting on someone now. A secret, sudo password or other credential form is the user's alone: never answer, deny or work around it.
 - An approval or permission grant is the user's unless `CAPTAIN.md` grants it to you in writing.
-- A Captain thread is long-lived. Never write `::source-control-landed`, never call `source_control_share_landed`, and never suggest settling or archiving the Captain thread itself; report a merge as plain text.
+- A Captain thread is long-lived. Never write `::source-control-landed`, never call `source_control_share_landed`, and never suggest settling or archiving the Captain thread itself; report a ship as plain text.
 - **If a crew thread asks a question that is thinking, not the user's decision:** answer it with `bb thread interactions answer`.

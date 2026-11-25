@@ -160,6 +160,54 @@ export function shipBlockers(taskKey: string, review: string | null): Blocker[] 
   ];
 }
 
+/** A full commit id, the only head a ship ask may name. */
+export const FULL_SHA = /^[0-9a-f]{40}$/u;
+
+/** The answer that closes a ship ask a newer head replaced; it is never delivered. */
+export const SUPERSEDED = "Superseded";
+
+/** The head a ship ask's detail names, from its leading `Review <verdict> at <sha>.`. */
+function shipAskHead(detail: string): string | null {
+  return /^Review \S+ at ([0-9a-f]{40})\./u.exec(detail)?.[1] ?? null;
+}
+
+/**
+ * Close the task's open ship asks that no longer match its review verdict:
+ * every one when the verdict is not ship-ready, else each that names another
+ * head. A Merge on such an ask would cover commits no review approved. Each
+ * is answered `Superseded` without a send, and the task gets a comment.
+ */
+export async function supersedeShipAsks(
+  deps: CommandDeps,
+  captain: Captain,
+  task: TasksTask,
+  verdict: { value: string; head: string | null },
+): Promise<string[]> {
+  const notes: string[] = [];
+  const head = verdict.head?.toLowerCase() ?? null;
+  const keep = SHIP_READY_REVIEWS.has(verdict.value) ? head : null;
+  const recorded = `review ${verdict.value}${head === null ? "" : ` at ${head}`}`;
+  const stale = deps.store
+    .asksOf(captain.threadId, { open: true })
+    .filter((ask) => ask.kind === "ship" && ask.taskKey === task.key)
+    .filter((ask) => keep === null || shipAskHead(ask.detail) !== keep);
+  for (const ask of stale) {
+    const at = deps.now();
+    deps.store.answerAsk(ask.id, SUPERSEDED, at);
+    deps.store.markAnswerDelivered(ask.id, at);
+    const warning = await captainComment(
+      deps,
+      captain,
+      task.id,
+      `${SUPERSEDED}: ${ask.id} does not match the recorded ${recorded}; a Merge on it grants nothing.`,
+    );
+    notes.push(`${ask.id} superseded: it does not match the recorded ${recorded}`);
+    if (warning !== null) notes.push(`warning: ${warning}`);
+  }
+  if (stale.length > 0) deps.bb.rpc.experimental_invalidate([asksTag(captain.threadId)]);
+  return notes;
+}
+
 /**
  * Open an ask, or return the open one with the same kind, task and text, so a
  * rerun opens nothing twice. A new ask is posted on its task as an `Asked:`
@@ -345,7 +393,10 @@ export async function resolveAsk(
   if (ask.answer !== null && ask.answer !== answer) {
     blockers.push({
       reason: `${id} was already answered ${JSON.stringify(ask.answer)}`,
-      fix: "open a new ask with bb captain ask",
+      fix:
+        ask.kind === "ship"
+          ? `once Review has passed: bb captain verdict ${ask.taskKey ?? "<task>"} review passed --head <sha> --ship`
+          : "open a new ask with bb captain ask",
     });
   }
   if (blockers.length > 0 || captain === null) throw new Refusal(blockers);
