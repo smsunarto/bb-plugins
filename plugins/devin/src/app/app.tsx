@@ -13,7 +13,12 @@ import { DEVIN_LOGO_PATHS, DEVIN_LOGO_VIEW_BOX } from "../shared/devin-brand.ts"
 import { cloudSessionSettled, DEVIN_PROVIDER_ID } from "../shared/devin.ts";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
-import { Input } from "./components/ui/input.tsx";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "./components/ui/input-group.tsx";
 import { Toggle } from "./components/ui/toggle.tsx";
 import {
   Tooltip,
@@ -223,15 +228,11 @@ function CloudBanner() {
           {active === null ? (
             <span className="truncate text-xs">Starting a cloud session…</span>
           ) : (
-            <a
-              className="truncate text-xs underline-offset-2 hover:text-foreground hover:underline"
-              href={active.url}
-              rel="noreferrer"
-              target="_blank"
-              title={active.url}
-            >
-              Open in Devin
-            </a>
+            <Button asChild className="min-w-0 shrink" size="xs" variant="link">
+              <a href={active.url} rel="noreferrer" target="_blank" title={active.url}>
+                <span className="truncate">Open in Devin</span>
+              </a>
+            </Button>
           )}
         </div>
         <Badge
@@ -245,27 +246,27 @@ function CloudBanner() {
         </Badge>
       </div>
 
-      <div className="mt-2 flex min-w-0 items-center gap-2">
-        <Input
+      <InputGroup className="mt-2">
+        <InputGroupInput
           aria-label="Devin attach command"
-          className="min-w-0 flex-1 font-mono text-xs"
+          className="min-w-0 font-mono text-xs"
           placeholder="Waiting for the Devin session ID…"
           readOnly
           title={active?.attachCommand}
           value={active?.attachCommand ?? ""}
         />
-        <Button
-          type="button"
-          aria-label="Copy Devin attach command"
-          className="w-20"
-          disabled={active === null}
-          onClick={() => void copy()}
-          size="sm"
-          variant="ghost"
-        >
-          {copied === "copied" ? "Copied" : copied === "failed" ? "Copy failed" : "Copy"}
-        </Button>
-      </div>
+        <InputGroupAddon align="inline-end">
+          <InputGroupButton
+            type="button"
+            aria-label="Copy Devin attach command"
+            className="w-20"
+            disabled={active === null}
+            onClick={() => void copy()}
+          >
+            {copied === "copied" ? "Copied" : copied === "failed" ? "Copy failed" : "Copy"}
+          </InputGroupButton>
+        </InputGroupAddon>
+      </InputGroup>
     </div>
   );
 }
