@@ -2,8 +2,9 @@ import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 
 // BB's inset and Monokai's web frame are outside the navPanel slot.
 // Bounded split panes have data-focused. Leave their shared frame intact.
-const INSET =
-  ':has([data-scott-tasks-page]):not(:has([data-split-pane-id][data-focused]))[data-sidebar="inset"]';
+const TASKS_PAGE = "[data-scott-tasks-page]";
+const FOCUSED_SPLIT = "[data-split-pane-id][data-focused]";
+const INSET = `:has(${TASKS_PAGE}):not(:has(${FOCUSED_SPLIT}))[data-sidebar="inset"]`;
 
 export function mountTasksPageFrame({ signal }: Pick<PluginContentScriptContext, "signal">) {
   if (signal.aborted) return;
@@ -11,7 +12,7 @@ export function mountTasksPageFrame({ signal }: Pick<PluginContentScriptContext,
   style.setAttribute("data-scott-tasks-frame-style", "");
   style.textContent = `
     @media (min-width: 768px) {
-      :not([data-framed]):has(> ${INSET})[data-testid="app-layout-root"] {
+      :not([data-framed]):has(> [data-sidebar="inset"] ${TASKS_PAGE}):not(:has(> [data-sidebar="inset"] ${FOCUSED_SPLIT}))[data-testid="app-layout-root"] {
         padding: 0;
       }
       ${INSET} {

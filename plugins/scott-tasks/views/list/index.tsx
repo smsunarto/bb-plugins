@@ -11,6 +11,7 @@ import { editTask, type TaskEdit } from "../../shell/collections.js";
 import { useActiveThreads, useLabels, useProjects, useTasksRpc } from "../../shell/data.js";
 import { useTasksNavigation } from "../../shell/routes.js";
 import { useTasksUi } from "../../shell/ui-store.js";
+import { hasOpenOverlay } from "../../shell/keyboard.js";
 import { DetailToasts, useDetailToasts } from "../detail/toast.js";
 import { ViewEmptyState } from "../../components/empty-state.js";
 import { Button } from "@/components/ui/button";
@@ -289,24 +290,25 @@ export function ListView({ projectId, activeOnly = false, backlogOnly = false }:
         !(target instanceof HTMLElement)
       )
         return;
+      const checkboxRow = target.matches('[role="checkbox"]')
+        ? target.closest<HTMLElement>("[data-task-key]")
+        : null;
+      const rowKey = target.dataset.openTask ?? checkboxRow?.dataset.taskKey;
       if (
         target !== document.body &&
         target !== container &&
-        !(container.contains(target) && target.matches("[data-open-task]"))
+        !(rowKey && container.contains(target))
       )
         return;
-      if (
-        target === document.body &&
-        document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
-      )
-        return;
+      if (hasOpenOverlay()) return;
       const key = event.key.toLowerCase();
       if (key === "escape" && selectedTasks.length > 0) {
         event.preventDefault();
         setSelection(new Set());
+        if (checkboxRow && rowKey) readRow(container, rowKey)?.focus({ preventScroll: true });
       } else if (key === "j" || key === "k" || key === "arrowup" || key === "arrowdown") {
         event.preventDefault();
-        moveFocus(target.dataset.openTask, key === "j" || key === "arrowdown" ? 1 : -1);
+        moveFocus(rowKey, key === "j" || key === "arrowdown" ? 1 : -1);
       }
     };
   });
@@ -355,7 +357,12 @@ export function ListView({ projectId, activeOnly = false, backlogOnly = false }:
           heading="No tasks yet"
           description="Create the first task to start tracking work."
           action={
-            <Button size="sm" onClick={() => openNewTask({ projectId })}>
+            <Button
+              size="sm"
+              onClick={() =>
+                openNewTask({ projectId, status: backlogOnly ? "backlog" : undefined })
+              }
+            >
               <Icon name="Plus" className="size-3.5" />
               New task
             </Button>

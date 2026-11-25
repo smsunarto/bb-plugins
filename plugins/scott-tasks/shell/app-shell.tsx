@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { TasksDataRoot } from "./data-root.js";
 import { useTasksUi } from "./ui-store.js";
+import { hasOpenOverlay } from "./keyboard.js";
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -28,14 +29,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
     target instanceof HTMLInputElement ||
     target instanceof HTMLTextAreaElement ||
     target.isContentEditable
-  );
-}
-
-function hasOpenOverlay(): boolean {
-  return (
-    document.querySelector(
-      '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
-    ) !== null
   );
 }
 

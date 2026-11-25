@@ -17,6 +17,7 @@ import { bbProjectsQuery } from "../../shell/query.js";
 import { PriorityIcon, StatusIcon, formatDueDate, isActiveThread } from "./meta.js";
 import { DUE_DATE_PRESETS, localIsoDate, PRIORITY_LABELS, STATUS_LABELS } from "../list/lib.js";
 import { isBareKey, priorityForShortcut, statusForShortcut } from "../list/property-menus.js";
+import { hasOpenOverlay } from "../../shell/keyboard.js";
 import { DispatchControl } from "./threads.js";
 import { CreateLabelItem } from "../../components/create-label-item.js";
 import { DEFAULT_COLOR } from "../manage/shared.js";
@@ -539,12 +540,7 @@ export function PropertiesRail({
       if (target !== document.body && !article.contains(target)) return;
       if (target.isContentEditable || target.closest("input, textarea, select, [role='textbox']"))
         return;
-      if (
-        document.querySelector(
-          '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
-        )
-      )
-        return;
+      if (hasOpenOverlay()) return;
       if (rail.current?.getClientRects().length === 0) return;
       event.preventDefault();
       setOpenMenu(property);

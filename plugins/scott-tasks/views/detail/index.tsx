@@ -76,7 +76,7 @@ function EditableTitle({ task, onSave }: { task: Task; onSave: (title: string) =
       suppressContentEditableWarning
       role="textbox"
       aria-label="Task title"
-      className="text-[1.75rem] font-semibold leading-tight tracking-tight outline-none focus-visible:underline focus-visible:decoration-ring focus-visible:underline-offset-4 @[45rem]:text-[2rem]"
+      className="text-[1.75rem] font-semibold leading-tight tracking-tight outline-none focus-visible:underline focus-visible:decoration-ring focus-visible:underline-offset-4 @[45rem]:text-[2.125rem]"
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
@@ -387,7 +387,7 @@ function TaskDetail({ task }: { task: Task }) {
             value={descriptionValue}
             onChange={onDescriptionChange}
             variant="doc"
-            className="min-h-20"
+            className="min-h-20 @[45rem]:[--tasks-editor-font-size:15px]"
             placeholder="Add a description…"
             onUploadImage={uploadForTask}
             mentionItems={mentionItems}

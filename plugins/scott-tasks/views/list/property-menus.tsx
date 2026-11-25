@@ -137,7 +137,7 @@ export function LabelsEditor({
           size="sm"
           aria-label="Edit task labels"
           aria-keyshortcuts="L"
-          className="relative z-10 min-w-0 gap-1 px-1 max-md:pointer-coarse:h-11"
+          className="relative z-10 min-w-0 gap-1 px-1 pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:pt-4"
         >
           {children ?? <Icon name="Tag" className="size-3.5 text-subtle-foreground" />}
         </Button>

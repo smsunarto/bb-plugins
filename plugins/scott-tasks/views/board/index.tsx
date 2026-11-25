@@ -39,6 +39,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 const DRAG_THRESHOLD_PX = 5;
+const TOUCH_HOLD_MS = 400;
 
 interface BoardCardMeta {
   workingThreads: readonly TaskThread[];
@@ -175,9 +176,7 @@ function TaskCard({
       onClick={onClick}
       className={cn(
         "min-h-19 shrink-0 rounded-md bg-surface-recessed-solid px-3 py-2.5 text-left select-none",
-        ghost
-          ? "shadow-md"
-          : "cursor-pointer touch-none hover:bg-state-hover focus-visible:outline-ring pointer-coarse:touch-auto",
+        ghost ? "shadow-md" : "cursor-pointer hover:bg-state-hover focus-visible:outline-ring",
         dragging && "opacity-40",
       )}
     >
@@ -313,45 +312,53 @@ export function BoardView({ projectId }: BoardViewProps) {
   };
 
   const handleCardPointerDown = (event: ReactPointerEvent<HTMLElement>, task: Task) => {
-    if (event.button !== 0 || event.pointerType === "touch" || dragCleanupRef.current) return;
-    const rect = event.currentTarget.getBoundingClientRect();
+    if (event.button !== 0 || !event.isPrimary || dragCleanupRef.current) return;
+    const { pointerId, currentTarget: card, clientX, clientY } = event;
+    const touch = event.pointerType === "touch";
     const start = {
-      x: event.clientX,
-      y: event.clientY,
-      offsetX: event.clientX - rect.left,
-      offsetY: event.clientY - rect.top,
-      width: rect.width,
+      x: clientX,
+      y: clientY,
     };
-    let active = false;
+    let cardRect: DOMRect | null = null;
+    let hold: ReturnType<typeof setTimeout> | undefined;
+    let moved = false;
 
-    const updateDrag = (moveEvent: PointerEvent) => {
-      const target = findDropTarget(moveEvent.clientX, moveEvent.clientY, task.id);
+    const updateDrag = (x: number, y: number) => {
+      if (!cardRect) return;
+      const target = findDropTarget(x, y, task.id);
       setDrag({
         taskId: task.id,
-        x: moveEvent.clientX,
-        y: moveEvent.clientY,
-        offsetX: start.offsetX,
-        offsetY: start.offsetY,
-        width: start.width,
+        x,
+        y,
+        offsetX: start.x - cardRect.left,
+        offsetY: start.y - cardRect.top,
+        width: cardRect.width,
         overStatus: target?.status ?? null,
         dropIndex: target?.index ?? 0,
       });
     };
 
     const onMove = (moveEvent: PointerEvent) => {
-      if (!active) {
-        const distance = Math.hypot(moveEvent.clientX - start.x, moveEvent.clientY - start.y);
-        if (distance < DRAG_THRESHOLD_PX) return;
-        active = true;
+      if (moveEvent.pointerId !== pointerId) return;
+      const { clientX: x, clientY: y } = moveEvent;
+      if (!moved && Math.hypot(x - start.x, y - start.y) < DRAG_THRESHOLD_PX) return;
+      if (!cardRect) {
+        if (touch) {
+          // A swipe before the hold completes belongs to native scrolling.
+          finish(null);
+          return;
+        }
+        cardRect = card.getBoundingClientRect();
       }
+      moved = true;
       moveEvent.preventDefault();
-      updateDrag(moveEvent);
+      updateDrag(x, y);
     };
     const finish = (upEvent: PointerEvent | null) => {
       dragCleanupRef.current?.();
       dragCleanupRef.current = null;
-      if (!active) return;
-      if (upEvent) {
+      if (!cardRect) return;
+      if (upEvent && moved) {
         const target = findDropTarget(upEvent.clientX, upEvent.clientY, task.id);
         if (target) commitDrop(task.id, target.status, target.index);
       }
@@ -361,17 +368,38 @@ export function BoardView({ projectId }: BoardViewProps) {
         suppressClickRef.current = false;
       }, 0);
     };
-    const onUp = (upEvent: PointerEvent) => finish(upEvent);
-    const onCancel = () => finish(null);
+    const onUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId === pointerId) finish(upEvent);
+    };
+    const onCancel = (cancelEvent: PointerEvent) => {
+      if (cancelEvent.pointerId === pointerId) finish(null);
+    };
+    const onTouchMove = (moveEvent: TouchEvent) => {
+      if (moveEvent.touches.length > 1) {
+        finish(null);
+      } else if (cardRect && moveEvent.cancelable) {
+        // Prevent native scrolling only once a card has been picked up.
+        moveEvent.preventDefault();
+      }
+    };
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
     dragCleanupRef.current = () => {
+      clearTimeout(hold);
+      card.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
     };
+    if (touch) {
+      card.addEventListener("touchmove", onTouchMove, { passive: false });
+      hold = setTimeout(() => {
+        cardRect = card.getBoundingClientRect();
+        updateDrag(start.x, start.y);
+      }, TOUCH_HOLD_MS);
+    }
   };
 
   const openTask = (task: Task) => {
