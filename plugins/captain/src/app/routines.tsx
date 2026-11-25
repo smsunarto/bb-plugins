@@ -35,6 +35,7 @@ import { captainContract, type RoutineDraft, type RoutineRow } from "../contract
 import { TAP } from "./banner.tsx";
 import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 import { Button } from "./components/ui/button.tsx";
+import { Card, CardContent } from "./components/ui/card.tsx";
 import { FieldDescription, FieldLabel, Field as KitField } from "./components/ui/field.tsx";
 import { Input } from "./components/ui/input.tsx";
 import { Item } from "./components/ui/item.tsx";
@@ -975,15 +976,12 @@ function DraftForm({
     });
   };
   const field = cn(TAP, "h-8 text-sm");
-  return (
+  const form = (
     <form
       ref={root}
       aria-label={draft.routineId === null ? "New routine" : `Edit ${draft.name}`}
       data-testid="captain-routine-form"
-      className={cn(
-        "flex min-w-0 flex-col gap-3 text-xs leading-4",
-        draft.routineId === null && "mx-2 my-1 rounded-lg border border-border p-2",
-      )}
+      className="flex min-w-0 flex-col gap-3 text-xs leading-4"
       onSubmit={(event) => {
         event.preventDefault();
         if (ready && !draft.saving) submit();
@@ -1168,5 +1166,12 @@ function DraftForm({
         ) : null}
       </div>
     </form>
+  );
+  return draft.routineId === null ? (
+    <Card size="xs" className="mx-2 my-1">
+      <CardContent>{form}</CardContent>
+    </Card>
+  ) : (
+    form
   );
 }

@@ -16,6 +16,7 @@ import { captainContract } from "../contract/rpc.ts";
 import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
+import { Item, ItemGroup } from "./components/ui/item.tsx";
 import { cn } from "./lib/utils.ts";
 
 const NO_INPUT = {};
@@ -118,12 +119,10 @@ function RoleSection({
           </Button>
         ) : null}
       </header>
-      <ol className="@container flex flex-col rounded-md border">
+      <ItemGroup variant="divided" className="@container">
         {rungs.map((rung, index) => (
-          <li
-            key={index}
-            className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t px-2 py-1.5 first:border-t-0"
-          >
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- ItemGroup is a div with role="list", which cannot hold an <li>.
+          <Item key={index} role="listitem" size="row" className="flex-wrap gap-x-2 gap-y-1">
             <span className="order-1 w-14 shrink-0 text-xs text-muted-foreground tabular-nums">
               Rung {index + 1}
             </span>
@@ -167,9 +166,9 @@ function RoleSection({
                 <Icon name="X" aria-hidden />
               </Button>
             </div>
-          </li>
+          </Item>
         ))}
-      </ol>
+      </ItemGroup>
       <Button
         variant="outline"
         size="sm"

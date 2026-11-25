@@ -23,6 +23,7 @@ import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { EmptyState } from "./components/ui/empty-state.tsx";
 import { Input } from "./components/ui/input.tsx";
+import { Item, ItemGroup } from "./components/ui/item.tsx";
 import { iconImage } from "./icon-image.ts";
 import { cn } from "./lib/utils.ts";
 
@@ -69,11 +70,11 @@ export function CaptainIconSettings() {
       {list.data.captains.length === 0 ? (
         <EmptyState message="No live Captains yet." />
       ) : (
-        <ul className="flex flex-col rounded-md border">
+        <ItemGroup variant="divided">
           {list.data.captains.map((captain) => (
             <CaptainIconRow key={captain.threadId} {...captain} />
           ))}
-        </ul>
+        </ItemGroup>
       )}
     </div>
   );
@@ -162,7 +163,8 @@ function CaptainIconRow({
   const typedName = normalizeIconName(value);
 
   return (
-    <li className="flex flex-col gap-1 border-t px-3 py-2 first:border-t-0">
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- ItemGroup is a div with role="list", which cannot hold an <li>.
+    <Item role="listitem" size="sm" className="flex-col items-stretch gap-1">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="flex min-w-0 flex-1 basis-48 items-center gap-2" title={name}>
           <StoredIcon icon={icon} />
@@ -234,7 +236,7 @@ function CaptainIconRow({
       {note === null || error !== null ? null : (
         <p className="text-xs wrap-anywhere text-muted-foreground">{note}</p>
       )}
-    </li>
+    </Item>
   );
 }
 
