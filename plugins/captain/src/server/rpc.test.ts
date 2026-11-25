@@ -664,6 +664,20 @@ describe("the Overview's routines", () => {
     );
   });
 
+  test("an unchanged schedule refresh performs no per-routine revision lookups", async () => {
+    const { host, save, list } = await routinesHost();
+    for (let index = 0; index < 20; index += 1)
+      expect((await save({ ...SWEEP, name: `Sweep ${index}` })).ok).toBe(true);
+    const lookups = vi.spyOn(host.server.store, "routine");
+    const before = host.automations.calls.length;
+    expect((await list()).every((row) => !row.scheduleLoading)).toBe(true);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(
+      host.automations.calls.slice(before).filter((call) => call.method === "automations_get"),
+    ).toHaveLength(20);
+    expect(lookups).not.toHaveBeenCalled();
+  });
+
   test("a write that changes the cached schedule publishes the list again", async () => {
     const { host, captainId, rpc, save } = await routinesHost();
     await save(SWEEP);

@@ -570,6 +570,7 @@ describe("deletes, names and maintenance limits", () => {
     });
     await expect(routines.fire(created.id, call)).rejects.toThrow(/no answer yet/);
     // The queue is still empty: only the guard stops a second message.
+    host.setNow(host.now() + 1_000);
     expect((await routines.fire(created.id, call)).state).toBe("skipped");
     host.threadHolds.send = null;
     release();
@@ -579,9 +580,10 @@ describe("deletes, names and maintenance limits", () => {
     expect(
       host.server.store.routineRuns(created.id).map((run) => [run.status, run.reason]),
     ).toEqual([
-      ["queued", null],
       ["skipped", "previous delivery in flight"],
+      ["queued", null],
     ]);
+    expect(host.server.store.routineRuns(created.id, 1)[0]?.at).toBe(host.now());
   });
 
   test("a reload preserves an outstanding send and records it on the current plugin", async () => {
@@ -603,6 +605,34 @@ describe("deletes, names and maintenance limits", () => {
       gate.resolve();
     }
     await waitFor(() => host.server.store.routineRuns(created.id).length === 2);
+    expect(host.queued.get(captainId)).toHaveLength(1);
+  });
+
+  test("a send that settles between plugin generations is recorded once on startup", async () => {
+    const host = await captainHost({ threadDeadlineMs: 20 });
+    const { captainId, owner, routines } = await ownerOf(host);
+    const created = await routines.create(owner, SWEEP);
+    host.busy.add(captainId);
+    const held = deferred();
+    host.threadHolds.send = held.promise;
+    try {
+      await expect(
+        routines.fire(created.id, { automationId: created.automationId!, runId: null }),
+      ).rejects.toThrow(/no answer yet/);
+      await host.reload(async () => {
+        held.resolve();
+        await waitFor(() => host.queued.get(captainId)?.length === 1);
+        // Let the send's completion handler finish before Captain starts again.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      });
+    } finally {
+      held.resolve();
+    }
+    expect(host.server.store.routineRuns(created.id)).toMatchObject([
+      { at: host.now(), status: "queued" },
+    ]);
+    await host.reload();
+    expect(host.server.store.routineRuns(created.id)).toHaveLength(1);
     expect(host.queued.get(captainId)).toHaveLength(1);
   });
 

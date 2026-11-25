@@ -121,6 +121,30 @@ describe("routines", () => {
     expect(store.routineRuns(routine.id)).toEqual([]);
   });
 
+  test("history retains the newest fire times and breaks ties by ID", async () => {
+    const {
+      server: { store },
+    } = await captainHost();
+    const routine = store.createRoutine({ ...fields("Sweep"), captainId: "thr_a", at: 1 });
+    const record = (at: number) =>
+      store.recordRoutineRun({
+        routineId: routine.id,
+        trigger: "schedule",
+        status: "sent",
+        reason: null,
+        at,
+      });
+    for (let at = 10; at < 30; at += 1) record(at);
+    const tied = record(29);
+    const late = record(9);
+    const runs = store.routineRuns(routine.id);
+    expect(runs).toHaveLength(20);
+    expect(runs[0]?.id).toBe(tied.id);
+    expect(runs[1]).toMatchObject({ at: 29, id: tied.id - 1 });
+    expect(runs.at(-1)?.at).toBe(11);
+    expect(runs.some((run) => run.id === late.id)).toBe(false);
+  });
+
   test("fired and delivered times outlive the trimmed history", async () => {
     const host = await captainHost();
     const store = host.server.store;
@@ -157,10 +181,12 @@ describe("routines", () => {
     const db = host.bb.storage.database();
     const plan = db
       .prepare(
-        "EXPLAIN QUERY PLAN SELECT * FROM routine_runs WHERE routine_id = ? ORDER BY id DESC LIMIT 1",
+        "EXPLAIN QUERY PLAN SELECT * FROM routine_runs WHERE routine_id = ? ORDER BY at DESC, id DESC LIMIT 1",
       )
       .all("r1") as { detail: string }[];
-    expect(plan.map((row) => row.detail).join(" ")).toContain("routine_runs_by_routine");
+    const detail = plan.map((row) => row.detail).join(" ");
+    expect(detail).toContain("routine_runs_by_routine");
+    expect(detail).not.toContain("TEMP B-TREE");
   });
 
   test("retiring a routine records its delete in the same write", async () => {

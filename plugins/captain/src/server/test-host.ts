@@ -907,7 +907,12 @@ export async function captainHost(options: FakeOptions = {}) {
    * The CLI harness stays bound to the first instance, so drive the reloaded
    * one through `server`.
    */
-  async function reload(): Promise<void> {
+  async function reload(duringGap?: () => Promise<void>): Promise<void> {
+    if (duringGap !== undefined) {
+      // The watcher can unload Captain before it builds and starts the replacement.
+      current = await current.harness.lifecycle.reload(() => {});
+      await duringGap();
+    }
     current = await current.harness.lifecycle.reload(async (bb) => {
       server = await start(bb, startOptions);
       await server.ready;

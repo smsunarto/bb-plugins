@@ -183,6 +183,8 @@ export const MIGRATIONS: readonly string[] = [
   // answered before this column stay null and prove no answer's source.
   "ALTER TABLE asks ADD COLUMN answered_by TEXT CHECK (answered_by IN ('user', 'captain'))",
   "ALTER TABLE routine_runs ADD COLUMN automation_run_id TEXT",
+  `DROP INDEX routine_runs_by_routine;
+   CREATE INDEX routine_runs_by_routine ON routine_runs (routine_id, at DESC, id DESC)`,
 ];
 
 /**
@@ -1213,16 +1215,16 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         }
         db.prepare(
           `DELETE FROM routine_runs WHERE routine_id = ? AND id NOT IN (
-             SELECT id FROM routine_runs WHERE routine_id = ? ORDER BY id DESC LIMIT ?)`,
+             SELECT id FROM routine_runs WHERE routine_id = ? ORDER BY at DESC, id DESC LIMIT ?)`,
         ).run(run.routineId, run.routineId, ROUTINE_RUNS_KEPT);
         return { ...run, id: Number(lastInsertRowid) };
       })();
     },
-    /** A routine's runs, newest first. */
+    /** A routine's runs, newest fire first. */
     routineRuns(routineId: string, limit: number = ROUTINE_RUNS_KEPT): RoutineRun[] {
       return db
         .prepare<[string, number], RoutineRunRecord>(
-          "SELECT * FROM routine_runs WHERE routine_id = ? ORDER BY id DESC LIMIT ?",
+          "SELECT * FROM routine_runs WHERE routine_id = ? ORDER BY at DESC, id DESC LIMIT ?",
         )
         .all(routineId, limit)
         .map(toRoutineRun);

@@ -490,10 +490,10 @@ function routineHandlers(deps: CommandDeps, live: (captainId: string) => void) {
           const previous = map.get(routine.id);
           const view = await deps.routines.view(routine).catch(() => null);
           if (view === null || map.get(routine.id) !== previous) return;
-          const latest = deps.store.routine(routine.id);
-          if (latest === null || latest.updatedAt !== routine.updatedAt) return;
           const next = liveOf(view);
           if (JSON.stringify(previous) === JSON.stringify(next)) return;
+          const latest = deps.store.routine(routine.id);
+          if (latest === null || latest.updatedAt !== routine.updatedAt) return;
           map.set(routine.id, next);
           publishSoon(captainId);
         }),

@@ -87,7 +87,11 @@ type RecordDelivery = (
   status: RoutineRun["status"],
   reason: string | null,
 ) => RoutineRun | null;
-type DeliveryState = { pending: Set<string>; recorders: Set<RecordDelivery> };
+type DeliveryState = {
+  pending: Set<string>;
+  recorders: Set<RecordDelivery>;
+  waiting?: ((recorder: RecordDelivery) => void)[];
+};
 
 // Plugin reload can re-evaluate this module while an SDK send is still pending.
 const processState: typeof globalThis & { captainRoutineDeliveries?: Map<string, DeliveryState> } =
@@ -115,13 +119,16 @@ export function createRoutines(deps: RoutinesDeps) {
   const deadlineMs = deps.maintenanceDeadlineMs ?? 20_000;
   const threadDeadlineMs = deps.threadDeadlineMs ?? 10_000;
   const dataDir = bb.server.experimental_dataDir;
-  const deliveries = (processState.captainRoutineDeliveries ??= new Map());
+  const deliveries = (processState.captainRoutineDeliveries ??= new Map<string, DeliveryState>());
   const deliveryState = deliveries.get(dataDir) ?? {
     pending: new Set<string>(),
     recorders: new Set<RecordDelivery>(),
   };
   deliveries.set(dataDir, deliveryState);
   const { pending: delivering, recorders } = deliveryState;
+  // A live upgrade can inherit this process state from an older generation.
+  const waiting = (deliveryState.waiting ??= []);
+  const changed = (captainId: string) => bb.rpc.experimental_invalidate([routinesTag(captainId)]);
   const forgetDeliveryState = () => {
     if (delivering.size === 0 && recorders.size === 0) deliveries.delete(dataDir);
   };
@@ -140,12 +147,33 @@ export function createRoutines(deps: RoutinesDeps) {
     recorders.delete(persistDelivery);
     forgetDeliveryState();
   });
+  for (const complete of waiting.splice(0)) complete(persistDelivery);
+
+  function recordSettledDelivery(
+    delivery: DeliveryRecord,
+    status: RoutineRun["status"],
+    reason: string | null,
+  ): RoutineRun | null | Promise<RoutineRun | null> {
+    const persist = [...recorders].at(-1);
+    if (persist !== undefined) return persist(delivery, status, reason);
+    // The watcher can stop Captain before loading the replacement. Keep both
+    // the outcome and the in-flight claim until the replacement can record it.
+    return new Promise((resolve, reject) => {
+      waiting.push((recorder) => {
+        try {
+          resolve(recorder(delivery, status, reason));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+  }
+
   /** Captains being removed: a create queued behind the removal is refused. */
   const removing = new Set<string>();
   const archived = new Set<string>();
   const namesKey = (captainId: string) => `names:${captainId}`;
   const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
-  const changed = (captainId: string) => bb.rpc.experimental_invalidate([routinesTag(captainId)]);
   const ownerOf = (routine: Routine): RoutineOwner => {
     const row = store.captain(routine.captainId);
     if (row === null)
@@ -581,11 +609,11 @@ export function createRoutines(deps: RoutinesDeps) {
           }),
           (error: unknown) => ({ status: "failed" as const, reason: message(error) }),
         )
-        .then(({ status, reason }) => {
-          // A replacement generation opens its own database handle; use the newest live one.
-          const persist = [...recorders].at(-1);
-          return { status, reason, run: persist?.(delivery, status, reason) ?? null };
-        })
+        .then(async ({ status, reason }) => ({
+          status,
+          reason,
+          run: await recordSettledDelivery(delivery, status, reason),
+        }))
         .finally(release);
       let settled: Awaited<typeof outcome>;
       try {

@@ -222,6 +222,43 @@ test("Test shows requested until its run is recorded, then that run's result", a
   );
 });
 
+test("a Test keeps its observed outcome after newer runs replace its history row", async () => {
+  const captainId = nextCaptain();
+  const observed: RoutineRun = {
+    id: 1,
+    routineId: "r1",
+    trigger: "test",
+    status: "sent",
+    reason: null,
+    at: REQUESTED,
+    automationRunId: "arun_1",
+  };
+  const { routinesSection, slot, state } = render(captainId, {
+    routines: [routine()],
+    runs: [observed],
+  });
+  const section = await routinesSection();
+  fireEvent.click(await within(section).findByRole("button", { name: /Stalled crew sweep/u }));
+  const panel = await within(section).findByTestId("captain-routine-panel");
+  fireEvent.click(within(panel).getByRole("button", { name: "Test" }));
+  await within(panel).findByText(/^Test sent/u);
+  state.runs = Array.from({ length: 5 }, (_, index) => ({
+    ...observed,
+    id: index + 2,
+    at: REQUESTED + index + 1,
+    automationRunId: `arun_${index + 2}`,
+    status: "skipped",
+    reason: `newer run ${index + 1}`,
+  }));
+  await slot.behavior.experimental_invalidateRpc([routinesTag(captainId)]);
+  await within(panel).findByText(/Skipped: newer run 5/u);
+  expect(within(panel).getByTestId("captain-routine-test").textContent).toMatch(/^Test sent/u);
+  const toggle = within(section).getByRole("button", { name: /^Routines/u });
+  fireEvent.click(toggle);
+  fireEvent.click(toggle);
+  await within(section).findByText(/^Test sent/u);
+});
+
 test("Delete asks first, then removes the routine", async () => {
   const { routinesSection, calls } = render(nextCaptain(), { routines: [routine()] });
   const section = await routinesSection();

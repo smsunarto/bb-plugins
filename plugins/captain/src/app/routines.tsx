@@ -10,6 +10,7 @@ import {
   experimental_useRpcQuery as useRpcQuery,
 } from "@get-bb/plugin-sdk/app";
 import {
+  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -91,13 +92,18 @@ type Draft = {
  * the components: bb remounts a panel tab when its width crosses a
  * breakpoint, and none of this may reset under the user.
  */
+type RoutineTest = {
+  runId: string;
+  outcome: Pick<RoutineRun, "status" | "reason"> | null;
+};
+
 type RoutinesUi = {
   open: string | null;
   confirm: string | null;
   /** The last failed action per routine, so a row restored after a failed delete shows it. */
   errors: Readonly<Record<string, string>>;
-  /** The Automations run ID for each routine's last Test in this client. */
-  tests: Readonly<Record<string, string>>;
+  /** The most recent Test this client requested for each routine. */
+  tests: Readonly<Record<string, RoutineTest>>;
 };
 const CLOSED: RoutinesUi = { open: null, confirm: null, errors: {}, tests: {} };
 const uiStates = new Map<string, RoutinesUi>();
@@ -453,7 +459,10 @@ function RoutineRow({
       ({ runId }) =>
         kind === "run" && runId !== null
           ? patchUi(captainId, {
-              tests: { ...uiStates.get(captainId)?.tests, [routine.id]: runId },
+              tests: {
+                ...uiStates.get(captainId)?.tests,
+                [routine.id]: { runId, outcome: null },
+              },
             })
           : undefined,
       (failure: unknown) => setError((failure as Error).message),
@@ -536,7 +545,7 @@ function RoutineRow({
               state={state}
               confirming={ui.confirm === routine.id}
               pending={pendingAction}
-              testRunId={ui.tests[routine.id] ?? null}
+              test={ui.tests[routine.id] ?? null}
               visible={visible}
               run={run}
               onRetry={onRetry}
@@ -563,7 +572,7 @@ function RoutineDetails({
   state,
   confirming,
   pending,
-  testRunId,
+  test,
   visible,
   run,
   onRetry,
@@ -575,8 +584,7 @@ function RoutineDetails({
   confirming: boolean;
   /** The action on its way to the server, if any. */
   pending: { action: RoutineAction } | undefined;
-  /** When the server took this panel's last Test; null when none was pressed. */
-  testRunId: string | null;
+  test: RoutineTest | null;
   visible: boolean;
   run: (action: RoutineAction) => void;
   onRetry: () => void;
@@ -702,7 +710,14 @@ function RoutineDetails({
           </Button>
         </div>
       )}
-      {testRunId === null ? null : <TestOutcome testRunId={testRunId} runs={runs.data?.runs} />}
+      {test === null ? null : (
+        <TestOutcome
+          captainId={captainId}
+          routineId={routine.id}
+          test={test}
+          runs={runs.data?.runs}
+        />
+      )}
     </>
   );
 }
@@ -765,8 +780,29 @@ const TEST_OUTCOME: Record<RoutineRun["status"], string> = {
  * What became of the panel's last Test: requested until fire records a test
  * run with the matching Automations ID, then that run's delivery state and reason.
  */
-function TestOutcome({ testRunId, runs }: { testRunId: string; runs: RoutineRun[] | undefined }) {
-  const run = runs?.find((each) => each.automationRunId === testRunId);
+function TestOutcome({
+  captainId,
+  routineId,
+  test,
+  runs,
+}: {
+  captainId: string;
+  routineId: string;
+  test: RoutineTest;
+  runs: RoutineRun[] | undefined;
+}) {
+  const { runId, outcome } = test;
+  const match = outcome === null ? runs?.find((each) => each.automationRunId === runId) : undefined;
+  useEffect(() => {
+    const tests = uiStates.get(captainId)?.tests;
+    const current = tests?.[routineId];
+    if (match === undefined || current?.runId !== runId || current.outcome !== null) return;
+    const { status, reason } = match;
+    patchUi(captainId, {
+      tests: { ...tests, [routineId]: { runId, outcome: { status, reason } } },
+    });
+  }, [captainId, routineId, runId, match]);
+  const run = outcome ?? match;
   const text =
     run === undefined
       ? "Test requested · waiting for it to reach the Captain"
