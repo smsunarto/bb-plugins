@@ -99,8 +99,8 @@ function TaskPager({
       </span>
       <Button
         variant="ghost"
-        size="icon"
-        className="size-6 max-md:pointer-coarse:size-11"
+        size="icon-xs"
+        className="max-md:pointer-coarse:size-11"
         aria-label="Previous task"
         disabled={position.prevKey === null}
         onClick={() => step(position.prevKey)}
@@ -109,8 +109,8 @@ function TaskPager({
       </Button>
       <Button
         variant="ghost"
-        size="icon"
-        className="size-6 max-md:pointer-coarse:size-11"
+        size="icon-xs"
+        className="max-md:pointer-coarse:size-11"
         aria-label="Next task"
         disabled={position.nextKey === null}
         onClick={() => step(position.nextKey)}

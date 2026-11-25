@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import {
   TASK_PRIORITIES,
   TASK_STATUSES,
@@ -6,7 +6,9 @@ import {
   type TaskStatus,
 } from "../../shared/contract.js";
 import { TASK_SORTS, type TaskSort } from "../../shared/pagination.js";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { CompactButton } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +44,10 @@ const PRIORITY_OPTIONS: readonly ResourceOption[] = TASK_PRIORITIES.map((priorit
 
 const FILTER_TRIGGER_CLASS =
   "h-7 max-w-52 shrink-0 gap-1.5 px-2 text-xs text-muted-foreground max-md:pointer-coarse:h-11 [&>span]:truncate";
+
+/** Layout and the retained muted tone for the CompactButton triggers beside the filter chips. */
+const COMPACT_TRIGGER_CLASS =
+  "max-w-52 shrink-0 text-muted-foreground max-md:pointer-coarse:h-11 [&>span]:truncate";
 
 function FilterMenu({
   icon,
@@ -91,15 +97,15 @@ function SortMenu({ sort, onChange }: { sort: TaskSort; onChange: (sort: TaskSor
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button
+        <CompactButton
           variant="ghost"
           size="sm"
           aria-label={`Sort: ${SORT_LABELS[sort]}`}
-          className={FILTER_TRIGGER_CLASS}
+          className={COMPACT_TRIGGER_CLASS}
         >
           <Icon name="SlidersHorizontal" className="size-3.5" />
           <span>{sort === "manual" ? "Display" : SORT_LABELS[sort]}</span>
-        </Button>
+        </CompactButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44" mobileTitle="Sort tasks">
         <ResourceSortMenuItems
@@ -154,7 +160,6 @@ export function ListFilterBar({
   fixedStatus?: boolean;
 }) {
   const [showFilters, setShowFilters] = useState<boolean | null>(null);
-  const filterId = useId();
   const filterCount =
     filters.statuses.length + filters.priorities.length + filters.labelNames.length;
   const filtersOpen = showFilters ?? filterCount > 0;
@@ -181,20 +186,23 @@ export function ListFilterBar({
       })),
   ];
   return (
-    <div className="shrink-0 border-b border-border-hairline px-3 @md:px-6">
+    <Collapsible
+      open={filtersOpen}
+      onOpenChange={setShowFilters}
+      className="shrink-0 border-b border-border-hairline px-3 @md:px-6"
+    >
       <div className="flex min-h-10 items-center gap-1.5">
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-expanded={filtersOpen}
-          aria-controls={filterId}
-          className={FILTER_TRIGGER_CLASS}
-          onClick={() => setShowFilters(!filtersOpen)}
-        >
-          <Icon name="Filter" className="size-3.5" />
-          <span>Filter</span>
-          {filterCount > 0 ? <span className="ml-1 tabular-nums">{filterCount}</span> : null}
-        </Button>
+        <CollapsibleTrigger asChild>
+          <CompactButton variant="ghost" size="sm" className={COMPACT_TRIGGER_CLASS}>
+            <Icon name="Filter" className="size-3.5" />
+            <span>Filter</span>
+            {filterCount > 0 ? (
+              <Badge variant="count" className="ml-1">
+                {filterCount}
+              </Badge>
+            ) : null}
+          </CompactButton>
+        </CollapsibleTrigger>
         <span className="ml-auto hidden whitespace-nowrap text-2xs tabular-nums text-muted-foreground @md:inline">
           {taskCount === undefined ? "" : `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`}
         </span>
@@ -202,7 +210,7 @@ export function ListFilterBar({
           <SortMenu sort={sort} onChange={onSortChange} />
         </div>
       </div>
-      <div id={filterId} hidden={!filtersOpen}>
+      <CollapsibleContent>
         <div
           role="group"
           aria-label="Filter tasks"
@@ -244,18 +252,18 @@ export function ListFilterBar({
             />
           ) : null}
           {hasActiveFilters(filters) ? (
-            <Button
+            <CompactButton
               variant="outline"
               size="sm"
               onClick={() => onChange(EMPTY_FILTERS)}
-              className="h-7 shrink-0 gap-1 px-2 text-muted-foreground max-md:pointer-coarse:h-11"
+              className="shrink-0 gap-1 text-muted-foreground max-md:pointer-coarse:h-11"
             >
               <Icon name="X" className="size-3" />
               Clear
-            </Button>
+            </CompactButton>
           ) : null}
         </div>
-      </div>
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

@@ -14,6 +14,7 @@ import type { TaskScope } from "../../shell/routes.js";
 import { useTasksUi } from "../../shell/ui-store.js";
 import { hasOpenOverlay } from "../../shell/keyboard.js";
 import { ViewEmptyState } from "../../components/empty-state.js";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
 import { Icon } from "@/components/ui/icon";
@@ -521,9 +522,7 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
               />
               <StatusIcon status={group.status} />
               {STATUS_LABELS[group.status]}
-              <span className="font-normal tabular-nums text-muted-foreground">
-                {group.tasks.length}
-              </span>
+              <Badge variant="count">{group.tasks.length}</Badge>
             </Button>
             <Button
               type="button"
