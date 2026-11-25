@@ -3,6 +3,8 @@ import {
   experimental_useComposerRenderer as useComposerRenderer,
 } from "@get-bb/plugin-sdk/app";
 import { mountBranchPickerStyle } from "./src/branch-picker-style";
+import { mountProjectPickerHide } from "./src/captain-projects/project-picker-hide";
+import { useCaptainProjectGuard } from "./src/captain-projects/useCaptainProjectGuard";
 import { mountChildThreadsBannerStyle } from "./src/child-threads-banner-style";
 import { ComposerHandleProvider } from "./src/composer-handle";
 import { PromptBoxInternal } from "./src/PromptBoxInternal";
@@ -16,6 +18,12 @@ function SettingKeywords() {
   return null;
 }
 
+/** Keeps a new thread off the Captains projects; renders nothing. */
+function CaptainProjectGuard() {
+  useCaptainProjectGuard();
+  return null;
+}
+
 function T3Composer() {
   const { input } = useComposerRenderer();
   // Like ChatGPT's, this composer never collapses: drop BB's collapse action and compact form.
@@ -23,6 +31,7 @@ function T3Composer() {
   return (
     <ComposerHandleProvider>
       <SettingKeywords />
+      <CaptainProjectGuard />
       <PromptBoxInternal {...expanded} />
     </ComposerHandleProvider>
   );
@@ -37,6 +46,11 @@ export default definePluginApp((app) => {
   app.contentScripts.register({
     id: "child-threads-banner-style",
     mount: ({ signal }) => mountChildThreadsBannerStyle(document, signal),
+  });
+  // BB's project picker, without the projects Captains live in.
+  app.contentScripts.register({
+    id: "captain-projects",
+    mount: ({ signal }) => mountProjectPickerHide(document, signal),
   });
   app.slots.experimental_composer({
     id: "composer",
