@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   Label,
   Project,
@@ -16,6 +16,7 @@ import { useTasksRpc } from "../../shell/data.js";
 import { bbProjectsQuery } from "../../shell/query.js";
 import { PriorityIcon, StatusIcon, formatDueDate, isActiveThread } from "./meta.js";
 import { DUE_DATE_PRESETS, localIsoDate, PRIORITY_LABELS, STATUS_LABELS } from "../list/lib.js";
+import { isBareKey, priorityForShortcut, statusForShortcut } from "../list/property-menus.js";
 import { DispatchControl } from "./threads.js";
 import { CreateLabelItem } from "../../components/create-label-item.js";
 import { DEFAULT_COLOR } from "../manage/shared.js";
@@ -27,6 +28,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -54,6 +56,7 @@ interface TaskPropertiesProps {
   projects: Project[] | undefined;
   labels: Label[] | undefined;
   threads: TaskThread[];
+  children?: React.ReactNode;
   onUpdate: (update: TaskPropertyUpdate) => void;
   onMoveToProject: (projectId: string) => void;
 }
@@ -63,12 +66,13 @@ type PropertyTrigger = Pick<ButtonProps, "variant" | "className">;
 
 const RAIL_TRIGGER: PropertyTrigger = {
   variant: "ghost",
-  className: "-mx-2 h-7 w-[calc(100%+1rem)] justify-start px-2 text-sm font-normal",
+  className:
+    "h-8 justify-start gap-1.5 rounded-md border border-border-hairline px-2 font-normal @[45rem]:w-full @[45rem]:border-transparent @[45rem]:text-sm max-md:pointer-coarse:h-11",
 };
 
-const CHIP_TRIGGER: PropertyTrigger = {
-  variant: "secondary",
-  className: "h-6 gap-1 px-2 font-normal",
+type PropertyMenuState = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 };
 
 function LabelChip({ label }: { label: Label }) {
@@ -88,20 +92,33 @@ function StatusMenu({
   task,
   onUpdate,
   trigger,
+  menu,
 }: {
   task: Task;
   onUpdate: (update: TaskPropertyUpdate) => void;
   trigger: PropertyTrigger;
+  menu: PropertyMenuState;
 }) {
   return (
-    <DropdownMenu>
+    <DropdownMenu {...menu}>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" {...trigger}>
+        <Button size="sm" {...trigger} aria-keyshortcuts="S">
           <StatusIcon status={task.status} />
           {STATUS_LABELS[task.status]}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent
+        align="start"
+        mobileTitle="Change status"
+        onKeyDown={(event) => {
+          const status = statusForShortcut(event.key);
+          if (status === null || !isBareKey(event)) return;
+          event.preventDefault();
+          if (status !== task.status) onUpdate({ status });
+          menu.onOpenChange(false);
+        }}
+      >
+        <DropdownMenuLabel>Change status (S)</DropdownMenuLabel>
         {TASK_STATUSES.map((status) => (
           <DropdownMenuItem key={status} onSelect={() => onUpdate({ status })}>
             <StatusIcon status={status} />
@@ -118,20 +135,33 @@ function PriorityMenu({
   task,
   onUpdate,
   trigger,
+  menu,
 }: {
   task: Task;
   onUpdate: (update: TaskPropertyUpdate) => void;
   trigger: PropertyTrigger;
+  menu: PropertyMenuState;
 }) {
   return (
-    <DropdownMenu>
+    <DropdownMenu {...menu}>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" {...trigger}>
+        <Button size="sm" {...trigger} aria-keyshortcuts="P">
           <PriorityIcon priority={task.priority} />
           {PRIORITY_LABELS[task.priority]}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent
+        align="start"
+        mobileTitle="Set priority"
+        onKeyDown={(event) => {
+          const priority = priorityForShortcut(event.key);
+          if (priority === null || !isBareKey(event)) return;
+          event.preventDefault();
+          if (priority !== task.priority) onUpdate({ priority });
+          menu.onOpenChange(false);
+        }}
+      >
+        <DropdownMenuLabel>Set priority (P)</DropdownMenuLabel>
         {TASK_PRIORITIES.map((priority) => (
           <DropdownMenuItem key={priority} onSelect={() => onUpdate({ priority })}>
             <PriorityIcon priority={priority} />
@@ -213,11 +243,13 @@ function LabelsMenu({
   labels,
   onUpdate,
   children,
+  menu,
 }: {
   task: Task;
   labels: Label[] | undefined;
   onUpdate: (update: TaskPropertyUpdate) => void;
   children: React.ReactNode;
+  menu: PropertyMenuState;
 }) {
   const rpc = useTasksRpc();
   const [query, setQuery] = useState("");
@@ -249,11 +281,17 @@ function LabelsMenu({
   const labelList = labels ?? [];
   const trimmed = query.trim();
   return (
-    <Popover onOpenChange={(open) => open || setQuery("")}>
+    <Popover
+      open={menu.open}
+      onOpenChange={(open) => {
+        if (!open) setQuery("");
+        menu.onOpenChange(open);
+      }}
+    >
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent className="w-56 p-0" align="start">
         <Command>
-          <CommandInput placeholder="Add labels…" value={query} onValueChange={setQuery} />
+          <CommandInput placeholder="Add labels… (L)" value={query} onValueChange={setQuery} />
           <CommandList>
             {trimmed === "" ? <CommandEmpty>No labels in this project.</CommandEmpty> : null}
             <CreateLabelItem
@@ -453,6 +491,14 @@ function DispatchTargetMenu({
   );
 }
 
+const PROPERTY_KEYS = {
+  s: "status",
+  p: "priority",
+  l: "labels",
+  a: "agent",
+} as const;
+type PropertyMenu = (typeof PROPERTY_KEYS)[keyof typeof PROPERTY_KEYS];
+
 export function PropertiesRail({
   task,
   project,
@@ -464,6 +510,7 @@ export function PropertiesRail({
   onMoveToProject,
   onError,
   className,
+  children,
 }: TaskPropertiesProps & {
   presets: Preset[] | undefined;
   onError: (message: string) => void;
@@ -472,130 +519,135 @@ export function PropertiesRail({
   const taskLabels = (labels ?? []).filter((label) => task.labelIds.includes(label.id));
   const active = threads.filter(isActiveThread);
   const bbProjects = useQuery(bbProjectsQuery);
+  const rail = useRef<HTMLElement>(null);
+  const [openMenu, setOpenMenu] = useState<PropertyMenu | null>(null);
+  const menu = (property: PropertyMenu): PropertyMenuState => ({
+    open: openMenu === property,
+    onOpenChange: (open) =>
+      setOpenMenu((current) => (open ? property : current === property ? null : current)),
+  });
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing || !isBareKey(event)) return;
+      const key = event.key.toLowerCase();
+      const property = PROPERTY_KEYS[key as keyof typeof PROPERTY_KEYS];
+      if (!property || (property === "agent" && presets === undefined)) return;
+      const target = event.target;
+      const article = rail.current?.closest("article");
+      if (!article || !(target instanceof HTMLElement)) return;
+      if (target !== document.body && !article.contains(target)) return;
+      if (target.isContentEditable || target.closest("input, textarea, select, [role='textbox']"))
+        return;
+      if (
+        document.querySelector(
+          '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
+        )
+      )
+        return;
+      if (rail.current?.getClientRects().length === 0) return;
+      event.preventDefault();
+      setOpenMenu(property);
+    };
+    // The Tasks page owns these letters before BB's window-level commands run.
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [presets]);
+
   return (
-    <aside className={cn("w-56 shrink-0 py-10 pl-2 pr-6", className)}>
-      <h2 className="mb-1 text-xs font-semibold text-muted-foreground">Properties</h2>
-      <StatusMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} />
-      <PriorityMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} />
-      <DueDateMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} />
+    <aside
+      ref={rail}
+      className={cn(
+        "min-w-0 @[45rem]:border-l @[45rem]:border-border-hairline @[45rem]:bg-surface-recessed-solid",
+        className,
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-1.5 @[45rem]:sticky @[45rem]:top-0 @[45rem]:block @[45rem]:px-4 @[45rem]:py-8">
+        <h2 className="sr-only @[45rem]:not-sr-only @[45rem]:mb-3 @[45rem]:text-sm @[45rem]:font-semibold">
+          Properties
+        </h2>
+        <StatusMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} menu={menu("status")} />
+        <PriorityMenu
+          task={task}
+          onUpdate={onUpdate}
+          trigger={RAIL_TRIGGER}
+          menu={menu("priority")}
+        />
+        <DueDateMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} />
 
-      <div className="mb-1 mt-3 text-2xs font-semibold text-muted-foreground">Labels</div>
-      <div className="flex min-h-6 flex-wrap items-center gap-1">
-        {taskLabels.map((label) => (
-          <LabelChip key={label.id} label={label} />
-        ))}
-        <LabelsMenu task={task} labels={labels} onUpdate={onUpdate}>
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Edit labels"
-            className="h-5 w-6 border-dashed text-muted-foreground"
-          >
-            <Icon name="Plus" className="size-3" />
-          </Button>
-        </LabelsMenu>
-      </div>
-
-      <div className="mb-1 mt-3 text-2xs font-semibold text-muted-foreground">Project</div>
-      <ProjectMenu
-        task={task}
-        project={project}
-        projects={projects}
-        onMoveToProject={onMoveToProject}
-        trigger={RAIL_TRIGGER}
-      />
-
-      <div className="mb-1 mt-3 text-2xs font-semibold text-muted-foreground">Dispatch target</div>
-      {project !== undefined ? (
-        <DispatchTargetMenu
+        <div className="hidden @[45rem]:mb-1 @[45rem]:mt-3 @[45rem]:block @[45rem]:text-xs @[45rem]:font-medium @[45rem]:text-muted-foreground">
+          Project
+        </div>
+        <ProjectMenu
+          task={task}
           project={project}
-          bbProjects={bbProjects.data ?? []}
-          onError={onError}
+          projects={projects}
+          onMoveToProject={onMoveToProject}
           trigger={RAIL_TRIGGER}
         />
-      ) : (
-        <div className="flex h-6 items-center text-sm text-muted-foreground">…</div>
-      )}
 
-      <div className="mt-3">
-        <DispatchControl
-          taskId={task.id}
-          presets={presets}
-          onError={onError}
-          align="start"
-          className="w-full"
-        />
-      </div>
+        <div className="hidden @[45rem]:mb-1 @[45rem]:mt-3 @[45rem]:block @[45rem]:text-xs @[45rem]:font-medium @[45rem]:text-muted-foreground">
+          Labels
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
+          {taskLabels.map((label) => (
+            <LabelChip key={label.id} label={label} />
+          ))}
+          <LabelsMenu task={task} labels={labels} onUpdate={onUpdate} menu={menu("labels")}>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Edit labels (L)"
+              aria-keyshortcuts="L"
+              className="size-7 text-muted-foreground max-md:pointer-coarse:size-11"
+            >
+              <Icon name="Tag" className="size-3.5" />
+            </Button>
+          </LabelsMenu>
+        </div>
 
-      <div className="mb-1 mt-3 text-2xs font-semibold text-muted-foreground">Agents</div>
-      <div className="flex flex-col gap-1 text-xs">
-        {active.length > 0 ? (
-          active.map((thread) => (
-            <span key={thread.id} className="flex items-center gap-1 font-medium text-success">
-              <span
-                aria-hidden
-                className="size-1.5 shrink-0 animate-pulse rounded-full bg-success"
-              />
-              <span className="truncate">
-                {thread.presetName} {thread.liveStatus === "starting" ? "starting" : "working"}
-              </span>
-            </span>
-          ))
+        <div className="hidden @[45rem]:mb-1 @[45rem]:mt-4 @[45rem]:block @[45rem]:text-xs @[45rem]:font-medium @[45rem]:text-muted-foreground">
+          Dispatch target
+        </div>
+        {project !== undefined ? (
+          <DispatchTargetMenu
+            project={project}
+            bbProjects={bbProjects.data ?? []}
+            onError={onError}
+            trigger={RAIL_TRIGGER}
+          />
         ) : (
-          <span className="text-muted-foreground">none active</span>
+          <div className="hidden text-sm text-muted-foreground @[45rem]:block">…</div>
         )}
+
+        <div className="@[45rem]:mt-2">
+          <DispatchControl
+            taskId={task.id}
+            presets={presets}
+            onError={onError}
+            align="start"
+            className="max-w-56 @[45rem]:w-full"
+            menu={menu("agent")}
+          />
+        </div>
+
+        {active.length > 0 ? (
+          <div className="mt-3 flex flex-col gap-1 text-xs">
+            {active.map((thread) => (
+              <span key={thread.id} className="flex items-center gap-1 font-medium text-success">
+                <span
+                  aria-hidden
+                  className="size-1.5 shrink-0 animate-pulse rounded-full bg-success"
+                />
+                <span className="truncate">
+                  {thread.presetName} {thread.liveStatus === "starting" ? "starting" : "working"}
+                </span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {children}
       </div>
     </aside>
-  );
-}
-
-export function InlineProperties({
-  task,
-  project,
-  projects,
-  labels,
-  presets,
-  onUpdate,
-  onMoveToProject,
-  onError,
-  className,
-}: Omit<TaskPropertiesProps, "threads"> & {
-  presets: Preset[] | undefined;
-  onError: (message: string) => void;
-  className?: string;
-}) {
-  const taskLabels = (labels ?? []).filter((label) => task.labelIds.includes(label.id));
-  return (
-    <div className={cn("flex flex-wrap items-center gap-2", className)}>
-      <StatusMenu task={task} onUpdate={onUpdate} trigger={CHIP_TRIGGER} />
-      <PriorityMenu task={task} onUpdate={onUpdate} trigger={CHIP_TRIGGER} />
-      <DueDateMenu task={task} onUpdate={onUpdate} trigger={CHIP_TRIGGER} />
-      <ProjectMenu
-        task={task}
-        project={project}
-        projects={projects}
-        onMoveToProject={onMoveToProject}
-        trigger={CHIP_TRIGGER}
-      />
-      {taskLabels.map((label) => (
-        <LabelChip key={label.id} label={label} />
-      ))}
-      <LabelsMenu task={task} labels={labels} onUpdate={onUpdate}>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="Edit labels"
-          className="h-6 w-7 border-dashed text-muted-foreground"
-        >
-          <Icon name="Plus" className="size-3" />
-        </Button>
-      </LabelsMenu>
-      <DispatchControl
-        taskId={task.id}
-        presets={presets}
-        onError={onError}
-        className="ml-auto max-w-56"
-      />
-    </div>
   );
 }

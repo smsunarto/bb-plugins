@@ -261,6 +261,7 @@ interface DispatchControlProps {
   onError: (message: string) => void;
   align?: "start" | "end";
   className?: string;
+  menu?: { open: boolean; onOpenChange: (open: boolean) => void };
 }
 
 export function DispatchControl({
@@ -269,6 +270,7 @@ export function DispatchControl({
   onError,
   align = "end",
   className,
+  menu,
 }: DispatchControlProps) {
   const rpc = useRpc<DelegationRpcContract>();
   const tasksRpc = useTasksRpc();
@@ -300,18 +302,22 @@ export function DispatchControl({
       <>
         <Button
           size="sm"
-          className={cn("h-7 gap-1", primarySegment, className)}
+          className={cn("h-8 gap-1 max-md:pointer-coarse:h-11", primarySegment, className)}
+          aria-keyshortcuts="A"
           onClick={() => setCreateDialogKey(Date.now())}
         >
           <Icon name="Plus" className="size-3.5 shrink-0" />
           Add a preset…
         </Button>
-        {createDialogKey !== null ? (
+        {createDialogKey !== null || menu?.open ? (
           <PresetDialog
             key={createDialogKey}
             open
             onOpenChange={(open) => {
-              if (!open) setCreateDialogKey(null);
+              if (!open) {
+                setCreateDialogKey(null);
+                menu?.onOpenChange(false);
+              }
             }}
             editing={null}
             onSave={(draft) => savePresetDraft(tasksRpc, null, draft)}
@@ -331,7 +337,10 @@ export function DispatchControl({
         <Button
           size="sm"
           disabled={dispatching || !current}
-          className={cn("h-7 min-w-0 flex-1 gap-1 rounded-r-none", primarySegment)}
+          className={cn(
+            "h-8 min-w-0 flex-1 gap-1 rounded-r-none max-md:pointer-coarse:h-11",
+            primarySegment,
+          )}
           onClick={() => {
             if (current) pickPreset(current);
           }}
@@ -340,13 +349,14 @@ export function DispatchControl({
             {dispatching ? "Dispatching…" : (current?.name ?? "Dispatch")}
           </span>
         </Button>
-        <DropdownMenu>
+        <DropdownMenu {...menu}>
           <DropdownMenuTrigger asChild disabled={dispatching || !current}>
             <Button
               size="sm"
               aria-label="Choose dispatch preset"
+              aria-keyshortcuts="A"
               className={cn(
-                "h-7 shrink-0 rounded-l-none border-l border-primary-foreground/25 px-1",
+                "h-8 shrink-0 rounded-l-none border-l border-primary-foreground/25 px-1 max-md:pointer-coarse:size-11",
                 primarySegment,
               )}
             >
@@ -354,7 +364,7 @@ export function DispatchControl({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align={align}>
-            <DropdownMenuLabel>Dispatch with preset</DropdownMenuLabel>
+            <DropdownMenuLabel>Dispatch with preset (A)</DropdownMenuLabel>
             {(presets ?? []).map((preset) => (
               <DropdownMenuItem key={preset.id} onSelect={() => pickPreset(preset)}>
                 <span className="min-w-0 flex-1 truncate">{preset.name}</span>

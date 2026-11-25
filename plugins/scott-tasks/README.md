@@ -41,6 +41,10 @@ The fork also fixes three bugs from upstream's incremental loading
 - `boardMove` publishes every card a column renumber touches, so the board
   keeps the server order.
 
+The list, board, task detail, and project navigation are fork-specific UI.
+When syncing upstream Tasks, port fixes to those views into the fork's layout
+and preserve the existing task linking and agent dispatch integrations.
+
 ## Install
 
 Install the fork from a checkout of this repository:
