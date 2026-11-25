@@ -198,7 +198,7 @@ test("a save sends the version it was typed over, then marks the file saved", as
   const tab = await sidebar("global/skills/dev/scripts/run.sh", fake);
   const editor = await slot.findByRole("textbox", { name: "scripts/run.sh" });
   fireEvent.change(editor, { target: { value: "#!/bin/sh\necho bye\n" } });
-  await waitFor(() => expect(tab.container.querySelector(".pe-dot")).toBeTruthy());
+  await waitFor(() => expect(tab.container.querySelector('[data-slot="status-dot"]')).toBeTruthy());
 
   fireEvent.click(slot.getByRole("button", { name: "Save" }));
   await slot.findByText("Saved. Agents get it in their next session.");
@@ -209,7 +209,7 @@ test("a save sends the version it was typed over, then marks the file saved", as
     content: "#!/bin/sh\necho bye\n",
     expectedSha256: sha("1"),
   });
-  await waitFor(() => expect(tab.container.querySelector(".pe-dot")).toBeNull());
+  await waitFor(() => expect(tab.container.querySelector('[data-slot="status-dot"]')).toBeNull());
   slot.unmount();
   tab.unmount();
 });

@@ -3,6 +3,7 @@ import { memo, useLayoutEffect, useRef, useState } from "react";
 import { Alert, AlertDescription } from "../../../components/ui/alert.tsx";
 import { Badge } from "../../../components/ui/badge.tsx";
 import { Button } from "../../../components/ui/button.tsx";
+import { Card, CardContent } from "../../../components/ui/card.tsx";
 import { EmptyState } from "../../../components/ui/empty-state.tsx";
 import { FieldError } from "../../../components/ui/field.tsx";
 import { Input } from "../../../components/ui/input.tsx";
@@ -224,52 +225,56 @@ function InlineFormFields(props: {
   const [busy, setBusy] = useState(false);
   const first = useFocusOnMount<HTMLInputElement>();
   return (
-    <form
-      className="pe-inline-form"
-      aria-label={props.label}
-      onSubmit={async (event) => {
-        event.preventDefault();
-        setBusy(true);
-        try {
-          const failed = await props.onSubmit(values);
-          if (failed === null) props.onClose();
-          else setErrors(failed);
-        } catch (error) {
-          setErrors([(error as Error).message]);
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      {props.fields.map((field, index) => (
-        <Input
-          key={field.name}
-          ref={index === 0 ? first : undefined}
-          className="h-8"
-          aria-label={field.label}
-          placeholder={field.placeholder}
-          maxLength={field.maxLength}
-          value={values[field.name] ?? ""}
-          onChange={(event) => setValues({ ...values, [field.name]: event.target.value })}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") props.onClose();
+    <Card size="xs" className="my-1">
+      <CardContent>
+        <form
+          className="flex flex-col gap-2"
+          aria-label={props.label}
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setBusy(true);
+            try {
+              const failed = await props.onSubmit(values);
+              if (failed === null) props.onClose();
+              else setErrors(failed);
+            } catch (error) {
+              setErrors([(error as Error).message]);
+            } finally {
+              setBusy(false);
+            }
           }}
-        />
-      ))}
-      {errors.map((error) => (
-        <FieldError key={error} className="break-words">
-          {error}
-        </FieldError>
-      ))}
-      <div className="pe-actions">
-        <Button type="button" variant="ghost" size="sm" onClick={props.onClose}>
-          Cancel
-        </Button>
-        <Button type="submit" size="sm" disabled={busy}>
-          {busy ? "Creating…" : props.submit}
-        </Button>
-      </div>
-    </form>
+        >
+          {props.fields.map((field, index) => (
+            <Input
+              key={field.name}
+              ref={index === 0 ? first : undefined}
+              className="h-8"
+              aria-label={field.label}
+              placeholder={field.placeholder}
+              maxLength={field.maxLength}
+              value={values[field.name] ?? ""}
+              onChange={(event) => setValues({ ...values, [field.name]: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") props.onClose();
+              }}
+            />
+          ))}
+          {errors.map((error) => (
+            <FieldError key={error} className="break-words">
+              {error}
+            </FieldError>
+          ))}
+          <div className="pe-actions justify-end">
+            <Button type="button" variant="ghost" size="sm" onClick={props.onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={busy}>
+              {busy ? "Creating…" : props.submit}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -139,7 +139,7 @@ function SkillGroup({
     <details ref={disclosure} className="pe-skill" aria-label={label}>
       <summary className="pe-skill-summary">
         {label.replace(/\/?SKILL\.md$/, "") || "Skills"}
-        {dirty && <UnsavedDot />}
+        {dirty && <UnsavedDot className="ml-1" />}
       </summary>
       {children}
     </details>

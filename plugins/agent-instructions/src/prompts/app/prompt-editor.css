@@ -65,13 +65,6 @@
 .pe-meta[data-tone="bad"] {
   color: var(--pe-bad);
 }
-.pe-dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--primary);
-}
 .pe-editor {
   overflow-y: auto;
   display: flex;
@@ -152,10 +145,6 @@
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
-.pe-skill-summary .pe-dot {
-  display: inline-block;
-  margin-left: 4px;
-}
 
 /* Catalog editor (Global tab). */
 .pe-summary-line {
@@ -164,9 +153,6 @@
   gap: 4px;
   width: calc(100% - 16px);
   vertical-align: middle;
-}
-.pe-skill-summary .pe-summary-line .pe-dot {
-  margin-left: 0;
 }
 .pe-status {
   display: flex;
@@ -215,18 +201,6 @@ form.pe-actions {
 }
 .pe-section:first-child > .pe-label {
   padding-top: 4px;
-}
-.pe-inline-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 4px 0;
-  padding: 8px;
-  border: 1px solid var(--pe-hairline);
-  border-radius: 6px;
-}
-.pe-inline-form .pe-actions {
-  justify-content: flex-end;
 }
 /* iOS zooms into a field under 16px. */
 @media (max-width: 767px) and (pointer: coarse) {
