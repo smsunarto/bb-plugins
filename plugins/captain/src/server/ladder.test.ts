@@ -1,7 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { RETRY_GRACE_MS } from "./fallback.ts";
+import { isRateLimit, RETRY_GRACE_MS } from "./fallback.ts";
 import { rungEligibility } from "./ladder.ts";
-import { captainHost, newCaptain, type CaptainHost, type FakePool } from "./test-host.ts";
+import {
+  captainHost,
+  newCaptain,
+  SERVER_HOST,
+  type CaptainHost,
+  type FakePool,
+} from "./test-host.ts";
 
 type Json = {
   ok: boolean;
@@ -68,6 +74,7 @@ describe("rung eligibility", () => {
     expect(rungEligibility(rung("claude-opus-5-5"), CLAUDE_CAPPED, now)).toEqual({
       eligible: false,
       reason: "no ready claude account with opus left",
+      kind: "pool",
     });
     expect(rungEligibility(rung("claude-sonnet-5-5"), CLAUDE_CAPPED, now)).toEqual({
       eligible: true,
@@ -85,6 +92,286 @@ describe("rung eligibility", () => {
       ),
     ).toEqual({ eligible: true });
     expect(rungEligibility(rung("claude-opus-5-5"), null, now)).toEqual({ eligible: true });
+  });
+});
+
+const ANTIGRAVITY = {
+  providerId: "acp-antigravity",
+  model: "gemini-4-neon",
+  reasoningLevel: "high",
+};
+const CODEX = { providerId: "codex", model: "gpt-6-astra", reasoningLevel: "high" };
+
+/** Set a Tasks preset's permission mode, as a user editing it in Tasks would. */
+function setPermission(host: CaptainHost, name: string, mode: string) {
+  const preset = presetNamed(host, name);
+  if (preset === undefined) throw new Error(`no preset ${name}`);
+  preset.permissionMode = mode;
+}
+
+/** Take a provider off one machine's list, or off every machine's. */
+function dropProvider(host: CaptainHost, id: string, hostId?: string) {
+  const list = (host.providerList.value ?? []).filter((provider) => provider.id !== id);
+  if (hostId === undefined) host.providerList.value = list;
+  else host.providerList.byHost[hostId] = list;
+}
+
+describe("rungs on a provider the pool does not route, such as Antigravity", () => {
+  test("dispatch starts an ACP rung when the pooled rungs are out, through its own preset", async () => {
+    const { host, as } = await ladderHost(NONE_READY);
+    await host.harness.behavior.callRpc("setLadder", {
+      role: "implement",
+      rungs: [
+        { providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high" },
+        ANTIGRAVITY,
+      ],
+    });
+
+    const result = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("started  rung 2 acp-antigravity gemini-4-neon high");
+    expect(presetNamed(host, "Captain Implement · 2")).toMatchObject({
+      providerId: "acp-antigravity",
+      modelId: "gemini-4-neon",
+      permissionMode: "full",
+    });
+    // Providers are read on the machine the thread spawns on: the project's default source.
+    expect(host.providerList.reads).toEqual([SERVER_HOST]);
+  });
+
+  test("a rung whose provider lacks the role preset's permission mode is skipped, and a forced one refused", async () => {
+    const { host, as } = await ladderHost();
+    host.pool.status = { routing: {}, accounts: [] };
+    setPermission(host, "Implement", "auto");
+    await host.harness.behavior.callRpc("setLadder", {
+      role: "implement",
+      rungs: [ANTIGRAVITY, CODEX],
+    });
+
+    const auto = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--dry-run"]);
+    expect(auto.stdout).toContain(
+      `rung 2 codex gpt-6-astra high; skipped rung 1 acp-antigravity gemini-4-neon high: acp-antigravity does not take permission mode auto`,
+    );
+
+    // Forcing the rung skips the pool, not bb: it refuses before Tasks starts a thread bb rejects.
+    const forced = await as([
+      "dispatch",
+      "BBPLUGINS-1",
+      "--role",
+      "Implement",
+      "--rung",
+      "1",
+      "--json",
+    ]);
+    expect(forced.exitCode).toBe(1);
+    expect(json(forced.stdout).results[0]?.["blockers"]).toEqual([
+      {
+        reason:
+          "rung 1 acp-antigravity gemini-4-neon high: acp-antigravity does not take permission mode auto",
+        fix: "set the Implement preset's permission to accept-edits or full, or use another rung",
+      },
+    ]);
+    expect(delegates(host)).toEqual([]);
+  });
+
+  test("a provider missing from a machine's list counts as unavailable; an unread list skips no rung", async () => {
+    const { host, as } = await ladderHost();
+    host.pool.status = { routing: {}, accounts: [] };
+    await host.harness.behavior.callRpc("setLadder", {
+      role: "implement",
+      rungs: [ANTIGRAVITY, CODEX],
+    });
+    dropProvider(host, "acp-antigravity");
+
+    const missing = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--dry-run"]);
+    expect(missing.stdout).toContain(
+      `rung 2 codex gpt-6-astra high; skipped rung 1 acp-antigravity gemini-4-neon high: acp-antigravity is not available on ${SERVER_HOST}`,
+    );
+
+    const forced = await as([
+      "dispatch",
+      "BBPLUGINS-1",
+      "--role",
+      "Implement",
+      "--rung",
+      "1",
+      "--json",
+    ]);
+    expect(json(forced.stdout).results[0]?.["blockers"]).toEqual([
+      {
+        reason: `rung 1 acp-antigravity gemini-4-neon high: acp-antigravity is not available on ${SERVER_HOST}`,
+        fix: `install, enable or sign in to acp-antigravity on ${SERVER_HOST}, or use another rung`,
+      },
+    ]);
+
+    // Every rung refused by bb: --rung would refuse too, so the fix does not offer it.
+    dropProvider(host, "codex");
+    const none = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--json"]);
+    expect(json(none.stdout).results[0]?.["blockers"]).toEqual([
+      {
+        reason: `no rung of Implement's ladder can start now: rung 1 acp-antigravity gemini-4-neon high: acp-antigravity is not available on ${SERVER_HOST}; rung 2 codex gpt-6-astra high: codex is not available on ${SERVER_HOST}`,
+        fix: "fix what each rung names, or add a rung in Captain settings",
+      },
+    ]);
+
+    host.providerList.value = null;
+    const unread = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--dry-run"]);
+    expect(unread.stdout).toContain("rung 1 acp-antigravity gemini-4-neon high");
+  });
+
+  test("providers are read on the machine the thread spawns on: the preset's machine, else the project's connected source", async () => {
+    const { host, as } = await ladderHost();
+    host.pool.status = { routing: {}, accounts: [] };
+    await host.harness.behavior.callRpc("setLadder", { role: "implement", rungs: [ANTIGRAVITY] });
+    // Antigravity is missing on the server, present on the Mac where the repo lives.
+    dropProvider(host, "acp-antigravity", SERVER_HOST);
+    host.connectedHosts.add("host_mac");
+    host.projectSources.set("proj_plugins", [
+      { hostId: SERVER_HOST, isDefault: false },
+      { hostId: "host_mac", isDefault: true },
+    ]);
+
+    const onMac = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--dry-run"]);
+    expect(onMac.stdout).toContain("planned");
+    expect(onMac.stdout).toContain("rung 1 acp-antigravity gemini-4-neon high");
+    expect(host.providerList.reads).toEqual(["host_mac"]);
+
+    // A preset pinned to a machine spawns there, wherever the project lives.
+    const implement = presetNamed(host, "Implement");
+    if (implement !== undefined) implement.machineId = SERVER_HOST;
+    const pinned = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--json"]);
+    expect(json(pinned.stdout).results[0]?.["blockers"]).toEqual([
+      expect.objectContaining({
+        reason: `no rung of Implement's ladder can start now: rung 1 acp-antigravity gemini-4-neon high: acp-antigravity is not available on ${SERVER_HOST}`,
+      }),
+    ]);
+
+    // A known machine that is not connected is refused, as Tasks would refuse it.
+    if (implement !== undefined) implement.machineId = "host_mac";
+    host.connectedHosts.delete("host_mac");
+    const asleep = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--json"]);
+    expect(json(asleep.stdout).results[0]?.["blockers"]).toEqual([
+      expect.objectContaining({
+        reason:
+          "no rung of Implement's ladder can start now: rung 1 acp-antigravity gemini-4-neon high: host_mac is not connected",
+      }),
+    ]);
+    if (implement !== undefined) implement.machineId = null;
+    host.projectSources.set("proj_plugins", [{ hostId: "host_mac", isDefault: true }]);
+    const noSource = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--json"]);
+    expect(json(noSource.stdout).results[0]?.["blockers"]).toEqual([
+      expect.objectContaining({
+        reason:
+          "no rung of Implement's ladder can start now: rung 1 acp-antigravity gemini-4-neon high: no connected machine holds proj_plugins",
+      }),
+    ]);
+  });
+
+  test("a listed provider that is not available is skipped", async () => {
+    const { host, as } = await ladderHost();
+    host.pool.status = { routing: {}, accounts: [] };
+    await host.harness.behavior.callRpc("setLadder", {
+      role: "implement",
+      rungs: [ANTIGRAVITY, CODEX],
+    });
+    const antigravity = host.providerList.value?.find((p) => p.id === "acp-antigravity");
+    if (antigravity !== undefined) antigravity.available = false;
+
+    const result = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--dry-run"]);
+
+    expect(result.stdout).toContain(
+      `rung 2 codex gpt-6-astra high; skipped rung 1 acp-antigravity gemini-4-neon high: acp-antigravity is not available on ${SERVER_HOST}`,
+    );
+  });
+
+  test("dispatch reads each machine once per call, only for rungs a unit would start on", async () => {
+    const { host, as } = await ladderHost(NONE_READY);
+    host.addTask("BBPLUGINS-2", { title: "Fix the sidebar" });
+    await host.harness.behavior.callRpc("setLadder", {
+      role: "implement",
+      rungs: [
+        { providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high" },
+        ANTIGRAVITY,
+        CODEX,
+      ],
+    });
+    // Rung 1's preset lives on an offline Mac; the pool skips rung 1, so it is never read.
+    host.tasks.presets.push({
+      ...presetNamed(host, "Implement"),
+      id: "preset_rung1",
+      name: "Captain Implement · 1",
+      machineId: "host_mac",
+    } as never);
+    host.connectedHosts.add("host_mac");
+    host.providerList.byHost["host_mac"] = null;
+
+    const first = await as([
+      "dispatch",
+      "BBPLUGINS-1",
+      "BBPLUGINS-2",
+      "--role",
+      "Implement",
+      "--json",
+    ]);
+    expect(json(first.stdout).results.map((entry) => entry["rung"])).toEqual([2, 2]);
+    expect(host.providerList.reads).toEqual([SERVER_HOST]);
+    expect(host.sdkReads).toEqual({ hostsList: 1, projectsGet: 1 });
+
+    // Units that already have a live thread start nothing and read nothing.
+    host.providerList.reads.length = 0;
+    const again = await as(["dispatch", "BBPLUGINS-1", "BBPLUGINS-2", "--role", "Implement"]);
+    expect(again.stdout).toContain("exists");
+    expect(host.providerList.reads).toEqual([]);
+
+    // --rung reads only the forced rung's machine.
+    const forced = await as([
+      "dispatch",
+      "BBPLUGINS-1",
+      "--role",
+      "Implement",
+      "--rung",
+      "3",
+      "--again",
+      "--dry-run",
+    ]);
+    expect(forced.stdout).toContain("planned");
+    expect(host.providerList.reads).toEqual([SERVER_HOST]);
+  });
+
+  test("a rung preset made while the role preset was auto follows it back to full", async () => {
+    const { host, as } = await ladderHost();
+    host.pool.status = { routing: {}, accounts: [] };
+    setPermission(host, "Implement", "auto");
+    await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--rung", "2"]);
+    expect(presetNamed(host, "Captain Implement · 2")).toMatchObject({
+      providerId: "codex",
+      permissionMode: "auto",
+    });
+
+    setPermission(host, "Implement", "full");
+    await host.harness.behavior.callRpc("setLadder", {
+      role: "implement",
+      rungs: [
+        { providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high" },
+        ANTIGRAVITY,
+      ],
+    });
+    const result = await as([
+      "dispatch",
+      "BBPLUGINS-1",
+      "--role",
+      "Implement",
+      "--rung",
+      "2",
+      "--again",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(presetNamed(host, "Captain Implement · 2")).toMatchObject({
+      providerId: "acp-antigravity",
+      permissionMode: "full",
+    });
   });
 });
 
@@ -168,7 +455,7 @@ describe("bb captain dispatch on a ladder", () => {
     expect(json(result.stdout).results[0]?.["blockers"]).toEqual([
       {
         reason:
-          "no rung of Implement's ladder has an eligible account: rung 1 claude-code claude-opus-5-5 high: no ready claude account with opus left; rung 2 codex gpt-6-astra high: no ready codex account",
+          "no rung of Implement's ladder can start now: rung 1 claude-code claude-opus-5-5 high: no ready claude account with opus left; rung 2 codex gpt-6-astra high: no ready codex account",
         fix: expect.stringContaining("--rung <n>"),
       },
     ]);
@@ -279,10 +566,20 @@ describe("bb captain dispatch on a ladder", () => {
 /** A dispatched Implement thread that then fails on a rate limit bb declined to retry. */
 async function rateLimited(
   pool: FakePool,
-  options: { rung?: string; decision?: "decline" | "retry" | "none"; reported?: boolean } = {},
+  options: {
+    rung?: string;
+    decision?: "decline" | "retry" | "none";
+    reported?: boolean;
+    error?: unknown;
+    /** The Implement ladder the thread starts on, saved before the dispatch. */
+    ladder?: unknown[];
+  } = {},
 ) {
   const setup = await ladderHost(ALL_READY);
   const { host, as } = setup;
+  if (options.ladder !== undefined) {
+    await host.harness.behavior.callRpc("setLadder", { role: "implement", rungs: options.ladder });
+  }
   const argv = ["dispatch", "BBPLUGINS-1", "--role", "Implement", "--json"];
   const started = await as(options.rung === undefined ? argv : [...argv, "--rung", options.rung]);
   const failed = String(json(started.stdout).results[0]?.["thread"]);
@@ -293,7 +590,7 @@ async function rateLimited(
     {
       type: "provider/error",
       createdAt: host.now(),
-      data: {
+      data: options.error ?? {
         message: "Provider error",
         detail:
           "API Error: Request rejected (429) · No Account Pooler account is currently eligible.",
@@ -421,6 +718,171 @@ describe("rate-limit fallback", () => {
     expect(delegates(undecided.host)).toHaveLength(2);
   });
 
+  test("an ACP agent's quota error, which bb records as text with no errorInfo, restarts on the next rung", async () => {
+    const { host, captainId, failed } = await rateLimited(CLAUDE_CAPPED, {
+      error: ACP_QUOTA_ERROR,
+    });
+
+    await host.server.check.pass();
+
+    expect(delegates(host)).toHaveLength(2);
+    expect(host.threads.get(failed)?.archivedAt).not.toBeNull();
+    expect(toCaptain(host, captainId).map((message) => message.text)).toEqual([
+      expect.stringContaining(`${failed} hit a provider rate limit on rung 1`),
+    ]);
+  });
+
+  const OPUS = { providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high" };
+  const restartedRung = (host: CaptainHost) => {
+    const restarted = [...host.threads.keys()].findLast((id) => id.startsWith("thr_crew")) ?? "";
+    return host.server.store.crewRole(restarted)?.rung;
+  };
+
+  test("passes over a rung bb would refuse: a provider lacking the role preset's mode, or missing", async () => {
+    const mode = await rateLimited(CLAUDE_CAPPED, { ladder: [OPUS, ANTIGRAVITY, CODEX] });
+    setPermission(mode.host, "Implement", "auto");
+    await mode.host.server.check.pass();
+    expect(restartedRung(mode.host)).toBe(3);
+    expect(toCaptain(mode.host, mode.captainId).map((message) => message.text)).toEqual([
+      expect.stringContaining(
+        "Skipped rung 2 acp-antigravity gemini-4-neon high: acp-antigravity does not take permission mode auto.",
+      ),
+    ]);
+
+    const missing = await rateLimited(CLAUDE_CAPPED, { ladder: [OPUS, ANTIGRAVITY, CODEX] });
+    dropProvider(missing.host, "acp-antigravity");
+    await missing.host.server.check.pass();
+    expect(restartedRung(missing.host)).toBe(3);
+  });
+
+  test("opens nothing while presets or a provider list are unread, then picks the right rung on a later pass", async () => {
+    for (const unread of ["providers", "presets"] as const) {
+      const { host, captainId, failed } = await rateLimited(CLAUDE_CAPPED, {
+        ladder: [OPUS, ANTIGRAVITY, CODEX],
+      });
+      setPermission(host, "Implement", "auto");
+      if (unread === "providers") host.providerList.value = null;
+      else host.tasks.failing.add("listPresets");
+
+      await host.server.check.pass();
+      expect(host.server.store.fallback(failed)).toBeNull();
+      expect(delegates(host)).toHaveLength(1);
+      expect(toCaptain(host, captainId)).toEqual([]);
+
+      host.providerList.value = [
+        { id: "claude-code", available: true, permissionModes: ["accept-edits", "auto", "full"] },
+        { id: "codex", available: true, permissionModes: ["accept-edits", "auto", "full"] },
+        { id: "acp-antigravity", available: true, permissionModes: ["accept-edits", "full"] },
+      ];
+      host.tasks.failing.delete("listPresets");
+      await host.server.check.pass();
+      expect(host.server.store.fallback(failed)).toMatchObject({ toRung: 3 });
+      expect(restartedRung(host)).toBe(3);
+    }
+  });
+
+  test("waits while a candidate rung's machine or project cannot be read, then restarts", async () => {
+    for (const failing of ["hosts.list", "projects.get"]) {
+      const { host, failed } = await rateLimited(CLAUDE_CAPPED, {
+        ladder: [OPUS, ANTIGRAVITY, CODEX],
+      });
+      setPermission(host, "Implement", "auto");
+      host.sdkFailing.add(failing);
+
+      await host.server.check.pass();
+      expect(host.server.store.fallback(failed)).toBeNull();
+      expect(delegates(host)).toHaveLength(1);
+
+      host.sdkFailing.delete(failing);
+      await host.server.check.pass();
+      expect(host.server.store.fallback(failed)).toMatchObject({ toRung: 3 });
+    }
+  });
+
+  test("a rung pinned to a machine that is not connected is passed over", async () => {
+    const { host, failed } = await rateLimited(CLAUDE_CAPPED, {
+      ladder: [OPUS, ANTIGRAVITY, CODEX],
+    });
+    host.tasks.presets.push({
+      ...presetNamed(host, "Implement"),
+      id: "preset_rung2",
+      name: "Captain Implement · 2",
+      machineId: "host_mac",
+    } as never);
+
+    await host.server.check.pass();
+
+    expect(host.server.store.fallback(failed)).toMatchObject({
+      toRung: 3,
+      skipped: ["rung 2 acp-antigravity gemini-4-neon high: host_mac is not connected"],
+    });
+  });
+
+  test("reads only rungs after the failed one: an offline machine on a used rung blocks nothing", async () => {
+    const used = await rateLimited(CLAUDE_CAPPED, { ladder: [OPUS, CODEX] });
+    const rung1 = presetNamed(used.host, "Captain Implement · 1");
+    if (rung1 !== undefined) rung1.machineId = "host_mac";
+    used.host.connectedHosts.add("host_mac");
+    used.host.providerList.byHost["host_mac"] = null;
+    await used.host.server.check.pass();
+    expect(restartedRung(used.host)).toBe(2);
+    expect(used.host.providerList.reads).not.toContain("host_mac");
+
+    // After the last rung there is nothing to read: the Captain is woken as blocked.
+    const last = await rateLimited(NONE_READY, { rung: "2", ladder: [OPUS, CODEX] });
+    last.host.providerList.value = null;
+    await last.host.server.check.pass();
+    expect(toCaptain(last.host, last.captainId).map((message) => message.text)).toEqual([
+      expect.stringMatching(/^\[captain\] Blocked: /u),
+    ]);
+  });
+
+  test("one pass reads each machine and project once across every failed thread", async () => {
+    const { host, as, failed } = await rateLimited(CLAUDE_CAPPED, {
+      ladder: [OPUS, ANTIGRAVITY, CODEX],
+    });
+    host.addTask("BBPLUGINS-2", { title: "Fix the sidebar" });
+    host.pool.status = ALL_READY;
+    const second = await as(["dispatch", "BBPLUGINS-2", "--role", "Implement", "--json"]);
+    const other = String(json(second.stdout).results[0]?.["thread"]);
+    host.pool.status = CLAUDE_CAPPED;
+    host.updateThread(other, { status: "error", updatedAt: host.now() });
+    host.events.set(other, host.events.get(failed) ?? []);
+    host.retryDecisions.set(other, host.retryDecisions.get(failed));
+    host.providerList.reads.length = 0;
+    host.sdkReads.hostsList = 0;
+    host.sdkReads.projectsGet = 0;
+
+    await host.server.check.pass();
+
+    expect(host.server.store.fallback(failed)).toMatchObject({ toRung: 2 });
+    expect(host.server.store.fallback(other)).toMatchObject({ toRung: 2 });
+    expect(host.providerList.reads).toEqual([SERVER_HOST]);
+    expect(host.sdkReads).toEqual({ hostsList: 1, projectsGet: 1 });
+  });
+
+  test("with the role preset deleted, rungs are checked as Captain's role spec would make them", async () => {
+    const { host, failed } = await rateLimited(CLAUDE_CAPPED, {
+      ladder: [OPUS, ANTIGRAVITY, CODEX],
+    });
+    dropProvider(host, "acp-antigravity");
+    host.tasks.presets = host.tasks.presets.filter((preset) => preset.name !== "Implement");
+
+    await host.server.check.pass();
+
+    expect(host.server.store.fallback(failed)).toMatchObject({ toRung: 3 });
+  });
+
+  test("reads Tasks' presets once per pass, for both picking the rung and starting it", async () => {
+    const { host } = await rateLimited(CLAUDE_CAPPED);
+    host.tasks.calls.length = 0;
+
+    await host.server.check.pass();
+
+    expect(delegates(host)).toHaveLength(1);
+    expect(host.tasks.calls.filter((call) => call.method === "listPresets")).toHaveLength(1);
+  });
+
   test("a thread that reported before it failed is not restarted", async () => {
     const { host, captainId } = await rateLimited(CLAUDE_CAPPED, { reported: true });
 
@@ -428,5 +890,47 @@ describe("rate-limit fallback", () => {
 
     expect(delegates(host)).toHaveLength(1);
     expect(toCaptain(host, captainId).filter((m) => m.text.includes("rate limit"))).toEqual([]);
+  });
+});
+
+/**
+ * The `provider/error` data bb recorded on a test instance (bb 0.50.1) when an
+ * ACP agent answered `session/prompt` with a JSON-RPC error. The envelope is
+ * bb's real one; the text is the quota message the Antigravity CLI (`agy`)
+ * ships, served by a stand-in agent because no real quota error was observed.
+ */
+const ACP_QUOTA_ERROR = {
+  providerThreadId: "fake-346648-1",
+  message: "Provider error",
+  detail: "Internal error: You have exhausted your quota on this model.",
+};
+
+describe("isRateLimit", () => {
+  test("reads quota wording only from errors no provider classified", () => {
+    expect(isRateLimit(ACP_QUOTA_ERROR)).toBe(true);
+    for (const detail of [
+      "Internal error: RESOURCE_EXHAUSTED",
+      "googleapi: Too Many Requests",
+      "model gemini-4-neon is out of quota until 2026-11-26T00:00:00Z",
+      "Rate limit reached, try again later",
+    ]) {
+      expect(isRateLimit({ message: "Provider error", detail })).toBe(true);
+    }
+    // Other ACP failures are not rate limits, even when agy's stderr mentions its /quota command.
+    expect(
+      isRateLimit({
+        message: "Provider error",
+        detail:
+          'ACP agent "agy" exited unexpectedly (code 1): printmode.go:332] Print mode: running slash command /quota\npanic: runtime error',
+      }),
+    ).toBe(false);
+    // A provider that classified its error is believed, even when its text reads like a quota.
+    expect(
+      isRateLimit({
+        message: "Provider error",
+        detail: ACP_QUOTA_ERROR.detail,
+        errorInfo: { category: "max-output-tokens", providerCode: null, httpStatusCode: null },
+      }),
+    ).toBe(false);
   });
 });
