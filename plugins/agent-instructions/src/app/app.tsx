@@ -19,6 +19,8 @@ import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react"
 import { useSidebarColumnFill } from "@bb-plugins/ui/sidebar-fill";
 import { Button } from "../../components/ui/button.tsx";
 import { useIsCompactViewport } from "../../components/ui/hooks/use-compact-viewport.tsx";
+import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs.tsx";
+import { cn } from "../../lib/utils.ts";
 import {
   crumbRoute,
   locate,
@@ -195,44 +197,67 @@ function SectionList(props: { subPath: string; section: Section; home?: boolean 
  * editor's own sticky header (the catalog's filter) can sit just below it.
  */
 function useStickyHeight() {
-  const ref = useRef<HTMLElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const nav = ref.current;
+    const bar = ref.current;
     // Test DOMs have no ResizeObserver; every browser bb supports does.
-    if (!nav || typeof ResizeObserver === "undefined") return;
+    if (!bar || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(([entry]) => {
       const height = entry?.borderBoxSize[0]?.blockSize;
       if (height !== undefined)
-        nav.parentElement?.style.setProperty("--ai-nav-height", `${height}px`);
+        bar.parentElement?.style.setProperty("--ai-nav-height", `${height}px`);
     });
-    observer.observe(nav);
+    observer.observe(bar);
     return () => observer.disconnect();
   }, []);
   return ref;
 }
 
-/** The three editors, as a sticky row of buttons above the current editor's list. */
+/** The three editors, as a sticky tab switcher above the current editor's list. */
 function EditorSwitcher({ section, className }: { section: Section; className: string }) {
   const navigate = useBbNavigate();
-  const navRef = useStickyHeight();
+  const stickyRef = useStickyHeight();
+  const openSection = (target: Section) => {
+    const entry = SECTIONS.find((candidate) => candidate.section === target);
+    if (entry) navigate.toPluginPanel("instructions", { subPath: entry.subPath });
+  };
   return (
-    <nav
-      ref={navRef}
-      aria-label="Instruction editors"
-      className={`sticky top-0 z-10 flex shrink-0 flex-wrap gap-1 border-b border-border p-2 ${className}`}
+    <div
+      ref={stickyRef}
+      className={cn("sticky top-0 z-10 shrink-0 border-b border-border p-2", className)}
     >
-      {SECTIONS.map((entry) => (
-        <Button
-          key={entry.label}
-          variant={entry.section === section ? "secondary" : "ghost"}
-          size="sm"
-          aria-pressed={entry.section === section}
-          onClick={() => navigate.toPluginPanel("instructions", { subPath: entry.subPath })}
-        >
-          {entry.label}
-        </Button>
-      ))}
-    </nav>
+      <Tabs
+        value={section}
+        activationMode="manual"
+        onValueChange={(value) => openSection(value as Section)}
+      >
+        <TabsList aria-label="Instruction editors" className="h-auto max-w-full flex-wrap">
+          {SECTIONS.map((entry) => (
+            <TabsTrigger
+              key={entry.section}
+              value={entry.section}
+              className="flex-none px-2 py-1 text-xs max-md:pointer-coarse:min-h-11 max-md:pointer-coarse:px-3"
+              onMouseDown={(event) => {
+                if (entry.section === section && event.button === 0 && !event.ctrlKey) {
+                  openSection(entry.section);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (
+                  entry.section === section &&
+                  event.target === event.currentTarget &&
+                  (event.key === " " || event.key === "Enter")
+                ) {
+                  openSection(entry.section);
+                }
+              }}
+            >
+              {entry.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+    </div>
   );
 }
 
