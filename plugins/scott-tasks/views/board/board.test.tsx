@@ -553,4 +553,128 @@ describe("BoardView", () => {
     });
     await slot.findByText("First backlog task");
   });
+
+  it("schedules at most one RAF per frame during sustained edge auto-scroll and stops after drop or Escape", async () => {
+    const slot = renderBoard();
+    await slot.findByText("First backlog task");
+
+    const boardEl = slot.container.querySelector("[data-board-scroller]") as HTMLElement;
+    const backlogCol = slot.container.querySelector('[data-board-column="backlog"]') as HTMLElement;
+    const firstCard = slot.getByRole("button", { name: /BRD-1/ });
+
+    const rect = (left: number, top: number, right: number, bottom: number) =>
+      ({
+        left,
+        top,
+        right,
+        bottom,
+        width: right - left,
+        height: bottom - top,
+        x: left,
+        y: top,
+        toJSON: () => ({}),
+      }) as DOMRect;
+
+    vi.spyOn(boardEl, "getBoundingClientRect").mockReturnValue(rect(0, 0, 320, 400));
+    vi.spyOn(backlogCol, "getBoundingClientRect").mockReturnValue(rect(12, 40, 268, 400));
+    vi.spyOn(firstCard, "getBoundingClientRect").mockReturnValue(rect(12, 50, 268, 130));
+
+    let nextId = 1;
+    let rafCount = 0;
+    const pending = new Map<number, FrameRequestCallback>();
+    const allScheduled: FrameRequestCallback[] = [];
+    const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      const id = nextId++;
+      rafCount += 1;
+      pending.set(id, cb);
+      allScheduled.push(cb);
+      return id;
+    });
+    const cafSpy = vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+      pending.delete(id);
+    });
+
+    const tickFrame = (timestamp: number) => {
+      const batch = [...pending.entries()];
+      pending.clear();
+      for (const [, cb] of batch) {
+        cb(timestamp);
+      }
+      return batch.length;
+    };
+
+    try {
+      // Sustained edge drag: drag card into the bottom 48px edge of Backlog.
+      await act(async () => {
+        fireEvent.pointerDown(firstCard, { pointerId: 1, button: 0, clientX: 80, clientY: 90 });
+        fireEvent.pointerMove(window, { pointerId: 1, clientX: 80, clientY: 390 });
+      });
+      expect(boardEl.hasAttribute("data-dragging")).toBe(true);
+      expect(pending.size).toBe(1);
+
+      let now = 16;
+      for (let frame = 0; frame < 6; frame++) {
+        const beforeTop = backlogCol.scrollTop;
+        const countBefore = rafCount;
+        let ran = 0;
+        await act(async () => {
+          ran = tickFrame(now);
+        });
+        now += 16;
+        expect(ran).toBe(1);
+        expect(backlogCol.scrollTop).toBeGreaterThan(beforeTop);
+        // Each edge-scroll frame schedules at most 1 follow-up RAF (no 2^N fork bomb).
+        expect(rafCount - countBefore).toBe(1);
+        expect(pending.size).toBe(1);
+      }
+
+      // Drop mid-edge-scroll: pending RAF is canceled and stale callbacks are no-ops.
+      const scrollAtDrop = backlogCol.scrollTop;
+      const countAtDrop = rafCount;
+      await act(async () => {
+        fireEvent.pointerUp(window, { pointerId: 1, clientX: 80, clientY: 390 });
+      });
+      expect(pending.size).toBe(0);
+      expect(boardEl.hasAttribute("data-dragging")).toBe(false);
+
+      // Even if a stale callback fires after drop, active===false prevents scroll/drag resurrection.
+      const staleCallback = allScheduled.at(-1)!;
+      await act(async () => {
+        staleCallback(now + 16);
+      });
+      expect(backlogCol.scrollTop).toBe(scrollAtDrop);
+      expect(rafCount).toBe(countAtDrop);
+      expect(boardEl.hasAttribute("data-dragging")).toBe(false);
+
+      // Repeat with Escape cancel mid-edge-scroll.
+      await act(async () => {
+        fireEvent.pointerDown(firstCard, { pointerId: 2, button: 0, clientX: 80, clientY: 90 });
+        fireEvent.pointerMove(window, { pointerId: 2, clientX: 80, clientY: 390 });
+      });
+      expect(pending.size).toBe(1);
+      await act(async () => {
+        expect(tickFrame(now + 32)).toBe(1);
+      });
+      expect(pending.size).toBe(1);
+
+      const scrollAtEscape = backlogCol.scrollTop;
+      const countAtEscape = rafCount;
+      const staleEscapeCb = allScheduled.at(-1)!;
+      await act(async () => {
+        fireEvent.keyDown(window, { key: "Escape" });
+      });
+      expect(pending.size).toBe(0);
+      expect(boardEl.hasAttribute("data-dragging")).toBe(false);
+
+      await act(async () => {
+        staleEscapeCb(now + 48);
+      });
+      expect(backlogCol.scrollTop).toBe(scrollAtEscape);
+      expect(rafCount).toBe(countAtEscape);
+      expect(boardEl.hasAttribute("data-dragging")).toBe(false);
+    } finally {
+      rafSpy.mockRestore();
+      cafSpy.mockRestore();
+    }
+  });
 });

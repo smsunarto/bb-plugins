@@ -96,6 +96,21 @@ function isNearEdge(coord: number, start: number, end: number): boolean {
   return coord < start + SCROLL_EDGE_PX || coord > end - SCROLL_EDGE_PX;
 }
 
+function isPointInsideRect(x: number, y: number, rect: DOMRect): boolean {
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+function isPointerNearScrollEdge(
+  x: number,
+  y: number,
+  boardRect: DOMRect | null,
+  hoveredRect: DOMRect | null,
+): boolean {
+  if (!boardRect || !isPointInsideRect(x, y, boardRect)) return false;
+  if (isNearEdge(x, boardRect.left, boardRect.right)) return true;
+  return hoveredRect !== null && isNearEdge(y, hoveredRect.top, hoveredRect.bottom);
+}
+
 function boardMoveAnnouncement(
   taskKey: string,
   fromStatus: TaskStatus,
@@ -898,6 +913,7 @@ export function BoardView({ projectId, onError }: BoardViewProps) {
       const { pointerId, currentTarget: card, clientX, clientY } = event;
       const touch = event.pointerType === "touch";
       const start = { x: clientX, y: clientY };
+      let active = true;
       let cardRect: DOMRect | null = null;
       let hold: ReturnType<typeof setTimeout> | undefined;
       let moved = false;
@@ -918,8 +934,13 @@ export function BoardView({ projectId, onError }: BoardViewProps) {
         }
       };
 
+      const scheduleEdgeScroll = () => {
+        if (!active || scrollFrame !== null) return;
+        scrollFrame = requestAnimationFrame(scrollAtEdge);
+      };
+
       const syncDropState = (x: number, y: number, forceState = false) => {
-        if (!cardRect) return;
+        if (!active || !cardRect) return;
         // Read geometry BEFORE writing ghost transform to avoid read-after-write layout thrash.
         const target = findDropTarget(x, y, task.id);
         const boardRect = boardRef.current?.getBoundingClientRect() ?? null;
@@ -940,29 +961,18 @@ export function BoardView({ projectId, onError }: BoardViewProps) {
           });
         }
 
-        const nearHorizontal = boardRect !== null && isNearEdge(x, boardRect.left, boardRect.right);
-        const nearVertical =
-          hoveredRect !== null &&
-          boardRect !== null &&
-          y >= boardRect.top &&
-          y <= boardRect.bottom &&
-          isNearEdge(y, hoveredRect.top, hoveredRect.bottom);
-        if ((nearHorizontal || nearVertical) && scrollFrame === null) {
-          scrollFrame = requestAnimationFrame(scrollAtEdge);
+        if (isPointerNearScrollEdge(x, y, boardRect, hoveredRect)) {
+          scheduleEdgeScroll();
         }
       };
 
-      const scrollAtEdge = (now: number) => {
+      function scrollAtEdge(now: number) {
         scrollFrame = null;
+        if (!active) return;
         const boardEl = boardRef.current;
         if (!boardEl || !cardRect) return;
         const boardRect = boardEl.getBoundingClientRect();
-        if (
-          pointer.y < boardRect.top ||
-          pointer.y > boardRect.bottom ||
-          pointer.x < boardRect.left ||
-          pointer.x > boardRect.right
-        ) {
+        if (!isPointInsideRect(pointer.x, pointer.y, boardRect)) {
           lastFrame = null;
           return;
         }
@@ -992,20 +1002,23 @@ export function BoardView({ projectId, onError }: BoardViewProps) {
           return;
         }
         lastFrame = now;
+        // syncDropState is the sole owner of scheduling the next edge-scroll RAF.
         syncDropState(pointer.x, pointer.y);
-        scrollFrame = requestAnimationFrame(scrollAtEdge);
-      };
+      }
 
       const flushMove = () => {
         moveFrame = null;
+        if (!active) return;
         syncDropState(pointer.x, pointer.y);
       };
 
       const finish = (upEvent: PointerEvent | null, waitForRelease = false) => {
+        if (!active) return;
+        const hadDrag = cardRect !== null;
         dragCleanupRef.current?.();
         dragCleanupRef.current = null;
         dragPointerRef.current = null;
-        if (!cardRect) return;
+        if (!hadDrag) return;
         if (upEvent && moved) {
           const target = findDropTarget(upEvent.clientX, upEvent.clientY, task.id);
           if (target) {
@@ -1031,7 +1044,7 @@ export function BoardView({ projectId, onError }: BoardViewProps) {
       };
 
       const onMove = (moveEvent: PointerEvent) => {
-        if (moveEvent.pointerId !== pointerId) return;
+        if (!active || moveEvent.pointerId !== pointerId) return;
         const { clientX: x, clientY: y } = moveEvent;
         if (!moved && Math.hypot(x - start.x, y - start.y) < DRAG_THRESHOLD_PX) return;
         const startingNow = !cardRect;
@@ -1082,9 +1095,17 @@ export function BoardView({ projectId, onError }: BoardViewProps) {
       window.addEventListener("blur", onBlur);
       window.addEventListener("keydown", onKeyDown);
       dragCleanupRef.current = () => {
+        active = false;
+        cardRect = null;
         clearTimeout(hold);
-        if (moveFrame !== null) cancelAnimationFrame(moveFrame);
-        if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+        if (moveFrame !== null) {
+          cancelAnimationFrame(moveFrame);
+          moveFrame = null;
+        }
+        if (scrollFrame !== null) {
+          cancelAnimationFrame(scrollFrame);
+          scrollFrame = null;
+        }
         card.removeEventListener("touchmove", onTouchMove);
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
@@ -1095,6 +1116,7 @@ export function BoardView({ projectId, onError }: BoardViewProps) {
       if (touch) {
         card.addEventListener("touchmove", onTouchMove, { passive: false });
         hold = setTimeout(() => {
+          if (!active) return;
           cardRect = card.getBoundingClientRect();
           syncDropState(start.x, start.y, true);
         }, TOUCH_HOLD_MS);
