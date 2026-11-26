@@ -6,7 +6,12 @@ installDom();
 const { resetHeaderBarRegistry, setHeaderBarSegments } = await import("@bb-plugins/header-bar");
 const { act, cleanup, fireEvent } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
+const { COMPACT_VIEWPORT_QUERY } =
+  await import("../src/app/components/ui/hooks/use-compact-viewport.tsx");
+const { POINTER_COARSE_QUERY } =
+  await import("../src/app/components/ui/hooks/use-pointer-coarse.ts");
 const { buildKitchenSinkHeaderSegments } = await import("../src/app/header-bar/lineage.ts");
+const { PHONE_VIEWPORT_QUERY } = await import("../src/app/header-bar/status-bar.tsx");
 const { PROBE_ATTRIBUTE } = await import("../src/app/timeline-motion/thread-activity.ts");
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 
@@ -14,9 +19,64 @@ const app = await loadPluginApp(() => import("../src/app/app.tsx"));
 const statusBarSlot = app.threadHeaderRows.find((entry) => entry.id === "header-status-bar")!;
 const probeSlot = app.threadHeaderRows.find((entry) => entry.id === "thread-activity-probe")!;
 
+const originalMatchMedia = window.matchMedia;
+
+function installMatchMedia(initial: { compact: boolean; coarse: boolean }) {
+  const state = { ...initial };
+  const listeners = new Map<string, Set<() => void>>();
+  let callCount = 0;
+
+  const matchesFor = (query: string) => {
+    if (query === PHONE_VIEWPORT_QUERY) return state.compact && state.coarse;
+    if (query === COMPACT_VIEWPORT_QUERY) return state.compact;
+    if (query === POINTER_COARSE_QUERY) return state.coarse;
+    return false;
+  };
+
+  window.matchMedia = ((query: string) => {
+    callCount += 1;
+    return {
+      media: query,
+      get matches() {
+        return matchesFor(query);
+      },
+      onchange: null,
+      addListener() {},
+      removeListener() {},
+      addEventListener(type: string, listener: () => void) {
+        if (type !== "change") return;
+        let set = listeners.get(query);
+        if (!set) {
+          set = new Set();
+          listeners.set(query, set);
+        }
+        set.add(listener);
+      },
+      removeEventListener(type: string, listener: () => void) {
+        if (type !== "change") return;
+        listeners.get(query)?.delete(listener);
+      },
+      dispatchEvent: () => true,
+    };
+  }) as unknown as typeof window.matchMedia;
+
+  return {
+    get callCount() {
+      return callCount;
+    },
+    set(next: Partial<{ compact: boolean; coarse: boolean }>) {
+      Object.assign(state, next);
+      for (const set of listeners.values()) {
+        for (const listener of set) listener();
+      }
+    },
+  };
+}
+
 afterEach(() => {
   cleanup();
   resetHeaderBarRegistry();
+  window.matchMedia = originalMatchMedia;
 });
 
 function makeThread(
@@ -320,5 +380,111 @@ describe("HeaderStatusBar unified host", () => {
 
     expect(left.container.querySelector('[data-testid="thread-header-status-bar"]')).not.toBeNull();
     expect(right.container.querySelector('[data-testid="thread-header-status-bar"]')).toBeNull();
+  });
+
+  test("hides on phone viewports (compact + coarse) and stays visible on desktop, narrow fine, and wide coarse", () => {
+    const threads = [
+      makeThread({ id: "thr_parent", displayTitle: "Plugins Captain", createdAt: 1 }),
+      makeThread({
+        id: "thr_child",
+        displayTitle: "Child work",
+        parentThreadId: "thr_parent",
+        createdAt: 2,
+      }),
+    ];
+
+    setHeaderBarSegments("thr_child", "tasks:m", "scott-tasks", [
+      {
+        owner: "scott-tasks",
+        slot: "task",
+        priority: 10,
+        keyText: "BBP-148",
+        label: "Hide on mobile",
+      },
+    ]);
+
+    // Phone (compact viewport + coarse pointer): renders nothing at all.
+    const media = installMatchMedia({ compact: true, coarse: true });
+    const phone = renderSlot(
+      statusBarSlot,
+      { threadId: "thr_child", projectId: "proj_1", environment: null },
+      { sidebarThreads: { threads } },
+    );
+    expect(phone.container.firstChild).toBeNull();
+    expect(phone.container.querySelector('[data-testid="thread-header-status-bar"]')).toBeNull();
+
+    // Switching to narrow desktop (compact + fine pointer): renders normally.
+    act(() => {
+      media.set({ compact: true, coarse: false });
+    });
+    expect(
+      phone.container.querySelector('[data-testid="thread-header-status-bar"]'),
+    ).not.toBeNull();
+
+    // Switching to wide touch / tablet (non-compact + coarse pointer): renders normally.
+    act(() => {
+      media.set({ compact: false, coarse: true });
+    });
+    expect(
+      phone.container.querySelector('[data-testid="thread-header-status-bar"]'),
+    ).not.toBeNull();
+
+    // Switching to standard desktop (non-compact + fine pointer): renders normally.
+    act(() => {
+      media.set({ compact: false, coarse: false });
+    });
+    expect(
+      phone.container.querySelector('[data-testid="thread-header-status-bar"]'),
+    ).not.toBeNull();
+    expect(phone.getByRole("button", { name: "Parent: Plugins Captain" })).not.toBeNull();
+
+    // Switching back to phone: unmounts the statusbar cleanly.
+    act(() => {
+      media.set({ compact: true, coarse: true });
+    });
+    expect(phone.container.firstChild).toBeNull();
+  });
+
+  test("keeps matchMedia subscriptions flat across repeated re-renders", () => {
+    const threads = [
+      makeThread({ id: "thr_parent", displayTitle: "Plugins Captain", createdAt: 1 }),
+      makeThread({
+        id: "thr_child",
+        displayTitle: "Child work",
+        parentThreadId: "thr_parent",
+        createdAt: 2,
+      }),
+    ];
+
+    const media = installMatchMedia({ compact: false, coarse: false });
+    const SlotComponent = statusBarSlot.component;
+    const rendered = renderSlot(
+      statusBarSlot,
+      { threadId: "thr_child", projectId: "proj_1", environment: null },
+      { sidebarThreads: { threads } },
+    );
+
+    const callsAfterMount = media.callCount;
+    expect(callsAfterMount).toBeGreaterThan(0);
+    expect(callsAfterMount).toBeLessThanOrEqual(3);
+
+    for (let i = 0; i < 100; i += 1) {
+      rendered.rerender(
+        <SlotComponent threadId="thr_child" projectId="proj_1" environment={null} />,
+      );
+    }
+    expect(media.callCount).toBe(callsAfterMount);
+
+    act(() => {
+      media.set({ compact: true, coarse: true });
+    });
+    expect(rendered.container.firstChild).toBeNull();
+
+    for (let i = 0; i < 100; i += 1) {
+      rendered.rerender(
+        <SlotComponent threadId="thr_child" projectId="proj_1" environment={null} />,
+      );
+    }
+    expect(media.callCount).toBe(callsAfterMount);
   });
 });
