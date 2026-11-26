@@ -937,7 +937,10 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
         variant="ghost"
         tone="muted"
         hidden
-        className={cn(TAP, "flex w-full justify-center rounded-none px-1 [&[hidden]]:hidden")}
+        className={cn(
+          TAP,
+          "group flex w-full justify-center rounded-none px-1 hover:bg-transparent [&[hidden]]:hidden",
+        )}
         aria-controls={id}
         aria-expanded={open}
         onClick={() => {
@@ -951,7 +954,7 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
         <span
           className={cn(
             surface.edge,
-            "flex items-center gap-1 rounded-full bg-popover px-2.5 py-0.5 text-xs",
+            "flex items-center gap-1 rounded-full bg-popover px-2.5 py-0.5 text-xs transition-colors group-hover:bg-state-hover",
           )}
         >
           {open ? "Less" : "More"}

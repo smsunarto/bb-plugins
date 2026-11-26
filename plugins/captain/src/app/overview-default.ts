@@ -32,6 +32,13 @@ const FALLBACK_KINDS: ReadonlySet<string> = new Set(["info", "new-tab"]);
  * move to New tab still counts as part of the open. A New tab picked later is
  * the user's.
  */
+export const CAPTAIN_EMPTY_HIDE_CSS = [
+  'section:has(> [data-captain-overview-anchor]:only-child)[aria-label="captain"],',
+  'section:has(> [data-captain-overview-anchor] + [data-bb-plugin="captain"]:empty:last-child)[aria-label="captain"] {',
+  "  display: none;",
+  "}",
+].join("\n");
+
 export const SETTLE_MS = 500;
 
 // workaround:captain/panel-new-tab-intent
@@ -104,12 +111,7 @@ export function watchNewTabClicks(document: Document, signal: AbortSignal): () =
   // any empty focus-retaining Captain frame layout-free too.
   const style = document.createElement("style");
   style.setAttribute("data-captain-overview-style", "");
-  style.textContent = [
-    'section:has(> [data-captain-overview-anchor]:only-child)[aria-label="captain"],',
-    'section:has(> [data-captain-overview-anchor] + [data-bb-plugin="captain"]:empty:last-child)[aria-label="captain"] {',
-    "  display: none;",
-    "}",
-  ].join("\n");
+  style.textContent = CAPTAIN_EMPTY_HIDE_CSS;
   document.head.append(style);
   observer.observe(document.body, { childList: true, subtree: true });
   document.querySelectorAll(PLUS).forEach(bind);

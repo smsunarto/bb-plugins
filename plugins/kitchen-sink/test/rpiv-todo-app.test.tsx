@@ -176,6 +176,55 @@ test("renders nothing while paging an empty truncated snapshot and shows no load
   slot.unmount();
 });
 
+test("keeps Loading task history notice when visible tasks are truncated", async () => {
+  const slot = renderSlot(
+    { component: TodoBanner },
+    {},
+    {
+      composer: { scope: { kind: "thread", threadId: "truncated-visible" } },
+      sdk: { subscribe: () => () => {} },
+      rpc: {
+        getRpivTodos: () => ({
+          items: [{ id: "1", text: "Visible task", status: "in_progress" }],
+          truncated: true,
+        }),
+      },
+    },
+  );
+  await slot.findByText("#1 Visible task");
+  expect(slot.getByText(/Loading task history/)).toBeDefined();
+  slot.unmount();
+});
+
+test("retries automatically on an idle thread when initial RPC fails while empty", async () => {
+  let attempts = 0;
+  const slot = renderSlot(
+    { component: TodoBanner },
+    {},
+    {
+      composer: { scope: { kind: "thread", threadId: "idle-retry" }, isRunning: false },
+      sdk: { subscribe: () => () => {} },
+      rpc: {
+        getRpivTodos: () => {
+          attempts += 1;
+          if (attempts === 1) throw new Error("transient failure");
+          return result("Recovered task");
+        },
+      },
+    },
+  );
+  await waitFor(() => expect(attempts).toBe(1));
+  // Never pops up a banner while empty and retrying.
+  expect(slot.container.childNodes).toHaveLength(0);
+
+  // Automatic bounded retry recovers without requiring realtime events or a Retry button.
+  await waitFor(() => expect(slot.queryByText("#1 Recovered task")).not.toBeNull(), {
+    timeout: 3000,
+  });
+  expect(attempts).toBe(2);
+  slot.unmount();
+});
+
 /** A press the browser may not turn into a focus change, so a phone keeps the composer's keyboard up. */
 function expectPressKeepsFocus(control: HTMLElement) {
   expect(fireEvent.pointerDown(control)).toBe(false);

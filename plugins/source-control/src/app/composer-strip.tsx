@@ -150,12 +150,14 @@ export function StripSummary({
   const leadIcon = LEAD_ICONS[state.tone];
   const [first, ...rest] = stripParts(summary, countUncommitted, merge);
   const hasBranch = rest.some((part) => part.branch);
+  const hasSiblings = segments.length > 1;
   return (
     <span
       data-bb-plugin="source-control"
       data-testid="sc-strip"
       className={cx(
-        "flex min-h-6 min-w-0 flex-1 items-center gap-1.5 overflow-hidden px-2 py-1 text-xs leading-4 whitespace-nowrap",
+        "flex min-h-6 min-w-0 items-center gap-1.5 overflow-hidden px-2 py-1 text-xs leading-4 whitespace-nowrap",
+        hasSiblings && "max-w-2/3 @max-[34rem]/promptbox-shell:max-w-1/2",
         STACKED,
       )}
       title={chips.map((chip) => chip.label).join(" · ") || undefined}

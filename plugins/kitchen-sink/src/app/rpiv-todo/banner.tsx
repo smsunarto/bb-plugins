@@ -24,6 +24,9 @@ import { CheckIcon, ChevronDownIcon, ListTodoIcon, SquareIcon } from "./icons.ts
 import type { TodoItem } from "../../shared/rpiv-todo-types.ts";
 
 const STATUS_ORDER = { in_progress: 0, pending: 1, completed: 2 } as const;
+const POLL_MS = 1200;
+const MAX_EMPTY_RETRIES = 4;
+const MAX_RETRY_DELAY_MS = 10_000;
 
 /** Side chats are `ThreadChat` composers, which report their own thread. */
 function threadIdFromScope(scope: PluginComposerScope): string | null {
@@ -141,14 +144,16 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
     if (connection !== "connected" || !pageVisible) return;
     let disposed = false;
     let pending = false;
+    let failedAttempts = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       if (pending || disposed) return;
       pending = true;
-      let continueReading = false;
+      let nextDelayMs: number | null = null;
       try {
         const result = await rpcRef.current.call("getRpivTodos", { threadId });
         if (disposed) return;
+        failedAttempts = 0;
         snapshots.delete(threadId);
         snapshots.set(threadId, result);
         if (snapshots.size > 64) {
@@ -157,12 +162,23 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
         }
         setSnapshot(result);
         setError(false);
-        continueReading = result.truncated;
+        if (running || result.truncated) nextDelayMs = POLL_MS;
       } catch {
-        if (!disposed) setError(true);
+        if (!disposed) {
+          setError(true);
+          const hasVisibleTasks = (snapshots.get(threadId)?.items.length ?? 0) > 0;
+          if (running) {
+            nextDelayMs = POLL_MS;
+          } else if (!hasVisibleTasks && failedAttempts < MAX_EMPTY_RETRIES) {
+            failedAttempts += 1;
+            nextDelayMs = Math.min(POLL_MS * 2 ** (failedAttempts - 1), MAX_RETRY_DELAY_MS);
+          }
+        }
       } finally {
         pending = false;
-        if (!disposed && (running || continueReading)) timer = setTimeout(() => void load(), 1200);
+        if (!disposed && nextDelayMs !== null) {
+          timer = setTimeout(() => void load(), nextDelayMs);
+        }
       }
     };
     void load();
@@ -217,19 +233,25 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
           />
         </button>
       </div>
-      {connection === "connected" && error ? (
+      {connection === "connected" && (error || snapshot?.truncated) ? (
         <output className="rpiv-todo-notice">
-          Could not refresh tasks
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            className="h-auto p-0 text-xs"
-            {...KEEP_COMPOSER_FOCUS}
-            onClick={() => refresh((value) => value + 1)}
-          >
-            Retry
-          </Button>
+          {error ? (
+            <>
+              Could not refresh tasks
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs"
+                {...KEEP_COMPOSER_FOCUS}
+                onClick={() => refresh((value) => value + 1)}
+              >
+                Retry
+              </Button>
+            </>
+          ) : (
+            "Loading task history…"
+          )}
         </output>
       ) : null}
       <section

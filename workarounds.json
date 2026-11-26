@@ -111,22 +111,19 @@
     },
     {
       "id": "t3-composer/prompt-stack-banner-chrome",
-      "defect": "bb's PromptStackCard renders 1px border-border hairlines beneath child fills, applies activityRowClass('active') wash/ring on core toggle buttons, reserves a 1px transparent border-top on collapsed disclosure bodies, sets minHeight: 35 on ThreadPromptContextBanner, and applies .animate-shine-icon masking to running banner icons.",
+      "defect": "bb's PromptStackCard renders 1px border-border hairlines beneath child fills, applies activityRowClass('active') wash/ring on core rows (Plan/Goal, background agents, child threads, to-do), darkens headers on hover (hover:bg-background/80) without a light-mode lift token, sets minHeight: 35 on ThreadPromptContextBanner, reserves a 1px transparent border-top on collapsed disclosure bodies, renders Active child threads and Queue labels at font-normal, inverts background-agent label/value colors and shines its value, and applies .animate-shine-icon masking to running banner icons.",
       "verifiedOn": "0.50.1",
       "files": [
         "plugins/t3-composer/src/prompt-stack-banner-style.ts",
         "plugins/t3-composer/src/prompt-stack-banner-style.test.ts"
       ],
-      "manual": "Unregister the prompt-stack-banner-style content script in plugins/t3-composer/app.tsx once bb core ships unified PromptStackCard framing, disclosure dividers, and static banner icons.",
+      "manual": "Remove the prompt-stack-banner-style import and mount calls from scripts/prompt-banner-contract.test.ts once bb core ships unified PromptStackCard chrome, lightening hover tokens, flat active rows, label/value grammar, and static banner icons.",
       "probe": {
         "needed": null,
         "fixed": null
       },
-      "afterRemoval": [
-        "cd plugins/t3-composer && bun run typecheck && bun run test",
-        "bun test scripts/prompt-banner-contract.test.ts"
-      ],
-      "verify": "Open a thread with Captain, Source Control, bb--git changed files, and running core banners across bb Monokai dark, default dark, and default light: every banner shares the same 32px height, crisp hairline, disclosure divider, and un-animated leading icon."
+      "afterRemoval": ["cd plugins/t3-composer && bun run typecheck && bun run test"],
+      "verify": "Open a thread with Captain, Source Control, bb--git changed files, Plan, Active child threads, and 1-item/2-item background agents across bb Monokai dark, default dark, and default light: every banner shares the same 32px height, crisp hairline, flat rest surface, disclosure divider, medium foreground labels, muted values (keeping 10px text-2xs badges), lightening hover without wiping :focus-visible rings or styling body buttons, and un-animated leading icons (preserving PluginAssetIcon masks)."
     }
   ]
 }

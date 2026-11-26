@@ -29,6 +29,7 @@ import {
   CollapsibleTrigger,
 } from "./components/ui/collapsible.tsx";
 import { Hint, KEEP_COMPOSER_FOCUS } from "./ui.tsx";
+import { surface } from "@bb-plugins/ui/surface";
 import { EmptyState } from "./components/ui/empty-state.tsx";
 import { Item } from "./components/ui/item.tsx";
 
@@ -126,7 +127,7 @@ function StateIcon({ watch }: { watch: PrWatchView }) {
     );
   const state = watchChecksState(watch);
   return state ? (
-    <CheckIcon outcome={OUTCOME[state]} />
+    <CheckIcon outcome={OUTCOME[state]} size={14} />
   ) : (
     <Icon name="GitPullRequest" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
   );
@@ -200,8 +201,10 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
       {stop.error ? (
         <p className="m-0 px-3 pb-1 text-[11px] text-destructive-text">{stop.error.message}</p>
       ) : null}
-      <CollapsibleContent>
-        <WatchDetails watch={watch} />
+      <CollapsibleContent asChild>
+        <section aria-hidden={!expanded} className={cx(expanded && surface.divider, "bg-popover")}>
+          <WatchDetails watch={watch} />
+        </section>
       </CollapsibleContent>
     </Collapsible>
   );
@@ -219,7 +222,7 @@ function WatchDetails({ watch }: { watch: PrWatchView }) {
   ].filter(Boolean);
   const { checks } = watch.checks;
   return (
-    <div className="flex min-w-0 flex-col px-1 pb-1">
+    <div className="flex min-w-0 flex-col px-1 py-1.5">
       <p className="m-0 min-w-0 truncate ps-2 text-[11px] text-muted-foreground" translate="no">
         {notes.join(" · ")}
       </p>
@@ -246,12 +249,12 @@ function WatchDetails({ watch }: { watch: PrWatchView }) {
             <li
               key={check.id}
               className={cx(
-                "flex min-h-6 min-w-0 items-center gap-1 rounded-[4px] px-2",
+                "flex min-h-6 min-w-0 items-center gap-1.5 rounded-sm px-2",
                 check.state === "failure" &&
                   "bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)]",
               )}
             >
-              <CheckIcon outcome={OUTCOME[check.state]} />
+              <CheckIcon outcome={OUTCOME[check.state]} size={14} />
               <span
                 className={cx(
                   "min-w-0 flex-1 truncate",

@@ -252,7 +252,7 @@ function CloudBanner() {
         </Badge>
       </div>
 
-      <InputGroup className="max-md:pointer-coarse:min-h-11">
+      <InputGroup className="max-md:pointer-coarse:h-auto max-md:pointer-coarse:min-h-11">
         <InputGroupInput
           aria-label="Devin attach command"
           className="min-w-0 font-mono text-xs"
@@ -261,7 +261,7 @@ function CloudBanner() {
           title={active?.attachCommand}
           value={active?.attachCommand ?? ""}
         />
-        <InputGroupAddon align="inline-end">
+        <InputGroupAddon align="inline-end" className="max-md:pointer-coarse:py-0">
           <InputGroupButton
             type="button"
             aria-label="Copy Devin attach command"
