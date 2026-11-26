@@ -16,6 +16,7 @@ import {
   todoSignalSchema,
   type TodoSnapshot,
 } from "../../shared/rpiv-todo.ts";
+import { surface } from "@bb-plugins/ui/surface";
 import { Button } from "../components/ui/button.tsx";
 import { Item } from "../components/ui/item.tsx";
 import { Spinner } from "../components/ui/spinner.tsx";
@@ -23,6 +24,9 @@ import { CheckIcon, ChevronDownIcon, ListTodoIcon, SquareIcon } from "./icons.ts
 import type { TodoItem } from "../../shared/rpiv-todo-types.ts";
 
 const STATUS_ORDER = { in_progress: 0, pending: 1, completed: 2 } as const;
+const POLL_MS = 1200;
+const MAX_EMPTY_RETRIES = 4;
+const MAX_RETRY_DELAY_MS = 10_000;
 
 /** Side chats are `ThreadChat` composers, which report their own thread. */
 function threadIdFromScope(scope: PluginComposerScope): string | null {
@@ -104,7 +108,6 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
   const toggleId = `${id}-toggle`;
   const bodyId = `${id}-body`;
   const items = snapshot?.items ?? [];
-  const truncated = snapshot?.truncated ?? false;
 
   useEffect(() => {
     const changed = () => setVisible(document.visibilityState !== "hidden");
@@ -141,14 +144,16 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
     if (connection !== "connected" || !pageVisible) return;
     let disposed = false;
     let pending = false;
+    let failedAttempts = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       if (pending || disposed) return;
       pending = true;
-      let continueReading = false;
+      let nextDelayMs: number | null = null;
       try {
         const result = await rpcRef.current.call("getRpivTodos", { threadId });
         if (disposed) return;
+        failedAttempts = 0;
         snapshots.delete(threadId);
         snapshots.set(threadId, result);
         if (snapshots.size > 64) {
@@ -157,12 +162,23 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
         }
         setSnapshot(result);
         setError(false);
-        continueReading = result.truncated;
+        if (running || result.truncated) nextDelayMs = POLL_MS;
       } catch {
-        if (!disposed) setError(true);
+        if (!disposed) {
+          setError(true);
+          const hasVisibleTasks = (snapshots.get(threadId)?.items.length ?? 0) > 0;
+          if (running) {
+            nextDelayMs = POLL_MS;
+          } else if (!hasVisibleTasks && failedAttempts < MAX_EMPTY_RETRIES) {
+            failedAttempts += 1;
+            nextDelayMs = Math.min(POLL_MS * 2 ** (failedAttempts - 1), MAX_RETRY_DELAY_MS);
+          }
+        }
       } finally {
         pending = false;
-        if (!disposed && (running || continueReading)) timer = setTimeout(() => void load(), 1200);
+        if (!disposed && nextDelayMs !== null) {
+          timer = setTimeout(() => void load(), nextDelayMs);
+        }
       }
     };
     void load();
@@ -174,13 +190,15 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
 
   const sorted = [...items].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
 
-  if (sorted.length === 0 && (connection !== "connected" || (!error && !truncated))) return null;
+  // Never pop up a banner while loading, paging task history, or after an error
+  // with no real tasks to show. Background loading continues in useEffect until
+  // real tasks arrive.
+  if (sorted.length === 0) return null;
 
   const completed = sorted.filter((item) => item.status === "completed").length;
   const current = sorted.find((item) => item.status === "in_progress");
   const currentLabel = current ? current.activeForm || current.text : null;
   const counts = `${completed}/${sorted.length} complete`;
-  const visible = currentLabel ? `${counts} · ${currentLabel}` : counts;
   const aria = currentLabel
     ? `${completed} of ${sorted.length} items complete, now ${currentLabel}`
     : `${completed} of ${sorted.length} ${sorted.length === 1 ? "item" : "items"} complete`;
@@ -199,30 +217,41 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
             manuallyToggled.current = true;
             setExpanded((open) => !open);
           }}
-          className="flex min-h-8 w-full min-w-0 cursor-pointer items-center gap-1 rounded-none px-3 py-1 text-xs text-foreground transition-colors hover:bg-background/80"
+          className="flex min-h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-none px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-state-hover max-md:pointer-coarse:min-h-11"
         >
           <ListTodoIcon className="rpiv-todo-icon" />
-          <span className="min-w-0 flex-1 truncate text-left">{visible}</span>
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+            <span className="shrink-0 font-medium text-foreground">{counts}</span>
+            {currentLabel ? (
+              <span className="min-w-0 truncate font-normal text-muted-foreground">
+                · {currentLabel}
+              </span>
+            ) : null}
+          </span>
           <ChevronDownIcon
             className={`rpiv-todo-icon rpiv-todo-chevron${expanded ? " rpiv-todo-chevron-open" : ""}`}
           />
         </button>
       </div>
-      {connection === "connected" && (error || truncated) ? (
+      {connection === "connected" && (error || snapshot?.truncated) ? (
         <output className="rpiv-todo-notice">
-          {truncated ? "Loading task history…" : "Could not refresh tasks"}
-          {error && connection === "connected" ? (
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-xs"
-              {...KEEP_COMPOSER_FOCUS}
-              onClick={() => refresh((value) => value + 1)}
-            >
-              Retry
-            </Button>
-          ) : null}
+          {error ? (
+            <>
+              Could not refresh tasks
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs"
+                {...KEEP_COMPOSER_FOCUS}
+                onClick={() => refresh((value) => value + 1)}
+              >
+                Retry
+              </Button>
+            </>
+          ) : (
+            "Loading task history…"
+          )}
         </output>
       ) : null}
       <section
@@ -230,7 +259,7 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
         aria-labelledby={toggleId}
         aria-hidden={!expanded}
         inert={!expanded}
-        className={`rpiv-todo-body ${expanded ? "rpiv-todo-body-open" : "rpiv-todo-body-closed"}`}
+        className={`rpiv-todo-body ${expanded ? `rpiv-todo-body-open ${surface.divider}` : "rpiv-todo-body-closed"}`}
       >
         <div className="overflow-hidden bg-popover">
           <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto px-3 pb-2 pt-2">

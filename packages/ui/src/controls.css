@@ -3,7 +3,7 @@
  * Shapes, sizes, and focus follow shadcn's Vega style (preset b5JNZnXf8);
  * every color is a bb theme token, so the active theme owns the palette. */
 @layer components {
-  .bbui-5cf16233abef-button {
+  .bbui-8387d59494de-button {
     display: inline-flex;
     flex-shrink: 0;
     cursor: pointer;
@@ -19,22 +19,22 @@
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
     font-weight: 500;
   }
-  .bbui-5cf16233abef-motion {
+  .bbui-8387d59494de-motion {
     transition-property: color, background-color, border-color, outline-color, fill, stroke;
     transition-duration: 150ms;
   }
-  .bbui-5cf16233abef-motion:hover {
+  .bbui-8387d59494de-motion:hover {
     transition-duration: 0ms;
   }
-  .bbui-5cf16233abef-row-motion {
+  .bbui-8387d59494de-row-motion {
     transition: none;
   }
-  .bbui-5cf16233abef-button:disabled {
+  .bbui-8387d59494de-button:disabled {
     pointer-events: none;
     opacity: 0.5;
   }
   /* Vega's focus: the edge takes --ring and a 3px halo of it sits outside. */
-  .bbui-5cf16233abef-button:where(:not(.bbui-5cf16233abef-native)):focus-visible {
+  .bbui-8387d59494de-button:where(:not(.bbui-8387d59494de-native)):focus-visible {
     outline: none;
     border-color: var(--ring);
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(3px + var(--tw-ring-offset-width, 0px))
@@ -43,100 +43,100 @@
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
   }
-  .bbui-5cf16233abef-button :where(svg, [data-icon-root]) {
+  .bbui-8387d59494de-button :where(svg, [data-icon-root]) {
     pointer-events: none;
     flex-shrink: 0;
   }
   /* Filled actions read the theme's control layer. A theme without one keeps
    * bb's ink-on-canvas fill, so --primary stays the link and accent color. */
-  .bbui-5cf16233abef-default {
+  .bbui-8387d59494de-default {
     background: var(--control-primary, var(--foreground));
     color: var(--control-primary-foreground, var(--background));
   }
-  .bbui-5cf16233abef-default:hover {
+  .bbui-8387d59494de-default:hover {
     background: var(
       --control-primary-hover,
       color-mix(in oklab, var(--foreground) 90%, transparent)
     );
   }
-  .bbui-5cf16233abef-destructive {
+  .bbui-8387d59494de-destructive {
     background: var(
       --surface-destructive,
       color-mix(in oklab, var(--destructive) 10%, transparent)
     );
     color: var(--destructive-text, var(--destructive));
   }
-  .bbui-5cf16233abef-destructive:hover {
+  .bbui-8387d59494de-destructive:hover {
     background: color-mix(in oklab, var(--destructive) 20%, transparent);
   }
-  .bbui-5cf16233abef-destructive:where(:not(.bbui-5cf16233abef-native)):focus-visible {
+  .bbui-8387d59494de-destructive:where(:not(.bbui-8387d59494de-native)):focus-visible {
     border-color: color-mix(in oklab, var(--destructive) 40%, transparent);
     --tw-ring-color: color-mix(in oklab, var(--destructive) 20%, transparent);
   }
-  .bbui-5cf16233abef-outline {
+  .bbui-8387d59494de-outline {
     border-color: var(--input);
     background: var(--control-background, transparent);
   }
   /* Vega lifts outline controls and fields with the theme's xs shadow. */
-  .bbui-5cf16233abef-outline,
-  .bbui-5cf16233abef-input,
-  .bbui-5cf16233abef-textarea {
+  .bbui-8387d59494de-outline,
+  .bbui-8387d59494de-input,
+  .bbui-8387d59494de-textarea {
     --tw-shadow: var(--shadow-xs, 0 0 #0000);
     box-shadow:
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
   }
-  .bbui-5cf16233abef-outline.bbui-5cf16233abef-bordered {
+  .bbui-8387d59494de-outline.bbui-8387d59494de-bordered {
     border-color: var(--border);
   }
   /* A quiet ghost: muted ink at rest, foreground on hover or when open. */
-  .bbui-5cf16233abef-ghost.bbui-5cf16233abef-muted:where(
+  .bbui-8387d59494de-ghost.bbui-8387d59494de-muted:where(
       :not([aria-pressed="true"], [aria-expanded="true"], [data-state="open"])
     ) {
     color: var(--muted-foreground);
   }
   /* A quiet action that warns on hover: muted ink at rest, destructive ink on hover. */
-  .bbui-5cf16233abef-danger {
+  .bbui-8387d59494de-danger {
     color: var(--muted-foreground);
   }
-  .bbui-5cf16233abef-danger:hover {
+  .bbui-8387d59494de-danger:hover {
     color: var(--destructive-text, var(--destructive));
   }
-  .bbui-5cf16233abef-ghost.bbui-5cf16233abef-danger:hover {
+  .bbui-8387d59494de-ghost.bbui-8387d59494de-danger:hover {
     background: color-mix(in oklab, var(--destructive) 10%, transparent);
     color: var(--destructive-text, var(--destructive));
   }
   /* Plain: ink only. Muted at rest, foreground on hover or when open; never filled. */
-  .bbui-5cf16233abef-plain {
+  .bbui-8387d59494de-plain {
     color: var(--muted-foreground);
   }
-  .bbui-5cf16233abef-plain:hover,
-  .bbui-5cf16233abef-plain:where(
+  .bbui-8387d59494de-plain:hover,
+  .bbui-8387d59494de-plain:where(
     [aria-pressed="true"],
     [aria-expanded="true"],
     [data-state="open"]
   ) {
     color: var(--foreground);
   }
-  .bbui-5cf16233abef-outline:hover,
-  .bbui-5cf16233abef-outline:where([aria-expanded="true"]),
-  .bbui-5cf16233abef-ghost:hover {
+  .bbui-8387d59494de-outline:hover,
+  .bbui-8387d59494de-outline:where([aria-expanded="true"]),
+  .bbui-8387d59494de-ghost:hover {
     background: var(--state-hover);
     color: var(--foreground);
   }
-  .bbui-5cf16233abef-secondary {
+  .bbui-8387d59494de-secondary {
     background: var(--secondary);
     color: var(--secondary-foreground);
   }
-  .bbui-5cf16233abef-secondary:hover {
+  .bbui-8387d59494de-secondary:hover {
     background: color-mix(in oklch, var(--secondary), var(--foreground) 5%);
   }
-  .bbui-5cf16233abef-ghost:where(
+  .bbui-8387d59494de-ghost:where(
     [aria-pressed="true"],
     [aria-expanded="true"],
     [data-state="open"]
   ),
-  .bbui-5cf16233abef-ghost:where(
+  .bbui-8387d59494de-ghost:where(
       [aria-pressed="true"],
       [aria-expanded="true"],
       [data-state="open"]
@@ -144,95 +144,95 @@
     background: var(--state-active);
     color: var(--foreground);
   }
-  .bbui-5cf16233abef-link {
+  .bbui-8387d59494de-link {
     color: var(--primary);
     text-underline-offset: 4px;
   }
-  .bbui-5cf16233abef-link:hover {
+  .bbui-8387d59494de-link:hover {
     text-decoration-line: underline;
   }
-  .bbui-5cf16233abef-size-default {
+  .bbui-8387d59494de-size-default {
     height: 2.25rem;
     padding: 0 0.625rem;
   }
-  .bbui-5cf16233abef-size-xs {
+  .bbui-8387d59494de-size-xs {
     height: 1.5rem;
     gap: 0.25rem;
     padding: 0 0.5rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-5cf16233abef-size-sm {
+  .bbui-8387d59494de-size-sm {
     height: 2rem;
     gap: 0.25rem;
     padding: 0 0.625rem;
   }
-  .bbui-5cf16233abef-size-lg {
+  .bbui-8387d59494de-size-lg {
     height: 2.5rem;
     padding: 0 0.625rem;
   }
-  .bbui-5cf16233abef-size-icon {
+  .bbui-8387d59494de-size-icon {
     height: 2.25rem;
     width: 2.25rem;
   }
-  .bbui-5cf16233abef-size-icon-xs {
+  .bbui-8387d59494de-size-icon-xs {
     height: 1.5rem;
     width: 1.5rem;
   }
-  .bbui-5cf16233abef-size-icon-sm {
+  .bbui-8387d59494de-size-icon-sm {
     height: 2rem;
     width: 2rem;
   }
-  .bbui-5cf16233abef-size-icon-lg {
+  .bbui-8387d59494de-size-icon-lg {
     height: 2.5rem;
     width: 2.5rem;
   }
   /* CompactButton keeps bb's own denser control sizes. */
-  .bbui-5cf16233abef-compact {
+  .bbui-8387d59494de-compact {
     gap: 0.375rem;
   }
-  .bbui-5cf16233abef-compact.bbui-5cf16233abef-outline {
+  .bbui-8387d59494de-compact.bbui-8387d59494de-outline {
     border-color: var(--border);
   }
-  .bbui-5cf16233abef-compact.bbui-5cf16233abef-size-default {
+  .bbui-8387d59494de-compact.bbui-8387d59494de-size-default {
     height: 2rem;
     padding: 0 0.75rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-5cf16233abef-compact.bbui-5cf16233abef-size-sm {
+  .bbui-8387d59494de-compact.bbui-8387d59494de-size-sm {
     height: 1.75rem;
     padding: 0 0.625rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-5cf16233abef-compact.bbui-5cf16233abef-size-xs {
+  .bbui-8387d59494de-compact.bbui-8387d59494de-size-xs {
     height: 1.5rem;
     padding: 0 0.5rem;
     font-size: var(--text-2xs, 0.625rem);
   }
-  .bbui-5cf16233abef-compact.bbui-5cf16233abef-size-icon {
+  .bbui-8387d59494de-compact.bbui-8387d59494de-size-icon {
     height: 2rem;
     width: 2rem;
   }
-  .bbui-5cf16233abef-compact.bbui-5cf16233abef-size-icon-sm {
+  .bbui-8387d59494de-compact.bbui-8387d59494de-size-icon-sm {
     height: 1.75rem;
     width: 1.75rem;
   }
-  .bbui-5cf16233abef-compact.bbui-5cf16233abef-size-icon-xs {
+  .bbui-8387d59494de-compact.bbui-8387d59494de-size-icon-xs {
     height: 1.5rem;
     width: 1.5rem;
   }
-  .bbui-5cf16233abef-compact.bbui-5cf16233abef-size-icon-xxs {
+  .bbui-8387d59494de-compact.bbui-8387d59494de-size-icon-xxs {
     height: 1.25rem;
     width: 1.25rem;
     border-radius: var(--radius-sm, 0.25rem);
   }
-  .bbui-5cf16233abef-round {
+  .bbui-8387d59494de-round {
     border-radius: 9999px;
   }
-  .bbui-5cf16233abef-input,
-  .bbui-5cf16233abef-textarea {
+  .bbui-8387d59494de-input,
+  .bbui-8387d59494de-textarea {
     display: flex;
     width: 100%;
     min-width: 0;
@@ -243,10 +243,10 @@
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
   }
-  .bbui-5cf16233abef-input {
+  .bbui-8387d59494de-input {
     height: 2.25rem;
   }
-  .bbui-5cf16233abef-input::file-selector-button {
+  .bbui-8387d59494de-input::file-selector-button {
     border: 0;
     background: transparent;
     font-size: var(--text-sm, 0.8125rem);
@@ -254,20 +254,20 @@
     font-weight: 500;
     color: var(--foreground);
   }
-  .bbui-5cf16233abef-input.bbui-5cf16233abef-bordered {
+  .bbui-8387d59494de-input.bbui-8387d59494de-bordered {
     border-color: var(--border);
     background: var(--background);
   }
-  .bbui-5cf16233abef-textarea {
+  .bbui-8387d59494de-textarea {
     min-height: 4rem;
     padding-block: 0.5rem;
   }
-  .bbui-5cf16233abef-input::placeholder,
-  .bbui-5cf16233abef-textarea::placeholder {
+  .bbui-8387d59494de-input::placeholder,
+  .bbui-8387d59494de-textarea::placeholder {
     color: var(--muted-foreground);
   }
-  .bbui-5cf16233abef-input:focus-visible,
-  .bbui-5cf16233abef-textarea:focus-visible {
+  .bbui-8387d59494de-input:focus-visible,
+  .bbui-8387d59494de-textarea:focus-visible {
     outline: none;
     border-color: var(--ring);
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(3px + var(--tw-ring-offset-width, 0px))
@@ -276,20 +276,20 @@
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
   }
-  .bbui-5cf16233abef-input[aria-invalid="true"],
-  .bbui-5cf16233abef-textarea[aria-invalid="true"] {
+  .bbui-8387d59494de-input[aria-invalid="true"],
+  .bbui-8387d59494de-textarea[aria-invalid="true"] {
     border-color: var(--destructive);
     --tw-ring-color: color-mix(in oklab, var(--destructive) 20%, transparent);
   }
-  .bbui-5cf16233abef-input:disabled,
-  .bbui-5cf16233abef-textarea:disabled {
+  .bbui-8387d59494de-input:disabled,
+  .bbui-8387d59494de-textarea:disabled {
     cursor: not-allowed;
     opacity: 0.5;
   }
   /* Surfaces: one card, edge, divider, and hairline for every plugin. Edges
    * take the theme's --hairline-width when it sets one. A card spaces its
    * parts with --card-spacing, as Vega's does; set it to make a card denser. */
-  .bbui-5cf16233abef-card {
+  .bbui-8387d59494de-card {
     --card-spacing: 1.5rem;
     display: flex;
     flex-direction: column;
@@ -303,77 +303,109 @@
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
   }
-  .bbui-5cf16233abef-card-header {
+  .bbui-8387d59494de-card-header {
     display: grid;
     grid-auto-rows: min-content;
     align-items: start;
     gap: 0.25rem;
     padding-inline: var(--card-spacing);
   }
-  .bbui-5cf16233abef-card-title {
+  .bbui-8387d59494de-card-title {
     font-size: var(--text-base, 1rem);
     line-height: 1.5;
     font-weight: 500;
   }
-  .bbui-5cf16233abef-card-description {
+  .bbui-8387d59494de-card-description {
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
     color: var(--muted-foreground);
   }
-  .bbui-5cf16233abef-card-content {
+  .bbui-8387d59494de-card-content {
     padding-inline: var(--card-spacing);
   }
-  .bbui-5cf16233abef-card-footer {
+  .bbui-8387d59494de-card-footer {
     display: flex;
     align-items: center;
     padding-inline: var(--card-spacing);
   }
   /* Vega's small card, and bb's xs for dense tiles in panels. */
-  .bbui-5cf16233abef-card[data-size="sm"] {
+  .bbui-8387d59494de-card[data-size="sm"] {
     --card-spacing: 1rem;
   }
-  .bbui-5cf16233abef-card[data-size="xs"] {
+  .bbui-8387d59494de-card[data-size="xs"] {
     --card-spacing: 0.75rem;
     gap: 0.5rem;
   }
   /* Flush: rows run edge to edge; the card keeps only its edge, radius and fill. */
-  .bbui-5cf16233abef-card[data-size="flush"] {
+  .bbui-8387d59494de-card[data-size="flush"] {
     --card-spacing: 0px;
   }
-  .bbui-5cf16233abef-card:where([data-size="sm"], [data-size="xs"]) .bbui-5cf16233abef-card-title {
+  .bbui-8387d59494de-card:where([data-size="sm"], [data-size="xs"]) .bbui-8387d59494de-card-title {
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
   }
-  .bbui-5cf16233abef-edge {
+  .bbui-8387d59494de-edge {
     border: var(--hairline-width, 1px) solid var(--border);
   }
-  .bbui-5cf16233abef-divider {
+  .bbui-8387d59494de-divider {
     border-top: var(--hairline-width, 1px) solid var(--border);
   }
   /* The composer's edge: 0.5px and opaque, so stacked surfaces meet without a
    * bright stub where two translucent edges overlap at a rounded corner. */
-  .bbui-5cf16233abef-hairline {
+  .bbui-8387d59494de-hairline {
     box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));
   }
-  .dark .bbui-5cf16233abef-hairline {
+  .dark .bbui-8387d59494de-hairline {
     box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));
   }
+  /* Shared prompt-stack banner hover surface: lightens in every theme (white
+   * fill + inset hairline in Light, --state-hover in .dark), keyed on bb's
+   * .dark class so it follows bb's appearance, not the OS colour scheme. */
+  .bbui-8387d59494de-banner-hover {
+    --bb-banner-hover-bg: var(--background);
+    --bb-banner-hover-shadow: inset 0 0 0 var(--t3-composer-ring-width, var(--hairline-width, 1px))
+      var(--border);
+  }
+  .dark .bbui-8387d59494de-banner-hover {
+    --bb-banner-hover-bg: var(--state-hover);
+    --bb-banner-hover-shadow: none;
+  }
+  @media (hover: hover) {
+    .bbui-8387d59494de-banner-hover:hover:not([aria-selected="true"]),
+    .group:hover > .bbui-8387d59494de-banner-hover {
+      background: var(--bb-banner-hover-bg);
+    }
+    .bbui-8387d59494de-banner-hover:hover:not(
+        :focus-visible,
+        [aria-selected="true"],
+        .bbui-8387d59494de-outline
+      ),
+    .group:hover > .bbui-8387d59494de-banner-hover {
+      box-shadow: var(--bb-banner-hover-shadow);
+    }
+    .bbui-8387d59494de-outline.bbui-8387d59494de-banner-hover:hover:not(:focus-visible) {
+      --tw-inset-shadow: var(--bb-banner-hover-shadow);
+    }
+    .dark .bbui-8387d59494de-outline.bbui-8387d59494de-banner-hover:hover:not(:focus-visible) {
+      --tw-inset-shadow: 0 0 #0000;
+    }
+  }
   /* Drawn as a border: a box thinner than 1px can round to no pixels. */
-  .bbui-5cf16233abef-separator {
+  .bbui-8387d59494de-separator {
     flex-shrink: 0;
     border-color: var(--border);
     border-style: solid;
     border-width: 0;
   }
-  .bbui-5cf16233abef-separator[data-orientation="horizontal"] {
+  .bbui-8387d59494de-separator[data-orientation="horizontal"] {
     border-top-width: var(--hairline-width, 1px);
     width: 100%;
   }
-  .bbui-5cf16233abef-separator[data-orientation="vertical"] {
+  .bbui-8387d59494de-separator[data-orientation="vertical"] {
     border-left-width: var(--hairline-width, 1px);
     align-self: stretch;
   }
-  .bbui-5cf16233abef-badge {
+  .bbui-8387d59494de-badge {
     display: inline-flex;
     width: fit-content;
     height: 1.25rem;
@@ -390,31 +422,31 @@
     font-weight: 500;
     white-space: nowrap;
   }
-  .bbui-5cf16233abef-badge > :where(svg, [data-icon-root]) {
+  .bbui-8387d59494de-badge > :where(svg, [data-icon-root]) {
     pointer-events: none;
     width: 0.75rem;
     height: 0.75rem;
   }
-  .bbui-5cf16233abef-badge-default {
+  .bbui-8387d59494de-badge-default {
     background: var(--control-primary, var(--foreground));
     color: var(--control-primary-foreground, var(--background));
   }
-  .bbui-5cf16233abef-badge-secondary {
+  .bbui-8387d59494de-badge-secondary {
     background: var(--secondary);
     color: var(--secondary-foreground);
   }
-  .bbui-5cf16233abef-badge-destructive {
+  .bbui-8387d59494de-badge-destructive {
     background: var(
       --surface-destructive,
       color-mix(in oklab, var(--destructive) 10%, transparent)
     );
     color: var(--destructive-text, var(--destructive));
   }
-  .bbui-5cf16233abef-badge-outline {
+  .bbui-8387d59494de-badge-outline {
     border-color: var(--border);
     color: var(--foreground);
   }
-  .bbui-5cf16233abef-badge-count {
+  .bbui-8387d59494de-badge-count {
     height: 1rem;
     background: var(--surface-raised, var(--secondary));
     padding: 0 0.375rem;
@@ -423,76 +455,76 @@
     font-variant-numeric: tabular-nums;
   }
   /* Status tones: a tinted pill whose hue carries the meaning, for labels such as live/shadow or pass/fail. */
-  .bbui-5cf16233abef-badge-success {
+  .bbui-8387d59494de-badge-success {
     border-color: color-mix(in srgb, var(--success) 30%, transparent);
     background: color-mix(in srgb, var(--success) 10%, transparent);
     color: var(--success-foreground, var(--success));
   }
-  .bbui-5cf16233abef-badge-warning {
+  .bbui-8387d59494de-badge-warning {
     border-color: color-mix(in srgb, var(--attention, var(--warning)) 40%, transparent);
     background: var(--surface-attention, transparent);
     color: var(--warning-text, var(--warning));
   }
-  .bbui-5cf16233abef-badge-info {
+  .bbui-8387d59494de-badge-info {
     border-color: color-mix(in srgb, var(--timeline-accent, var(--primary)) 30%, transparent);
     color: var(--timeline-accent, var(--primary));
   }
-  .bbui-5cf16233abef-badge-danger {
+  .bbui-8387d59494de-badge-danger {
     border-color: color-mix(in srgb, var(--destructive) 35%, transparent);
     background: color-mix(in srgb, var(--destructive) 10%, transparent);
     color: var(--destructive-text, var(--destructive));
   }
   /* Small: a 16px chip for dense rows and compact counts. After the variants, so it sets the
    * height a count's own rule would. */
-  .bbui-5cf16233abef-badge-sm {
+  .bbui-8387d59494de-badge-sm {
     height: 1rem;
     gap: 0.125rem;
     padding: 0 0.375rem;
     font-size: var(--text-2xs, 0.625rem);
     line-height: 1;
   }
-  .bbui-5cf16233abef-badge-sm > :where(svg, [data-icon-root]) {
+  .bbui-8387d59494de-badge-sm > :where(svg, [data-icon-root]) {
     width: 0.625rem;
     height: 0.625rem;
   }
   /* Table: shadcn's Vega table, as plain CSS. */
-  .bbui-5cf16233abef-table-wrap {
+  .bbui-8387d59494de-table-wrap {
     position: relative;
     width: 100%;
     overflow: auto;
   }
-  .bbui-5cf16233abef-table {
+  .bbui-8387d59494de-table {
     width: 100%;
     caption-side: bottom;
     font-size: var(--text-sm, 0.8125rem);
   }
-  .bbui-5cf16233abef-table-row {
+  .bbui-8387d59494de-table-row {
     border-bottom: 1px solid var(--border);
     transition: background-color 150ms;
   }
-  .bbui-5cf16233abef-table-body > tr:last-child {
+  .bbui-8387d59494de-table-body > tr:last-child {
     border-bottom-width: 0;
   }
-  .bbui-5cf16233abef-table-body > .bbui-5cf16233abef-table-row:hover {
+  .bbui-8387d59494de-table-body > .bbui-8387d59494de-table-row:hover {
     background: color-mix(in srgb, var(--muted) 50%, transparent);
   }
-  .bbui-5cf16233abef-table-row[data-state="selected"] {
+  .bbui-8387d59494de-table-row[data-state="selected"] {
     background: var(--muted);
   }
-  .bbui-5cf16233abef-table-footer {
+  .bbui-8387d59494de-table-footer {
     border-top: 1px solid var(--border);
     background: color-mix(in srgb, var(--muted) 50%, transparent);
     font-weight: 500;
   }
-  .bbui-5cf16233abef-table-footer > tr:last-child {
+  .bbui-8387d59494de-table-footer > tr:last-child {
     border-bottom-width: 0;
   }
-  .bbui-5cf16233abef-table-caption {
+  .bbui-8387d59494de-table-caption {
     margin-top: 1rem;
     font-size: var(--text-sm, 0.8125rem);
     color: var(--muted-foreground);
   }
-  .bbui-5cf16233abef-table-head {
+  .bbui-8387d59494de-table-head {
     height: 2.5rem;
     padding: 0 0.5rem;
     text-align: left;
@@ -501,7 +533,7 @@
     white-space: nowrap;
     color: var(--foreground);
   }
-  .bbui-5cf16233abef-table-cell {
+  .bbui-8387d59494de-table-cell {
     padding: 0.5rem;
     vertical-align: middle;
   }
@@ -509,14 +541,14 @@
 /* Desktop utility overrides must not shrink touch targets. Explicit coarse-
  * pointer utilities remain the caller's escape hatch, as with the old defaults. */
 @layer utilities {
-  :where(.bbui-5cf16233abef-button:not(.bbui-5cf16233abef-native)) :is(svg, [data-icon-root]),
-  .bbui-5cf16233abef-native svg:not([class*="size-"]) {
+  :where(.bbui-8387d59494de-button:not(.bbui-8387d59494de-native)) :is(svg, [data-icon-root]),
+  .bbui-8387d59494de-native svg:not([class*="size-"]) {
     width: 1rem;
     height: 1rem;
   }
-  :where(.bbui-5cf16233abef-button:not(.bbui-5cf16233abef-native)):where(
-      .bbui-5cf16233abef-size-xs,
-      .bbui-5cf16233abef-size-icon-xs
+  :where(.bbui-8387d59494de-button:not(.bbui-8387d59494de-native)):where(
+      .bbui-8387d59494de-size-xs,
+      .bbui-8387d59494de-size-icon-xs
     )
     :is(svg, [data-icon-root]) {
     width: 0.75rem;
@@ -524,11 +556,11 @@
   }
 
   @media (width < 48rem) and (pointer: coarse) {
-    .bbui-5cf16233abef-input.bbui-5cf16233abef-input:not([class*="pointer-coarse:h-"]) {
+    .bbui-8387d59494de-input.bbui-8387d59494de-input:not([class*="pointer-coarse:h-"]) {
       height: 2.5rem;
     }
-    .bbui-5cf16233abef-input.bbui-5cf16233abef-input:not([class*="pointer-coarse:text-"]),
-    .bbui-5cf16233abef-textarea.bbui-5cf16233abef-textarea:not([class*="pointer-coarse:text-"]) {
+    .bbui-8387d59494de-input.bbui-8387d59494de-input:not([class*="pointer-coarse:text-"]),
+    .bbui-8387d59494de-textarea.bbui-8387d59494de-textarea:not([class*="pointer-coarse:text-"]) {
       font-size: var(--text-base, 1rem);
     }
   }
@@ -540,16 +572,16 @@
    * shadow, ring, and focus styles still draw beside it; other themes keep the
    * border. Cards and edges stay borders: a flush child would cover a ring. */
   @media (min-resolution: 2.5dppx) {
-    .bbui-5cf16233abef-outline,
-    .bbui-5cf16233abef-input,
-    .bbui-5cf16233abef-textarea {
-      --bbui-5cf16233abef-edge: var(--input);
+    .bbui-8387d59494de-outline,
+    .bbui-8387d59494de-input,
+    .bbui-8387d59494de-textarea {
+      --bbui-8387d59494de-edge: var(--input);
     }
-    .bbui-5cf16233abef-outline.bbui-5cf16233abef-bordered,
-    .bbui-5cf16233abef-input.bbui-5cf16233abef-bordered {
-      --bbui-5cf16233abef-edge: var(--border);
+    .bbui-8387d59494de-outline.bbui-8387d59494de-bordered,
+    .bbui-8387d59494de-input.bbui-8387d59494de-bordered {
+      --bbui-8387d59494de-edge: var(--border);
     }
-    .bbui-5cf16233abef-outline:not(
+    .bbui-8387d59494de-outline:not(
       .border-0,
       .border-t-0,
       .border-r-0,
@@ -564,7 +596,7 @@
       .border-transparent,
       [class*=":border-"]
     ),
-    .bbui-5cf16233abef-input:not(
+    .bbui-8387d59494de-input:not(
       .border-0,
       .border-t-0,
       .border-r-0,
@@ -579,7 +611,7 @@
       .border-transparent,
       [class*=":border-"]
     ),
-    .bbui-5cf16233abef-textarea:not(
+    .bbui-8387d59494de-textarea:not(
       .border-0,
       .border-t-0,
       .border-r-0,
@@ -599,7 +631,7 @@
         var(--tw-inset-shadow, 0 0 transparent),
         var(--tw-inset-ring-shadow, 0 0 transparent),
         inset 0 0 0 calc(var(--hairline-ring-width, 0px) * var(--hairline-rings, 0))
-          var(--bbui-5cf16233abef-edge),
+          var(--bbui-8387d59494de-edge),
         var(--tw-ring-offset-shadow, 0 0 transparent),
         var(--tw-ring-shadow, 0 0 transparent),
         var(--tw-shadow, 0 0 transparent);

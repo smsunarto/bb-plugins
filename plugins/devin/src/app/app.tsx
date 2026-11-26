@@ -13,7 +13,6 @@ import { DEVIN_LOGO_PATHS, DEVIN_LOGO_VIEW_BOX } from "../shared/devin-brand.ts"
 import { cloudSessionSettled, DEVIN_PROVIDER_ID } from "../shared/devin.ts";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
-import { Card, CardContent } from "./components/ui/card.tsx";
 import { StatusDot } from "./components/ui/status-dot.tsx";
 import {
   InputGroup,
@@ -222,56 +221,59 @@ function CloudBanner() {
   };
 
   return (
-    <Card size="xs" className="mb-2">
-      <CardContent>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
-            <DevinIcon />
-            <span className="shrink-0 text-sm font-medium text-foreground">Devin Cloud</span>
-            {active === null ? (
-              <span className="truncate text-xs">Starting a cloud session…</span>
-            ) : (
-              <Button asChild className="min-w-0 shrink" size="xs" variant="link">
-                <a href={active.url} rel="noreferrer" target="_blank" title={active.url}>
-                  <span className="truncate">Open in Devin</span>
-                </a>
-              </Button>
-            )}
-          </div>
-          <Badge
-            aria-live="polite"
-            className="min-w-18 justify-center gap-1 uppercase"
-            data-state={data.state}
-            variant={active === null ? "secondary" : "info"}
-          >
-            <StatusDot tone="current" size="sm" pulse={active === null} />
-            {active === null ? "Starting" : "Active"}
-          </Badge>
-        </div>
-
-        <InputGroup className="mt-2">
-          <InputGroupInput
-            aria-label="Devin attach command"
-            className="min-w-0 font-mono text-xs"
-            placeholder="Waiting for the Devin session ID…"
-            readOnly
-            title={active?.attachCommand}
-            value={active?.attachCommand ?? ""}
-          />
-          <InputGroupAddon align="inline-end">
-            <InputGroupButton
-              type="button"
-              aria-label="Copy Devin attach command"
-              className="w-20"
-              disabled={active === null}
-              onClick={() => void copy()}
+    <div className="flex min-h-8 flex-col justify-center gap-2 px-3 py-1.5 text-xs text-foreground">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+          <DevinIcon className="devin-cloud-logo text-foreground" />
+          <span className="shrink-0 font-medium text-foreground">Devin Cloud</span>
+          {active === null ? (
+            <span className="truncate">Starting a cloud session…</span>
+          ) : (
+            <Button
+              asChild
+              className="min-w-0 shrink max-md:pointer-coarse:min-h-11"
+              size="xs"
+              variant="link"
             >
-              {copied === "copied" ? "Copied" : copied === "failed" ? "Copy failed" : "Copy"}
-            </InputGroupButton>
-          </InputGroupAddon>
-        </InputGroup>
-      </CardContent>
-    </Card>
+              <a href={active.url} rel="noreferrer" target="_blank" title={active.url}>
+                <span className="truncate">Open in Devin</span>
+              </a>
+            </Button>
+          )}
+        </div>
+        <Badge
+          aria-live="polite"
+          className="min-w-18 justify-center gap-1 uppercase"
+          data-state={data.state}
+          variant={active === null ? "secondary" : "info"}
+        >
+          <StatusDot tone="current" size="sm" />
+          {active === null ? "Starting" : "Active"}
+        </Badge>
+      </div>
+
+      <InputGroup className="max-md:pointer-coarse:h-auto max-md:pointer-coarse:min-h-11">
+        <InputGroupInput
+          aria-label="Devin attach command"
+          className="min-w-0 font-mono text-xs"
+          placeholder="Waiting for the Devin session ID…"
+          readOnly
+          title={active?.attachCommand}
+          value={active?.attachCommand ?? ""}
+        />
+        <InputGroupAddon align="inline-end" className="max-md:pointer-coarse:py-0">
+          <InputGroupButton
+            type="button"
+            aria-label="Copy Devin attach command"
+            className="w-20 max-md:pointer-coarse:min-h-11"
+            disabled={active === null}
+            onClick={() => void copy()}
+          >
+            {copied === "copied" ? "Copied" : copied === "failed" ? "Copy failed" : "Copy"}
+          </InputGroupButton>
+        </InputGroupAddon>
+      </InputGroup>
+    </div>
   );
 }
 
@@ -316,7 +318,7 @@ export default definePluginApp((app) => {
     banners: [
       {
         id: "cloud-session",
-        chrome: "bare",
+        chrome: "card",
         component: CloudSessionBanner,
       },
     ],

@@ -5,7 +5,9 @@ import {
 import { mountBranchPickerStyle } from "./src/branch-picker-style";
 import { mountProjectPickerHide } from "./src/captain-projects/project-picker-hide";
 import { useCaptainProjectGuard } from "./src/captain-projects/useCaptainProjectGuard";
-import { mountChildThreadsBannerStyle } from "./src/child-threads-banner-style";
+// workaround:t3-composer/prompt-stack-banner-chrome begin
+import { mountPromptStackBannerStyle } from "./src/prompt-stack-banner-style";
+// workaround:t3-composer/prompt-stack-banner-chrome end
 import { ComposerHandleProvider } from "./src/composer-handle";
 import { PromptBoxInternal } from "./src/PromptBoxInternal";
 import { useSettingKeywords } from "./src/composer-settings/useSettingKeywords";
@@ -43,10 +45,12 @@ export default definePluginApp((app) => {
     id: "branch-picker-style",
     mount: ({ signal }) => mountBranchPickerStyle(document, signal),
   });
+  // workaround:t3-composer/prompt-stack-banner-chrome begin
   app.contentScripts.register({
-    id: "child-threads-banner-style",
-    mount: ({ signal }) => mountChildThreadsBannerStyle(document, signal),
+    id: "prompt-stack-banner-style",
+    mount: ({ signal }) => mountPromptStackBannerStyle(document, signal),
   });
+  // workaround:t3-composer/prompt-stack-banner-chrome end
   // BB's project picker, without the projects Captains live in.
   app.contentScripts.register({
     id: "captain-projects",

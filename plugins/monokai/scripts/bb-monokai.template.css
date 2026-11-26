@@ -1610,29 +1610,8 @@
   overflow: hidden;
 }
 
-/* Context is a separate request surface; its compact git inlay is layout. */
-.dark [aria-label="Thread context before sending"] {
-  background-color: var(--agent-surface-background);
-  background-clip: padding-box;
-}
-
-.dark
-  [aria-label="Thread context before sending"]
-  > .flex.items-center.gap-0\.5.p-1 {
-  background-color: transparent;
-}
-
-/* Agentation owns this composer banner and exposes a stable theme hook. Match
- * it to user-authored surfaces, including its outer edge and list divider. */
-.dark [data-agentation-staging-banner] {
-  background-color: var(--agent-surface-background);
-  background-clip: padding-box;
-  border-color: var(--agent-surface-border);
-}
-
-.dark [data-agentation-staging-banner] > ul {
-  border-color: var(--agent-surface-border);
-}
+/* Prompt-stack cards all inherit --surface-raised-solid from bb's PromptStackCard
+ * (6% ink flattened on the panel ground), with no per-card overrides here. */
 
 /* The bottom-anchored conversation body is transparent upstream. Pin its
  * concrete child as well as --background so split-pane wrappers cannot leak. */

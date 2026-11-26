@@ -14,6 +14,7 @@
     "./badge": "./src/badge.tsx",
     "./table": "./src/table.tsx",
     "./surface": "./src/surface.ts",
+    "./banner-hover": "./src/banner-hover.ts",
     "./sidebar-fill": "./src/sidebar-fill.ts"
   },
   "dependencies": {

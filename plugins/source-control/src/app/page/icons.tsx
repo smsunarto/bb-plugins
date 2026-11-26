@@ -187,10 +187,16 @@ export function GitHubMark() {
 }
 
 /** A check's outcome, as the ship path draws its steps. */
-export function CheckIcon({ outcome }: { outcome: "passed" | "failed" | "pending" | "skipped" }) {
+export function CheckIcon({
+  outcome,
+  size = 12,
+}: {
+  outcome: "passed" | "failed" | "pending" | "skipped";
+  size?: number;
+}) {
   if (outcome === "pending")
     return (
-      <svg width="12" height="12" viewBox="0 0 14 14" className="shrink-0" aria-label="Running">
+      <svg width={size} height={size} viewBox="0 0 14 14" className="shrink-0" aria-label="Running">
         <circle
           cx="7"
           cy="7"
@@ -204,7 +210,7 @@ export function CheckIcon({ outcome }: { outcome: "passed" | "failed" | "pending
     );
   if (outcome === "failed")
     return (
-      <svg width="12" height="12" viewBox="0 0 14 14" className="shrink-0" aria-label="Failed">
+      <svg width={size} height={size} viewBox="0 0 14 14" className="shrink-0" aria-label="Failed">
         <circle cx="7" cy="7" r="5.25" fill="none" stroke="var(--destructive)" strokeWidth="1.5" />
         <path
           d="M5 5L9 9M9 5L5 9"
@@ -217,8 +223,8 @@ export function CheckIcon({ outcome }: { outcome: "passed" | "failed" | "pending
     );
   return (
     <svg
-      width="12"
-      height="12"
+      width={size}
+      height={size}
       viewBox="0 0 14 14"
       className="shrink-0"
       aria-label={outcome === "skipped" ? "Skipped" : "Passed"}

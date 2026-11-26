@@ -73,15 +73,6 @@ describe("bb Monokai surface palette", () => {
     expect(theme).toContain(
       ".dark [data-promptbox] [data-promptbox-editor-scroll] {\n  background-color: transparent;\n  border-radius: 11px 11px 0 0",
     );
-    expect(theme).toContain(
-      '.dark [aria-label="Thread context before sending"] {\n  background-color: var(--agent-surface-background)',
-    );
-    expect(theme).toContain(
-      '[aria-label="Thread context before sending"]\n  > .flex.items-center.gap-0\\.5.p-1 {\n  background-color: transparent',
-    );
-    expect(theme).toContain(
-      ".dark [data-agentation-staging-banner] {\n  background-color: var(--agent-surface-background);\n  background-clip: padding-box;\n  border-color: var(--agent-surface-border)",
-    );
   });
 
   test("styles conversation links as accent text with T3's dotted hover underline", () => {

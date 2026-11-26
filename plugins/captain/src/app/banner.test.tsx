@@ -614,10 +614,10 @@ test("an empty queue is one clear line with an action that opens Captain Overvie
   expect(row.querySelector("ul")).toBeNull();
   const icon = row.querySelector("[data-icon]");
   expect(icon?.getAttribute("data-icon")).toBe(DEFAULT_ICON_GLYPH);
-  expect(icon?.className).toContain("text-muted-foreground");
+  expect(icon?.className).toContain("text-foreground");
   const label = slot.getByText("All clear");
-  expect(label.className).toContain("text-muted-foreground");
-  expect(label.className).not.toContain("font-medium");
+  expect(label.className).toContain("text-foreground");
+  expect(label.className).toContain("font-medium");
   fireEvent.click(overview);
   expect(slot.experimental_panelCalls).toEqual([
     {
@@ -1029,4 +1029,60 @@ test.each([
       DEFAULT_ICON_GLYPH,
     );
   }
+});
+
+test("clearing the final ask while crew is still loading leaves only an empty frame that overview-default hides", async () => {
+  const { watchNewTabClicks } = await import("./overview-default.ts");
+  const controller = new AbortController();
+  const dispose = watchNewTabClicks(document, controller.signal);
+
+  let resolveCrew!: (value: { items: QueueItem[] }) => void;
+  const crewPromise = new Promise<{ items: QueueItem[] }>((resolve) => {
+    resolveCrew = resolve;
+  });
+  let currentAsks: QueueItem[] = [decision];
+  const slot = renderSlot(banner as never, {} as never, {
+    experimental_rpcContract: captainContract,
+    composer: { scope: { kind: "thread", threadId: CAPTAIN } },
+    experimental_panel: { openTab: () => true },
+    rpc: {
+      captains: () => ({ ids: [CAPTAIN] }),
+      asks: () => ({ items: currentAsks }),
+      crew: () => crewPromise,
+      defer: () => ({ snoozedUntil: null, skipOrder: null }),
+    } as never,
+  });
+
+  // Ask renders while crew is still pending, mounting Queue and setting root.
+  await slot.findByTestId("captain-needs-you");
+  // Deferring the final ask clears items while crew has not resolved yet.
+  currentAsks = [];
+  fireEvent.click(slot.getByRole("button", { name: "Later" }));
+  await waitFor(() => expect(slot.queryByTestId("captain-needs-you")).toBeNull());
+
+  // Wrap rendered children in BB's host <section aria-label="captain"> to verify
+  // the overview-default CSS rule hides the card while only the hidden anchor and
+  // empty focus-keeping <div data-bb-plugin="captain"> remain.
+  const hostSection = document.createElement("section");
+  hostSection.setAttribute("aria-label", "captain");
+  hostSection.append(...Array.from(slot.container.childNodes));
+  document.body.append(hostSection);
+
+  const emptyFrame = hostSection.querySelector('[data-bb-plugin="captain"]');
+  expect(emptyFrame?.childNodes).toHaveLength(0);
+  const styleText = document.head.querySelector("style[data-captain-overview-style]")?.textContent;
+  expect(styleText).toContain(
+    'section:has(> [data-captain-overview-anchor] + [data-bb-plugin="captain"]:empty:last-child)[aria-label="captain"]',
+  );
+  expect(
+    hostSection.querySelector(
+      ':scope > [data-captain-overview-anchor] + [data-bb-plugin="captain"]:empty:last-child',
+    ),
+  ).toBe(emptyFrame);
+
+  slot.container.append(...Array.from(hostSection.childNodes));
+  hostSection.remove();
+  await act(async () => resolveCrew({ items: [] }));
+  await slot.findByText("All clear");
+  dispose();
 });

@@ -29,13 +29,16 @@ import {
   CollapsibleTrigger,
 } from "./components/ui/collapsible.tsx";
 import { Hint, KEEP_COMPOSER_FOCUS } from "./ui.tsx";
+import { surface } from "@bb-plugins/ui/surface";
 import { EmptyState } from "./components/ui/empty-state.tsx";
 import { Item } from "./components/ui/item.tsx";
 
 const NO_WATCHES: PrWatchView[] = [];
 
-const ACTION =
-  "inline-flex h-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:outline-1 disabled:opacity-50";
+const ACTION = cx(
+  surface.bannerHover,
+  "inline-flex h-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 text-muted-foreground hover:text-foreground focus-visible:outline-1 disabled:opacity-50",
+);
 
 type CheckState = WatchCheck["state"];
 
@@ -103,16 +106,15 @@ function PrWatchCard({ threadId }: { threadId: string }) {
   const watches = query.data?.[threadId]?.watches ?? NO_WATCHES;
   if (watches.length === 0) return null;
   return (
-    <section
-      aria-label="Watched pull requests"
+    <div
       data-bb-plugin="source-control"
       data-testid="sc-pr-watch"
-      className="flex flex-col p-1 text-[12px]"
+      className="flex flex-col text-xs"
     >
       {watches.map((watch) => (
         <WatchedPullRequest key={prKey(watch.ref)} threadId={threadId} watch={watch} />
       ))}
-    </section>
+    </div>
   );
 }
 
@@ -127,7 +129,7 @@ function StateIcon({ watch }: { watch: PrWatchView }) {
     );
   const state = watchChecksState(watch);
   return state ? (
-    <CheckIcon outcome={OUTCOME[state]} />
+    <CheckIcon outcome={OUTCOME[state]} size={14} />
   ) : (
     <Icon name="GitPullRequest" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
   );
@@ -142,8 +144,12 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
   const tone = expanded ? "text-foreground" : "text-muted-foreground";
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded} className="flex min-w-0 flex-col">
-      <div className="flex min-h-7 min-w-0 items-center gap-1">
-        <Item asChild size="row" className="min-h-6 min-w-0 flex-1 cursor-pointer gap-1">
+      <div className="flex min-h-8 min-w-0 items-center gap-1 px-1 py-1">
+        <Item
+          asChild
+          size="row"
+          className="min-h-6 min-w-0 flex-1 cursor-pointer gap-1.5 border-0 py-0 text-xs"
+        >
           <CollapsibleTrigger
             {...KEEP_COMPOSER_FOCUS}
             aria-label={`${key} ${watch.title}: ${summary}. ${expanded ? "Hide" : "Show"} checks`}
@@ -172,7 +178,13 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
         <Hint label="Open on GitHub">
           {/* UrlLink takes no ref: the tooltip anchors on this span. */}
           <span className="inline-flex shrink-0">
-            <Button asChild variant="ghost" size="icon-xs" tone="muted">
+            <Button
+              asChild
+              variant="ghost"
+              size="icon-xs"
+              tone="muted"
+              className={surface.bannerHover}
+            >
               <UrlLink href={watch.url} aria-label={`Open ${key} on GitHub`}>
                 <Icon name="ArrowUpRight" className="size-3" aria-hidden />
               </UrlLink>
@@ -185,6 +197,7 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
             size="xs"
             variant="ghost"
             tone="muted"
+            className={surface.bannerHover}
             aria-label={`Unwatch ${key}`}
             {...KEEP_COMPOSER_FOCUS}
             disabled={stop.isPending}
@@ -195,10 +208,12 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
         </Hint>
       </div>
       {stop.error ? (
-        <p className="m-0 px-2 pb-1 text-[11px] text-destructive-text">{stop.error.message}</p>
+        <p className="m-0 px-3 pb-1 text-[11px] text-destructive-text">{stop.error.message}</p>
       ) : null}
-      <CollapsibleContent>
-        <WatchDetails watch={watch} />
+      <CollapsibleContent asChild>
+        <section aria-hidden={!expanded} className={cx(expanded && surface.divider, "bg-popover")}>
+          <WatchDetails watch={watch} />
+        </section>
       </CollapsibleContent>
     </Collapsible>
   );
@@ -216,7 +231,7 @@ function WatchDetails({ watch }: { watch: PrWatchView }) {
   ].filter(Boolean);
   const { checks } = watch.checks;
   return (
-    <div className="flex min-w-0 flex-col pb-1">
+    <div className="flex min-w-0 flex-col px-1 py-1.5">
       <p className="m-0 min-w-0 truncate ps-2 text-[11px] text-muted-foreground" translate="no">
         {notes.join(" · ")}
       </p>
@@ -243,12 +258,12 @@ function WatchDetails({ watch }: { watch: PrWatchView }) {
             <li
               key={check.id}
               className={cx(
-                "flex min-h-6 min-w-0 items-center gap-1 rounded-[4px] px-2",
+                "flex min-h-6 min-w-0 items-center gap-1.5 rounded-sm px-2",
                 check.state === "failure" &&
                   "bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)]",
               )}
             >
-              <CheckIcon outcome={OUTCOME[check.state]} />
+              <CheckIcon outcome={OUTCOME[check.state]} size={14} />
               <span
                 className={cx(
                   "min-w-0 flex-1 truncate",
