@@ -1,15 +1,10 @@
 import { createHash, type Hash } from "node:crypto";
 import { type Dirent, lstatSync, opendirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import {
-  type CaptainTaskItem,
-  type CREW_STATES,
-  DRIVE_EXCERPT_BYTES,
-  type DriveFileItem,
-} from "../contract/rpc.ts";
+import { type CaptainTaskItem, DRIVE_EXCERPT_BYTES, type DriveFileItem } from "../contract/rpc.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { ensureStorageRoot } from "./commands/deps.ts";
-import { type CrewThread, isActive, joinCrew } from "./crew.ts";
+import { type CrewThread, crewThreadState, isActive, joinCrew } from "./crew.ts";
 import { DRIVE_FILES, isInside, readInside } from "./drive.ts";
 import type { OwnerBackfill, OwnersState } from "./owners.ts";
 import type { CrewSnapshot } from "./queue.ts";
@@ -242,19 +237,10 @@ function crewByTask(
       {
         threadId: member.thread.id,
         role: member.role === null ? null : ROLE_SPECS[member.role].label,
-        state: crewState(member.thread),
+        state: crewThreadState(member.thread),
       },
     ]),
   );
-}
-
-function crewState(thread: {
-  status: string;
-  hasPendingInteraction: boolean;
-}): (typeof CREW_STATES)[number] {
-  if (thread.status === "error") return "errored";
-  if (thread.hasPendingInteraction) return "needs-input";
-  return isActive(thread.status) ? "working" : "idle";
 }
 
 /** At most this many cards; the header counts every file. */

@@ -57,6 +57,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@bb-plugins/header-bar": "workspace:*",
     "@bb-plugins/ui": "workspace:*",
     "@get-bb/plugin-sdk": "0.6.157",
     "@radix-ui/react-dialog": "^1.1.19",

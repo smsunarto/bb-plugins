@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { CrewState } from "../contract/rpc.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { Refusal, type Blocker } from "./output.ts";
 import type { Captain } from "./registry.ts";
@@ -238,6 +239,16 @@ export function isActive(status: string): boolean {
   return (
     status === "active" || status === "starting" || status === "pending" || status === "stopping"
   );
+}
+
+/** A crew thread's live UI state: errored, waiting on input, working, or idle. */
+export function crewThreadState(thread: {
+  status: string;
+  hasPendingInteraction: boolean;
+}): CrewState {
+  if (thread.status === "error") return "errored";
+  if (thread.hasPendingInteraction) return "needs-input";
+  return isActive(thread.status) ? "working" : "idle";
 }
 
 type Interaction = Awaited<

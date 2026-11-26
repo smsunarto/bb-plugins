@@ -39,6 +39,7 @@ import {
   askItems,
   createCrewReads,
   crewItems,
+  crewRoster,
   deferItem,
   markSeen,
   needsYouCount,
@@ -102,6 +103,10 @@ export function registerRpc(
     crew: async ({ captainId }) => {
       live(captainId);
       return { items: await crewItems(deps, captainId, readCrew) };
+    },
+    crewRoster: async ({ captainId }) => {
+      live(captainId);
+      return crewRoster(deps, captainId, readCrew);
     },
     tasks: async ({ captainId }) => {
       live(captainId);
@@ -213,12 +218,15 @@ function registerCrewWatch(
   crewWatch: (captainId: string, signal: AbortSignal) => Promise<void>,
   tasksWatch: (captainId: string, signal: AbortSignal) => Promise<void>,
 ): void {
-  for (const method of ["crew", "tasks"] as const) {
+  for (const method of ["crew", "crewRoster", "tasks"] as const) {
     deps.bb.rpc.experimental_whileWatched(method, async (read, signal) => {
       const captainId = captainOf(read);
       if (captainId === null) return;
-      if (method === "crew") return crewWatch(captainId, signal);
-      await Promise.all([crewWatch(captainId, signal), tasksWatch(captainId, signal)]);
+      if (method === "tasks") {
+        await Promise.all([crewWatch(captainId, signal), tasksWatch(captainId, signal)]);
+        return;
+      }
+      return crewWatch(captainId, signal);
     });
   }
 }
@@ -336,7 +344,10 @@ function createCrewWatch(
       try {
         const threads = await listChildren(bb, captainId, false, signal);
         const shape = threads
-          .map((thread) => `${thread.id}:${thread.status}:${thread.hasPendingInteraction}`)
+          .map(
+            (thread) =>
+              `${thread.id}:${thread.title ?? ""}:${thread.status}:${thread.hasPendingInteraction}`,
+          )
           .join(",");
         if (last !== null && shape !== last) {
           changed(captainId);

@@ -1,6 +1,7 @@
 import { definePluginApp, experimental_THREAD_ACTION_GROUPS } from "@get-bb/plugin-sdk/app";
 import { ADOPT_ICON, ADOPT_LABEL, AdoptOverlay, adoptItem, useAdoptData } from "./adopt.tsx";
 import { CAPTAIN_OVERVIEW_TAB, NeedsYouBanner } from "./banner.tsx";
+import { CAPTAIN_HEADER_ROW_ORDER, CaptainHeaderRow } from "./header-row.tsx";
 import { CaptainIconSettings } from "./icon-settings.tsx";
 // workaround:captain/panel-new-tab-intent begin
 import { watchNewTabClicks } from "./overview-default.ts";
@@ -30,6 +31,12 @@ export default definePluginApp((app) => {
     title: "Captain icons",
     description: "The icon or picture each Captain shows in the sidebar.",
     component: CaptainIconSettings,
+  });
+  // Captain ↔ Crew orientation and quick switching directly under the thread header.
+  app.slots.experimental_threadHeaderRow({
+    id: "captain-crew",
+    order: CAPTAIN_HEADER_ROW_ORDER,
+    component: CaptainHeaderRow,
   });
   // A Captain's asks, tasks and Drive beside its thread; hidden on every other thread.
   app.slots.experimental_tab({

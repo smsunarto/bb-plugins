@@ -5,10 +5,24 @@ import {
   type BlockedItem,
   type HealthItem,
 } from "../contract/queue.ts";
-import { asksTag, crewTag, sinceTag, type ChangeRef } from "../contract/rpc.ts";
+import {
+  asksTag,
+  crewTag,
+  sinceTag,
+  type ChangeRef,
+  type CrewRoster,
+  type CrewRosterMember,
+  type CrewState,
+} from "../contract/rpc.ts";
 import { ANSWER_MAX_ATTEMPTS } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
-import { joinCrew, listChildren, readInteractions, type ListedThread } from "./crew.ts";
+import {
+  crewThreadState,
+  joinCrew,
+  listChildren,
+  readInteractions,
+  type ListedThread,
+} from "./crew.ts";
 import { ROLE_SPECS, SHIP_READY_REVIEWS } from "./roles.ts";
 import { crewState } from "./status.ts";
 import { NOTICE, type Ask } from "./store.ts";
@@ -226,6 +240,58 @@ export async function crewItems(
     }
   }
   return items;
+}
+
+const ROSTER_STATE_RANK: Readonly<Record<CrewState, number>> = {
+  "needs-input": 0,
+  errored: 1,
+  working: 2,
+  idle: 3,
+};
+
+/**
+ * The Captain's identity and live unarchived crew for the thread header row,
+ * ordered by attention priority (needs-input, errored, working, idle) then most
+ * recently updated. Reuses the shared crew read; when Tasks is unavailable,
+ * members still render with their thread title, role and live state.
+ */
+export async function crewRoster(
+  deps: Pick<QueueDeps, "bb" | "store" | "registry" | "tasks">,
+  captainId: string,
+  readCrew: (captainId: string) => CrewSnapshot = (id) => readCrewSnapshot(deps, id),
+): Promise<CrewRoster> {
+  const captain = deps.registry.get(captainId);
+  if (captain === null) throw new Error(`${captainId} is not a live Captain`);
+  const snapshot = readCrew(captainId);
+  const [threads, rows] = await Promise.all([snapshot.threads, snapshot.rows]);
+  const members: CrewRosterMember[] = joinCrew(deps, threads, rows)
+    .map((member): CrewRosterMember => {
+      const task = member.rows[0]?.task ?? null;
+      const rawTitle = member.thread.title?.trim() ?? "";
+      return {
+        threadId: member.thread.id,
+        title: rawTitle !== "" ? rawTitle : (task?.title ?? member.thread.id),
+        role: member.role === null ? null : ROLE_SPECS[member.role].label,
+        task: task?.key ?? null,
+        taskTitle: task?.title ?? null,
+        state: crewThreadState(member.thread),
+        updatedAt: member.thread.updatedAt,
+      };
+    })
+    .sort(
+      (a, b) =>
+        ROSTER_STATE_RANK[a.state] - ROSTER_STATE_RANK[b.state] ||
+        b.updatedAt - a.updatedAt ||
+        a.threadId.localeCompare(b.threadId),
+    );
+  return {
+    captain: {
+      threadId: captain.threadId,
+      name: captain.name,
+      icon: deps.store.captainIcon(captain.threadId),
+    },
+    members,
+  };
 }
 
 /**

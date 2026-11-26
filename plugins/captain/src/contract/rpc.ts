@@ -105,8 +105,38 @@ export const DEFERRABLE_KEY = /^(ask|blocked|health):[A-Za-z0-9_:.-]{1,200}$/u;
 /** A Captain's name: one line of at most this many characters. */
 export const CAPTAIN_NAME_MAX = 80;
 
-/** What a task's crew thread is doing, as the Overview's Tasks rows label it. */
+/** What a task's crew thread is doing, as the Overview's Tasks rows and header row label it. */
 export const CREW_STATES = ["working", "needs-input", "errored", "idle"] as const;
+export type CrewState = (typeof CREW_STATES)[number];
+
+/** One live crew member as the Captain/Crew thread header row lists it. */
+const crewRosterMemberSchema = z
+  .object({
+    threadId,
+    title: z.string(),
+    /** The crew role's label, such as Implement or Review; null when not known. */
+    role: z.string().nullable(),
+    /** Attached task key, such as BBP-44; null when none is attached or Tasks is unavailable. */
+    task: z.string().nullable(),
+    /** Attached task title; null when none is attached or Tasks is unavailable. */
+    taskTitle: z.string().nullable(),
+    state: z.enum(CREW_STATES),
+    updatedAt: z.number(),
+  })
+  .strict();
+
+const crewRosterSchema = z
+  .object({
+    captain: z
+      .object({
+        threadId,
+        name: z.string(),
+        icon: captainIconSchema,
+      })
+      .strict(),
+    members: z.array(crewRosterMemberSchema),
+  })
+  .strict();
 
 /** One open task of the Captain's repos as the Overview's Tasks section lists it. */
 const captainTask = z
@@ -317,6 +347,16 @@ export const captainContract = defineRpcContract({
     input: z.object({ captainId: threadId }).strict(),
     output: z.object({ items: z.array(z.union([blockedItem, healthItem])) }).strict(),
     tags: ({ captainId }) => [crewTag(captainId)],
+  },
+  /**
+   * The Captain's identity and live crew threads for the thread header row:
+   * shares the server's in-flight crew read and refreshes on crew, icon, and
+   * Captain changes.
+   */
+  crewRoster: {
+    input: z.object({ captainId: threadId }).strict(),
+    output: crewRosterSchema,
+    tags: ({ captainId }) => [crewTag(captainId), iconTag(captainId), CAPTAINS_TAG],
   },
   /**
    * The Overview's Tasks: the open tasks this Captain owns in its repos (ones it
@@ -575,6 +615,8 @@ export type AdoptInput = z.infer<typeof adoptInputSchema>;
 export type AdoptResult = z.infer<typeof adoptResultSchema>;
 export type ChangeRef = z.infer<typeof changeRef>;
 export type CaptainTaskItem = z.infer<typeof captainTask>;
+export type CrewRosterMember = z.infer<typeof crewRosterMemberSchema>;
+export type CrewRoster = z.infer<typeof crewRosterSchema>;
 export type DriveFileItem = z.infer<typeof driveFile>;
 export type RoutineDraft = z.infer<typeof routineDraftSchema>;
 export type SaveRoutineResult = z.infer<typeof saveRoutineResultSchema>;

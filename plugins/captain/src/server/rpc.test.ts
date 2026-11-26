@@ -787,3 +787,92 @@ describe("the Overview's routines", () => {
     );
   });
 });
+
+describe("crewRoster", () => {
+  test("returns Captain identity and live crew sorted by attention priority, excluding archived crew", async () => {
+    const { host, captainId, as, rpc } = await bannerHost();
+    host.addTask("BBPLUGINS-3", { title: "Audit permissions" });
+    host.addTask("BBPLUGINS-4", { title: "Clean up logs" });
+    host.addTask("BBPLUGINS-5", { title: "Old archived task" });
+
+    const idleCrew = await dispatched(as, "BBPLUGINS-1");
+    const workingCrew = await dispatched(as, "BBPLUGINS-2");
+    const erroredCrew = await dispatched(as, "BBPLUGINS-3");
+    const blockedCrew = await dispatched(as, "BBPLUGINS-4");
+    const archivedCrew = await dispatched(as, "BBPLUGINS-5");
+
+    host.updateThread(idleCrew, { status: "idle", updatedAt: 5_000 });
+    host.updateThread(workingCrew, { status: "active", updatedAt: 4_000 });
+    host.updateThread(erroredCrew, { status: "error", updatedAt: 3_000 });
+    host.updateThread(blockedCrew, {
+      status: "idle",
+      hasPendingInteraction: true,
+      updatedAt: 2_000,
+    });
+    host.updateThread(archivedCrew, { status: "idle", archivedAt: 6_000, updatedAt: 6_000 });
+
+    await rpc("setIcon", { captainId, icon: { kind: "icon", name: "Star" } });
+
+    const roster = (await rpc("crewRoster", { captainId })) as {
+      captain: { threadId: string; name: string; icon: unknown };
+      members: {
+        threadId: string;
+        title: string;
+        role: string | null;
+        task: string | null;
+        taskTitle: string | null;
+        state: string;
+      }[];
+    };
+
+    expect(roster.captain).toEqual({
+      threadId: captainId,
+      name: "Plugins",
+      icon: { kind: "icon", name: "Star" },
+    });
+    expect(
+      roster.members.map((member) => [member.threadId, member.state, member.task, member.role]),
+    ).toEqual([
+      [blockedCrew, "needs-input", "BBPLUGINS-4", "Implement"],
+      [erroredCrew, "errored", "BBPLUGINS-3", "Implement"],
+      [workingCrew, "working", "BBPLUGINS-2", "Implement"],
+      [idleCrew, "idle", "BBPLUGINS-1", "Implement"],
+    ]);
+  });
+
+  test("degrades gracefully when Tasks is down and rejects non-Captain ids", async () => {
+    const { host, captainId, as, rpc } = await bannerHost();
+    const crewId = await dispatched(as, "BBPLUGINS-1");
+    host.updateThread(crewId, { status: "active", updatedAt: 5_000 });
+    host.tasks.down = true;
+
+    const roster = (await rpc("crewRoster", { captainId })) as {
+      members: { threadId: string; role: string | null; task: string | null; state: string }[];
+    };
+    expect(roster.members).toEqual([
+      expect.objectContaining({
+        threadId: crewId,
+        role: "Implement",
+        task: null,
+        state: "working",
+      }),
+    ]);
+
+    await expect(rpc("crewRoster", { captainId: crewId })).rejects.toThrow(/not a live Captain/u);
+  });
+
+  test("shares the in-flight crew read when called concurrently with crew", async () => {
+    const { host, captainId, as, rpc } = await bannerHost();
+    await dispatched(as, "BBPLUGINS-1");
+    const hold = deferred();
+    host.crewSnapshotHold.gate = hold.promise;
+    const before = host.threadLists.length;
+
+    const first = rpc("crew", { captainId });
+    const second = rpc("crewRoster", { captainId });
+    hold.resolve();
+    await Promise.all([first, second]);
+
+    expect(host.threadLists.slice(before)).toEqual([captainId]);
+  });
+});
