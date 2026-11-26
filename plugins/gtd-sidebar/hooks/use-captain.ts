@@ -13,9 +13,17 @@ import { CAPTAIN_PLUGIN_ID, captainContract } from "../lib/captain-contract";
 
 const NO_INPUT = {};
 const NO_KEYS: string[] = [];
+const NO_IDS: ReadonlySet<string> = new Set();
 const NO_COUNTS: Readonly<Record<string, number>> = {};
 /** Statuses in which Captain's server answers its RPCs. */
 const SERVING = new Set(["running", "degraded"]);
+
+export interface CaptainRoster {
+  /** Live Captain thread ids from Captain's `captains` RPC; empty when unavailable. */
+  captainIds: ReadonlySet<string>;
+  /** Each listed Captain's Needs you count, by thread id; empty when unavailable. */
+  needsYou: Readonly<Record<string, number>>;
+}
 
 /**
  * Whether Captain is installed, enabled and serving, from one read of bb's
@@ -46,16 +54,16 @@ export function useCaptainAvailable(): boolean {
 }
 
 /**
- * Each listed Captain's Needs you count, by thread id: one shared read of
- * Captain's ids, then one keyed read over the Captain rows the list holds, so
- * every row's count arrives in one batch. A row refreshes when its Captain's
- * banner reads do, through their tags; nothing polls. Empty while Captain is
- * unavailable.
+ * Live Captain thread ids and each listed Captain's Needs you count: one
+ * shared read of Captain's ids, then one keyed read over the Captain rows the
+ * list holds, so every row's count arrives in one batch. A row refreshes when
+ * its Captain's banner reads do, through their tags; nothing polls. Empty while
+ * Captain is unavailable.
  */
-export function useNeedsYouCounts(
+export function useCaptainRoster(
   available: boolean,
   threads: readonly PluginSidebarThread[],
-): Readonly<Record<string, number>> {
+): CaptainRoster {
   const captains = useRpcQuery({
     contract: captainContract,
     pluginId: CAPTAIN_PLUGIN_ID,
@@ -64,15 +72,23 @@ export function useNeedsYouCounts(
     enabled: available,
   });
   const ids = captains.data?.ids;
+  // Joined, so an unchanged Captain roster keeps the same Set identity.
+  const joinedIds = useMemo(
+    () => (available && ids !== undefined && ids.length > 0 ? ids.join(",") : ""),
+    [available, ids],
+  );
+  const captainIds = useMemo<ReadonlySet<string>>(
+    () => (joinedIds === "" ? NO_IDS : new Set(joinedIds.split(","))),
+    [joinedIds],
+  );
   // Joined, so a new roster with the same Captain rows keeps the same keys.
   const joined = useMemo(() => {
-    if (ids === undefined || ids.length === 0) return "";
-    const live = new Set(ids);
+    if (captainIds.size === 0) return "";
     return threads
-      .filter((thread) => live.has(thread.id) && !thread.isArchived)
+      .filter((thread) => captainIds.has(thread.id) && !thread.isArchived)
       .map((thread) => thread.id)
       .join(",");
-  }, [ids, threads]);
+  }, [captainIds, threads]);
   const keys = useMemo(() => (joined === "" ? NO_KEYS : joined.split(",")), [joined]);
   const counts = useRpcKeyedQuery({
     contract: captainContract,
@@ -81,5 +97,6 @@ export function useNeedsYouCounts(
     keys,
     enabled: available && keys.length > 0,
   });
-  return (available && counts.data) || NO_COUNTS;
+  const needsYou = (available && counts.data) || NO_COUNTS;
+  return useMemo(() => ({ captainIds, needsYou }), [captainIds, needsYou]);
 }

@@ -245,7 +245,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   const { ThreadInbox } = await import("../components/inbox/thread-inbox.tsx");
   const { HeaderSettle } = await import("../components/header/header-settle.tsx");
   const { useCommittedEvent } = await import("../hooks/use-committed-event.ts");
-  const { settleThread } = await import("../lib/sidebar-actions-bridge.ts");
+  const { openNewCaptain: triggerNewCaptain, settleThread } =
+    await import("../lib/sidebar-actions-bridge.ts");
   const { TOUCH_PRESS_FEEDBACK_MS } = await import("../hooks/use-ios-long-press.ts");
 
   interface EventProbeProps {
@@ -3183,10 +3184,43 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
     function captainThreads() {
       return [
-        thread("thr_c1", { title: "Plugins Captain", isPinned: true, pinnedAt: 1 }),
-        thread("thr_c2", { title: "Rampage Captain", isPinned: true, pinnedAt: 2 }),
-        thread("thr_plain", { title: "Plain thread", projectId: "two" }),
+        thread("thr_c1", {
+          title: "Plugins Captain",
+          projectId: "proj_captains",
+          originPluginId: "captain",
+          isPinned: true,
+          pinnedAt: 1,
+        }),
+        thread("thr_c2", {
+          title: "Rampage Captain",
+          projectId: "two",
+          originPluginId: "captain",
+          isPinned: true,
+          pinnedAt: 2,
+        }),
+        thread("thr_plain_one", { title: "Plain one", projectId: "one" }),
+        thread("thr_plain_two", { title: "Plain two", projectId: "two" }),
       ];
+    }
+
+    function captainHostState(threads = captainThreads()): HostState {
+      const base = hostState(threads);
+      return {
+        ...base,
+        sidebar: {
+          ...base.sidebar,
+          projects: [
+            ...base.sidebar.projects,
+            {
+              id: "proj_captains",
+              name: "Captains",
+              isPersonal: false,
+              href: "",
+              settingsHref: "",
+            },
+          ],
+        },
+      };
     }
 
     function countOf(slot: RenderedSlot, id: string): string | null {
@@ -3199,11 +3233,14 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ["captains", "needsYou", "newCaptain"].includes(call.method),
       );
 
-    it("with Captain absent, shows no New Captain button and no counts, and asks Captain nothing", async () => {
-      const view = mount(hostState(captainThreads()));
+    it("with Captain absent, renders no Captains shelf, no New Captain header button, and asks Captain nothing", async () => {
+      const view = mount(captainHostState());
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
       });
+      assert.equal(view.slot.queryByRole("region", { name: "Captains" }), null);
+      assert.ok(view.slot.getByRole("region", { name: "Pinned" }));
+      assert.equal(view.slot.container.querySelectorAll(".gtd-project-group-captain").length, 0);
       assert.equal(view.slot.queryAllByRole("button", { name: /^New Captain/ }).length, 0);
       assert.ok(view.slot.getAllByRole("button", { name: /^New thread in / }).length > 0);
       assert.equal(view.slot.container.querySelectorAll("[data-gtd-needs-you]").length, 0);
@@ -3212,20 +3249,87 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
     it("with Captain disabled, behaves as if it were absent", async () => {
       const host = {
-        ...hostState(captainThreads()),
+        ...captainHostState(),
         plugins: [{ ...CAPTAIN_RUNNING[0]!, enabled: false, status: "disabled" }],
       };
       const view = mount(host);
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
       });
+      assert.equal(view.slot.queryByRole("region", { name: "Captains" }), null);
+      assert.ok(view.slot.getByRole("region", { name: "Pinned" }));
+      assert.equal(view.slot.container.querySelectorAll(".gtd-project-group-captain").length, 0);
       assert.equal(view.slot.queryAllByRole("button", { name: /^New Captain/ }).length, 0);
       assert.deepEqual(captainCalls(view.slot), []);
     });
 
+    it("places listed Captains on a dedicated flat Captains shelf with no Captains folder and keeps crew in place", async () => {
+      const threads = [
+        ...captainThreads(),
+        thread("thr_pinned_mine", { title: "Urgent pin", projectId: "one", isPinned: true }),
+        thread("thr_crew_other", {
+          title: "Crew in repo",
+          projectId: "one",
+          indicator: "runtime",
+        }),
+      ];
+      const host = { ...captainHostState(threads), plugins: CAPTAIN_RUNNING };
+      const view = mount(host, {}, "", {
+        rpc: {
+          captains: async () => ({ ids: ["thr_c1", "thr_c2"] }),
+          needsYou: async () => ({ thr_c1: 3, thr_c2: 0 }),
+        } as never,
+      });
+      const captainsRegion = await view.slot.findByRole("region", { name: "Captains" });
+      // Every listed Captain appears in Captains (whichever project it is in),
+      // flat with no project-group folder header.
+      assert.deepEqual(
+        [...captainsRegion.querySelectorAll("[data-sidebar-thread-id]")].map((el) =>
+          el.getAttribute("data-sidebar-thread-id"),
+        ),
+        ["thr_c1", "thr_c2"],
+      );
+      assert.equal(captainsRegion.querySelectorAll(".gtd-project-group").length, 0);
+      // No "Captains" project group anywhere in the sidebar, and no per-project
+      // New Captain button on any project header.
+      assert.equal(view.slot.queryByRole("button", { name: /^Captains project/ }), null);
+      assert.equal(view.slot.container.querySelectorAll(".gtd-project-group-captain").length, 0);
+      // Non-Captain threads keep their shelves and project groups.
+      const pinnedRegion = view.slot.getByRole("region", { name: "Pinned" });
+      assert.deepEqual(
+        [...pinnedRegion.querySelectorAll("[data-sidebar-thread-id]")].map((el) =>
+          el.getAttribute("data-sidebar-thread-id"),
+        ),
+        ["thr_pinned_mine"],
+      );
+      const waitingRegion = view.slot.getByRole("region", { name: "Waiting" });
+      assert.deepEqual(
+        [...waitingRegion.querySelectorAll("[data-sidebar-thread-id]")].map((el) =>
+          el.getAttribute("data-sidebar-thread-id"),
+        ),
+        ["thr_crew_other"],
+      );
+      // Shelf order: Pinned -> Captains -> Next Action -> Waiting.
+      assert.deepEqual(
+        [...view.slot.container.querySelectorAll("section[aria-label]")].map((el) =>
+          el.getAttribute("aria-label"),
+        ),
+        ["Pinned", "Captains", "Next Action", "Waiting"],
+      );
+      // Folding the Captains shelf shows its count and hides its rows.
+      const toggle = within(captainsRegion).getByRole("button", { name: "Captains" });
+      assert.equal(toggle.getAttribute("aria-expanded"), "true");
+      fireEvent.click(toggle);
+      assert.equal(toggle.getAttribute("aria-expanded"), "false");
+      assert.equal(toggle.textContent, "Captains (2)");
+      fireEvent.click(toggle);
+      assert.equal(toggle.getAttribute("aria-expanded"), "true");
+      assert.equal(toggle.textContent, "Captains");
+    });
+
     it("reads every Captain row's count in one batch, shows it, and hides it at 0", async () => {
       const counts: Record<string, number> = { thr_c1: 2, thr_c2: 0 };
-      const host = { ...hostState(captainThreads()), plugins: CAPTAIN_RUNNING };
+      const host = { ...captainHostState(), plugins: CAPTAIN_RUNNING };
       const view = mount(host, {}, "", {
         rpc: {
           captains: async () => ({ ids: ["thr_c1", "thr_c2", "thr_elsewhere"] }),
@@ -3235,7 +3339,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       });
       await waitFor(() => assert.equal(countOf(view.slot, "thr_c1"), "2"));
       assert.equal(countOf(view.slot, "thr_c2"), null);
-      assert.equal(countOf(view.slot, "thr_plain"), null);
+      assert.equal(countOf(view.slot, "thr_plain_two"), null);
       const reads = view.slot.inspection.rpcCalls.filter((call) => call.method === "needsYou");
       // Only the listed Captain rows, together in one call.
       assert.equal(reads.length, 1);
@@ -3251,25 +3355,32 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.deepEqual((after.at(-1)!.input as { keys: string[] }).keys, ["thr_c1"]);
     });
 
-    async function openNewCaptain(newCaptain: (input: unknown) => unknown) {
+    async function openNewCaptain(
+      newCaptain: (input: unknown) => unknown,
+      activeProjectId: string | null = "two",
+    ) {
       const host = {
         ...hostState([thread("t1"), thread("t2", { projectId: "two" })]),
         plugins: CAPTAIN_RUNNING,
       };
-      const view = mount(host, {}, "", {
+      const view = mount(host, { activeProjectId }, "", {
         rpc: {
           captains: async () => ({ ids: [] }),
           needsYou: async () => ({}),
           newCaptain: async (input: unknown) => newCaptain(input),
         } as never,
       });
-      const button = await view.slot.findByRole("button", { name: "New Captain directing Two" });
-      fireEvent.click(button);
+      // Wait for useCaptainAvailable to resolve before opening through the bridge.
+      await waitFor(() =>
+        assert.ok(view.slot.inspection.rpcCalls.some((call) => call.method === "captains")),
+      );
+      assert.equal(view.slot.container.querySelectorAll(".gtd-project-group-captain").length, 0);
+      act(() => triggerNewCaptain());
       const dialog = await screen.findByRole("dialog", { name: "New Captain" });
       return { view, host, dialog: within(dialog) };
     }
 
-    it("New Captain opens with its project picked and checks the form before sending", async () => {
+    it("New Captain opens with the active project picked and checks the form before sending", async () => {
       const sent: unknown[] = [];
       const { view, dialog } = await openNewCaptain((input) => {
         sent.push(input);

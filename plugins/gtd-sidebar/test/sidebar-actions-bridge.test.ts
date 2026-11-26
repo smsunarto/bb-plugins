@@ -5,6 +5,7 @@ import {
   canSettleThread,
   forgetSidebarActions,
   hasSidebarActions,
+  openNewCaptain,
   publishSidebarActions,
   settleThread,
   type PublishedSidebarActions,
@@ -78,5 +79,20 @@ describe("sidebar actions bridge", () => {
     assert.equal(canSettleThread("thr_1"), true);
     assert.equal(canSettleThread("thr_captain"), false);
     forgetSidebarActions(captain);
+  });
+
+  it("forwards openNewCaptain to the mounted list when published", () => {
+    const opened: (string | null | undefined)[] = [];
+    const actions: PublishedSidebarActions = {
+      ...fakeEntry(settled),
+      openNewCaptain: (projectId) => opened.push(projectId),
+    };
+    openNewCaptain("proj_1");
+    assert.deepEqual(opened, []);
+    publishSidebarActions(actions);
+    openNewCaptain();
+    openNewCaptain("proj_1");
+    assert.deepEqual(opened, [undefined, "proj_1"]);
+    forgetSidebarActions(actions);
   });
 });

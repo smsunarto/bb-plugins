@@ -499,6 +499,77 @@ describe("inbox families", () => {
     assert.deepEqual(build(2_000, false), ["a", "b"]);
   });
 
+  it("places listed Captain threads on the captains shelf regardless of project, pin, or activity", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "pinned-mine", isPinned: true, pinSortKey: "a" }),
+        thread({
+          id: "cap-pinned",
+          projectId: "proj_captains",
+          originPluginId: "captain",
+          isPinned: true,
+          pinSortKey: "b",
+        }),
+        thread({
+          id: "cap-working",
+          projectId: "proj_other",
+          originPluginId: "captain",
+          indicator: "runtime",
+        }),
+        thread({
+          id: "cap-nested",
+          projectId: "proj_other",
+          parentThreadId: "mine",
+          originPluginId: "captain",
+        }),
+        thread({ id: "mine", projectId: "proj_other" }),
+        thread({
+          id: "crew-child",
+          projectId: "proj_other",
+          parentThreadId: "cap-pinned",
+          isPinned: true,
+        }),
+        thread({ id: "crew-standalone", projectId: "proj_other", indicator: "runtime" }),
+      ],
+      active,
+      "",
+      { captainIds: new Set(["cap-pinned", "cap-working", "cap-nested"]) },
+    );
+    assert.deepEqual(
+      tree.map((node) => [node.thread.id, node.shelf]),
+      [
+        ["pinned-mine", "pinned"],
+        ["cap-pinned", "captains"],
+        ["cap-nested", "captains"],
+        ["cap-working", "captains"],
+        ["mine", "nextAction"],
+        ["crew-standalone", "waiting"],
+      ],
+    );
+    // Active crew child stays nested under its Captain without pulling the Captain to Pinned.
+    assert.deepEqual(
+      tree.find((node) => node.thread.id === "cap-pinned")?.children.map((node) => node.thread.id),
+      ["crew-child"],
+    );
+  });
+
+  it("leaves Captain threads on their ordinary shelves when captainIds is empty", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "cap-pinned", projectId: "proj_captains", isPinned: true }),
+        thread({ id: "cap-idle", projectId: "proj_captains" }),
+      ],
+      active,
+    );
+    assert.deepEqual(
+      tree.map((node) => [node.thread.id, node.shelf]),
+      [
+        ["cap-pinned", "pinned"],
+        ["cap-idle", "nextAction"],
+      ],
+    );
+  });
+
   it("keeps a family pinned when a descendant is pinned", () => {
     const tree = buildInboxTree(
       [

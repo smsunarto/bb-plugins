@@ -85,6 +85,32 @@ describe("buildInboxWindow", () => {
     expect(layout.items.map((item) => item.key)).toEqual(["shelf:pinned", "row:a", "row:b"]);
     expect([...layout.rowsStart]).toEqual([["shelf:pinned", 1]]);
   });
+
+  it("lets one shelf opt out of project groups while neighbouring shelves stay grouped", () => {
+    const layout = buildInboxWindow(
+      [
+        { shelf: "captains", expanded: true, grouped: false, groups: [group("", ["c1", "c2"])] },
+        { shelf: "nextAction", expanded: true, groups: [group("p1", ["a"]), group("p2", ["b"])] },
+      ],
+      true,
+      () => true,
+    );
+    expect(layout.items.map((item) => item.key)).toEqual([
+      "shelf:captains",
+      "row:c1",
+      "row:c2",
+      "shelf:nextAction",
+      groupCollapseKey("nextAction", "p1"),
+      "row:a",
+      groupCollapseKey("nextAction", "p2"),
+      "row:b",
+    ]);
+    expect([...layout.rowsStart]).toEqual([
+      ["shelf:captains", 1],
+      [groupCollapseKey("nextAction", "p1"), 5],
+      [groupCollapseKey("nextAction", "p2"), 7],
+    ]);
+  });
 });
 
 describe("windowSegments", () => {

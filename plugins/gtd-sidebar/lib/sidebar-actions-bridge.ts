@@ -6,6 +6,8 @@ export interface PublishedSidebarActions {
   settle(threadId: string): void;
   /** False for a thread that stays open (lib/long-lived). */
   canSettle(threadId: string): boolean;
+  /** Opens the New Captain dialog; optionally preselects a project. */
+  openNewCaptain?(projectId?: string | null): void;
 }
 
 let current: PublishedSidebarActions | null = null;
@@ -29,6 +31,10 @@ export function canSettleThread(threadId: string): boolean {
 
 export function settleThread(threadId: string): void {
   current?.settle(threadId);
+}
+
+export function openNewCaptain(projectId?: string | null): void {
+  current?.openNewCaptain?.(projectId);
 }
 
 // The palette row still asks for archiveThread; a settle is an archive plus

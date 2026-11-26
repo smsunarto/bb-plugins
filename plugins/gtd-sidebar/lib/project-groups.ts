@@ -244,7 +244,10 @@ export function shouldGroupByProject(
   shelves: Readonly<Record<InboxShelf, readonly VisibleInboxRow[]>>,
 ): boolean {
   const projectIds = new Set<string>();
-  for (const rows of Object.values(shelves)) {
+  for (const [shelf, rows] of Object.entries(shelves)) {
+    // Captains render flat on their own shelf, so their project never earns
+    // group headers for the remaining shelves.
+    if (shelf === "captains") continue;
     for (const row of rows) {
       if (row.depth === 0) projectIds.add(row.node.thread.projectId);
       if (projectIds.size > 1) return true;
