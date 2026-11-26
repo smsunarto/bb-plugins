@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   ROUTINE_INSTRUCTION_MAX,
   ROUTINES_PER_CAPTAIN,
@@ -866,7 +868,7 @@ describe("default daily routines", () => {
     );
   }
 
-  test("backfill seeds both daily defaults on an existing Captain with no routines", async () => {
+  test("backfill seeds all four daily defaults on an existing Captain with no routines", async () => {
     const host = await captainHost({ defaultTimezone: "America/Los_Angeles" });
     seedPreexistingCaptain(host, "thr_existing", "Existing");
 
@@ -882,12 +884,20 @@ describe("default daily routines", () => {
         schedule: { cron: "0 9 * * *", timezone: "America/Los_Angeles" },
       },
       { name: "Drive sweep", schedule: { cron: "30 9 * * *", timezone: "America/Los_Angeles" } },
+      {
+        name: "Rebase crew work",
+        schedule: { cron: "0 10 * * *", timezone: "America/Los_Angeles" },
+      },
+      {
+        name: "Stuck crew cleanup",
+        schedule: { cron: "30 10 * * *", timezone: "America/Los_Angeles" },
+      },
     ]);
     for (const spec of DEFAULT_ROUTINES) {
       const stored = routines.find((r) => r.name === spec.name);
       expect(stored?.instruction).toBe(host.server.files.read(spec.instructionFile));
     }
-    expect(host.automations.rows.size).toBe(2);
+    expect(host.automations.rows.size).toBe(4);
     for (const routine of routines) {
       expect(routine.automationId).not.toBeNull();
       expect(host.automations.rows.get(routine.automationId as string)?.enabled).toBe(true);
@@ -904,12 +914,126 @@ describe("default daily routines", () => {
     expect(routines.map((r) => [r.name, r.schedule])).toEqual([
       ["Backlog grooming", { cron: "0 9 * * *", timezone: "Europe/Berlin" }],
       ["Drive sweep", { cron: "30 9 * * *", timezone: "Europe/Berlin" }],
+      ["Rebase crew work", { cron: "0 10 * * *", timezone: "Europe/Berlin" }],
+      ["Stuck crew cleanup", { cron: "30 10 * * *", timezone: "Europe/Berlin" }],
     ]);
     for (const spec of DEFAULT_ROUTINES) {
       const stored = routines.find((r) => r.name === spec.name);
       expect(stored?.instruction).toBe(host.server.files.read(spec.instructionFile));
     }
     expect(allSeeded(host, "thr_legacy")).toBe(true);
+  });
+
+  function defaultSpec(key: string) {
+    const spec = DEFAULT_ROUTINES.find((entry) => entry.key === key);
+    if (spec === undefined) throw new Error(`missing default routine spec ${key}`);
+    return spec;
+  }
+
+  test("backfill adds the two new defaults to a Captain already seeded with the first two", async () => {
+    const host = await captainHost({ defaultTimezone: "America/New_York" });
+    seedPreexistingCaptain(host, "thr_seeded_two", "SeededTwo");
+    const owner: RoutineOwner = {
+      threadId: "thr_seeded_two",
+      name: "SeededTwo",
+      homeProjectId: "proj_captains",
+    };
+    for (const key of ["backlog-grooming", "drive-sweep"]) {
+      const spec = defaultSpec(key);
+      await host.server.routines.create(owner, {
+        name: spec.name,
+        instruction: host.server.files.read(spec.instructionFile),
+        schedule: { cron: spec.cron, timezone: "America/New_York" },
+      });
+      host.server.store.markDefaultRoutineSeeded("thr_seeded_two", spec.key, host.now());
+    }
+
+    const createsBefore = host.automations.calls.filter(
+      (call) => call.method === "automations_create",
+    ).length;
+    const first = await host.server.routines.backfillDefaults();
+    expect(first).toEqual({ complete: true, warnings: [] });
+    expect(allSeeded(host, "thr_seeded_two")).toBe(true);
+    expect(
+      host.automations.calls.filter((call) => call.method === "automations_create").length -
+        createsBefore,
+    ).toBe(2);
+    const routines = host.server.store.routinesOf("thr_seeded_two");
+    expect(routines.map((r) => ({ name: r.name, schedule: r.schedule }))).toEqual([
+      { name: "Backlog grooming", schedule: { cron: "0 9 * * *", timezone: "America/New_York" } },
+      { name: "Drive sweep", schedule: { cron: "30 9 * * *", timezone: "America/New_York" } },
+      { name: "Rebase crew work", schedule: { cron: "0 10 * * *", timezone: "America/New_York" } },
+      {
+        name: "Stuck crew cleanup",
+        schedule: { cron: "30 10 * * *", timezone: "America/New_York" },
+      },
+    ]);
+    for (const key of ["rebase-crew-work", "stuck-crew-cleanup"]) {
+      const spec = defaultSpec(key);
+      expect(routines.find((r) => r.name === spec.name)?.instruction).toBe(
+        host.server.files.read(spec.instructionFile),
+      );
+    }
+    expect(host.automations.rows.size).toBe(4);
+
+    const callsBeforeSecond = host.automations.calls.length;
+    const second = await host.server.routines.backfillDefaults();
+    expect(second).toEqual({ complete: true, warnings: [] });
+    expect(host.server.store.routinesOf("thr_seeded_two")).toHaveLength(4);
+    expect(host.automations.calls.length).toBe(callsBeforeSecond);
+  });
+
+  test("backfill adds only the two new defaults when the user removed an earlier default, and running again adds nothing", async () => {
+    const host = await captainHost({ defaultTimezone: "America/Los_Angeles" });
+    seedPreexistingCaptain(host, "thr_removed_one", "RemovedOne");
+    const owner: RoutineOwner = {
+      threadId: "thr_removed_one",
+      name: "RemovedOne",
+      homeProjectId: "proj_captains",
+    };
+    // Both BBP-128 defaults were seeded, then the user removed Backlog grooming.
+    const driveSweep = defaultSpec("drive-sweep");
+    await host.server.routines.create(owner, {
+      name: driveSweep.name,
+      instruction: host.server.files.read(driveSweep.instructionFile),
+      schedule: { cron: driveSweep.cron, timezone: "America/Los_Angeles" },
+    });
+    host.server.store.markDefaultRoutineSeeded("thr_removed_one", "backlog-grooming", host.now());
+    host.server.store.markDefaultRoutineSeeded("thr_removed_one", "drive-sweep", host.now());
+
+    const createsBefore = host.automations.calls.filter(
+      (call) => call.method === "automations_create",
+    ).length;
+    const first = await host.server.routines.backfillDefaults();
+    expect(first).toEqual({ complete: true, warnings: [] });
+    expect(allSeeded(host, "thr_removed_one")).toBe(true);
+    expect(
+      host.automations.calls.filter((call) => call.method === "automations_create").length -
+        createsBefore,
+    ).toBe(2);
+    expect(
+      host.server.store
+        .routinesOf("thr_removed_one")
+        .map((r) => ({ name: r.name, schedule: r.schedule })),
+    ).toEqual([
+      { name: "Drive sweep", schedule: { cron: "30 9 * * *", timezone: "America/Los_Angeles" } },
+      {
+        name: "Rebase crew work",
+        schedule: { cron: "0 10 * * *", timezone: "America/Los_Angeles" },
+      },
+      {
+        name: "Stuck crew cleanup",
+        schedule: { cron: "30 10 * * *", timezone: "America/Los_Angeles" },
+      },
+    ]);
+    expect(host.server.store.findRoutine("thr_removed_one", "Backlog grooming")).toBeNull();
+    expect(host.automations.rows.size).toBe(3);
+
+    const callsBeforeSecond = host.automations.calls.length;
+    const second = await host.server.routines.backfillDefaults();
+    expect(second).toEqual({ complete: true, warnings: [] });
+    expect(host.server.store.routinesOf("thr_removed_one")).toHaveLength(3);
+    expect(host.automations.calls.length).toBe(callsBeforeSecond);
   });
 
   test("backfill skips a default whose name already exists and running twice adds nothing", async () => {
@@ -930,7 +1054,7 @@ describe("default daily routines", () => {
     expect(first).toEqual({ complete: true, warnings: [] });
 
     const afterFirst = host.server.store.routinesOf("thr_existing");
-    expect(afterFirst).toHaveLength(2);
+    expect(afterFirst).toHaveLength(4);
     expect(afterFirst.find((r) => r.id === custom.id)).toMatchObject({
       name: "backlog grooming",
       instruction: "My custom grooming routine.",
@@ -940,11 +1064,19 @@ describe("default daily routines", () => {
       schedule: { cron: "30 9 * * *", timezone: "UTC" },
       instruction: host.server.files.read("routines/drive-sweep"),
     });
+    expect(afterFirst.find((r) => r.name === "Rebase crew work")).toMatchObject({
+      schedule: { cron: "0 10 * * *", timezone: "UTC" },
+      instruction: host.server.files.read("routines/rebase-crew-work"),
+    });
+    expect(afterFirst.find((r) => r.name === "Stuck crew cleanup")).toMatchObject({
+      schedule: { cron: "30 10 * * *", timezone: "UTC" },
+      instruction: host.server.files.read("routines/stuck-crew-cleanup"),
+    });
 
     const callsBeforeSecond = host.automations.calls.length;
     const second = await host.server.routines.backfillDefaults();
     expect(second).toEqual({ complete: true, warnings: [] });
-    expect(host.server.store.routinesOf("thr_existing")).toHaveLength(2);
+    expect(host.server.store.routinesOf("thr_existing")).toHaveLength(4);
     expect(host.automations.calls.length).toBe(callsBeforeSecond);
   });
 
@@ -955,13 +1087,21 @@ describe("default daily routines", () => {
     expect(grooming).not.toBeNull();
 
     await host.server.routines.act(grooming!, "delete");
-    expect(host.server.store.routinesOf(captainId).map((r) => r.name)).toEqual(["Drive sweep"]);
+    expect(host.server.store.routinesOf(captainId).map((r) => r.name)).toEqual([
+      "Drive sweep",
+      "Rebase crew work",
+      "Stuck crew cleanup",
+    ]);
 
     expect(await host.server.routines.backfillDefaults()).toEqual({ complete: true, warnings: [] });
     await host.reload();
     await host.server.routines.maintain();
 
-    expect(host.server.store.routinesOf(captainId).map((r) => r.name)).toEqual(["Drive sweep"]);
+    expect(host.server.store.routinesOf(captainId).map((r) => r.name)).toEqual([
+      "Drive sweep",
+      "Rebase crew work",
+      "Stuck crew cleanup",
+    ]);
     expect(host.server.store.findRoutine(captainId, "Backlog grooming")).toBeNull();
   });
 
@@ -982,10 +1122,14 @@ describe("default daily routines", () => {
     expect(first.warnings).toHaveLength(1);
     expect(host.server.store.defaultRoutineSeeded("thr_existing", "backlog-grooming")).toBe(true);
     expect(host.server.store.defaultRoutineSeeded("thr_existing", "drive-sweep")).toBe(false);
+    expect(host.server.store.defaultRoutineSeeded("thr_existing", "rebase-crew-work")).toBe(false);
+    expect(host.server.store.defaultRoutineSeeded("thr_existing", "stuck-crew-cleanup")).toBe(
+      false,
+    );
     const grooming = host.server.store.findRoutine("thr_existing", "Backlog grooming");
     expect(grooming).not.toBeNull();
 
-    // User deletes the first default while the second default is still waiting to retry.
+    // User deletes the first default while the remaining defaults are still waiting to retry.
     host.automations.call = origCall;
     await host.server.routines.act(grooming!, "delete");
     expect(host.server.store.routinesOf("thr_existing")).toEqual([]);
@@ -995,8 +1139,10 @@ describe("default daily routines", () => {
     expect(allSeeded(host, "thr_existing")).toBe(true);
     expect(host.server.store.routinesOf("thr_existing").map((r) => r.name)).toEqual([
       "Drive sweep",
+      "Rebase crew work",
+      "Stuck crew cleanup",
     ]);
-    expect(host.automations.rows.size).toBe(1);
+    expect(host.automations.rows.size).toBe(3);
   });
 
   test("seeding stops at the first transient failure, coalesces concurrent backfills, and dedupes warnings", async () => {
@@ -1015,7 +1161,7 @@ describe("default daily routines", () => {
     const [r1, r2] = await Promise.all([first, second]);
     expect(r1).toEqual(r2);
     expect(r1.complete).toBe(false);
-    // Stopped at the first transient failure instead of attempting the second default too.
+    // Stopped at the first transient failure instead of attempting the remaining defaults too.
     expect(r1.warnings).toHaveLength(1);
     expect(
       host.automations.calls.filter((call) => call.method === "automations_create"),
@@ -1043,7 +1189,7 @@ describe("default daily routines", () => {
     expect(await host.server.routines.backfillDefaults()).toEqual({ complete: true, warnings: [] });
     expect(host.harness.inspection.sdk.callsTo("threads.get").length).toBe(readsBefore);
 
-    // Once unarchived, the next backfill seeds both defaults.
+    // Once unarchived, the next backfill seeds all four defaults.
     host.updateThread("thr_archived", { archivedAt: null });
     await host.harness.behavior.emitThreadEvent("thread.unarchived", {
       thread: makeThreadResponse({ id: "thr_archived", archivedAt: null }),
@@ -1052,6 +1198,8 @@ describe("default daily routines", () => {
     expect(host.server.store.routinesOf("thr_archived").map((r) => r.name)).toEqual([
       "Backlog grooming",
       "Drive sweep",
+      "Rebase crew work",
+      "Stuck crew cleanup",
     ]);
   });
 
@@ -1085,8 +1233,15 @@ describe("default daily routines", () => {
     expect(host.server.store.routinesOf("thr_full")).toHaveLength(ROUTINES_PER_CAPTAIN);
   });
 
-  test("default routine prompts are non-empty, under 4000 chars, and pass routineFieldsSchema", async () => {
+  test("default routine prompts are non-empty, under 4000 chars, pass routineFieldsSchema, and use distinct daily crons", async () => {
     const host = await captainHost();
+    expect(DEFAULT_ROUTINES.map((spec) => [spec.key, spec.name, spec.cron])).toEqual([
+      ["backlog-grooming", "Backlog grooming", "0 9 * * *"],
+      ["drive-sweep", "Drive sweep", "30 9 * * *"],
+      ["rebase-crew-work", "Rebase crew work", "0 10 * * *"],
+      ["stuck-crew-cleanup", "Stuck crew cleanup", "30 10 * * *"],
+    ]);
+    expect(new Set(DEFAULT_ROUTINES.map((spec) => spec.cron)).size).toBe(DEFAULT_ROUTINES.length);
     for (const spec of DEFAULT_ROUTINES) {
       const instruction = host.server.files.read(spec.instructionFile);
       expect(instruction.length).toBeGreaterThan(0);
@@ -1098,6 +1253,31 @@ describe("default daily routines", () => {
           schedule: { cron: spec.cron, timezone: "UTC" },
         }).success,
       ).toBe(true);
+    }
+
+    const captainInstructions = host.server.files.read("captain", {
+      name: "Plugins",
+      drive: "/drive",
+    });
+    const routinesSkill = readFileSync(
+      join(host.server.files.root, "skills/captain-routines/SKILL.md"),
+      "utf8",
+    );
+    const captainDefaultsParagraph = captainInstructions
+      .split("\n")
+      .find((line) => line.includes("Every Captain starts with"));
+    const skillDefaultsParagraph = /## Built-in defaults\n+([^\n]+)/u.exec(routinesSkill)?.[1];
+    expect(captainDefaultsParagraph).toBeDefined();
+    expect(skillDefaultsParagraph).toBeDefined();
+    for (const paragraph of [captainDefaultsParagraph!, skillDefaultsParagraph!]) {
+      for (const spec of DEFAULT_ROUTINES) {
+        expect(paragraph).toContain(spec.name);
+      }
+      expect(paragraph).toMatch(/\b(?:change|edit)\b.*\bremove\b/iu);
+      expect(paragraph).toMatch(/\bremoved default\b/iu);
+    }
+    for (const spec of DEFAULT_ROUTINES) {
+      expect(skillDefaultsParagraph!).toContain(spec.cron);
     }
   });
 });

@@ -217,7 +217,7 @@ describe("bb captain new", () => {
     expect(result.stderr).toMatch(/warning: push level of thr_\w+ not set to input-only/u);
   });
 
-  test("seeds Backlog grooming (09:00) and Drive sweep (09:30) daily routines on a new Captain", async () => {
+  test("seeds all four daily default routines on a new Captain with staggered crons", async () => {
     const host = await captainHost({ defaultTimezone: "America/Los_Angeles" });
 
     const captainId = await newCaptain(host);
@@ -238,6 +238,20 @@ describe("bb captain new", () => {
         schedule: { cron: "30 9 * * *", timezone: "America/Los_Angeles" },
         enabled: true,
       },
+      {
+        name: "Rebase crew work",
+        state: "active",
+        when: "Every day at 10:00 AM",
+        schedule: { cron: "0 10 * * *", timezone: "America/Los_Angeles" },
+        enabled: true,
+      },
+      {
+        name: "Stuck crew cleanup",
+        state: "active",
+        when: "Every day at 10:30 AM",
+        schedule: { cron: "30 10 * * *", timezone: "America/Los_Angeles" },
+        enabled: true,
+      },
     ]);
     for (const spec of DEFAULT_ROUTINES) {
       const stored = host.server.store.findRoutine(captainId, spec.name);
@@ -250,7 +264,11 @@ describe("bb captain new", () => {
     const rerun = await run(host, ["new", "--name", "Plugins", "--repo", "bb-plugins"]);
     expect(rerun.exitCode).toBe(0);
     const afterRerun = json((await run(host, ["routine", "list", "--json"], captainId)).stdout);
-    expect(afterRerun.results.map((r) => r["name"])).toEqual(["Backlog grooming"]);
+    expect(afterRerun.results.map((r) => r["name"])).toEqual([
+      "Backlog grooming",
+      "Rebase crew work",
+      "Stuck crew cleanup",
+    ]);
   });
 
   test("Automations being down during new warns instead of failing and leaves seeding pending", async () => {
@@ -275,6 +293,8 @@ describe("bb captain new", () => {
     expect(host.server.store.routinesOf(captainId).map((r) => r.name)).toEqual([
       "Backlog grooming",
       "Drive sweep",
+      "Rebase crew work",
+      "Stuck crew cleanup",
     ]);
   });
 });

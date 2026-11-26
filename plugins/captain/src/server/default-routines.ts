@@ -25,7 +25,7 @@ export type DefaultRoutineSpec = {
   readonly instructionFile: string;
 };
 
-/** Staggered by 30 minutes in the bb server's time zone so the two never land in one turn. */
+/** Staggered by 30 minutes in the bb server's time zone so no two defaults land in one turn. */
 export const DEFAULT_ROUTINES: readonly DefaultRoutineSpec[] = [
   {
     key: "backlog-grooming",
@@ -38,6 +38,18 @@ export const DEFAULT_ROUTINES: readonly DefaultRoutineSpec[] = [
     name: "Drive sweep",
     cron: "30 9 * * *",
     instructionFile: "routines/drive-sweep",
+  },
+  {
+    key: "rebase-crew-work",
+    name: "Rebase crew work",
+    cron: "0 10 * * *",
+    instructionFile: "routines/rebase-crew-work",
+  },
+  {
+    key: "stuck-crew-cleanup",
+    name: "Stuck crew cleanup",
+    cron: "30 10 * * *",
+    instructionFile: "routines/stuck-crew-cleanup",
   },
 ];
 

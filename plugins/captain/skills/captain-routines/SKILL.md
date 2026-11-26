@@ -9,7 +9,7 @@ A routine is a scheduled message to you. bb Automations holds the schedule; each
 
 ## Built-in defaults
 
-Every Captain starts with two daily routines in the bb server's time zone: **Backlog grooming** (`0 9 * * *`, 09:00) and **Drive sweep** (`30 9 * * *`, 09:30). They are ordinary routines — pause, change, or remove them like any other, and a removed default never comes back.
+Every Captain starts with four daily routines in the bb server's time zone: **Backlog grooming** (`0 9 * * *`, 09:00), **Drive sweep** (`30 9 * * *`, 09:30), **Rebase crew work** (`0 10 * * *`, 10:00), and **Stuck crew cleanup** (`30 10 * * *`, 10:30). They are ordinary routines — pause, change, or remove them like any other, and a removed default never comes back.
 
 ## Set one up
 

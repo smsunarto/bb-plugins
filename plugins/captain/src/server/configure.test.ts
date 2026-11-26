@@ -3,6 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { budget } from "./configure.ts";
+import { DEFAULT_ROUTINES } from "./default-routines.ts";
 import { captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
 
 const MAX = 32_768;
@@ -54,6 +55,9 @@ describe("configure", () => {
     expect(resolved.instructions).toContain(join(host.storageRoot, captainId));
     expect(resolved.instructions).toContain("Always answer in British English.");
     expect(resolved.instructions).toContain("- skills/release/SKILL.md");
+    for (const spec of DEFAULT_ROUTINES) {
+      expect(resolved.instructions).toContain(spec.name);
+    }
     expect(resolved.instructions).not.toContain("You are crew");
   });
 
