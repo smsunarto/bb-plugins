@@ -9,7 +9,7 @@ export interface PublishedSidebarActions {
   /** False for a thread that stays open (lib/long-lived). */
   canSettle(threadId: string): boolean;
   /** Opens the New Captain dialog hosted by the mounted inbox. */
-  openNewCaptain?(): void;
+  openNewCaptain(): void;
 }
 
 let current: PublishedSidebarActions | null = null;
@@ -35,7 +35,6 @@ export function hasSidebarActions(): boolean {
   return current !== null;
 }
 
-/** Whether the mounted list would settle `threadId`; false with no list mounted. */
 export function canSettleThread(threadId: string): boolean {
   return current?.canSettle(threadId) ?? false;
 }
@@ -45,7 +44,7 @@ export function settleThread(threadId: string): void {
 }
 
 export function openNewCaptain(): void {
-  current?.openNewCaptain?.();
+  current?.openNewCaptain();
 }
 
 const subscribeBridge = (listener: () => void) => {
@@ -55,16 +54,11 @@ const subscribeBridge = (listener: () => void) => {
   };
 };
 
-const hasNewCaptainHandler = () => current?.openNewCaptain !== undefined;
-
-/** Whether a mounted inbox is listening for `openNewCaptain()`. */
-export function useCanOpenNewCaptain(): boolean {
-  return useSyncExternalStore(subscribeBridge, hasNewCaptainHandler, hasNewCaptainHandler);
+/** Whether a mounted inbox has published its actions (`settle`, `openNewCaptain`). */
+export function useHasSidebarActions(): boolean {
+  return useSyncExternalStore(subscribeBridge, hasSidebarActions, hasSidebarActions);
 }
 
 // The palette row still asks for archiveThread; a settle is an archive plus
-// the advance, so it routes through the same dispatcher. Stays until the
-// palette's own change can land on its stack.
-export function archiveThread(threadId: string): void {
-  settleThread(threadId);
-}
+// advancing to the next visible row.
+export const archiveThread = settleThread;

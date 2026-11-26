@@ -55,6 +55,15 @@ function familyNeedsUser(node: InboxThreadNode): boolean {
  * A project missing from the order — a stale thread view, mostly — sorts
  * after every known project and before the personal one.
  */
+function ensureNamedGroup(groups: Map<string, ProjectGroup>, projectId: string): ProjectGroup {
+  let group = groups.get(projectId);
+  if (group === undefined) {
+    group = { projectId, rows: [], families: 0, attention: 0 };
+    groups.set(projectId, group);
+  }
+  return group;
+}
+
 export function groupRowsByProject(
   rows: readonly VisibleInboxRow[],
   projectOrder: readonly string[] = [],
@@ -71,11 +80,7 @@ export function groupRowsByProject(
         ungrouped ??= { projectId: "", rows: [], families: 0, attention: 0, ungrouped: true };
         current = ungrouped;
       } else {
-        current = groups.get(projectId) ?? null;
-        if (current === null) {
-          current = { projectId, rows: [], families: 0, attention: 0 };
-          groups.set(projectId, current);
-        }
+        current = ensureNamedGroup(groups, projectId);
       }
       current.families += 1;
       // The family's loudest status, not the root's own: the count shows while

@@ -499,6 +499,80 @@ describe("inbox families", () => {
     assert.deepEqual(build(2_000, false), ["a", "b"]);
   });
 
+  it("keeps a family pinned when a descendant is pinned", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "other", latestAttentionAt: 900 }),
+        thread({ id: "root", indicator: "runtime" }),
+        thread({ id: "child", parentThreadId: "root", isPinned: true }),
+      ],
+      active,
+    );
+    assert.deepEqual(ids(visibleInboxRows(tree, new Set())), ["root", "child", "other"]);
+    assert.equal(tree[0]?.shelf, "pinned");
+    assert.equal(tree[0]?.thread.isPinned, false);
+  });
+
+  it("reveals matching descendants with ancestors and preserves a matching parent's family", () => {
+    const input = [
+      thread({ id: "root", title: "Project" }),
+      thread({ id: "child", title: null, titleFallback: "Needle", parentThreadId: "root" }),
+      thread({ id: "sibling", title: "Elsewhere", parentThreadId: "root" }),
+    ];
+    assert.deepEqual(
+      ids(
+        visibleInboxRows(buildInboxTree(input, active, " NEEDLE "), new Set(["root"]), " NEEDLE "),
+      ),
+      ["root", "child"],
+    );
+    assert.deepEqual(
+      ids(visibleInboxRows(buildInboxTree(input, active, "project"), new Set(["root"]), "project")),
+      ["root", "child", "sibling"],
+    );
+    assert.deepEqual(
+      ids(visibleInboxRows(buildInboxTree(input, active, "   "), new Set(), "   ")),
+      ["root", "child", "sibling"],
+    );
+  });
+
+  it("keeps stable creation and id ties without mutating the roster", () => {
+    for (const indicator of ["none", "runtime"] as const) {
+      const input = Object.freeze([
+        Object.freeze(thread({ id: "b", createdAt: 1, indicator })),
+        Object.freeze(thread({ id: "c", createdAt: 2, indicator })),
+        Object.freeze(thread({ id: "a", createdAt: 1, indicator })),
+      ]);
+      const tree = buildInboxTree(input, active);
+      assert.deepEqual(ids(visibleInboxRows(tree, new Set())), ["c", "a", "b"]);
+      assert.deepEqual(
+        input.map((item) => item.id),
+        ["b", "c", "a"],
+      );
+    }
+  });
+
+  it("seeds a first build from each shelf's arrival clock", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "waiting-old", indicator: "runtime", updatedAt: 10, latestAttentionAt: 1000 }),
+        thread({ id: "renamed", latestAttentionAt: 10, updatedAt: 900 }),
+        thread({ id: "active", latestAttentionAt: 50, updatedAt: 10 }),
+        thread({ id: "waiting-new", indicator: "runtime", updatedAt: 20, latestAttentionAt: 1 }),
+        thread({ id: "settled-first", isArchived: true, archivedAt: 1 }),
+        thread({ id: "settled-second", isArchived: true, archivedAt: 500 }),
+      ],
+      active,
+    );
+    assert.deepEqual(
+      tree.map((node) => node.thread.id),
+      ["active", "renamed", "waiting-new", "waiting-old", "settled-second", "settled-first"],
+    );
+  });
+});
+
+describe("Captains shelf", () => {
+  const active = () => "active" as const;
+
   it("places listed Captain threads on the captains shelf regardless of project, pin, or activity", () => {
     const tree = buildInboxTree(
       [
@@ -650,76 +724,6 @@ describe("inbox families", () => {
         ["cap-pinned", "pinned"],
         ["cap-idle", "nextAction"],
       ],
-    );
-  });
-
-  it("keeps a family pinned when a descendant is pinned", () => {
-    const tree = buildInboxTree(
-      [
-        thread({ id: "other", latestAttentionAt: 900 }),
-        thread({ id: "root", indicator: "runtime" }),
-        thread({ id: "child", parentThreadId: "root", isPinned: true }),
-      ],
-      active,
-    );
-    assert.deepEqual(ids(visibleInboxRows(tree, new Set())), ["root", "child", "other"]);
-    assert.equal(tree[0]?.shelf, "pinned");
-    assert.equal(tree[0]?.thread.isPinned, false);
-  });
-
-  it("reveals matching descendants with ancestors and preserves a matching parent's family", () => {
-    const input = [
-      thread({ id: "root", title: "Project" }),
-      thread({ id: "child", title: null, titleFallback: "Needle", parentThreadId: "root" }),
-      thread({ id: "sibling", title: "Elsewhere", parentThreadId: "root" }),
-    ];
-    assert.deepEqual(
-      ids(
-        visibleInboxRows(buildInboxTree(input, active, " NEEDLE "), new Set(["root"]), " NEEDLE "),
-      ),
-      ["root", "child"],
-    );
-    assert.deepEqual(
-      ids(visibleInboxRows(buildInboxTree(input, active, "project"), new Set(["root"]), "project")),
-      ["root", "child", "sibling"],
-    );
-    assert.deepEqual(
-      ids(visibleInboxRows(buildInboxTree(input, active, "   "), new Set(), "   ")),
-      ["root", "child", "sibling"],
-    );
-  });
-
-  it("keeps stable creation and id ties without mutating the roster", () => {
-    for (const indicator of ["none", "runtime"] as const) {
-      const input = Object.freeze([
-        Object.freeze(thread({ id: "b", createdAt: 1, indicator })),
-        Object.freeze(thread({ id: "c", createdAt: 2, indicator })),
-        Object.freeze(thread({ id: "a", createdAt: 1, indicator })),
-      ]);
-      const tree = buildInboxTree(input, active);
-      assert.deepEqual(ids(visibleInboxRows(tree, new Set())), ["c", "a", "b"]);
-      assert.deepEqual(
-        input.map((item) => item.id),
-        ["b", "c", "a"],
-      );
-    }
-  });
-
-  it("seeds a first build from each shelf's arrival clock", () => {
-    const tree = buildInboxTree(
-      [
-        thread({ id: "waiting-old", indicator: "runtime", updatedAt: 10, latestAttentionAt: 1000 }),
-        thread({ id: "renamed", latestAttentionAt: 10, updatedAt: 900 }),
-        thread({ id: "active", latestAttentionAt: 50, updatedAt: 10 }),
-        thread({ id: "waiting-new", indicator: "runtime", updatedAt: 20, latestAttentionAt: 1 }),
-        thread({ id: "settled-first", isArchived: true, archivedAt: 1 }),
-        thread({ id: "settled-second", isArchived: true, archivedAt: 500 }),
-      ],
-      active,
-    );
-    assert.deepEqual(
-      tree.map((node) => node.thread.id),
-      ["active", "renamed", "waiting-new", "waiting-old", "settled-second", "settled-first"],
     );
   });
 });

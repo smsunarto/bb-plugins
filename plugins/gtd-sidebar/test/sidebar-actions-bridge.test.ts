@@ -15,6 +15,7 @@ function fakeEntry(settled: string[], stayOpen: readonly string[] = []): Publish
   return {
     settle: (threadId) => settled.push(threadId),
     canSettle: (threadId) => !stayOpen.includes(threadId),
+    openNewCaptain: () => {},
   };
 }
 

@@ -18,6 +18,11 @@ export const captainContract = defineRpcContract({
     output: z.object({ ids: z.array(threadId) }).strict(),
     tags: () => ["captains"],
   },
+  homeProjects: {
+    input: z.object({}).strict(),
+    output: z.object({ projectIds: z.array(z.string()) }).strict(),
+    tags: () => ["captains"],
+  },
   needsYou: {
     input: z.object({ keys: z.array(z.string().min(1).max(200)).max(500) }).strict(),
     output: z.record(z.string(), z.number().int().nonnegative()),

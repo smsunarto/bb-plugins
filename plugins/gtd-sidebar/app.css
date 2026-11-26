@@ -665,7 +665,8 @@
 }
 
 [data-gtd-phone-nav] [data-sidebar-navigation-item],
-[data-gtd-phone-nav] [data-sidebar-navigation-more] {
+[data-gtd-phone-nav] [data-sidebar-navigation-more],
+[data-gtd-phone-nav] [data-gtd-new-captain-placeholder] {
   height: var(--gtd-nav-row-height);
   gap: 12px;
   padding-inline: 4px 8px;
