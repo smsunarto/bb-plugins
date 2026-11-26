@@ -7,22 +7,25 @@ import {
   type PluginCliContext,
 } from "@get-bb/plugin-sdk";
 import { catalogChange, type CatalogChange } from "../../catalog/contract.ts";
-import type { CatalogContext } from "../../catalog/import.ts";
+import { MAX_FILE_BYTES } from "../../catalog/edit-rules.ts";
 import type { catalogHandlers } from "../../catalog/rpc.ts";
-import { callerHost } from "../lib/targets.ts";
+import type { AgentInstructionsContext } from "../lib/context.ts";
+import { callerEnvironment } from "../lib/targets.ts";
 
 type Handlers = ReturnType<typeof catalogHandlers>;
 
 const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 const asJson = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
 
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && /ENOENT|Path does not exist|not found/i.test(error.message);
+}
+
 /**
- * Commands that read and change catalog skills and global docs, for agents.
- * They go through the editor's handlers, so a change is checked, stored and
- * published exactly as a save in the Global tab is. Every change names the
- * sha256 it replaces, so an edit made elsewhere is never overwritten.
+ * Thin CLI wrappers over the file-backed catalog handlers.
+ * Agents can also edit files directly in the folder returned by `bb agent-instructions path`.
  */
-export function editCommands(ctx: CatalogContext, handlers: Handlers) {
+export function editCommands(ctx: AgentInstructionsContext, handlers: Handlers) {
   const json = { type: "boolean", description: "Print the result as JSON" } as const;
   const expect = {
     type: "string",
@@ -30,7 +33,6 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
     placeholder: "sha256",
     description: "The sha256 that `show` printed, so a change made since then is not overwritten",
   } as const;
-  // A file keeps its exact bytes and has no argv size limit; --content suits short text.
   const source = {
     file: {
       type: "string",
@@ -45,11 +47,10 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
     host: {
       type: "string",
       placeholder: "host-id",
-      description: "Host that has --file. Defaults to this thread's host",
+      description: "Host that has --file (outside a bb thread; threads always use their own host)",
     },
   } as const;
 
-  /** The new text: --content as given, or --file read on the calling thread's host. */
   async function newText(
     options: { file?: string | undefined; content?: string | undefined; host?: string | undefined },
     context: PluginCliContext,
@@ -60,21 +61,66 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
       });
     if (options.content !== undefined) return options.content;
     const file = posix.resolve(context.cwd ?? "/", options.file ?? "");
-    const hostId = options.host ?? (await callerHost(ctx.bb, context.threadId));
+    const env = await callerEnvironment(ctx.bb, context.threadId);
+    const threadHost = env?.hostId;
+    if (context.threadId && options.host && options.host !== threadHost) {
+      throw new PluginCliError("Cannot override --host to another host from inside a bb thread", {
+        code: "forbidden_host",
+      });
+    }
+    const hostId = threadHost ?? options.host;
     if (!hostId)
       throw new PluginCliError("--file needs --host outside a bb thread", { code: "no_host" });
-    const { content } = await ctx.host.call(
-      "readText",
-      { rootPath: posix.dirname(file), path: posix.basename(file) },
-      { hostId, timeoutMs: 60_000 },
-    );
-    if (content === null)
-      throw new PluginCliError(`${file} does not exist on host ${hostId}`, { code: "no_file" });
-    return content;
+
+    let rootPath: string;
+    if (context.threadId) {
+      // Confine thread `--file` reads to the thread's workspace or this host's editable instructions root.
+      const trustedRoots: string[] = [];
+      if (env?.path) trustedRoots.push(posix.resolve(env.path));
+      const editable = await ctx.sync.editablePathForHost(hostId).catch(() => null);
+      if (editable?.path) trustedRoots.push(posix.resolve(editable.path));
+      const matched = trustedRoots.find(
+        (root) => file === root || file.startsWith(root.endsWith("/") ? root : `${root}/`),
+      );
+      if (!matched) {
+        throw new PluginCliError(
+          `${file} is outside this thread's workspace and editable instructions folder`,
+          { code: "forbidden_path" },
+        );
+      }
+      rootPath = matched;
+    } else {
+      rootPath = posix.dirname(file);
+    }
+
+    let read;
+    try {
+      read = await ctx.bb.sdk.files.read({
+        hostId,
+        path: file,
+        rootPath,
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        throw new PluginCliError(`${file} does not exist on host ${hostId}`, { code: "no_file" });
+      }
+      throw error;
+    }
+    if (read.contentEncoding !== "utf8") {
+      throw new PluginCliError(`${file} is not a UTF-8 text file`, { code: "not_text" });
+    }
+    if (read.sizeBytes > MAX_FILE_BYTES) {
+      throw new PluginCliError(`${file} exceeds the ${MAX_FILE_BYTES}-byte editor limit`, {
+        code: "too_large",
+      });
+    }
+    return read.content;
   }
 
-  function skill(name: string) {
-    const found = ctx.catalog.listing().skills.find((s) => s.name === name);
+  async function skill(name: string) {
+    await ctx.store.reloadFromDisk("disk");
+    const found = ctx.store.findSkill(name);
     if (!found)
       throw new PluginCliError(`No skill ${name} in the catalog`, {
         code: "unknown_skill",
@@ -83,8 +129,9 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
     return found;
   }
 
-  function doc(id: string) {
-    const found = ctx.catalog.listing().docs.find((d) => d.id === id);
+  async function doc(id: string) {
+    await ctx.store.reloadFromDisk("disk");
+    const found = ctx.store.findDoc(id);
     if (!found)
       throw new PluginCliError(`No doc ${id} in the catalog`, {
         code: "unknown_doc",
@@ -93,9 +140,8 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
     return found;
   }
 
-  /** Reads a file the way the editor opens it. `content` is null for a binary file. */
-  function read(target: { skill: string; path: string } | { doc: string }) {
-    const file = handlers.catalogFile(target);
+  async function read(target: { skill: string; path: string } | { doc: string }) {
+    const file = await handlers.catalogFile(target);
     const label = "doc" in target ? target.doc : `${target.skill}/${target.path}`;
     if (file.sha256 === null)
       throw new PluginCliError(`${label} does not exist`, {
@@ -105,7 +151,6 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
     return { ...file, sha256: file.sha256 };
   }
 
-  /** Text mode prints only text; `--json` still gives a binary file's sha256 for a delete. */
   function textOf(file: { content: string | null }, label: string) {
     if (file.content === null)
       throw new PluginCliError(`${label} is not a text file`, {
@@ -115,11 +160,6 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
     return file.content;
   }
 
-  /**
-   * Parses a change at this boundary, applies it, and reports the outcome. A
-   * change that saved but did not publish exits 1, since new threads will not
-   * see it until `publish` succeeds.
-   */
   async function apply(input: unknown, label: string, json: boolean | undefined) {
     const parsed = catalogChange.safeParse(input);
     if (!parsed.success)
@@ -160,16 +200,12 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
     };
   }
 
-  /** Writing back what `show` printed would add a revision and make an imported entry authored. */
-  const unchanged = (text: string, expected: string, label: string, json: boolean | undefined) =>
-    sha256(text) !== expected
-      ? null
-      : {
-          exitCode: 0,
-          stdout: json
-            ? asJson({ outcome: "unchanged", sha256: expected })
-            : `${label}: unchanged; nothing saved\n`,
-        };
+  const unchanged = (label: string, expected: string, json: boolean | undefined) => ({
+    exitCode: 0,
+    stdout: json
+      ? asJson({ outcome: "unchanged", sha256: expected })
+      : `${label}: unchanged; nothing saved\n`,
+  });
 
   const commands: Record<string, PluginCliCommand> = {
     "skill show": cliCommand({
@@ -180,10 +216,10 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
       ],
       options: { json },
       async run({ positionals, options }) {
-        const found = skill(positionals.name);
+        const found = await skill(positionals.name);
         const path = positionals.path ?? "SKILL.md";
         const label = `${found.name}/${path}`;
-        const file = read({ skill: found.name, path });
+        const file = await read({ skill: found.name, path });
         const files = found.files.map((f) => f.path);
         if (options.json)
           return {
@@ -201,7 +237,7 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
     }),
 
     "skill create": cliCommand({
-      summary: "Create a catalog skill with a starter SKILL.md, then edit it with `skill write`",
+      summary: "Create a catalog skill with a starter SKILL.md",
       positionals: [
         {
           name: "name",
@@ -238,22 +274,21 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
         json,
       },
       async run({ positionals, options }, context) {
-        const name = skill(positionals.name).name;
+        const name = (await skill(positionals.name)).name;
         const label = `${name}/${positionals.path}`;
         const content = await newText(options, context);
-        return (
-          unchanged(content, options.expect, label, options.json) ??
-          apply(
-            {
-              op: "saveFile",
-              skill: name,
-              path: positionals.path,
-              content,
-              expectedSha256: options.expect === "new" ? null : options.expect,
-            },
-            label,
-            options.json,
-          )
+        if (sha256(content) === options.expect)
+          return unchanged(label, options.expect, options.json);
+        return apply(
+          {
+            op: "saveFile",
+            skill: name,
+            path: positionals.path,
+            content,
+            expectedSha256: options.expect === "new" ? null : options.expect,
+          },
+          label,
+          options.json,
         );
       },
     }),
@@ -271,8 +306,8 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
         },
         json,
       },
-      run({ positionals, options }) {
-        const name = skill(positionals.name).name;
+      async run({ positionals, options }) {
+        const name = (await skill(positionals.name)).name;
         const path = positionals.path;
         return path === undefined
           ? apply({ op: "deleteSkill", name, expectedTreeSha: options.expect }, name, options.json)
@@ -289,8 +324,8 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
       positionals: [{ name: "id", description: "Doc id from `catalog`", required: true }],
       options: { json },
       async run({ positionals, options }) {
-        const found = doc(positionals.id);
-        const file = read({ doc: found.id });
+        const found = await doc(positionals.id);
+        const file = await read({ doc: found.id });
         if (options.json)
           return {
             exitCode: 0,
@@ -309,12 +344,15 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
       positionals: [{ name: "id", description: "Doc id from `catalog`", required: true }],
       options: { ...source, expect, json },
       async run({ positionals, options }, context) {
-        const id = doc(positionals.id).id;
-        // Docs are stored trimmed, as the import stores them, so an editor's final newline is no change.
+        const found = await doc(positionals.id);
         const body = (await newText(options, context)).trim();
-        return (
-          unchanged(body, options.expect, id, options.json) ??
-          apply({ op: "saveDoc", id, body, expectedSha256: options.expect }, id, options.json)
+        const current = await read({ doc: found.id });
+        if (current.sha256 === options.expect && current.content?.trim() === body)
+          return unchanged(found.id, options.expect, options.json);
+        return apply(
+          { op: "saveDoc", id: found.id, body, expectedSha256: options.expect },
+          found.id,
+          options.json,
         );
       },
     }),
@@ -323,8 +361,8 @@ export function editCommands(ctx: CatalogContext, handlers: Handlers) {
       summary: "Delete a global instructions doc; the Global tab can restore it",
       positionals: [{ name: "id", description: "Doc id from `catalog`", required: true }],
       options: { expect, json },
-      run: ({ positionals, options }) => {
-        const id = doc(positionals.id).id;
+      async run({ positionals, options }) {
+        const id = (await doc(positionals.id)).id;
         return apply({ op: "deleteDoc", id, expectedSha256: options.expect }, id, options.json);
       },
     }),

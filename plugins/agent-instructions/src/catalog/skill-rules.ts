@@ -9,7 +9,7 @@ export const MAX_SKILL_FILES = 1000;
 
 export type Frontmatter = { name: string; description: string };
 
-const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+export const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
 /** The skill's `name` and `description`, or why bb would skip it. */
 export function parseFrontmatter(text: string): Frontmatter | { error: string } {
@@ -34,13 +34,6 @@ export function parseFrontmatter(text: string): Frontmatter | { error: string } 
   return { name, description };
 }
 
-/** Rewrites the frontmatter `name:` line; the body is untouched. */
-export function renameFrontmatter(text: string, from: string, to: string): string {
-  return text.replace(FRONTMATTER, (block) =>
-    block.replace(new RegExp(`^(name:\\s*["']?)${from}(["']?\\s*)$`, "m"), `$1${to}$2`),
-  );
-}
-
 // An absolute path into a provider's or ~/.agents' skill folders only works
 // where dotfiles installed it; bb publishes skills at content-addressed paths.
 // The last segment must look like a skill or plugin folder, so provider files
@@ -55,48 +48,6 @@ const FENCED_CODE = /^(```|~~~)[^\n]*\n[\s\S]*?^\1[ \t]*$/gm;
 
 const isRelative = (target: string) =>
   !/^[a-z][a-z0-9+.-]*:/i.test(target) && !target.startsWith("#") && !target.startsWith("/");
-
-/** Applies `edit` to the text outside fenced code; links inside fences are examples. */
-function outsideFences(text: string, edit: (chunk: string) => string): string {
-  let out = "";
-  let last = 0;
-  for (const fence of text.matchAll(FENCED_CODE)) {
-    out += edit(text.slice(last, fence.index)) + fence[0];
-    last = fence.index + fence[0].length;
-  }
-  return out + edit(text.slice(last));
-}
-
-/**
- * Points links into other catalog skills at bb's flat published layout,
- * `<name>/<path>`, where a skill's folder is its catalog name rather than its
- * source folder. `skillDirs` maps each source folder, relative to the
- * checkout, to its catalog name. Other links are left for `pathProblems`.
- */
-export function relinkSkills(
-  file: { dir: string; name: string; path: string },
-  text: string,
-  skillDirs: ReadonlyMap<string, string>,
-): string {
-  return outsideFences(text, (chunk) =>
-    chunk.replace(MARKDOWN_LINK, (whole, inline?: string, definition?: string) => {
-      const target = (inline ?? definition)!;
-      if (!isRelative(target)) return whole;
-      const bare = target.split(/[#?]/)[0]!;
-      const resolved = posix.normalize(posix.join(file.dir, posix.dirname(file.path), bare));
-      if (resolved === file.dir || resolved.startsWith(`${file.dir}/`)) return whole;
-      for (const [dir, name] of skillDirs) {
-        if (resolved !== dir && !resolved.startsWith(`${dir}/`)) continue;
-        const published = posix.join(name, resolved.slice(dir.length));
-        const from = posix.join(file.name, posix.dirname(file.path));
-        const relinked = posix.relative(from, published) + target.slice(bare.length);
-        const at = whole.indexOf(target, whole.search(/\]\(|\]:/));
-        return whole.slice(0, at) + relinked + whole.slice(at + target.length);
-      }
-      return whole;
-    }),
-  );
-}
 
 /**
  * Paths in one skill file that will not resolve once the skill is published
@@ -118,28 +69,6 @@ export function pathProblems(path: string, text: string, siblings: ReadonlySet<s
     problems.add(`${path}: links outside the skill folder (${target})`);
   }
   return [...problems];
-}
-
-const NAMESPACED = /(?<![\w/.:-])([a-z0-9][a-z0-9-]*):([a-z0-9][a-z0-9-]*|\*)(?![\w-])/g;
-
-/**
- * Replaces `plugin:skill` references with the skill's flat catalog name, and
- * reports `plugin:*` group references, which have no flat equivalent.
- */
-export function rewriteNamespaced(
-  text: string,
-  names: ReadonlyMap<string, string>,
-  plugins: ReadonlySet<string>,
-): { text: string; groups: string[] } {
-  const groups = new Set<string>();
-  const rewritten = text.replace(NAMESPACED, (whole, plugin: string, skill: string) => {
-    if (skill === "*") {
-      if (plugins.has(plugin)) groups.add(whole);
-      return whole;
-    }
-    return names.get(`${plugin}:${skill}`) ?? whole;
-  });
-  return { text: rewritten, groups: [...groups] };
 }
 
 /** Relative link targets outside code fences; they break wherever the text is published alone. */

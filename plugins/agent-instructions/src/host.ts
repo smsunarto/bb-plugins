@@ -1,9 +1,11 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
-import { catalogHostHandlers } from "./catalog/host.ts";
 import { documentHostHandlers } from "./documents/host.ts";
-import { hostContract } from "./host-contract.ts";
+import { hostContract, hostSignals } from "./host-contract.ts";
+import { disposeSyncHost, syncHostHandlers } from "./sync/host.ts";
 
 export default experimental_defineHostEntry({
   contract: hostContract,
-  handlers: { ...documentHostHandlers, ...catalogHostHandlers },
+  experimental_signals: hostSignals,
+  handlers: { ...documentHostHandlers, ...syncHostHandlers },
+  dispose: disposeSyncHost,
 });

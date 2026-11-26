@@ -104,6 +104,8 @@ function viewport(width: number) {
 const rpc = {
   catalog: () => ({
     revision: 1,
+    sourcePath: "/data/plugins/agent-instructions/source",
+    conflicts: [],
     docs: [],
     skills: [],
     deleted: [],

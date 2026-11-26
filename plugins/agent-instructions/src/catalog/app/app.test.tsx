@@ -8,11 +8,13 @@ installDom();
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { queryClient } = await import("../../app/query.ts");
+const { resetSourceLiveUpdatesForTest } = await import("../../app/app.tsx");
 const { resetCatalogDraftsForTest } = await import("./state.ts");
 const { resetRulesDraftForTest } = await import("../../app/rules.tsx");
 
 beforeEach(() => {
   queryClient.clear();
+  resetSourceLiveUpdatesForTest();
   resetCatalogDraftsForTest();
   resetRulesDraftForTest();
 });
@@ -37,15 +39,16 @@ const published: PublishOutcome = {
   warnings: [],
 };
 
-function listing(): CatalogListing {
+function listing(overrides: Partial<CatalogListing> = {}): CatalogListing {
   return {
     revision: 3,
+    sourcePath: "/data/plugins/agent-instructions/source",
+    conflicts: [],
     docs: [
       {
         id: "doc_shared",
         name: "Shared",
         enabled: true,
-        origin: { kind: "imported", from: "instructions/shared.md" },
         characters: 13,
         sha256: sha("d"),
       },
@@ -55,7 +58,6 @@ function listing(): CatalogListing {
         name: "dev",
         description: "Engineering workflow",
         enabled: true,
-        origin: { kind: "authored" },
         treeSha: sha("t"),
         files: [
           { path: "SKILL.md", executable: false, size: 40, text: true },
@@ -67,13 +69,13 @@ function listing(): CatalogListing {
         name: "mcp",
         description: "My MCP notes",
         enabled: false,
-        origin: { kind: "imported", from: "skills/mcp" },
         treeSha: sha("u"),
         files: [{ path: "SKILL.md", executable: false, size: 30, text: true }],
       },
     ],
     deleted: [{ kind: "skill", key: "old", name: "old", at: 1 }],
     published,
+    ...overrides,
   };
 }
 
@@ -222,7 +224,7 @@ test("a file changed elsewhere keeps the draft and asks before overwriting", asy
   });
   fake.files["dev/scripts/run.sh"] = { content: "theirs\n", sha256: sha("5") };
   fireEvent.click(slot.getByRole("button", { name: "Save" }));
-  await slot.findByText("This file changed in bb after you started editing.");
+  await slot.findByText("This file changed on disk after you started editing.");
   expect(slot.getByRole("textbox", { name: "scripts/run.sh" })).toHaveProperty("value", "mine\n");
   expect(slot.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
 
@@ -403,7 +405,156 @@ test("a new rule from the Global sidebar opens it in the rules editor", async ()
 
 test("the bare panel path opens the Global overview", async () => {
   const slot = await page("");
-  await waitFor(() => expect(slot.queryByRole("button", { name: "Add rule" })).toBeNull());
+  await slot.findByText("/data/plugins/agent-instructions/source");
+  expect(slot.queryByRole("button", { name: "Add rule" })).toBeNull();
   expect(slot.container.querySelector("[data-rule]")).toBeNull();
   slot.unmount();
+});
+
+test("overview and sidebar surface sync conflicts, and editor footer shows path without char count", async () => {
+  const fake = server({
+    catalog: () =>
+      listing({ conflicts: ["conflicts/dev-mac-20261126-043000/instructions/shared.md"] }),
+  });
+  const overview = await page("global", fake);
+  await overview.findByText(/1 sync conflict saved under/);
+  overview.unmount();
+
+  const tab = await sidebar("global", fake);
+  await tab.findByText("1 sync conflict in conflicts/");
+  tab.unmount();
+
+  const editor = await page("global/skills/dev/scripts/run.sh", fake);
+  await editor.findByText("skills/dev/scripts/run.sh");
+  expect(editor.queryByText(/chars/)).toBeNull();
+  // Plain editable non-executable doc renders no empty left metadata span (#33).
+  editor.unmount();
+
+  const docEditor = await page("global/docs/doc_shared", fake);
+  await docEditor.findByText("instructions/doc_shared.md");
+  const foot = docEditor.container.querySelector(".pe-editor-foot")!;
+  expect(foot.querySelectorAll("span")).toHaveLength(1);
+  docEditor.unmount();
+});
+
+test("live sourceChanged refreshes an unmodified open editor and flags a pre-save conflict on unsaved drafts", async () => {
+  let rev = 3;
+  const fake = server({
+    catalog: () => listing({ revision: rev }),
+  });
+  const slot = await page("global/skills/dev/scripts/run.sh", fake);
+  const editor = await slot.findByRole("textbox", { name: "scripts/run.sh" });
+  expect(editor).toHaveProperty("value", "#!/bin/sh\necho hi\n");
+
+  // External disk edit while unmodified -> live refresh via sourceChanged.
+  rev = 4;
+  fake.files["dev/scripts/run.sh"] = { content: "#!/bin/sh\necho live\n", sha256: sha("6") };
+  await slot.emitRealtime("sourceChanged", { revision: 4, rulesRevision: 0 });
+  await waitFor(() =>
+    expect(slot.getByRole("textbox", { name: "scripts/run.sh" })).toHaveProperty(
+      "value",
+      "#!/bin/sh\necho live\n",
+    ),
+  );
+
+  // Type an unsaved draft, then another disk edit lands -> pre-save conflict banner appears without clicking Save.
+  fireEvent.change(slot.getByRole("textbox", { name: "scripts/run.sh" }), {
+    target: { value: "#!/bin/sh\necho local-draft\n" },
+  });
+  rev = 5;
+  fake.files["dev/scripts/run.sh"] = { content: "#!/bin/sh\necho external\n", sha256: sha("7") };
+  await slot.emitRealtime("sourceChanged", { revision: 5, rulesRevision: 0 });
+  await slot.findByText("This file changed on disk after you started editing.");
+  expect(slot.getByRole("textbox", { name: "scripts/run.sh" })).toHaveProperty(
+    "value",
+    "#!/bin/sh\necho local-draft\n",
+  );
+  slot.unmount();
+});
+
+test("toggling or renaming a doc with an unsaved draft does not trigger a false disk-conflict banner", async () => {
+  const fake = server({
+    changeCatalog: (input: { op: string }) => ({
+      outcome: "saved",
+      revision: 4,
+      sha256: input.op === "setDocEnabled" ? sha("e") : sha("r"),
+      warnings: [],
+      published,
+    }),
+  });
+  const slot = await page("global/docs/doc_shared", fake);
+  try {
+    await slot.findByRole("heading", { name: "Shared" });
+    fireEvent.click(slot.getByRole("radio", { name: "Markdown source" }));
+    fireEvent.change(slot.getByRole("textbox", { name: "Shared" }), {
+      target: { value: "Unsaved body edit.\n" },
+    });
+
+    // Update mock file sha to simulate frontmatter change on disk when toggled.
+    fake.files["doc_shared"] = { content: "Shared text.\n", sha256: sha("e") };
+    fireEvent.click(slot.getByRole("switch", { name: "Shared on" }));
+    await slot.findByText("Turned off. Agents get it in their next session.");
+    expect(slot.queryByText(/changed on disk after you started editing/)).toBeNull();
+    expect(slot.getByRole("button", { name: "Save" })).toHaveProperty("disabled", false);
+  } finally {
+    slot.unmount();
+  }
+});
+
+test("deleting a drafted skill file on disk shows only the deleted-on-disk conflict notice, not New file or new badge", async () => {
+  let rev = 3;
+  let skills = listing().skills;
+  const fake = server({
+    catalog: () => listing({ revision: rev, skills }),
+  });
+  const slot = await page("global/skills/dev/scripts/run.sh", fake);
+  const tab = await sidebar("global/skills/dev/scripts/run.sh", fake);
+  const editor = await slot.findByRole("textbox", { name: "scripts/run.sh" });
+  fireEvent.change(editor, { target: { value: "#!/bin/sh\necho draft\n" } });
+
+  // Simulate file deleted on disk.
+  rev = 4;
+  delete fake.files["dev/scripts/run.sh"];
+  skills = [
+    {
+      ...skills[0]!,
+      files: skills[0]!.files.filter((f) => f.path !== "scripts/run.sh"),
+    },
+    ...skills.slice(1),
+  ];
+  await slot.emitRealtime("sourceChanged", { revision: 4, rulesRevision: 0 });
+
+  await slot.findByText("This file was deleted on disk after you started editing.");
+  expect(slot.queryByText(/New file\. Save to add it/)).toBeNull();
+  expect(slot.queryByRole("button", { name: "Discard new file" })).toBeNull();
+  const devGroup = tab.container.querySelector('[data-skill="dev"]')!;
+  await waitFor(() => expect(devGroup.textContent).not.toContain("new"));
+  slot.unmount();
+  tab.unmount();
+});
+
+test("sourceChanged is deduplicated when page and sidebar are mounted together and ignores unchanged slices", async () => {
+  let rev = 3;
+  const fake = server({
+    catalog: () => listing({ revision: rev }),
+  });
+  const slot = await page("global", fake);
+  const tab = await sidebar("global", fake);
+  await slot.findByText("Instructions and skills for every agent");
+
+  const catalogCallsBefore = fake.calls.filter((c) => c.method === "catalog").length;
+  // Rules-only change should not invalidate catalog!
+  await slot.emitRealtime("sourceChanged", { revision: 3, rulesRevision: 1000001 });
+  await tab.emitRealtime("sourceChanged", { revision: 3, rulesRevision: 1000001 });
+  expect(fake.calls.filter((c) => c.method === "catalog").length).toBe(catalogCallsBefore);
+
+  // Catalog revision bump emitted on both slots triggers only 1 catalog refetch.
+  rev = 4;
+  await slot.emitRealtime("sourceChanged", { revision: 4, rulesRevision: 1000001 });
+  await tab.emitRealtime("sourceChanged", { revision: 4, rulesRevision: 1000001 });
+  await waitFor(() =>
+    expect(fake.calls.filter((c) => c.method === "catalog").length).toBe(catalogCallsBefore + 1),
+  );
+  slot.unmount();
+  tab.unmount();
 });

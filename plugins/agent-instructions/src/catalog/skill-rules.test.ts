@@ -1,12 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  parseFrontmatter,
-  pathProblems,
-  relinkSkills,
-  renameFrontmatter,
-  rewriteNamespaced,
-  SKILL_NAME_PATTERN,
-} from "./skill-rules.ts";
+import { parseFrontmatter, pathProblems, SKILL_NAME_PATTERN } from "./skill-rules.ts";
 
 describe("skill names follow bb's contract", () => {
   test.each(["dev", "principle-grug-brain", "a", "x9", "a".repeat(64)])("accepts %s", (name) =>
@@ -36,13 +29,6 @@ describe("parseFrontmatter", () => {
       parseFrontmatter(`---\nname: ok\ndescription: ${"x".repeat(1025)}\n---\n`),
     ).toHaveProperty("error");
   });
-});
-
-test("renameFrontmatter changes only the frontmatter name", () => {
-  const text = "---\nname: mcp\ndescription: d\n---\nname: mcp stays in the body\n";
-  expect(renameFrontmatter(text, "mcp", "dotfiles-mcp")).toBe(
-    "---\nname: dotfiles-mcp\ndescription: d\n---\nname: mcp stays in the body\n",
-  );
 });
 
 describe("pathProblems", () => {
@@ -97,54 +83,4 @@ describe("pathProblems", () => {
   test("ignores example links inside code fences", () => {
     expect(pathProblems("SKILL.md", "```md\n[x](../../outside.md)\n```\n", siblings)).toEqual([]);
   });
-});
-
-describe("relinkSkills", () => {
-  const dirs = new Map([
-    ["p/dotfiles/skills/agent-setting", "agent-setting"],
-    ["p/dotfiles/skills/mcp", "dotfiles-mcp"],
-    ["skills/dev", "dev"],
-  ]);
-  const setting = { dir: "p/dotfiles/skills/agent-setting", name: "agent-setting" };
-  test("follows a renamed sibling to its published folder", () => {
-    expect(
-      relinkSkills({ ...setting, path: "SKILL.md" }, "See [mcp](../mcp/SKILL.md#setup).", dirs),
-    ).toBe("See [mcp](../dotfiles-mcp/SKILL.md#setup).");
-  });
-  test("flattens links between plugin and top-level skills, from nested files", () => {
-    expect(
-      relinkSkills(
-        { ...setting, path: "references/r.md" },
-        "[dev](../../../../../skills/dev/SKILL.md)",
-        dirs,
-      ),
-    ).toBe("[dev](../../dev/SKILL.md)");
-  });
-  test("relinks reference definitions too", () => {
-    expect(
-      relinkSkills({ ...setting, path: "SKILL.md" }, "[m][1]\n\n[1]: ../mcp/SKILL.md\n", dirs),
-    ).toBe("[m][1]\n\n[1]: ../dotfiles-mcp/SKILL.md\n");
-  });
-  test("leaves links inside the skill, outside every skill, and in fences alone", () => {
-    const text =
-      "[a](references/a.md) [rt](../../runtime/README.md)\n```md\n[x](../mcp/SKILL.md)\n```\n";
-    expect(relinkSkills({ ...setting, path: "SKILL.md" }, text, dirs)).toBe(text);
-  });
-});
-
-test("rewriteNamespaced flattens known plugin skills and reports plugin groups", () => {
-  const names = new Map([
-    ["scott-engineering:dev", "dev"],
-    ["dotfiles:mcp", "dotfiles-mcp"],
-  ]);
-  const plugins = new Set(["scott-engineering", "dotfiles"]);
-  const { text, groups } = rewriteNamespaced(
-    "Read `scott-engineering:dev`, then dotfiles:mcp. Use `dotfiles:*`. Keep https://x.dev and bb-global-skills:review.",
-    names,
-    plugins,
-  );
-  expect(text).toBe(
-    "Read `dev`, then dotfiles-mcp. Use `dotfiles:*`. Keep https://x.dev and bb-global-skills:review.",
-  );
-  expect(groups).toEqual(["dotfiles:*"]);
 });

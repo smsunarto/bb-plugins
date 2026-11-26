@@ -1,4 +1,8 @@
 import { expect, onTestFinished, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createFakePluginHost,
   makeHostResponse,
@@ -22,8 +26,10 @@ function rule(id: string, instructions: string, when: Partial<Rule["when"]> = {}
 }
 
 async function load() {
+  const dataDir = await mkdtemp(join(tmpdir(), "ai-server-test-"));
   const host = createFakePluginHost({
     pluginId: "agent-instructions",
+    dataDir,
     sdk: {
       hosts: {
         list: async () => [
@@ -47,7 +53,11 @@ async function load() {
     },
   });
   // Disposing removes the fake host's storage dir.
-  onTestFinished(() => host.harness.lifecycle.dispose());
+  onTestFinished(async () => {
+    await host.harness.lifecycle.dispose();
+    spawnSync("chmod", ["-R", "u+w", dataDir]);
+    await rm(dataDir, { recursive: true, force: true });
+  });
   await plugin(host.bb);
   return host;
 }
@@ -119,23 +129,44 @@ test("no matching rule contributes nothing", async () => {
   expect(await instructionsFor(harness)).toBeNull();
 });
 
-test("saved rules survive a plugin reload", async () => {
+test("saved rules survive a plugin reload and rulesRevision stays monotonic", async () => {
   const { harness } = await load();
   await saveAll(harness, [rule("a", "Persisted.", { providers: ["codex"] })]);
+  await saveAll(harness, [rule("a", "Persisted v2.", { providers: ["codex"] })]);
+  expect((await harness.callRpc("rules")) as { revision: number }).toMatchObject({ revision: 2 });
+
   const reloaded = await harness.reload(plugin);
   // The reload's instance owns the storage now, so it is the one to dispose.
   onTestFinished(() => reloaded.harness.lifecycle.dispose());
   expect(await reloaded.harness.callRpc("rules")).toEqual({
-    revision: 1,
-    rules: [rule("a", "Persisted.", { providers: ["codex"] })],
+    revision: 2,
+    rules: [rule("a", "Persisted v2.", { providers: ["codex"] })],
   });
-  expect(await instructionsFor(reloaded.harness)).toBe("Persisted.");
+  expect(await instructionsFor(reloaded.harness)).toBe("Persisted v2.");
+
+  // A subsequent edit on disk advances revision strictly above 2 (to 3).
+  const { writeFile } = await import("node:fs/promises");
+  await writeFile(
+    join(reloaded.bb.server.experimental_dataDir, "plugins/agent-instructions/source/rules/a.md"),
+    "---\nname: ''\nenabled: true\norder: 0\nwhen:\n  providers:\n    - codex\n---\n\nPersisted v3.",
+    "utf8",
+  );
+  expect(await reloaded.harness.callRpc("rules")).toEqual({
+    revision: 3,
+    rules: [rule("a", "Persisted v3.", { providers: ["codex"] })],
+  });
 });
 
-test("duplicate rule ids are rejected", async () => {
+test("duplicate rule ids (including case-insensitive collisions) are rejected", async () => {
   const { harness } = await load();
   await expect(
     harness.callRpc("saveRules", { rules: [rule("a", "One."), rule("a", "Two.")], revision: 0 }),
+  ).rejects.toThrow("rpc input validation failed");
+  await expect(
+    harness.callRpc("saveRules", {
+      rules: [rule("Policy", "One."), rule("policy", "Two.")],
+      revision: 0,
+    }),
   ).rejects.toThrow("rpc input validation failed");
   expect(await harness.callRpc("rules")).toEqual({ revision: 0, rules: [] });
 });

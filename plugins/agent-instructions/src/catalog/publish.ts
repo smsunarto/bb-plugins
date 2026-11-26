@@ -41,8 +41,14 @@ import { treeSha } from "./tree.ts";
 
 /** What publishing reads from the catalog. */
 export type PublishSource = {
+  /** Non-null when publishing must be refused (for example, an incomplete or failed migration). */
+  publishBlocked?(): string | null;
   publishable(): { name: string; treeSha: string }[];
-  skillFiles(name: string): { path: string; executable: boolean; bytes: Uint8Array }[];
+  skillFiles(
+    name: string,
+  ):
+    | { path: string; executable: boolean; bytes: Uint8Array }[]
+    | Promise<{ path: string; executable: boolean; bytes: Uint8Array }[]>;
   docs(): { body: string; enabled: boolean }[];
 };
 
@@ -65,7 +71,7 @@ export type PublishReport = {
 
 type Entry = { kind: "missing" } | { kind: "ours"; target: string } | { kind: "foreign" };
 type Outcome = "linked" | "relinked" | "unlinked" | "unchanged" | "conflict" | "none";
-type SourceFile = ReturnType<PublishSource["skillFiles"]>[number];
+type SourceFile = Awaited<ReturnType<PublishSource["skillFiles"]>>[number];
 
 const TRASH = "trash";
 const errorCode = (error: unknown) => (error as NodeJS.ErrnoException).code;
@@ -152,7 +158,11 @@ function verifiedFiles(path: string, files: SourceFile[]): SourceFile[] {
 }
 
 /** Builds a read-only tree at `path` unless it is already there. */
-async function ensureTree(path: string, files: () => SourceFile[], staging: string) {
+async function ensureTree(
+  path: string,
+  files: () => SourceFile[] | Promise<SourceFile[]>,
+  staging: string,
+) {
   try {
     await lstat(path);
     // A run that stopped right after its rename left the root writable.
@@ -161,7 +171,7 @@ async function ensureTree(path: string, files: () => SourceFile[], staging: stri
   } catch (error) {
     if (!isMissing(error)) throw error;
   }
-  const contents = verifiedFiles(path, files());
+  const contents = verifiedFiles(path, await files());
   const staged = join(staging, stagingName("tree"));
   const folders = new Set<string>();
   await mkdir(staging, { recursive: true });
@@ -260,6 +270,8 @@ export async function publish(
   pluginId: string,
   source: PublishSource,
 ): Promise<PublishReport> {
+  const blocked = source.publishBlocked?.();
+  if (blocked) throw new Error(`Publishing blocked: ${blocked}`);
   const own = join(dataDir, "plugins", pluginId);
   const skillsDir = join(dataDir, "skills");
   const agentsMd = join(dataDir, "AGENTS.md");

@@ -42,7 +42,7 @@ export const ruleSchema = z
 export const rulesSchema = z
   .array(ruleSchema)
   .refine(
-    (rules) => new Set(rules.map((rule) => rule.id)).size === rules.length,
+    (rules) => new Set(rules.map((rule) => rule.id.toLowerCase())).size === rules.length,
     "rule ids must be unique",
   );
 

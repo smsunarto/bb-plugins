@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { targetsSchema } from "../../shared/targets.ts";
-import type { AgentInstructionsContext } from "../lib/store.ts";
+import type { AgentInstructionsContext } from "../lib/context.ts";
 import { loadTargets } from "../lib/targets.ts";
 
 export const targetsContract = {
