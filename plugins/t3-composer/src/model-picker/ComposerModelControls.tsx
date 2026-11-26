@@ -39,13 +39,22 @@ export function hasEditablePickers(composer: PluginComposerApi) {
   );
 }
 
+/** Matches core's `SessionOptionsMenu` (`splitSessionOptionsByPlacement`): mode options live in the footer. */
+const SESSION_OPTION_MODE_CATEGORY = "mode";
+
 /**
- * Whether the model has an agent option only BB's picker can set: a list to choose from. An
- * on/off option, such as Codex's Daybreak, keeps BB's value (off unless turned on there), so
- * it need not cost the composer these pickers, here or in a new thread.
+ * Whether the model has a picker-hosted agent option only BB's picker can set: a list option
+ * whose category is not `"mode"`. BB renders `"mode"` options (such as ACP's Mode) in its footer
+ * "Agent options" menu rather than its model picker, so they stay usable there without handing
+ * the model selector back to BB. An on/off option, such as Codex's Daybreak, keeps BB's value
+ * (off unless turned on there), so it need not cost the composer these pickers either.
  */
 function needsBbPicker(model: CatalogModel) {
-  return model.sessionOptions?.some((option) => option.type === "select") ?? false;
+  return (
+    model.sessionOptions?.some(
+      (option) => option.type === "select" && option.category !== SESSION_OPTION_MODE_CATEGORY,
+    ) ?? false
+  );
 }
 
 /**
