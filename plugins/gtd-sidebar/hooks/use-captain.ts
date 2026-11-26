@@ -97,13 +97,6 @@ function refreshAvailability(
   cache.pending = request;
 }
 
-function detachSubscriptions(cache: CaptainAvailabilityCache): void {
-  for (const unsubscribe of cache.unsubscribes) unsubscribe();
-  cache.unsubscribes.length = 0;
-  cache.sawReconnect = false;
-  subscribedCaches.delete(cache);
-}
-
 function ensureSubscribed(sdk: ReturnType<typeof useSdk>, cache: CaptainAvailabilityCache): void {
   if (cache.unsubscribes.length > 0 || typeof sdk.subscribe !== "function") return;
   cache.unsubscribes.push(
@@ -136,9 +129,12 @@ function ensureSubscribed(sdk: ReturnType<typeof useSdk>, cache: CaptainAvailabi
  */
 export function disposeCaptainAvailability(): void {
   for (const cache of subscribedCaches) {
-    detachSubscriptions(cache);
+    for (const unsubscribe of cache.unsubscribes) unsubscribe();
+    cache.unsubscribes.length = 0;
+    cache.sawReconnect = false;
     cache.pending = null;
   }
+  subscribedCaches.clear();
 }
 
 /**
@@ -157,7 +153,6 @@ export function useCaptainAvailable(): boolean {
       if (cache.pending === null) refreshAvailability(sdk, cache);
       return () => {
         cache.listeners.delete(listener);
-        if (cache.listeners.size === 0) detachSubscriptions(cache);
       };
     },
     [sdk, cache],

@@ -5,7 +5,8 @@ import { installDom } from "@bb-plugins/testing";
 
 installDom();
 const { act, cleanup, fireEvent, waitFor } = await import("@testing-library/react");
-const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
+const { installTestPluginRuntime, loadPluginApp, mountPluginContentScripts, renderSlot } =
+  await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
 const { CapyNavigation, NEW_CAPTAIN_NAV_ITEM_ID } =
   await import("../components/nav/capy-navigation.tsx");
@@ -94,6 +95,7 @@ const rowIds = (slot: ReturnType<typeof mount>) =>
   );
 
 afterEach(() => {
+  disposeCaptainAvailability();
   cleanup();
   window.matchMedia = originalMatchMedia;
 });
@@ -444,6 +446,54 @@ describe("CapyNavigation", () => {
         await act(async () => {});
         assert.equal(calls, 3);
       } finally {
+        forgetSidebarActions(published);
+      }
+    });
+
+    it("wires captain-availability disposal through app.tsx contentScripts", async () => {
+      const published = { settle() {}, canSettle: () => false, openNewCaptain() {} };
+      publishSidebarActions(published);
+      const handlers = new Map<string, Set<(event: unknown) => void>>();
+      const emit = (eventName: string, payload: unknown) => {
+        for (const cb of handlers.get(eventName) ?? []) cb(payload);
+      };
+      const subscribe = ({
+        event,
+        callback,
+      }: {
+        event: string;
+        callback: (e: unknown) => void;
+      }) => {
+        const set = handlers.get(event) ?? new Set();
+        set.add(callback);
+        handlers.set(event, set);
+        return () => set.delete(callback);
+      };
+      let calls = 0;
+      const listPlugins = async () => {
+        calls += 1;
+        return { plugins: CAPTAIN_RUNNING };
+      };
+      const app = await loadPluginApp(() => import("../app.tsx"));
+      const scripts = await mountPluginContentScripts(app, { pluginId: "gtd-sidebar" });
+      try {
+        const slot = mount(items(), { listPlugins, subscribe });
+        await slot.findByRole("button", { name: "New Captain" });
+        assert.equal(calls, 1);
+
+        await scripts.lifecycle.dispose();
+        cleanup();
+        act(() =>
+          emit("system:changed", {
+            entity: "system",
+            type: "changed",
+            changes: ["plugins-changed"],
+          }),
+        );
+        await act(async () => {});
+        assert.equal(calls, 1);
+      } finally {
+        await scripts.lifecycle.dispose();
         forgetSidebarActions(published);
       }
     });
