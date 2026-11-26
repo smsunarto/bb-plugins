@@ -1,11 +1,19 @@
-import { execFile } from "node:child_process";
+import {
+  experimental_execHostFileCallback as execHostFileCallback,
+  experimental_hostToolchain as hostToolchain,
+} from "@get-bb/plugin-sdk/process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 
 /** Runs one agent-browser command against the shared Sauce Live browser and returns its `--json` data. */
 export interface BrowserRunner {
-  run(args: readonly string[], timeoutMs?: number): Promise<Record<string, unknown>>;
+  /** `signal` kills the agent-browser process when the caller gives up on it. */
+  run(
+    args: readonly string[],
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>>;
   /** How many times a call has launched or relaunched the browser since the runner was made. */
   launches?(): number;
 }
@@ -83,51 +91,128 @@ export function browserCommand(
     : command;
 }
 
-export function createAgentBrowserRunner(paths = sauceBrowserPaths()): BrowserRunner {
-  const env = browserEnv(paths);
-  const useScope = process.platform === "linux" && existsSync("/usr/bin/systemd-run");
+/**
+ * `systemd-run --user` needs the user's systemd instance over D-Bus. A server run
+ * from a system service, cron, or SSH without lingering has none, and every call
+ * would fail before agent-browser ran. Check for the session bus first.
+ */
+export function userScopeAvailable(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+  exists: (path: string) => boolean = existsSync,
+): boolean {
+  if (platform !== "linux") return false;
+  if (env.DBUS_SESSION_BUS_ADDRESS) return true;
+  const runtime = env.XDG_RUNTIME_DIR;
+  return Boolean(runtime && exists(join(runtime, "bus")));
+}
+
+/** systemd-run printed this when it could not reach the user manager, so the command never ran. */
+const SCOPE_UNAVAILABLE =
+  /Failed to (?:connect to|create) bus|Failed to start transient scope unit|Failed to connect to user scope bus/i;
+
+export type ExecFile = (
+  file: string,
+  args: readonly string[],
+  options: { env: NodeJS.ProcessEnv; timeout: number; maxBuffer: number; signal?: AbortSignal },
+  callback: (error: (Error & { code?: unknown }) | null, stdout: string, stderr: string) => void,
+) => unknown;
+
+export type AgentBrowserRunnerOptions = {
+  /** Aborted when the plugin is disposed: kills any agent-browser call still running. */
+  signal?: AbortSignal;
+  env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+  exists?: (path: string) => boolean;
+  /** Finds a command the way bb's host toolchain does, including the login shell's PATH. */
+  resolve?: (command: string, env: NodeJS.ProcessEnv) => string | null;
+  exec?: ExecFile;
+};
+
+type ExecResult = { error: (Error & { code?: unknown }) | null; stdout: string; stderr: string };
+
+function abortError(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  if (reason instanceof Error) return reason;
+  return Object.assign(new Error("The agent-browser call was cancelled."), {
+    name: "AbortError",
+    cause: reason,
+  });
+}
+
+export function createAgentBrowserRunner(
+  paths = sauceBrowserPaths(),
+  options: AgentBrowserRunnerOptions = {},
+): BrowserRunner {
+  const env = browserEnv(paths, options.env);
+  const exists = options.exists ?? existsSync;
+  const resolve =
+    options.resolve ??
+    ((command: string, from: NodeJS.ProcessEnv) => hostToolchain.resolve(command, { env: from }));
+  const exec: ExecFile = options.exec ?? (execHostFileCallback as unknown as ExecFile);
+  const systemdRun = userScopeAvailable(env, options.platform ?? process.platform, exists)
+    ? resolve("systemd-run", env)
+    : null;
+  /** Cleared after systemd-run fails to reach the user manager, so later calls skip it. */
+  let scope = systemdRun !== null;
   let launches = 0;
+
+  function execOnce(
+    file: string,
+    argv: readonly string[],
+    timeoutMs: number,
+    signal: AbortSignal | undefined,
+  ): Promise<ExecResult> {
+    return new Promise((settle) => {
+      exec(
+        file,
+        argv,
+        { env, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, signal },
+        (error, stdout, stderr) =>
+          settle({ error, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") }),
+      );
+    });
+  }
+
   return {
     launches: () => launches,
-    run(args, timeoutMs = 30_000) {
-      if (!existsSync(paths.profile)) {
-        return Promise.reject(
-          new BrowserUnavailableError(
-            `The Sauce Live browser profile ${paths.profile} is missing on the bb server machine. Sign in to Sauce Labs there with agent-browser --profile ${paths.profile} first.`,
-          ),
+    async run(args, timeoutMs = 30_000, callSignal) {
+      const signals = [options.signal, callSignal].filter((s): s is AbortSignal => s !== undefined);
+      const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+      if (signal?.aborted) throw abortError(signal);
+      if (!exists(paths.profile)) {
+        throw new BrowserUnavailableError(
+          `The Sauce Live browser profile ${paths.profile} is missing on the bb server machine. Sign in to Sauce Labs there with agent-browser --profile ${paths.profile} first.`,
         );
       }
-      const binary = findOnPath("agent-browser");
-      if (!binary) {
-        return Promise.reject(
-          new BrowserUnavailableError("agent-browser is not on the bb server's PATH."),
-        );
+      const binary = resolve("agent-browser", env);
+      if (!binary)
+        throw new BrowserUnavailableError("agent-browser is not on the bb server's PATH.");
+      const run = (useScope: boolean) => {
+        const [command, ...rest] = browserCommand(binary, args, useScope);
+        const file = useScope && systemdRun !== null ? systemdRun : command;
+        return execOnce(file, rest, timeoutMs, signal).then((result) => ({ file, result }));
+      };
+      let { file, result } = await run(scope);
+      const unparsed = parseReply(result.stdout) === null;
+      if (scope && unparsed && SCOPE_UNAVAILABLE.test(result.stderr) && !signal?.aborted) {
+        // systemd-run failed before it started agent-browser, so running it directly is safe.
+        scope = false;
+        ({ file, result } = await run(false));
       }
-      const [file, ...argv] = browserCommand(binary, args, useScope);
-      return new Promise((resolve, reject) => {
-        execFile(
-          file,
-          argv,
-          { env, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
-          (error, stdout, stderr) => {
-            if (error && (error as NodeJS.ErrnoException).code === "ENOENT") {
-              reject(
-                new BrowserUnavailableError(`${file} is not installed on the bb server machine`),
-              );
-              return;
-            }
-            const parsed = parseReply(stdout);
-            if (parsed?.success === true) {
-              const data = (parsed.data ?? {}) as Record<string, unknown>;
-              if (launchedBrowser(data)) launches += 1;
-              resolve(data);
-              return;
-            }
-            const detail = `${parsed?.error ?? (stderr || stdout || error?.message || "no output")}`;
-            reject(new BrowserCommandError(args[0] ?? "", detail.trim().slice(0, 600)));
-          },
-        );
-      });
+      const { error, stdout, stderr } = result;
+      if (signal?.aborted) throw abortError(signal);
+      if (error && error.code === "ENOENT") {
+        throw new BrowserUnavailableError(`${file} is not installed on the bb server machine`);
+      }
+      const parsed = parseReply(stdout);
+      if (parsed?.success === true) {
+        const data = (parsed.data ?? {}) as Record<string, unknown>;
+        if (launchedBrowser(data)) launches += 1;
+        return data;
+      }
+      const detail = `${parsed?.error ?? (stderr || stdout || error?.message || "no output")}`;
+      throw new BrowserCommandError(args[0] ?? "", detail.trim().slice(0, 600));
     },
   };
 }
@@ -138,13 +223,6 @@ export function launchedBrowser(data: Record<string, unknown>): boolean {
     | { launched?: unknown; relaunchedBrowser?: unknown }
     | undefined;
   return lifecycle?.launched === true || lifecycle?.relaunchedBrowser === true;
-}
-
-function findOnPath(name: string): string | null {
-  for (const dir of (process.env.PATH ?? "").split(delimiter)) {
-    if (dir && existsSync(join(dir, name))) return join(dir, name);
-  }
-  return null;
 }
 
 type BrowserReply = { success?: boolean; data?: unknown; error?: unknown };

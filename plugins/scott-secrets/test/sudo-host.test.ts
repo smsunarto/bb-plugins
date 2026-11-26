@@ -199,6 +199,28 @@ describe("sudo host handlers", () => {
   });
 });
 
+describe("sudo runner cancellation", () => {
+  test("an already aborted request never spawns sudo", async () => {
+    const runner = createSudoRunner({ binary: setup("pw"), timeoutBinary: null });
+    const controller = new AbortController();
+    controller.abort();
+    const marker = join(dir, "ran");
+    await expect(
+      runner.run({
+        argv: ["touch", marker],
+        cwd: dir,
+        password: Buffer.from("pw"),
+        timeoutMs: 10_000,
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    await expect(runner.validate(Buffer.from("pw"), controller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(calls()).toEqual([]);
+  });
+});
+
 describe("PasswordCache", () => {
   const noLease = () => ({ dispose: async () => {} });
 

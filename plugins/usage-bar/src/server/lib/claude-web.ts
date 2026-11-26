@@ -90,7 +90,12 @@ export function parseClaudeWeb(body: unknown, now: number): WebUsage | null {
   return { email, credits: { count, expiry, freshUntil } };
 }
 
-async function fetchWeb(signal: AbortSignal): Promise<unknown> {
+/** CodexBar is a macOS app, so other servers skip the CLI rather than spawn a missing binary. */
+export async function fetchClaudeWeb(
+  signal: AbortSignal,
+  platform: NodeJS.Platform = process.platform,
+): Promise<unknown> {
+  if (platform !== "darwin") return null;
   const { stdout } = await exec(
     CLI,
     [
@@ -112,7 +117,7 @@ async function fetchWeb(signal: AbortSignal): Promise<unknown> {
 
 /** Cache failures too. One service-owned reader shares a bounded CLI request across accounts. */
 export function createClaudeWebReader(
-  fetchUsage: (signal: AbortSignal) => Promise<unknown> = fetchWeb,
+  fetchUsage: (signal: AbortSignal) => Promise<unknown> = fetchClaudeWeb,
   now: () => number = Date.now,
 ) {
   let cache: { at: number; value: WebUsage | null } | null = null;
