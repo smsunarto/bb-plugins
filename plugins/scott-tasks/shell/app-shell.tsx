@@ -59,7 +59,7 @@ function RouteOutlet({
       return <DetailView taskKey={route.taskKey} />;
     case "project":
       return route.view === "board" ? (
-        <BoardView projectId={route.projectId} />
+        <BoardView projectId={route.projectId} onError={onError} />
       ) : (
         <ListView projectId={route.projectId} scope={route.scope} {...listProps} />
       );
@@ -191,7 +191,13 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
           onNewTask={() => openNewTask({ projectId: newTaskProjectId, status: newTaskStatus })}
           onBack={backFromTask}
         />
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div
+          className={
+            route.kind === "project" && route.view === "board"
+              ? "min-h-0 flex-1 overflow-hidden"
+              : "min-h-0 flex-1 overflow-auto"
+          }
+        >
           {noProjects && route.kind !== "task" && route.kind !== "manage" ? (
             <ViewEmptyState
               icon="ListTodo"

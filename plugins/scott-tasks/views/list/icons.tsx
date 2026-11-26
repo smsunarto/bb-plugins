@@ -2,12 +2,12 @@ import type { TaskPriority, TaskStatus } from "../../shared/contract.js";
 import { cn } from "@/lib/utils";
 
 const STATUS_COLOR_CLASS: Record<TaskStatus, string> = {
-  backlog: "text-subtle-foreground",
-  todo: "text-subtle-foreground",
+  backlog: "text-muted-foreground",
+  todo: "text-muted-foreground",
   in_progress: "text-attention",
   in_review: "text-timeline-accent",
   done: "text-success",
-  canceled: "text-subtle-foreground",
+  canceled: "text-muted-foreground",
 };
 
 export function StatusIcon({ status, className }: { status: TaskStatus; className?: string }) {
@@ -116,7 +116,7 @@ export function PriorityIcon({
       viewBox="0 0 14 14"
       aria-hidden
       data-priority-icon={priority}
-      className={cn("size-3.5 shrink-0", priority === "none" && "opacity-40", className)}
+      className={cn("size-3.5 shrink-0", className)}
     >
       {bars.map((bar, index) => (
         <rect
@@ -126,7 +126,13 @@ export function PriorityIcon({
           width="3"
           height={bar.height}
           rx="1"
-          className={index < active ? "fill-muted-foreground" : "fill-muted"}
+          className={
+            priority === "none"
+              ? "fill-muted-foreground opacity-65"
+              : index < active
+                ? "fill-muted-foreground"
+                : "fill-muted"
+          }
         />
       ))}
     </svg>
