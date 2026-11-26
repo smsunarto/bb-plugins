@@ -303,11 +303,15 @@ function AccountPicker({
   variant: Variant;
 }) {
   const choice = useAccountChoice();
-  const accounts = sources?.accounts ?? [];
+  const phone = variant === "phone";
+  // Reserve the picker's row while pageSources loads so Filters does not jump down.
+  if (sources === undefined) {
+    return phone ? null : <Skeleton className="h-6 w-28 self-start rounded-md" aria-hidden />;
+  }
+  const accounts = sources.accounts;
   if (accounts.length === 0) return null;
   const chosen = accounts.find((account) => account.login === choice);
   const label = chosen ? chosen.login : accounts.length === 1 ? accounts[0]!.login : "All accounts";
-  const phone = variant === "phone";
   const dots = (chosen ? [chosen] : accounts).slice(0, 3);
   return (
     <DropdownMenu>
@@ -321,7 +325,7 @@ function AccountPicker({
             "shrink-0 gap-2 font-normal text-muted-foreground",
             phone
               ? "h-8 px-1 text-[14px] leading-5"
-              : "h-6 px-2 text-[12px] leading-4 max-md:pointer-coarse:h-9",
+              : "h-6 self-start px-2 text-[12px] leading-4 max-md:pointer-coarse:h-9",
           )}
         >
           {phone ? null : (
@@ -340,7 +344,7 @@ function AccountPicker({
           {accounts.length > 1 ? <Chevron /> : null}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-44">
+      <DropdownMenuContent align={phone ? "end" : "start"} className="min-w-44">
         <DropdownMenuRadioGroup
           value={chosen?.login ?? ALL_ACCOUNTS}
           onValueChange={(value) => chooseAccount(value === ALL_ACCOUNTS ? null : value)}
@@ -379,7 +383,7 @@ function Filters({ counts, variant }: { counts: Record<Filter, number>; variant:
         if (next) chooseFilter(next);
       }}
       className={cx(
-        "flex min-w-0 gap-0 bg-surface-raised p-1",
+        "flex w-full min-w-0 gap-0 bg-surface-raised p-1",
         phone ? "rounded-lg" : "rounded-md",
       )}
     >
@@ -390,16 +394,18 @@ function Filters({ counts, variant }: { counts: Record<Filter, number>; variant:
             value={option.id}
             data-testid={`sc-filter-${option.id}`}
             className={cx(
-              "h-auto min-w-0 flex-1",
+              "h-auto min-w-0 flex-1 overflow-hidden",
               phone
                 ? "rounded-md py-2 text-[14px] leading-5"
-                : "rounded-sm py-1 text-[12px] leading-4",
+                : "rounded-sm px-1 py-1 text-[12px] leading-4",
               // The nav variant also fills the phone's sidebar sheet, where a finger needs more room.
               !phone && "max-md:pointer-coarse:py-2",
               "data-[state=on]:font-semibold",
             )}
           >
-            {option.label} {counts[option.id]}
+            <span className="truncate">
+              {option.label} {counts[option.id]}
+            </span>
           </ToggleGroupItem>
         );
       })}
@@ -716,21 +722,16 @@ export function ChangesList({
           phone ? "px-5 pt-2 pb-3" : "sticky top-0 z-10 bg-sidebar px-4 pt-4 pb-3",
         )}
       >
-        <div
-          className={cx("flex justify-between gap-2", phone ? "items-baseline" : "items-center")}
-        >
-          <h2
-            className={cx(
-              "m-0 text-foreground",
-              phone
-                ? "text-[28px] leading-8.5 font-bold tracking-[-0.02em]"
-                : "text-[13px] leading-5 font-semibold",
-            )}
-          >
-            Changes
-          </h2>
+        {phone ? (
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="m-0 text-[28px] leading-8.5 font-bold tracking-[-0.02em] text-foreground">
+              Changes
+            </h2>
+            <AccountPicker sources={sources.sources} variant={variant} />
+          </div>
+        ) : (
           <AccountPicker sources={sources.sources} variant={variant} />
-        </div>
+        )}
         <Filters counts={merged.counts} variant={variant} />
       </div>
       {/* bb's sidebar scrolls this list; on a phone page, and in a phone drawer that the nav

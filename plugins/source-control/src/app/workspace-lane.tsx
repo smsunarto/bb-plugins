@@ -469,9 +469,6 @@ export function UncommittedCard({
   );
 }
 
-/** A status pill's shape beside the branch name, so status costs no row of its own. */
-const PILL = "h-5 gap-1 rounded-full px-1 py-0 leading-none";
-
 const PR_LOOK = {
   open: { label: "Open", variant: "success" },
   draft: { label: "Draft", variant: "secondary" },
@@ -484,22 +481,17 @@ const PR_LOOK = {
 
 /** The pull request's checks overall, from the forge facet. */
 function ChecksChip({ checks }: { checks: NonNullable<ForgeValue>["checks"] }) {
-  if (checks.failed > 0)
-    return (
-      <Badge variant="danger" className={PILL}>
-        {checks.failed} Failing
-      </Badge>
-    );
+  if (checks.failed > 0) return <Badge variant="danger">{checks.failed} Failing</Badge>;
   if (checks.pending > 0)
     return (
-      <Badge variant="warning" className={PILL}>
+      <Badge variant="warning">
         <span className="size-1.5 rounded-full bg-current" aria-hidden />
         {checks.pending} Running
       </Badge>
     );
   if (checks.passed > 0)
     return (
-      <Badge variant="success" className={PILL}>
+      <Badge variant="success">
         <Icon name="Check" className="size-3" aria-hidden />
         Passed
       </Badge>
@@ -529,7 +521,6 @@ function ReviewChips({
               href={forge.url}
               className={cn(
                 badgeVariants({ variant: look.variant }),
-                PILL,
                 "className" in look && look.className,
                 "no-underline hover:opacity-90",
               )}
@@ -542,12 +533,7 @@ function ReviewChips({
       </>
     );
   }
-  if (branch.reviewId)
-    return (
-      <Badge variant="outline" className={PILL}>
-        {branch.reviewId}
-      </Badge>
-    );
+  if (branch.reviewId) return <Badge variant="outline">{branch.reviewId}</Badge>;
   return null;
 }
 
@@ -684,10 +670,7 @@ const BranchCard = memo(function BranchCard({
         trailing={
           <>
             {look.label && !forge ? (
-              <Badge
-                variant={branch.status === "conflicted" ? "destructive" : "outline"}
-                className={PILL}
-              >
+              <Badge variant={branch.status === "conflicted" ? "destructive" : "outline"}>
                 {look.label}
               </Badge>
             ) : null}

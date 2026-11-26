@@ -1,6 +1,7 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import { arrayMove } from "@dnd-kit/sortable";
-import type { InboxShelf, VisibleInboxRow } from "./inbox-tree.ts";
+import type { InboxShelf, InboxThreadNode, VisibleInboxRow } from "./inbox-tree.ts";
+import { isLongLivedThread } from "./long-lived.ts";
 
 export interface ProjectGroup {
   projectId: string;
@@ -19,6 +20,22 @@ export function needsUser(thread: PluginSidebarThread): boolean {
     thread.indicator === "waiting-for-input" ||
     thread.indicator === "unread-error" ||
     thread.indicator === "unread-success"
+  );
+}
+
+/**
+ * True when a root family needs the user while its project group is folded.
+ * Long-lived parents (Captains) ignore crew `isUnread` so a running crew child
+ * with a stale recovered-error unread flag does not inflate the group count.
+ */
+function familyNeedsUser(node: InboxThreadNode): boolean {
+  const status = node.statusThread;
+  return (
+    status.hasPendingInteraction ||
+    status.indicator === "waiting-for-input" ||
+    status.indicator === "unread-error" ||
+    status.indicator === "unread-success" ||
+    (isLongLivedThread(node.thread) ? node.hasUnread : status.isUnread)
   );
 }
 
@@ -54,7 +71,7 @@ export function groupRowsByProject(
       current.families += 1;
       // The family's loudest status, not the root's own: the count shows while
       // the group is folded, where the whole family is out of sight.
-      if (needsUser(row.node.statusThread)) current.attention += 1;
+      if (familyNeedsUser(row.node)) current.attention += 1;
     }
     current.rows.push(row);
   }

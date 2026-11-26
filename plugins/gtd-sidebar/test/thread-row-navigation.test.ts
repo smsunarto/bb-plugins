@@ -814,6 +814,20 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.equal(statusGlyph(container, "unread-success"), null);
       assert.ok(statusGlyph(row(view.slot, "child").parentElement!, "unread-success"));
     });
+
+    it("does not show an unread subthread dot on a collapsed Captain whose crew is unread", () => {
+      const captain = thread("captain", { originPluginId: "captain", isUnread: false });
+      const crew = thread("crew", {
+        parentThreadId: "captain",
+        originPluginId: "scott-tasks",
+        isUnread: true,
+      });
+      const view = mount(hostState([captain, crew]));
+      fireEvent.click(rowButton(view.slot, "captain", "Collapse children of captain"));
+      const container = row(view.slot, "captain").parentElement!;
+      assert.equal(statusGlyph(container, "unread-success"), null);
+      assert.equal(description(view.slot, "captain").includes("Unread response"), false);
+    });
     it("draws another plugin's row status in place of the age, under bb's precedence", () => {
       const threeDaysAgo = Date.now() - 3 * 86_400_000 - 3_600_000;
       const view = mount(

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { useSyncExternalStore } from "react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import {
@@ -772,4 +772,40 @@ test("Fix says so when the checks moved, and starts nothing", async () => {
   // Escape closes the dialog and is claimed, so bb does not also leave the page.
   expect(fireEvent.keyDown(document.body, { key: "Escape" })).toBe(false);
   expect(slot.queryByTestId("sc-fix-dialog")).toBeNull();
+});
+
+test("the sidebar omits the Changes heading, keeps the account picker aligned start, and stretches filters evenly", async () => {
+  const slot = render({
+    pageSources: () => ({
+      ...SOURCES,
+      accounts: [
+        { login: "smsunarto", active: true },
+        { login: "sms-yui", active: false },
+      ],
+    }),
+    inbox: () => ({
+      smsunarto: read([row("scott/one")]),
+      "sms-yui": read([]),
+    }),
+  });
+  await waitFor(() => expect(navRows(slot)).toHaveLength(1));
+  const nav = slot.getByTestId("sc-changes-nav");
+  expect(nav.querySelector("h2")).toBeNull();
+  const picker = slot.getByTestId("sc-account-picker");
+  expect(picker.textContent).toContain("All accounts");
+  expect(picker.className).toContain("self-start");
+  act(() => {
+    picker.focus();
+    fireEvent.keyDown(picker, { key: "Enter" });
+  });
+  const menu = await screen.findByRole("menu");
+  expect(menu.getAttribute("data-align")).toBe("start");
+  const group = nav.querySelector("[data-slot=toggle-group]");
+  expect(group?.className).toContain("w-full");
+  for (const id of ["all", "mine", "asked"]) {
+    const item = slot.getByTestId(`sc-filter-${id}`);
+    expect(item.className).toContain("flex-1");
+    expect(item.className).toContain("px-1");
+    expect(item.className).toContain("overflow-hidden");
+  }
 });

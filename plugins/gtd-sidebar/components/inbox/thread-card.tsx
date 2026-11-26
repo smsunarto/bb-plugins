@@ -204,7 +204,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
         title={titleText}
         isNaming={isNaming}
         isActive={isActive}
-        isUnread={thread.isUnread}
+        isUnread={isUnread && thread.isUnread}
         isChild={depth > 0}
         mobile={isCompactViewport}
       />

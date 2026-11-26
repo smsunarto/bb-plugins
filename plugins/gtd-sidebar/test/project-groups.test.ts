@@ -153,6 +153,56 @@ describe("project groups", () => {
     assert.equal(groups[0]!.attention, 2);
   });
 
+  it("ignores stale crew isUnread in folded Captain attention counts while keeping real Captain or crew alerts", () => {
+    // Running crew child with stale recovered-error isUnread must not increment attention.
+    const runningCrew = groupRowsByProject(
+      rows(
+        [
+          thread("captain", { originPluginId: "captain", isUnread: false }),
+          thread("crew", {
+            parentThreadId: "captain",
+            originPluginId: "scott-tasks",
+            indicator: "runtime",
+            isUnread: true,
+          }),
+        ],
+        "waiting",
+      ),
+    );
+    assert.equal(runningCrew[0]!.attention, 0);
+
+    // Captain's own unread response still counts even while crew is running.
+    const unreadCaptain = groupRowsByProject(
+      rows(
+        [
+          thread("captain", { originPluginId: "captain", isUnread: true }),
+          thread("crew", {
+            parentThreadId: "captain",
+            originPluginId: "scott-tasks",
+            indicator: "runtime",
+            isUnread: false,
+          }),
+        ],
+        "waiting",
+      ),
+    );
+    assert.equal(unreadCaptain[0]!.attention, 1);
+
+    // Blocked crew child still counts.
+    const blockedCrew = groupRowsByProject(
+      rows([
+        thread("captain", { originPluginId: "captain", isUnread: false }),
+        thread("crew", {
+          parentThreadId: "captain",
+          originPluginId: "scott-tasks",
+          hasPendingInteraction: true,
+          indicator: "waiting-for-input",
+        }),
+      ]),
+    );
+    assert.equal(blockedCrew[0]!.attention, 1);
+  });
+
   it("asks for headers only once a second project shows up anywhere", () => {
     const one = rows([thread("a"), thread("b")]);
     const empty: never[] = [];
