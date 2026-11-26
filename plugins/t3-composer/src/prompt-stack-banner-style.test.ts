@@ -104,13 +104,23 @@ describe("mountPromptStackBannerStyle", () => {
           <div role="group" aria-label="Plan controls" class="bg-background/70">
             <button id="plan-toggle" type="button" aria-expanded="false" aria-controls="plan-body">
               <svg class="animate-shine-icon"></svg>
-              <span>Plan</span>
+              <span class="animate-shine">Plan</span>
             </button>
             <button id="plan-dismiss" type="button" aria-label="Dismiss plan">X</button>
           </div>
           <section id="plan-body" role="region" aria-hidden="true">
             <button id="plan-collapse" type="button" aria-expanded="true">Collapse</button>
           </section>
+        </section>
+
+        <section aria-label="To-do list">
+          <div class="flex items-center">
+            <button id="todo-toggle" type="button" aria-expanded="false" aria-controls="todo-body">
+              <svg class="animate-shine-icon"></svg>
+              <span class="animate-shine">1/3 complete</span>
+            </button>
+          </div>
+          <section id="todo-body" role="region" aria-hidden="true"></section>
         </section>
 
         <section aria-label="Thread context before sending">
@@ -216,6 +226,7 @@ describe("mountPromptStackBannerStyle", () => {
     const taggedToggleIds = [...document.querySelectorAll(`[${TOGGLE_ATTR}]`)].map((el) => el.id);
     expect(taggedToggleIds).toEqual([
       "plan-toggle",
+      "todo-toggle",
       "git-toggle",
       "child-back-btn",
       "workflow-toggle",
@@ -241,10 +252,12 @@ describe("mountPromptStackBannerStyle", () => {
       );
     }
 
-    // Plan's div[role="group"] is flattened; Active child threads & Queue labels are marked;
-    // bb--git's +5/-2 diff spans are NOT touched.
+    // Plan's div[role="group"] is flattened; Plan, To-do, Active child threads & Queue labels
+    // are marked (clearing .animate-shine sweeps); bb--git's +5/-2 diff spans are NOT touched.
     expect(document.querySelector('div[role="group"]')?.hasAttribute(FLAT_ROW_ATTR)).toBe(true);
     expect([...document.querySelectorAll(`[${LABEL_ATTR}]`)].map((el) => el.textContent)).toEqual([
+      "Plan",
+      "1/3 complete",
       "Active child threads",
       "Queue",
     ]);

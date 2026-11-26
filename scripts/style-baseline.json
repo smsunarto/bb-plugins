@@ -1571,11 +1571,6 @@
   },
   {
     "file": "plugins/source-control/src/app/pr-watch-banner.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"inline-flex h-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:outline-1 disabled:opacity-50\";"
-  },
-  {
-    "file": "plugins/source-control/src/app/pr-watch-banner.tsx",
     "rule": "raw-color",
     "source": "\"bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)]\","
   },

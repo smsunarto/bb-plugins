@@ -35,8 +35,12 @@ import { Item } from "./components/ui/item.tsx";
 
 const NO_WATCHES: PrWatchView[] = [];
 
+/** Shared banner hover surface: lightens via t3-composer's card token and never darkens in Light. */
+const BANNER_CONTROL_HOVER =
+  "hover:bg-(--t3-prompt-banner-hover-bg,var(--background)) hover:border-border dark:hover:bg-(--t3-prompt-banner-hover-bg,var(--state-hover)) dark:hover:border-transparent";
+
 const ACTION =
-  "inline-flex h-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:outline-1 disabled:opacity-50";
+  "inline-flex h-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground hover:bg-(--t3-prompt-banner-hover-bg,var(--background)) dark:hover:bg-(--t3-prompt-banner-hover-bg,var(--state-hover)) hover:text-foreground focus-visible:outline-1 disabled:opacity-50";
 
 type CheckState = WatchCheck["state"];
 
@@ -176,7 +180,13 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
         <Hint label="Open on GitHub">
           {/* UrlLink takes no ref: the tooltip anchors on this span. */}
           <span className="inline-flex shrink-0">
-            <Button asChild variant="ghost" size="icon-xs" tone="muted">
+            <Button
+              asChild
+              variant="ghost"
+              size="icon-xs"
+              tone="muted"
+              className={BANNER_CONTROL_HOVER}
+            >
               <UrlLink href={watch.url} aria-label={`Open ${key} on GitHub`}>
                 <Icon name="ArrowUpRight" className="size-3" aria-hidden />
               </UrlLink>
@@ -189,6 +199,7 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
             size="xs"
             variant="ghost"
             tone="muted"
+            className={BANNER_CONTROL_HOVER}
             aria-label={`Unwatch ${key}`}
             {...KEEP_COMPOSER_FOCUS}
             disabled={stop.isPending}

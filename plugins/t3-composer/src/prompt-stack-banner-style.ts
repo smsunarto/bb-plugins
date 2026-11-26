@@ -86,9 +86,10 @@ ${PEEK_LAYER} {
   border-width: 0;
 }
 
-/* Prompt-stack banner icons never glimmer, shimmer, shine, or pulse in any state.
-   Guard mask clearing against [data-plugin-icon-asset] so PluginAssetIcon inline
-   mask-image glyphs stay intact. */
+/* Prompt-stack banner icons and labels never glimmer, shimmer, shine, or pulse
+   in any state. Guard mask clearing against [data-plugin-icon-asset] so
+   PluginAssetIcon inline mask-image glyphs stay intact. */
+${CARD} .animate-shine:not([data-plugin-icon-asset]),
 ${CARD} .animate-shine-icon:not([data-plugin-icon-asset]),
 ${CARD} svg:not(.animate-spin) {
   -webkit-mask-image: none;
@@ -102,28 +103,35 @@ ${CARD} .animate-pulse {
   will-change: auto;
 }
 
-/* Flatten active-row washes and rings at rest so every banner card shares one
-   surface fill while preserving keyboard :focus-visible rings on toggles. */
+/* Flatten active-row washes and rings unconditionally at rest so every banner
+   card shares one surface fill on both desktop and touch (preventing sticky
+   :hover from re-exposing core washes after a tap) while keeping :focus-visible
+   rings intact. */
 ${CARD} ${FLAT_ROW} {
   background-color: transparent;
   box-shadow: none;
 }
 
-${CARD} ${TOGGLE}:not(:hover) {
+${CARD} ${TOGGLE} {
   background-color: transparent;
 }
 
-${CARD} ${TOGGLE}:not(:hover):not(:focus-visible) {
+${CARD} ${TOGGLE}:not(:focus-visible) {
   box-shadow: none;
 }
 
-/* Unified label (medium foreground) and value (regular muted-foreground, no
-   shine) grammar for normalized core banner spans. Font size is inherited from
-   the row so compact badges such as text-2xs (10px) keep their size. */
+/* Unified label (medium foreground, steady with no shine sweep) and value
+   (regular muted-foreground, no shine) grammar for normalized core banner
+   spans. Font size is inherited from the row so compact badges such as
+   text-2xs (10px) keep their size. */
 ${CARD} ${LABEL} {
   font-weight: 500;
   color: var(--foreground);
   -webkit-text-fill-color: var(--foreground);
+  -webkit-mask-image: none;
+  mask-image: none;
+  animation: none;
+  will-change: auto;
 }
 
 ${CARD} ${VALUE} {
@@ -309,6 +317,7 @@ function collectCoreHeaderRowMarks(row: Element, marks: CardMarkSets): void {
   for (let child = row.firstElementChild; child !== null; child = child.nextElementSibling) {
     if (isHeaderDisclosureButton(child)) {
       marks.toggles.add(child);
+      collectDirectButtonLabel(child, marks.labels);
       collectMultiPartSummaryMarks(child, marks.labels, marks.values);
       continue;
     }
