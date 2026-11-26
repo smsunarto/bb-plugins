@@ -52,7 +52,9 @@ export function CompletionSound() {
 
 /**
  * True while this tab holds {@link PLAYER_LOCK}. Without Web Locks, every tab
- * plays. Every gesture also unlocks the player if it needs it.
+ * plays. Gestures unlock the player and join the election; once both have
+ * happened the global gesture listeners are removed, so later clicks and
+ * keystrokes cost nothing.
  */
 function usePlayerElection(player: CompletionPlayer): { readonly current: boolean } {
   const elected = useRef(false);
@@ -60,6 +62,7 @@ function usePlayerElection(player: CompletionPlayer): { readonly current: boolea
     const controller = new AbortController();
     const { signal } = controller;
     let joined = false;
+    let listening = false;
     const join = () => {
       if (joined) return;
       joined = true;
@@ -79,14 +82,26 @@ function usePlayerElection(player: CompletionPlayer): { readonly current: boolea
         )
         .catch(() => {});
     };
-    const onGesture = () => {
-      player.unlock();
-      join();
+    const detach = () => {
+      if (!listening) return;
+      listening = false;
+      for (const type of GESTURES) window.removeEventListener(type, onGesture, true);
     };
+    const onGesture = () => {
+      join();
+      if (player.unlocked) {
+        detach();
+        return;
+      }
+      void player.unlock().then((unlocked) => {
+        if (unlocked && joined && !signal.aborted) detach();
+      });
+    };
+    listening = true;
     for (const type of GESTURES) window.addEventListener(type, onGesture, true);
     if (navigator.userActivation?.hasBeenActive ?? true) join();
     return () => {
-      for (const type of GESTURES) window.removeEventListener(type, onGesture, true);
+      detach();
       controller.abort();
       player.release();
       elected.current = false;
@@ -96,10 +111,15 @@ function usePlayerElection(player: CompletionPlayer): { readonly current: boolea
 }
 
 interface CompletionPlayer {
-  /** Call inside a user gesture. Starts the audio context for later plays. */
-  unlock(): void;
+  /** True once a gesture has started the audio context; later plays need no gesture. */
+  readonly unlocked: boolean;
+  /**
+   * Call inside a user gesture. Starts the audio context for later plays and
+   * resolves true once it has started. After that it is a no-op.
+   */
+  unlock(): Promise<boolean>;
   play(): Promise<void>;
-  /** Frees the audio device once the tab no longer plays. */
+  /** Frees the audio device once the tab no longer plays; the next gesture unlocks again. */
   release(): void;
 }
 
@@ -111,14 +131,16 @@ const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  * audio element, because iOS shows an audio element in Now Playing on the lock
  * screen; WebKit lists an AudioContext there only on a page that set
  * `navigator.audioSession.type` to playback. WebKit starts only a context that
- * a gesture resumed, so the player keeps it and resumes it in each gesture.
- * It is suspended between sounds, so an idle tab holds no audio device.
+ * a gesture resumed once; after that, the same context may resume without a
+ * gesture, so the player keeps it and resumes it in one gesture only. It is
+ * suspended between sounds, so an idle tab holds no audio device.
  */
 function completionPlayer(url: string): CompletionPlayer {
   let context: AudioContext | undefined;
   /** Undefined until fetched, null once the route has no sound. */
   let cursor: Promise<AudioBuffer | null> | undefined;
   let sounding = 0;
+  let unlocked = false;
   const rest = () => {
     if (sounding === 0) void context?.suspend().catch(() => {});
   };
@@ -133,10 +155,33 @@ function completionPlayer(url: string): CompletionPlayer {
       },
     ));
   return {
+    get unlocked() {
+      return unlocked;
+    },
     unlock() {
-      if (typeof AudioContext === "undefined") return;
-      context ??= new AudioContext();
-      if (context.state !== "running") context.resume().then(rest, () => {});
+      if (unlocked) return Promise.resolve(true);
+      if (typeof AudioContext === "undefined") {
+        // Nothing to unlock: plays stay silent no matter how many gestures.
+        unlocked = true;
+        return Promise.resolve(true);
+      }
+      const audio = (context ??= new AudioContext());
+      if (audio.state === "running") {
+        unlocked = true;
+        return Promise.resolve(true);
+      }
+      // Not deduplicated: WebKit leaves a resume() outside a real gesture
+      // pending, so each gesture tries again until one starts the context.
+      return audio.resume().then(
+        () => {
+          // A release() during the resume dropped this context.
+          if (context !== audio) return false;
+          unlocked = true;
+          rest();
+          return true;
+        },
+        () => false,
+      );
     },
     async play() {
       if (typeof AudioContext === "undefined") return;
@@ -147,6 +192,8 @@ function completionPlayer(url: string): CompletionPlayer {
         await Promise.race([audio.resume(), delay(1_000)]);
         // A refusal stays silent until the next gesture resumes the context.
         if (audio.state !== "running") return;
+        // A context that started once may resume without a gesture from now on.
+        if (context === audio) unlocked = true;
         const start = audio.currentTime;
         if (buffer) {
           const source = audio.createBufferSource();
@@ -180,6 +227,7 @@ function completionPlayer(url: string): CompletionPlayer {
       void context?.close().catch(() => {});
       context = undefined;
       cursor = undefined;
+      unlocked = false;
     },
   };
 }

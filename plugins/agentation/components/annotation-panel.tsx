@@ -71,40 +71,52 @@ function useAnnotations(filter: FilterId) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestSeq = useRef(0);
 
   const statuses = useMemo(
     () => statusFilters.find((entry) => entry.id === filter)?.statuses ?? null,
     [filter],
   );
 
-  const refresh = useCallback(
-    () =>
-      Promise.all([
-        sharedRequest(`listAnnotations:${statuses?.join(",") ?? "all"}`, () =>
-          rpc.call("listAnnotations", {
-            sessionId: null,
-            statuses: statuses ? [...statuses] : null,
-            pluginId: null,
-          }),
-        ),
-        sharedRequest("listSessions", () => rpc.call("listSessions", { status: null })),
-      ])
-        .then(([annotationResult, sessionResult]) => {
-          setAnnotations(annotationResult.annotations);
-          setRoutings(annotationResult.routings);
-          setSessions(sessionResult.sessions);
-          return setError(null);
-        })
-        .catch((cause: unknown) => {
-          setError(cause instanceof Error ? cause.message : String(cause));
-        })
-        .finally(() => setIsLoading(false)),
-    [rpc, statuses],
-  );
+  const refresh = useCallback(() => {
+    const seq = ++requestSeq.current;
+    return Promise.all([
+      sharedRequest(`listAnnotations:${statuses?.join(",") ?? "all"}`, () =>
+        rpc.call("listAnnotations", {
+          sessionId: null,
+          statuses: statuses ? [...statuses] : null,
+          pluginId: null,
+        }),
+      ),
+      sharedRequest("listSessions", () => rpc.call("listSessions", { status: null })),
+    ])
+      .then(([annotationResult, sessionResult]) => {
+        if (seq !== requestSeq.current) return;
+        setAnnotations(annotationResult.annotations);
+        setRoutings(annotationResult.routings);
+        setSessions(sessionResult.sessions);
+        setError(null);
+      })
+      .catch((cause: unknown) => {
+        if (seq !== requestSeq.current) return;
+        setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        if (seq !== requestSeq.current) return;
+        setIsLoading(false);
+      });
+  }, [rpc, statuses]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(
+    () => () => {
+      requestSeq.current += 1;
+    },
+    [],
+  );
 
   // The toolbar's show/hide setting changes nothing listed here.
   useRealtime(

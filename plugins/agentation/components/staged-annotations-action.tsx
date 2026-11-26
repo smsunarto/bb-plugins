@@ -76,7 +76,8 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
   };
   const refreshSequence = useRef(0);
   const anchor = useRef<HTMLSpanElement>(null);
-  const chipSlot = useComposerContextSlot(anchor);
+  const hasStaged = batch.kind === "ready" && batch.annotations.length > 0;
+  const chipSlot = useComposerContextSlot(anchor, hasStaged);
 
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequence.current;
@@ -170,16 +171,18 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
     </>
   );
 
-  if (batch.kind === "loading") return place(null);
+  if (batch.kind === "loading" || batch.annotations.length === 0) return place(null);
 
   // Beside the composer's own chip for mentioned annotations, the chip holds
   // only the ones still waiting, so the two never count the same annotation.
   // The action-row button keeps them all, to send or discard with their pills.
-  const mentioned = annotationMentionIds(composer.draft.mentions, pluginId);
   const waiting = asChip
-    ? batch.annotations.filter(
-        (annotation) => !mentioned.has(annotationMentionItemId(annotation.id, threadId)),
-      )
+    ? (() => {
+        const mentioned = annotationMentionIds(composer.draft.mentions, pluginId);
+        return batch.annotations.filter(
+          (annotation) => !mentioned.has(annotationMentionItemId(annotation.id, threadId)),
+        );
+      })()
     : batch.annotations;
   if (waiting.length === 0) return place(null);
 
@@ -287,24 +290,66 @@ function annotationMentionIds(mentions: readonly ComposerMention[], pluginId: st
   );
 }
 
+function observeNarrowestContextWrapper(
+  observer: MutationObserver,
+  root: Element,
+  slot: HTMLElement | null,
+): void {
+  observer.disconnect();
+  if (slot) {
+    // Watch only the direct-child chain from the slot's wrapper up to
+    // `[data-promptbox]` (no `subtree: true`) so layout switches or slot
+    // removal are noticed without observing sibling editor subtrees like
+    // ProseMirror.
+    let node: Element | null = slot.parentElement;
+    while (node) {
+      observer.observe(node, { childList: true });
+      if (node === root) break;
+      node = node.parentElement;
+    }
+    return;
+  }
+  observer.observe(root, { childList: true });
+  for (const child of root.children) {
+    if (
+      !child.matches("[data-promptbox-editor-scroll], [contenteditable]") &&
+      child.querySelector('[contenteditable="true"], [data-promptbox-editor-scroll]') === null
+    ) {
+      observer.observe(child, { childList: true });
+    }
+  }
+}
+
 /**
  * The composer's row of attachment-like chips, when its composer offers one
  * (`[data-composer-context-slot]` inside the `[data-promptbox]` form, as the
- * T3 Composer draws it). Followed as the composer switches layouts.
+ * T3 Composer draws it). Followed as the composer switches layouts, only while
+ * staged annotations exist.
  */
-function useComposerContextSlot(anchor: RefObject<HTMLElement | null>): HTMLElement | null {
+function useComposerContextSlot(
+  anchor: RefObject<HTMLElement | null>,
+  enabled: boolean,
+): HTMLElement | null {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {
+    if (!enabled) return;
     const root = anchor.current?.closest("[data-promptbox]");
     if (!root) return;
-    const find = () =>
-      setSlot(root.querySelector<HTMLElement>("[data-composer-context-slot]") ?? null);
-    find();
-    const observer = new MutationObserver(find);
-    observer.observe(root, { childList: true, subtree: true });
+    let currentSlot: HTMLElement | null = null;
+    const sync = () => {
+      const next = root.querySelector<HTMLElement>("[data-composer-context-slot]") ?? null;
+      if (next !== currentSlot) {
+        currentSlot = next;
+        setSlot(next);
+        observeNarrowestContextWrapper(observer, root, next);
+      }
+    };
+    const observer = new MutationObserver(sync);
+    sync();
+    observeNarrowestContextWrapper(observer, root, currentSlot);
     return () => observer.disconnect();
-  }, [anchor]);
-  return slot;
+  }, [anchor, enabled]);
+  return enabled ? slot : null;
 }
 
 // The host mounts each action in a 36px-high cell that clips overflow, so the

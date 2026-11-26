@@ -35,6 +35,7 @@ if (!process.env.BB_AGENTATION_LIFECYCLE_CHILD) {
   function harness() {
     let time = 0;
     let nextTimer = 0;
+    let intervalCalls = 0;
     let view: AgentationProps | null = null;
     const timers = new Map<number, Timer>();
     const storage = new Map<string, string>();
@@ -42,6 +43,28 @@ if (!process.env.BB_AGENTATION_LIFECYCLE_CHILD) {
     const listeners = new Set<EventListenerOrEventListenerObject>();
     const streams = new Set<FakeEventSource>();
     const location = { pathname: "/a", href: "https://bb.test/a" };
+    const windowTarget = new EventTarget();
+    const history = {
+      pushState: (_state: unknown, _title: string, url?: string | URL | null) => {
+        if (typeof url === "string") {
+          location.pathname = url;
+          location.href = `https://bb.test${url}`;
+        }
+      },
+      replaceState: (_state: unknown, _title: string, url?: string | URL | null) => {
+        if (typeof url === "string") {
+          location.pathname = url;
+          location.href = `https://bb.test${url}`;
+        }
+      },
+    };
+    const fakeWindow = {
+      location,
+      history,
+      addEventListener: windowTarget.addEventListener.bind(windowTarget),
+      removeEventListener: windowTarget.removeEventListener.bind(windowTarget),
+      dispatchEvent: windowTarget.dispatchEvent.bind(windowTarget),
+    };
     const snapshot = (route: string): SessionSnapshot => ({
       session: { id: `session:${route}` },
       annotations: annotations.get(route) ?? [],
@@ -100,16 +123,18 @@ if (!process.env.BB_AGENTATION_LIFECYCLE_CHILD) {
       return id;
     };
     replaceGlobal("document", document);
-    replaceGlobal("window", { location });
+    replaceGlobal("window", fakeWindow);
+    replaceGlobal("history", history);
     replaceGlobal("localStorage", {
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => storage.set(key, value),
     });
     replaceGlobal("EventSource", FakeEventSource);
     replaceGlobal("setTimeout", addTimer);
-    replaceGlobal("setInterval", (callback: () => void, delay: number) =>
-      addTimer(callback, delay, delay),
-    );
+    replaceGlobal("setInterval", (callback: () => void, delay: number) => {
+      intervalCalls += 1;
+      return addTimer(callback, delay, delay);
+    });
     replaceGlobal("clearTimeout", timers.delete.bind(timers));
     replaceGlobal("clearInterval", timers.delete.bind(timers));
     replaceGlobal("requestAnimationFrame", addTimer);
@@ -121,14 +146,15 @@ if (!process.env.BB_AGENTATION_LIFECYCLE_CHILD) {
       opened,
       timers,
       call,
+      intervalCalls: () => intervalCalls,
+      opens: () => call.mock.calls.filter(([method]) => method === "openSession").length,
       pulls: () => call.mock.calls.filter(([method]) => method === "pullSession").length,
       setView: mock((snapshot: ToolbarView) => {
         view = snapshot?.props ?? null;
       }),
       view: () => view,
       navigate: (route: string) => {
-        location.pathname = route;
-        location.href = `https://bb.test${route}`;
+        history.pushState(null, "", route);
       },
       holdInitialSession: () => {
         let resolve!: (value: SessionSnapshot) => void;
@@ -252,8 +278,9 @@ if (!process.env.BB_AGENTATION_LIFECYCLE_CHILD) {
     expect(typeof active.view()?.onAnnotationAdd).toBe("function");
     expect(active.streams.size).toBe(1);
     expect(active.listeners.size).toBe(2);
-    // The poll, the route watcher, and the stream's silence watchdog.
-    expect(active.timers.size).toBe(3);
+    // The poll and the stream's silence watchdog (no interval route poller).
+    expect(active.timers.size).toBe(2);
+    expect(active.intervalCalls()).toBe(0);
     await disposeSecond();
     expect(active.streams.size).toBe(0);
     expect(active.listeners.size).toBe(0);
@@ -320,5 +347,30 @@ if (!process.env.BB_AGENTATION_LIFECYCLE_CHILD) {
     await active.advance(0);
     expect(active.pulls()).toBe(before + 2);
     await dispose();
+  });
+
+  test("route switch uses navigation events (no interval) and skips redundant pullSession after fresh openSession", async () => {
+    active = harness();
+    const dispose = await mount();
+    await active.advance(0);
+    expect(active.intervalCalls()).toBe(0);
+    expect(active.opens()).toBe(1);
+    expect(active.pulls()).toBe(0);
+
+    // Navigating to a brand-new route calls openSession and does NOT follow up with pullSession.
+    active.navigate("/b");
+    await active.advance(0);
+    expect(active.opens()).toBe(2);
+    expect(active.pulls()).toBe(0);
+
+    // Navigating back to a cached route skips openSession and pulls to refresh the cached session.
+    active.navigate("/a");
+    await active.advance(0);
+    expect(active.opens()).toBe(2);
+    expect(active.pulls()).toBe(1);
+
+    await dispose();
+    expect(active.intervalCalls()).toBe(0);
+    expect(active.timers.size).toBe(0);
   });
 }

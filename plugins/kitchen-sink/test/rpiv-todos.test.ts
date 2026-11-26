@@ -125,10 +125,12 @@ test("reads completed events in ascending pages, coalesces requests and resumes 
   const [a, b] = await Promise.all([reader.read("t1"), reader.read("t1")]);
   expect(a).toEqual(b);
   expect(a).toEqual({ items: [{ id: "1", text: "First", status: "pending" }], truncated: false });
-  expect(harness.sdk.callsTo("threads.events.list")).toHaveLength(4);
+  // Two cold pages, then the coalesced re-read validates its anchor and reads
+  // new events in one call.
+  expect(harness.sdk.callsTo("threads.events.list")).toHaveLength(3);
   rows.push(event(102, { action: "update", id: 1, status: "completed" }));
   expect((await reader.read("t1")).items[0]?.status).toBe("completed");
-  expect(harness.sdk.callsTo("threads.events.list")).toHaveLength(6);
+  expect(harness.sdk.callsTo("threads.events.list")).toHaveLength(4);
   await harness.lifecycle.dispose();
 });
 
@@ -212,7 +214,69 @@ test("keeps completed pages when a later history read fails", async () => {
   const reader = createTodoReader(bb);
   await expect(reader.read("t1")).rejects.toThrow("deadline");
   expect((await reader.read("t1")).items).toEqual([{ id: "1", text: "First", status: "pending" }]);
-  expect(after.filter((value) => value === undefined)).toHaveLength(2); // first page + anchor validation
-  expect(after.at(-1)).toBe("100");
+  // First page, failed second page, then one anchored read from the cursor.
+  expect(after).toEqual([undefined, "100", "99"]);
+  await harness.lifecycle.dispose();
+});
+
+test("a warm read validates its anchor and fetches new events in a single events.list call", async () => {
+  const rows = [event(1, { action: "create", subject: "First" })];
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "kitchen-sink",
+    sdk: { threads: { events: { list: async (input) => pageOf(rows, input) } } },
+  });
+  const reader = createTodoReader(bb);
+  await reader.read("t1");
+  expect(harness.sdk.callsTo("threads.events.list")).toHaveLength(1);
+
+  // Cache hit with nothing new: exactly one call.
+  expect((await reader.read("t1")).items).toEqual([{ id: "1", text: "First", status: "pending" }]);
+  expect(harness.sdk.callsTo("threads.events.list")).toHaveLength(2);
+
+  rows.push(event(5, { action: "update", id: 1, status: "in_progress" }));
+  expect((await reader.read("t1")).items[0]?.status).toBe("in_progress");
+  const calls = harness.sdk.callsTo("threads.events.list") as [
+    { afterSeq?: string; beforeSeq?: string; order?: string },
+  ][];
+  expect(calls).toHaveLength(3);
+  expect(calls.map(([input]) => input.order)).toEqual(["asc", "asc", "asc"]);
+  expect(calls.some(([input]) => input.beforeSeq !== undefined)).toBe(false);
+
+  // The next warm read anchors on seq 5, so afterSeq is 4.
+  await reader.read("t1");
+  expect(harness.sdk.callsTo("threads.events.list")).toHaveLength(4);
+  const last = harness.sdk.callsTo("threads.events.list").at(-1) as [{ afterSeq?: string }];
+  expect(last[0].afterSeq).toBe("4");
+  await harness.lifecycle.dispose();
+});
+
+test("the RPC handler forwards the caller's abort signal to events.list", async () => {
+  const signals: AbortSignal[] = [];
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "kitchen-sink",
+    sdk: {
+      threads: {
+        events: {
+          list: async (input) => {
+            if (input.signal) signals.push(input.signal);
+            return new Promise<never>((_resolve, reject) => {
+              input.signal?.addEventListener("abort", () => reject(input.signal?.reason), {
+                once: true,
+              });
+            });
+          },
+        },
+      },
+    },
+  });
+  const reader = createTodoReader(bb);
+  const caller = new AbortController();
+  const pending = reader.read("t1", caller.signal);
+  await Promise.resolve();
+  expect(signals).toHaveLength(1);
+  expect(signals[0]?.aborted).toBe(false);
+  caller.abort(new Error("caller went away"));
+  await expect(pending).rejects.toThrow("caller went away");
+  expect(signals[0]?.aborted).toBe(true);
   await harness.lifecycle.dispose();
 });

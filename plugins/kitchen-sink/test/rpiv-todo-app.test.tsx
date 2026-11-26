@@ -260,3 +260,69 @@ test("pressing the to-do toggle or Retry leaves focus in the composer", async ()
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   slot.unmount();
 });
+
+test("an empty running thread does not poll, and a completed tool call refreshes it", async () => {
+  let notify: (eventTypes: string[]) => void = () => {};
+  let items: { id: string; text: string; status: "pending" }[] = [];
+  const slot = renderSlot(
+    { component: TodoBanner },
+    {},
+    {
+      composer: { scope: { kind: "thread", threadId: "empty-running" }, isRunning: true },
+      sdk: {
+        subscribe: (input: unknown) => {
+          if (input && typeof input === "object" && "callback" in input) {
+            const callback = input.callback as (event: unknown) => void;
+            notify = (eventTypes) =>
+              callback({
+                entity: "thread",
+                id: "empty-running",
+                changes: ["events-appended"],
+                metadata: { eventTypes },
+              });
+          }
+          return () => {};
+        },
+      },
+      rpc: { getRpivTodos: () => ({ items, truncated: false }) },
+    },
+  );
+  await waitFor(() => expect(slot.inspection.rpcCalls.length).toBe(1));
+  // The old banner polled every 1.2s for the whole turn.
+  await new Promise((resolve) => setTimeout(resolve, 3_000));
+  expect(slot.inspection.rpcCalls.length).toBe(1);
+  expect(slot.container.childNodes).toHaveLength(0);
+
+  // Unrelated event types do not refresh.
+  await act(async () => notify(["thread/tokenUsage/updated"]));
+  await act(async () => {});
+  expect(slot.inspection.rpcCalls.length).toBe(1);
+
+  items = [{ id: "1", text: "New task", status: "pending" }];
+  await act(async () => notify(["item/completed"]));
+  await slot.findByText("#1 New task", undefined, { timeout: 3_000 });
+  slot.unmount();
+});
+
+test("a failing running thread backs off instead of retrying every 1.2s", async () => {
+  let attempts = 0;
+  const slot = renderSlot(
+    { component: TodoBanner },
+    {},
+    {
+      composer: { scope: { kind: "thread", threadId: "failing-running" }, isRunning: true },
+      sdk: { subscribe: () => () => {} },
+      rpc: {
+        getRpivTodos: () => {
+          attempts += 1;
+          throw new Error("offline");
+        },
+      },
+    },
+  );
+  await waitFor(() => expect(attempts).toBe(1));
+  // Backoff schedule: 0, 1.2s, 3.6s, 8.4s. Fixed 1.2s polling would make 5 by 4.9s.
+  await new Promise((resolve) => setTimeout(resolve, 4_900));
+  expect(attempts).toBe(3);
+  slot.unmount();
+});

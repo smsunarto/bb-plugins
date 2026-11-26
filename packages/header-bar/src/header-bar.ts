@@ -11,7 +11,7 @@
  * so higher-specificity context (e.g. Captain crew orientation) cleanly
  * supersedes generic lineage/subthread fallbacks without duplicate rows.
  */
-import { useId, useLayoutEffect, useSyncExternalStore } from "react";
+import { useCallback, useId, useLayoutEffect, useSyncExternalStore } from "react";
 
 export const HEADER_BAR_SLOTS = ["lineage", "task", "meta", "threads", "action"] as const;
 export type HeaderBarSlot = (typeof HEADER_BAR_SLOTS)[number];
@@ -162,6 +162,92 @@ function notifyThread(registry: HeaderBarRegistry, threadId: string): void {
   }
 }
 
+function areGlyphsEqual(a: HeaderBarGlyph | undefined, b: HeaderBarGlyph | undefined): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined || a.kind !== b.kind) return false;
+  switch (a.kind) {
+    case "icon":
+      return b.kind === "icon" && a.name === b.name && a.tone === b.tone;
+    case "image":
+      return b.kind === "image" && a.src === b.src && a.alt === b.alt;
+    case "dot":
+      return b.kind === "dot" && a.tone === b.tone && a.pulse === b.pulse;
+    case "task-status":
+      return b.kind === "task-status" && a.status === b.status;
+    case "task-priority":
+      return b.kind === "task-priority" && a.priority === b.priority;
+  }
+}
+
+function areMenuItemsEqual(a: HeaderBarMenuItem, b: HeaderBarMenuItem): boolean {
+  if (a === b) return true;
+  return (
+    a.id === b.id &&
+    a.label === b.label &&
+    a.keyText === b.keyText &&
+    a.detail === b.detail &&
+    a.active === b.active &&
+    a.disabled === b.disabled &&
+    a.onSelect === b.onSelect &&
+    areGlyphsEqual(a.glyph, b.glyph) &&
+    areGlyphsEqual(a.trailingGlyph, b.trailingGlyph)
+  );
+}
+
+function areMenusEqual(a: HeaderBarMenu | undefined, b: HeaderBarMenu | undefined): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  if (
+    a.triggerLabel !== b.triggerLabel ||
+    a.ariaLabel !== b.ariaLabel ||
+    a.title !== b.title ||
+    a.tone !== b.tone ||
+    a.heading !== b.heading ||
+    a.testId !== b.testId ||
+    !areGlyphsEqual(a.glyph, b.glyph) ||
+    a.items.length !== b.items.length
+  ) {
+    return false;
+  }
+  for (let i = 0; i < a.items.length; i++) {
+    if (!areMenuItemsEqual(a.items[i]!, b.items[i]!)) return false;
+  }
+  return true;
+}
+
+function areSegmentsEqual(a: readonly HeaderBarSegment[], b: readonly HeaderBarSegment[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (left === right) continue;
+    if (
+      left.owner !== right.owner ||
+      left.slot !== right.slot ||
+      left.priority !== right.priority ||
+      left.prefixIcon !== right.prefixIcon ||
+      left.keyText !== right.keyText ||
+      left.label !== right.label ||
+      left.tag !== right.tag ||
+      left.tone !== right.tone ||
+      left.tagTone !== right.tagTone ||
+      left.ariaLabel !== right.ariaLabel ||
+      left.title !== right.title ||
+      left.testId !== right.testId ||
+      left.shrink !== right.shrink ||
+      left.onClick !== right.onClick ||
+      !areGlyphsEqual(left.glyph, right.glyph) ||
+      !areGlyphsEqual(left.tagGlyph, right.tagGlyph) ||
+      !areMenusEqual(left.menu, right.menu) ||
+      !areMenusEqual(left.secondaryMenu, right.secondaryMenu)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Publish or update one mounted contributor's segments for `threadId`.
  * Passing an empty array clears this instance's segments for `threadId`.
@@ -184,6 +270,15 @@ export function setHeaderBarSegments(
   if (entries === undefined) {
     entries = new Map();
     registry.byThread.set(threadId, entries);
+  } else {
+    const existing = entries.get(instanceId);
+    if (
+      existing !== undefined &&
+      existing.owner === owner &&
+      areSegmentsEqual(existing.segments, segments)
+    ) {
+      return;
+    }
   }
   entries.set(instanceId, { owner, segments });
   notifyThread(registry, threadId);
@@ -298,11 +393,12 @@ export function usePublishHeaderBarSegments(
 
 /** Subscribe to the resolved statusbar segments for `threadId`. */
 export function useHeaderBarSnapshot(threadId: string): ResolvedHeaderBar {
-  return useSyncExternalStore(
-    (onStoreChange) => subscribeHeaderBar(threadId, onStoreChange),
-    () => getResolvedHeaderBar(threadId),
-    () => getResolvedHeaderBar(threadId),
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => subscribeHeaderBar(threadId, onStoreChange),
+    [threadId],
   );
+  const getSnapshot = useCallback(() => getResolvedHeaderBar(threadId), [threadId]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 /** Clear all registry state. Intended for unit tests. */

@@ -12,6 +12,7 @@ import { replayTodoArgs } from "./rpiv-todo-replay.ts";
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 40;
+const READ_TIMEOUT_MS = 10_000;
 const EVENT_TYPES = ["item/completed", "system/operation"] as const;
 type Event = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["events"]["list"]>>[number];
 
@@ -60,38 +61,43 @@ export function createTodoReader(bb: BbPluginApi) {
       if (oldest) cache.delete(oldest);
     }
   }
-  async function read(threadId: string): Promise<TodoSnapshot> {
+  async function read(threadId: string, callerSignal?: AbortSignal): Promise<TodoSnapshot> {
     const previous = cache.get(threadId);
     let state = previous?.state ?? { tasks: [], nextId: 1 };
     let cursor = previous?.cursor;
     let truncated = true;
-    const signal = AbortSignal.timeout(10_000);
-    if (cursor) {
-      // Editing a message can delete/reuse sequence numbers. Validate identity,
-      // not just the latest sequence, before reusing the reconstructed state.
-      const anchor = await bb.sdk.threads.events.list({
-        threadId,
-        types: EVENT_TYPES,
-        order: "desc",
-        limit: "1",
-        beforeSeq: String(cursor.seq + 1),
-        signal,
-      });
-      if (anchor[0]?.id !== cursor.id || anchor[0]?.seq !== cursor.seq) {
-        state = { tasks: [], nextId: 1 };
-        cursor = undefined;
-        cache.delete(threadId);
-      }
-    }
+    const timeout = AbortSignal.timeout(READ_TIMEOUT_MS);
+    const signal = callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
+    // A warm read re-reads the cursor event as the first row of its first page:
+    // editing a message can delete/reuse sequence numbers, so identity (not
+    // just the latest sequence) must match before reusing the cached state.
+    // One `events.list` call both validates the anchor and fetches new events.
+    let anchor = cursor;
     for (let i = 0; i < MAX_PAGES; i++) {
-      const page = await bb.sdk.threads.events.list({
+      const afterSeq = anchor ? anchor.seq - 1 : cursor?.seq;
+      let page = await bb.sdk.threads.events.list({
         threadId,
         types: EVENT_TYPES,
         order: "asc",
         limit: String(PAGE_SIZE),
-        ...(cursor ? { afterSeq: String(cursor.seq) } : {}),
+        ...(afterSeq !== undefined && afterSeq > 0 ? { afterSeq: String(afterSeq) } : {}),
         signal,
       });
+      const fullPage = page.length >= PAGE_SIZE;
+      if (anchor) {
+        const first = page[0];
+        if (first?.id !== anchor.id || first.seq !== anchor.seq) {
+          // History was rewritten: rebuild from the start.
+          state = { tasks: [], nextId: 1 };
+          cursor = undefined;
+          anchor = undefined;
+          cache.delete(threadId);
+          i--;
+          continue;
+        }
+        anchor = undefined;
+        page = page.slice(1);
+      }
       for (const row of page) {
         if (
           row.type === "system/operation" &&
@@ -108,7 +114,7 @@ export function createTodoReader(bb: BbPluginApi) {
       if (last) cursor = { seq: last.seq, id: last.id };
       // Keep validated progress even if a subsequent page exceeds the deadline.
       remember(threadId, state, cursor);
-      if (page.length < PAGE_SIZE) {
+      if (!fullPage) {
         truncated = false;
         break;
       }
@@ -116,7 +122,7 @@ export function createTodoReader(bb: BbPluginApi) {
     return { items: itemsFromTasks(state.tasks), truncated };
   }
   return {
-    read(threadId: string) {
+    read(threadId: string, signal?: AbortSignal) {
       const current = inFlight.get(threadId);
       if (current) {
         // The caller may be reacting to a mutation after our last page read.
@@ -132,7 +138,7 @@ export function createTodoReader(bb: BbPluginApi) {
         let attempts = 0;
         do {
           entry.dirty = false;
-          snapshot = await read(threadId);
+          snapshot = await read(threadId, signal);
           attempts++;
         } while (entry.dirty && attempts < 2);
         return entry.dirty ? { ...snapshot, truncated: true } : snapshot;
@@ -156,7 +162,9 @@ export function registerRpivTodos(bb: BbPluginApi): void {
       default: true,
     },
   });
-  bb.rpc.register(rpivTodoContract, { getRpivTodos: ({ threadId }) => reader.read(threadId) });
+  bb.rpc.register(rpivTodoContract, {
+    getRpivTodos: ({ threadId }, context) => reader.read(threadId, context?.experimental_signal),
+  });
   const publish = ({ thread }: { thread: { id: string } }) => {
     // A settling turn may race the last page of an already-running read.
     reader.invalidate(thread.id);

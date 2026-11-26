@@ -2,12 +2,16 @@ import { expect, onTestFinished, test } from "bun:test";
 import { createFakePluginHost, makeHostResponse } from "@get-bb/plugin-sdk/testing";
 
 import plugin from "../src/server/server.ts";
-import { CURSOR_COMPLETION_SOUND } from "../src/server/lib/completion-sound.ts";
+import {
+  COMPLETION_SOUND_MISS_TTL_MS,
+  CURSOR_COMPLETION_SOUND,
+  registerCompletionSound,
+} from "../src/server/lib/completion-sound.ts";
 
 const mp3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00, 0xff]);
 const missing = () => Promise.reject(Object.assign(new Error("HTTP 404"), { status: 404 }));
 
-async function load(cursorHosts: Set<string>) {
+async function load(cursorHosts: Set<string>, clock?: { now: number }) {
   const { bb, harness } = createFakePluginHost({
     pluginId: "kitchen-sink",
     sdk: {
@@ -35,7 +39,8 @@ async function load(cursorHosts: Set<string>) {
   });
   // Disposing removes the fake host's storage dir.
   onTestFinished(() => harness.lifecycle.dispose());
-  await plugin(bb);
+  if (clock) registerCompletionSound(bb, { now: () => clock.now });
+  else await plugin(bb);
   const readHosts = () =>
     harness.sdk.callsTo("files.read").map(([args]) => (args as { hostId: string }).hostId);
   return { harness, readHosts };
@@ -55,14 +60,26 @@ test("serves Cursor's sound from the connected host that has it, then from memor
   expect(readHosts()).toHaveLength(2);
 });
 
-test("answers 404 while no connected host has Cursor, and looks again on the next request", async () => {
+test("answers 404 while no connected host has Cursor, remembers the miss, and looks again after the TTL", async () => {
   const cursorHosts = new Set<string>();
-  const { harness, readHosts } = await load(cursorHosts);
+  const clock = { now: 1_000 };
+  const { harness, readHosts } = await load(cursorHosts, clock);
 
   expect((await harness.fetchHttp("GET", "/completion-sound")).status).toBe(404);
+  expect(harness.sdk.callsTo("hosts.list")).toHaveLength(1);
 
+  // Every browser load inside the TTL is answered from the negative cache.
   cursorHosts.add("host_mac");
+  for (let i = 0; i < 5; i++) {
+    clock.now += 60_000;
+    expect((await harness.fetchHttp("GET", "/completion-sound")).status).toBe(404);
+  }
+  expect(harness.sdk.callsTo("hosts.list")).toHaveLength(1);
+  expect(readHosts()).toEqual(["host_linux", "host_mac"]);
+
+  clock.now = 1_000 + COMPLETION_SOUND_MISS_TTL_MS;
   const later = await harness.fetchHttp("GET", "/completion-sound");
   expect(later.status).toBe(200);
+  expect(harness.sdk.callsTo("hosts.list")).toHaveLength(2);
   expect(readHosts()).toEqual(["host_linux", "host_mac", "host_linux", "host_mac"]);
 });
