@@ -37,19 +37,6 @@ export const gtdSidebarRpcContract = defineRpcContract({
     output: z.array(z.string()),
     tags: () => [GTD_TAGS.naming],
   },
-  listEnvironmentBranches: {
-    experimental_description:
-      "GitButler branch labels for plain (non-worktree) checkouts, when the setting is on.",
-    input: z.object({ environmentIds: z.array(z.string().trim().min(1)).max(100) }),
-    output: z.object({
-      environments: z.array(
-        z.object({
-          environmentId: z.string(),
-          label: z.string(),
-        }),
-      ),
-    }),
-  },
   listLifecycle: {
     experimental_description: "Every snoozed thread with its wake time.",
     input: z.object({}),

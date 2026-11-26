@@ -17,16 +17,17 @@ async function setup(settings: Record<string, boolean> = {}) {
 }
 
 describe("public feature opt-ins", () => {
-  test("new installs keep optional enhancements off and host branch reads disabled", async () => {
+  test("new installs keep optional enhancements off", async () => {
     const { harness } = await setup();
     try {
       const descriptors = harness.inspection.registrations.settingsDescriptors;
-      for (const key of ["mobileHaptics", "gitButlerBranches", "automaticallyNameThreads"]) {
+      for (const key of ["mobileHaptics", "automaticallyNameThreads"]) {
         assert.equal(descriptors[key]?.default, false, key);
       }
-      assert.deepEqual(
-        await harness.behavior.callRpc("listEnvironmentBranches", { environmentIds: ["env_1"] }),
-        { environments: [] },
+      assert.equal(descriptors.gitButlerBranches, undefined);
+      assert.equal(
+        harness.inspection.registrations.rpcMethods.includes("listEnvironmentBranches"),
+        false,
       );
       const config = await harness.behavior.resolveAgentConfiguration(
         makePluginAgentConfigurationContext(),
@@ -61,63 +62,6 @@ describe("public feature opt-ins", () => {
         assert.deepEqual(config.tools, []);
         if (reload === 0) ({ harness } = await harness.lifecycle.reload(plugin));
       }
-    } finally {
-      await harness.lifecycle.dispose();
-    }
-  });
-});
-
-describe("GitButler branch labels", () => {
-  test("ask only connected machines, each bounded so one stalled machine cannot hold the rest", async () => {
-    const calls: unknown[] = [];
-    const { bb, harness } = createFakePluginHost({
-      pluginId: "gtd-sidebar",
-      settings: { gitButlerBranches: true },
-      sdk: {
-        subscribe: () => () => {},
-        hosts: {
-          list: async () => [
-            { id: "host_mac", status: "connected" },
-            { id: "host_asleep", status: "disconnected" },
-          ],
-        },
-        environments: {
-          get: async ({ environmentId }: { environmentId: string }) => ({
-            id: environmentId,
-            hostId: environmentId === "env_mac" ? "host_mac" : "host_asleep",
-            path: `/work/${environmentId}`,
-            isGitRepo: true,
-            isWorktree: false,
-          }),
-        },
-      } as never,
-    });
-    // The fake host client drops call options, so record them here.
-    const hosts = {
-      experimental_client: () => ({
-        call: async (method: string, input: unknown, options: unknown) => {
-          calls.push({ method, input, options });
-          return { label: "scott/foo" };
-        },
-      }),
-    };
-    await plugin(
-      new Proxy(bb, { get: (target, key) => (key === "hosts" ? hosts : Reflect.get(target, key)) }),
-    );
-    try {
-      assert.deepEqual(
-        await harness.behavior.callRpc("listEnvironmentBranches", {
-          environmentIds: ["env_mac", "env_asleep"],
-        }),
-        { environments: [{ environmentId: "env_mac", label: "scott/foo" }] },
-      );
-      assert.deepEqual(calls, [
-        {
-          method: "branchSummary",
-          input: { cwd: "/work/env_mac" },
-          options: { hostId: "host_mac", timeoutMs: 8_000 },
-        },
-      ]);
     } finally {
       await harness.lifecycle.dispose();
     }

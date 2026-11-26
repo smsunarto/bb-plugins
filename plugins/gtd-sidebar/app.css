@@ -586,9 +586,6 @@
 .gtd-thread-row:is(:hover, :focus-within, [data-sidebar-thread-active="true"]) .gtd-disclosure {
   color: var(--sidebar-accent-foreground);
 }
-.gtd-thread-tooltip {
-  overflow-wrap: anywhere;
-}
 /* Drag-to-nest (use-nest-drag): the dragged row fades in place while its
    ghost rides the pointer, and the row or project header that may take the
    drop shows the accent ground with the focus ring's outline. */

@@ -1,5 +1,5 @@
 // @smsunarto/bb-plugin-gtd-sidebar backend — the snooze store, the forked
-// Thread list's layout preferences, thread naming, and GitButler labels.
+// Thread list's layout preferences, and thread naming.
 //
 // Snoozes live in the plugin's own SQLite database, never on bb's thread.
 // Putting them on the thread would mean a schema change, a wire change, and a
@@ -43,9 +43,6 @@ interface LifecycleDbRow {
   snoozed_at: number;
 }
 
-/** The host's 5 s limit on `but status`, plus the trip to and from the machine. */
-const BRANCH_SUMMARY_TIMEOUT_MS = 8_000;
-
 export default async function plugin(bb: BbPluginApi) {
   const host = bb.hosts.experimental_client({ contract: gtdSidebarHostContract });
   const settings = bb.settings.define({
@@ -73,13 +70,6 @@ export default async function plugin(bb: BbPluginApi) {
       label: "Enable mobile haptics",
       description:
         "Opt in to a tactile tap when a long press opens a row's menu in bb's iOS app. Long-press menus work without it.",
-      default: false,
-    },
-    gitButlerBranches: {
-      type: "boolean",
-      label: "Show GitButler branches",
-      description:
-        "Opt in to periodic host GitButler CLI reads for primary checkouts. Otherwise use BB's native branch labels.",
       default: false,
     },
   });
@@ -178,48 +168,6 @@ export default async function plugin(bb: BbPluginApi) {
     gtdSidebarRpcContract,
     {
       listNamingThreads: threadNamer.listNamingThreads,
-      async listEnvironmentBranches({ environmentIds }) {
-        if (!(await settings.get()).gitButlerBranches) return { environments: [] };
-        // Environments live on every machine, and the answer waits for the
-        // slowest. A disconnected machine is skipped, and a connected one that
-        // stalls is cut off just past the host's own 5 s limit on `but`.
-        const connected = new Set(
-          (await bb.sdk.hosts.list())
-            .filter((machine) => machine.status === "connected")
-            .map((machine) => machine.id),
-        );
-        const environments = await Promise.all(
-          [...new Set(environmentIds)].map(async (environmentId) => {
-            try {
-              const environment = await bb.sdk.environments.get({ environmentId });
-              // GitButler owns the primary checkout. Linked worktrees keep their
-              // real Git branch and must not inherit the primary workspace's
-              // virtual branches. `branchName` is not a guard here: bb records it
-              // when an environment is created, so it can predate GitButler.
-              if (!environment.isGitRepo || environment.isWorktree || environment.path === null) {
-                return null;
-              }
-              if (!connected.has(environment.hostId)) return null;
-
-              const summary = await host.call(
-                "branchSummary",
-                { cwd: environment.path },
-                { hostId: environment.hostId, timeoutMs: BRANCH_SUMMARY_TIMEOUT_MS },
-              );
-              if (summary.label === null) return null;
-              return {
-                environmentId,
-                label: summary.label,
-              };
-            } catch {
-              // The card keeps bb's own branch label when the environment or its
-              // host is unavailable. A sidebar enhancement must not blank rows.
-              return null;
-            }
-          }),
-        );
-        return { environments: environments.filter((environment) => environment !== null) };
-      },
       async listCollapsedThreads({ familyIds }) {
         const expanded = new Set(await preferences.read("expandedThreads"));
         return { threadIds: familyIds.filter((id) => !expanded.has(id)) };
