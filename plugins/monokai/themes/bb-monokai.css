@@ -1484,15 +1484,18 @@
 /* Shared host-component adapter. Field and outline-button fills depend only
  * on role, never on which card, sidebar, dialog, or composer contains them.
  * Clip the translucent fill inside its edge to avoid double compositing.
- * Radix checkboxes are also `button.border-input`, but bb draws their checked
- * state with layered utilities this unlayered fill would hide, so they keep
- * bb's own look. Shared @bb-plugins/ui controls name their role with
- * data-bb-control and get the same fills as bb's controls of that role. */
+ * Radix checkboxes and compact radios (`data-state="checked"|"unchecked"`) are
+ * also `button.border-input`, but bb draws their checked state with layered
+ * utilities this unlayered fill would hide, so they keep bb's own look while
+ * single-select outline ToggleGroups (`role="radio"` with `data-state="on"|"off"`)
+ * keep the shared outline-button adapter. Shared @bb-plugins/ui controls name
+ * their role with data-bb-control and get the same fills as bb's controls of
+ * that role. */
 .dark input.border-input,
 .dark textarea.border-input,
 .dark select.border-input,
 .dark [role="combobox"].border-input,
-.dark button.border-input:not([role="checkbox"]),
+.dark button.border-input:not([role="checkbox"], [role="radio"][data-state="checked"], [role="radio"][data-state="unchecked"]),
 .dark button.border.bg-card,
 .dark [data-bb-control="field"],
 .dark button[data-bb-control="outline"] {
@@ -1514,7 +1517,7 @@
   .dark textarea.border-input:hover:not(:disabled),
   .dark select.border-input:hover:not(:disabled),
   .dark [role="combobox"].border-input:hover:not(:disabled),
-  .dark button.border-input:not([role="checkbox"]):hover:not(:disabled),
+  .dark button.border-input:not([role="checkbox"], [role="radio"][data-state="checked"], [role="radio"][data-state="unchecked"]):hover:not(:disabled),
   .dark button.border.bg-card:hover:not(:disabled),
   .dark [data-bb-control="field"]:hover:not(:disabled),
   .dark button[data-bb-control="outline"]:hover:not(:disabled) {
@@ -1532,11 +1535,11 @@
   }
 }
 
-.dark button.border-input:not([role="checkbox"])[data-state="on"],
+.dark button.border-input:not([role="checkbox"], [role="radio"][data-state="checked"], [role="radio"][data-state="unchecked"])[data-state="on"],
 .dark button[data-bb-control="outline"][data-state="on"],
-.dark button.border-input:not([role="checkbox"]):active:not(:disabled),
+.dark button.border-input:not([role="checkbox"], [role="radio"][data-state="checked"], [role="radio"][data-state="unchecked"]):active:not(:disabled),
 .dark button.border.bg-card:active:not(:disabled),
-.dark button.border-input:not([role="checkbox"])[data-state="open"],
+.dark button.border-input:not([role="checkbox"], [role="radio"][data-state="checked"], [role="radio"][data-state="unchecked"])[data-state="open"],
 .dark button.border.bg-card[data-state="open"],
 .dark button[data-bb-control="outline"]:active:not(:disabled),
 .dark button[data-bb-control="outline"][data-state="open"] {
@@ -1556,6 +1559,26 @@
   --tw-ring-inset: inset;
   --tw-ring-offset-width: 0px;
   outline-offset: -2px;
+}
+
+/* Compact selection controls (Radix/kit Radio, Checkbox, and Switch, carrying
+ * data-state="checked"|"unchecked"|"indeterminate") fill with solid --foreground
+ * when checked, where an inset --ring (same ink at 25% alpha) composites to zero
+ * contrast and an unchecked inset ring falls below 3:1. Draw an outer neutral-
+ * ladder outline separated by a 2px transparent gap so focus clears 3:1 against
+ * every dark surface (3.39:1-6.58:1) while staying visually distinct from the
+ * solid --foreground fill without painting an opaque moat. ToggleGroups
+ * (data-state="on"|"off") and custom card/row radios keep their own rings. */
+.dark button[role="radio"][data-state="checked"]:focus-visible,
+.dark button[role="radio"][data-state="unchecked"]:focus-visible,
+.dark button[role="checkbox"][data-state="checked"]:focus-visible,
+.dark button[role="checkbox"][data-state="unchecked"]:focus-visible,
+.dark button[role="checkbox"][data-state="indeterminate"]:focus-visible,
+.dark button[role="switch"][data-state="checked"]:focus-visible,
+.dark button[role="switch"][data-state="unchecked"]:focus-visible {
+  outline: 2px solid var(--muted-foreground);
+  outline-offset: 2px;
+  --tw-ring-shadow: 0 0 transparent;
 }
 
 /* The composer owns one 6% layer. Its editor is layout, not another surface. */
