@@ -13,7 +13,7 @@ Every Captain starts with four daily routines in the bb server's time zone: **Ba
 
 ## Set one up
 
-1. Write the instruction to a file, such as `briefs/routine-<name>.md` in your Drive. Write it as a standalone request: what to do on each run and what to reply. Keep it under 4000 characters. **Any routine that produces fixes or PRs** must end by opening a ship ask (`bb captain verdict <task> review passed --head <sha> --ship --reason "<ship path and branch>"`) once reviewed — never stop at an unshipped PR.
+1. Write the instruction to a file, such as `briefs/routine-<name>.md` in your Drive. Write it as a standalone request: what to do on each run and what to report when something needs the user (otherwise end the turn with no text). Keep it under 4000 characters. **Any routine that produces fixes or PRs** must end by opening a ship ask (`bb captain verdict <task> review passed --head <sha> --ship --reason "<ship path and branch>"`) once reviewed — never stop at an unshipped PR.
 2. Add it with one schedule:
    - Recurring: `bb captain routine add --name "<name>" --cron "<cron>" --timezone <iana> --prompt-file <path>`. Ask the user's time zone when you do not know it; the default is the bb server's.
    - Once: `--in 2h`, or `--at <ISO time with offset>`, in place of `--cron`.
@@ -37,7 +37,7 @@ Done when the routine is listed in `bb captain routine list`, the user has its s
 
 Weekdays at 09:00, `--cron "0 9 * * 1-5"`, named **Stalled crew sweep**:
 
-> In a background subagent, run `bb captain status --all`. Nudge each crew thread stalled over two hours with `bb captain tell --stalled`. For a thread blocked on an interaction for over an hour, check that it is in Needs you. For any task whose review passed at a full recorded head and that has no ship ask for that head, open or answered Merge or Hold, open one with `bb captain verdict <task> review passed --head <recorded sha> --ship --reason "<ship path and branch>"`; a Superseded ask does not count. Reply with one line; if nothing needed doing, say only that.
+> In a background subagent, run `bb captain status --all`. Nudge each crew thread stalled over two hours with `bb captain tell --stalled`. For a thread blocked on an interaction for over an hour, check that it is in Needs you. For any task whose review passed at a full recorded head and that has no ship ask for that head, open or answered Merge or Hold, open one with `bb captain verdict <task> review passed --head <recorded sha> --ship --reason "<ship path and branch>"`; a Superseded ask does not count. Reply with one line only if something needs the user or a step failed; otherwise end the turn with no text.
 
 Mondays at 10:00, `--cron "0 10 * * 1"`, named **Stale PR check**:
 

@@ -237,6 +237,9 @@ describe("fire", () => {
     expect(send?.text.split("\n")[0]).toBe('[captain] routine r1 "Stalled crew sweep" · scheduled');
     expect(send?.text).toContain(SWEEP.instruction);
     expect(send?.text).toContain("the user did not type it");
+    expect(send?.text).toContain("end the turn with no text");
+    expect(send?.text).toContain("all-clear line such as `Drive clean`");
+    expect(send?.text).toContain("On a `· test` run:");
     expect(host.server.store.routineRuns(created.id)).toMatchObject([
       { trigger: "schedule", status: "sent", reason: null },
     ]);
@@ -1246,6 +1249,8 @@ describe("default daily routines", () => {
       const instruction = host.server.files.read(spec.instructionFile);
       expect(instruction.length).toBeGreaterThan(0);
       expect(instruction.length).toBeLessThanOrEqual(ROUTINE_INSTRUCTION_MAX);
+      expect(instruction).toContain("end the turn with no text");
+      expect(instruction).toContain("or a step failed");
       expect(
         routineFieldsSchema.safeParse({
           name: spec.name,
@@ -1259,6 +1264,7 @@ describe("default daily routines", () => {
       name: "Plugins",
       drive: "/drive",
     });
+    expect(captainInstructions).toContain("end the turn with no text");
     const routinesSkill = readFileSync(
       join(host.server.files.root, "skills/captain-routines/SKILL.md"),
       "utf8",

@@ -8,4 +8,4 @@ In a background subagent, check this Captain's crew threads with `bb captain sta
 - Inspect pending interactions only on `<thread>` ids from this Captain's `blocked` crew rows, using `bb thread interactions list <thread> --json`. Allowlist only `payload.kind === "user_question"` (never answer or deny `approval`, `plugin`, or other kinds). Answer a `user_question` with `bb thread interactions answer` only when it is a thinking question, never with secrets, env values, or private file contents; any secret, sudo password, credential, approval, or decision (including inside a `user_question`) is the user's alone — never answer, deny, or work around it; list it in the reply.
 - Never dispatch new crew, add or change routines, or edit `CAPTAIN.md`, `CREW.md`, `repos/*.md`, or `skills/` from this routine.
 
-Reply with one line summarizing what changed or needs attention, or `Crew moving` if nothing was stuck.
+Reply with one line only if anything needs the user (`failed`, `undeliverable`, or `Blocked:` rows, or user-owned pending interactions) or a step failed; otherwise end the turn with no text.
