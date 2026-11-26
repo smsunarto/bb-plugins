@@ -7,4 +7,4 @@ In a background subagent, tidy this Captain's Drive and finished crew threads.
 - Never edit `CAPTAIN.md`, `CREW.md`, `repos/*.md`, or `skills/`. If you spot a rule in `CAPTAIN.md` that contradicts another rule, report the contradiction in one line instead of changing the file.
 - Never dispatch crew or add or change routines from this routine.
 
-Reply with one line summarizing what changed, or `Drive clean` if nothing changed.
+Reply with one line only if something needs the user's action or a rule change, or if you spot a contradiction in `CAPTAIN.md`; otherwise end the turn with no text.

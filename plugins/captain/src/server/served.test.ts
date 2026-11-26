@@ -86,6 +86,7 @@ describe("instruction change notices", () => {
     expect(first).toHaveLength(1);
     expect(first[0]?.mode).toBe("queue-if-active");
     expect(first[0]?.text).toContain(LEAD);
+    expect(first[0]?.text).toContain("end the turn with no text");
     expect(first[0]?.text).toContain("````diff\n@@ ");
     expect(first[0]?.text).toContain(`\n+${dropped()}\n`);
     expect(second).toEqual([]);

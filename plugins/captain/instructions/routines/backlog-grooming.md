@@ -6,4 +6,4 @@ In a background subagent, review this Captain's own `backlog` and `todo` tasks, 
 - Check `bb captain status --all` for this Captain's `ready` rows (`review passed` or `skipped`) with no open ship ask, and check open crew PRs via `bb tasks show <key> --json` (`.pullRequests`) or `gh pr list` per repo; list any reviewed-but-unshipped work in the reply so none strands silently.
 - Never dispatch crew, add or change routines, or edit `CAPTAIN.md`, `CREW.md`, `repos/*.md`, or `skills/` from this routine. Put any decision that belongs to the user — what to start next, or whether to drop a task — into at most one `bb captain ask`.
 
-Reply with one line summarizing what changed and any reviewed-but-unshipped work found, or `Backlog clean` if nothing changed and nothing is waiting to ship.
+Reply with one line only if you found reviewed-but-unshipped work or opened an ask for the user; otherwise end the turn with no text.

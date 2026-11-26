@@ -9,4 +9,4 @@ In a background subagent, check this Captain's live crew branches on `in_progres
 - Do not rebase yourself. Steer only `idle` Implement threads (skip `working`, `waiting`, `blocked`, and `failed` threads) by thread id — never `<task> --role Implement` — batching threads that share a message with variadic `bb captain tell <thread...> --message-file <path>`. Tell them to fetch and rebase onto the latest target branch, rerun the brief's checks, push only their own branch (with `--force-with-lease` when rewritten, unless the brief says not to push) so any open PR updates and never the target branch, and stop with `Blocked:` instead of guessing on a conflict with another thread's work or a semantic choice.
 - Never dispatch new crew, add or change routines, or edit `CAPTAIN.md`, `CREW.md`, `repos/*.md`, or `skills/` from this routine.
 
-Reply with one line summarizing what was steered (plus any behind ship-ready tasks or unreachable checkouts), or `Branches current` if nothing was behind.
+Reply with one line only if a ship-ready task is behind its target or a checkout is unreachable; otherwise end the turn with no text.
