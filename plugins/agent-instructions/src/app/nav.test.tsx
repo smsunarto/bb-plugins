@@ -1,13 +1,14 @@
 import { installDom } from "@bb-plugins/testing";
 import { afterEach, expect, test } from "bun:test";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
+import type { ComponentType } from "react";
 import type { Names } from "./nav.ts";
 
 // nav.ts reaches the editors' Radix components, which bind their layout effect
 // to a no-op when no DOM exists at load and keep it for every later test file.
 installDom();
 const { pageTrail } = await import("./nav.ts");
-const { fireEvent, render } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { queryClient } = await import("./query.ts");
 
@@ -112,12 +113,125 @@ const rpc = {
     published: null,
   }),
   catalogShadows: () => ({ checked: true, shadows: [] }),
+  documentSources: () => ({ globalProjectId: null, projects: [] }),
+  plugins: () => ({ plugins: [] }),
 };
+
+async function sidebarSlot(subPath: string) {
+  const sidebar = (await panel()).experimental_sidebar as ComponentType<PluginNavPanelProps>;
+  return renderSlot({ component: sidebar }, { subPath }, { rpc: rpc as never });
+}
+
+function clickTab(tab: HTMLElement) {
+  fireEvent.mouseDown(tab, { button: 0 });
+  act(() => {
+    tab.focus();
+  });
+  fireEvent.mouseUp(tab, { button: 0 });
+  fireEvent.click(tab);
+}
+
+function pressEnter(tab: HTMLElement) {
+  fireEvent.keyDown(tab, { key: "Enter" });
+  fireEvent.click(tab);
+}
+
+test("the sidebar switcher renders one tablist whose active tab follows the route and navigates once per click", async () => {
+  const global = await sidebarSlot("global");
+  const tablist = global.getByRole("tablist", { name: "Instruction editors" });
+  expect(global.queryByRole("tabpanel")).toBeNull();
+  expect(
+    within(tablist)
+      .getAllByRole("tab")
+      .map((tab) => tab.textContent),
+  ).toEqual(["Global", "Projects", "Plugin prompts"]);
+  const globalTab = within(tablist).getByRole("tab", { name: "Global" });
+  const projectsTab = within(tablist).getByRole("tab", { name: "Projects" });
+  const promptsTab = within(tablist).getByRole("tab", { name: "Plugin prompts" });
+  expect(globalTab.getAttribute("aria-selected")).toBe("true");
+  expect(projectsTab.getAttribute("aria-selected")).toBe("false");
+  expect(promptsTab.getAttribute("aria-selected")).toBe("false");
+
+  // A full mouse click (mouseDown + focus + mouseUp + click) pushes exactly one navigation.
+  clickTab(projectsTab);
+  expect(global.navigateCalls).toEqual([
+    {
+      method: "toPluginPanel",
+      path: "instructions",
+      options: { subPath: "projects" },
+    },
+  ]);
+  global.unmount();
+
+  const projects = await sidebarSlot("projects");
+  expect(projects.getByRole("tab", { name: "Projects" }).getAttribute("aria-selected")).toBe(
+    "true",
+  );
+  expect(projects.getByRole("tab", { name: "Global" }).getAttribute("aria-selected")).toBe("false");
+  clickTab(projects.getByRole("tab", { name: "Global" }));
+  expect(projects.navigateCalls).toEqual([
+    {
+      method: "toPluginPanel",
+      path: "instructions",
+      options: { subPath: "global" },
+    },
+  ]);
+  projects.unmount();
+});
+
+test("arrow keys move roving focus without navigating until Enter activates the tab once", async () => {
+  const slot = await sidebarSlot("global");
+  const globalTab = slot.getByRole("tab", { name: "Global" });
+  const projectsTab = slot.getByRole("tab", { name: "Projects" });
+
+  act(() => {
+    globalTab.focus();
+  });
+  fireEvent.keyDown(globalTab, { key: "ArrowRight" });
+  await waitFor(() => expect(document.activeElement?.textContent).toBe("Projects"));
+  expect(projectsTab.getAttribute("tabindex")).toBe("0");
+  expect(globalTab.getAttribute("tabindex")).toBe("-1");
+  expect(slot.navigateCalls).toHaveLength(0);
+
+  pressEnter(projectsTab);
+  expect(slot.navigateCalls).toEqual([
+    {
+      method: "toPluginPanel",
+      path: "instructions",
+      options: { subPath: "projects" },
+    },
+  ]);
+  slot.unmount();
+});
+
+test("activating the already-active tab navigates back to its section root", async () => {
+  const slot = await sidebarSlot("global/rules");
+  const globalTab = slot.getByRole("tab", { name: "Global" });
+  expect(globalTab.getAttribute("aria-selected")).toBe("true");
+
+  clickTab(globalTab);
+  expect(slot.navigateCalls).toEqual([
+    {
+      method: "toPluginPanel",
+      path: "instructions",
+      options: { subPath: "global" },
+    },
+  ]);
+
+  pressEnter(globalTab);
+  expect(slot.navigateCalls).toHaveLength(2);
+  expect(slot.navigateCalls.at(-1)).toEqual({
+    method: "toPluginPanel",
+    path: "instructions",
+    options: { subPath: "global" },
+  });
+  slot.unmount();
+});
 
 test("a phone's editor root lists the editors and the catalog in the page", async () => {
   viewport(390);
   const slot = renderSlot(await panel(), { subPath: "global" }, { rpc: rpc as never });
-  expect(slot.getByRole("navigation", { name: "Instruction editors" })).toBeTruthy();
+  expect(slot.getByRole("tablist", { name: "Instruction editors" })).toBeTruthy();
   await slot.findByRole("navigation", { name: "Catalog" });
   expect(slot.queryByText("Instructions and skills for every agent")).toBeNull();
   slot.unmount();
@@ -127,7 +241,7 @@ test("at 768px the root keeps the desktop overview", async () => {
   viewport(768);
   const slot = renderSlot(await panel(), { subPath: "global" }, { rpc: rpc as never });
   await slot.findByText("Instructions and skills for every agent");
-  expect(slot.queryByRole("navigation", { name: "Instruction editors" })).toBeNull();
+  expect(slot.queryByRole("tablist", { name: "Instruction editors" })).toBeNull();
   slot.unmount();
 });
 

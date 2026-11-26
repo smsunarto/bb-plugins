@@ -167,16 +167,16 @@ test("an unsaved edit on the page is marked in the tab", async () => {
 test("the sidebar offers every editor and only lists plugins on prompt routes", async () => {
   const sidebar = await pluginsTabRegistration();
   const global = renderSlot(sidebar, { subPath: "" }, { rpc: rpc as never });
-  expect(global.getByRole("button", { name: "Global" }).getAttribute("aria-pressed")).toBe("true");
+  expect(global.getByRole("tab", { name: "Global" }).getAttribute("aria-selected")).toBe("true");
   expect(global.queryByRole("button", { name: /Notes/ })).toBeNull();
   global.lifecycle.unmount();
 
   const slot = await pluginsTab("");
   await slot.findByRole("button", { name: /Notes/ });
-  expect(slot.getByRole("button", { name: "Plugin prompts" }).getAttribute("aria-pressed")).toBe(
+  expect(slot.getByRole("tab", { name: "Plugin prompts" }).getAttribute("aria-selected")).toBe(
     "true",
   );
-  fireEvent.click(slot.getByRole("button", { name: "Global" }));
+  fireEvent.mouseDown(slot.getByRole("tab", { name: "Global" }));
   expect(slot.navigateCalls.at(-1)).toEqual({
     method: "toPluginPanel",
     path: "instructions",

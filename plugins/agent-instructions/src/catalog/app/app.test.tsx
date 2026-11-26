@@ -366,13 +366,13 @@ test("typing back to the old text while a save runs keeps that text as unsaved",
 
 test("Global is the first editor and lists the rules with their scope", async () => {
   const tab = await sidebar("");
-  const editors = await tab.findByRole("navigation", { name: "Instruction editors" });
+  const editors = await tab.findByRole("tablist", { name: "Instruction editors" });
   expect(
     within(editors)
-      .getAllByRole("button")
+      .getAllByRole("tab")
       .map((b) => b.textContent),
   ).toEqual(["Global", "Projects", "Plugin prompts"]);
-  expect(within(editors).getByRole("button", { name: "Global" }).getAttribute("aria-pressed")).toBe(
+  expect(within(editors).getByRole("tab", { name: "Global" }).getAttribute("aria-selected")).toBe(
     "true",
   );
   const rules = await tab.findByRole("region", { name: "Rules" });
