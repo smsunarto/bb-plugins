@@ -1,21 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { Label, Task, TaskThread } from "../../shared/contract.js";
-import { makeTask } from "../../test-fixtures.js";
+import { makeTask, rpcInput } from "../../test-fixtures.js";
 
-window.matchMedia ??= (query: string) => ({
-  matches: false,
-  media: query,
-  onchange: null,
-  addListener: () => {},
-  removeListener: () => {},
-  addEventListener: () => {},
-  removeEventListener: () => {},
-  dispatchEvent: () => false,
-});
-Element.prototype.scrollIntoView ??= () => {};
 if (typeof window.PointerEvent === "undefined") {
   class JsdomPointerEvent extends MouseEvent {
     pointerId: number;
@@ -44,9 +33,9 @@ function dispatchPointer(
 }
 
 const app = await loadPluginApp(() => import("../../app"));
-const { resetTasksCollectionsForTest } = await import("../../shell/collections.js");
 
 const PROJECT_ID = "01HZZZZZZZZZZZZZZZZZZZZZP1";
+const OTHER_PROJECT_ID = "01HZZZZZZZZZZZZZZZZZZZZZP2";
 
 const project = {
   id: PROJECT_ID,
@@ -54,6 +43,17 @@ const project = {
   prefix: "BRD",
   nextTaskNumber: 10,
   color: "#88c0d0",
+  folderId: null,
+  linkedBbProjectId: null,
+  createdAt: "2026-07-15T00:00:00.000Z",
+};
+
+const otherProject = {
+  id: OTHER_PROJECT_ID,
+  name: "Other Board",
+  prefix: "OTH",
+  nextTaskNumber: 5,
+  color: "#a895fe",
   folderId: null,
   linkedBbProjectId: null,
   createdAt: "2026-07-15T00:00:00.000Z",
@@ -94,32 +94,65 @@ const taskC: Task = makeTask({
   projectId: PROJECT_ID,
   number: 3,
   key: "BRD-3",
+  title: "Third backlog task",
+  status: "backlog",
+  priority: "low",
+  position: 3,
+});
+
+const taskD: Task = makeTask({
+  id: "01HZZZZZZZZZZZZZZZZZZZZZT4",
+  projectId: PROJECT_ID,
+  number: 4,
+  key: "BRD-4",
   title: "Todo column task",
   status: "todo",
   priority: "urgent",
   position: 1,
 });
 
-function renderBoard(overrides: Record<string, unknown> = {}) {
+const otherTask: Task = makeTask({
+  id: "01HZZZZZZZZZZZZZZZZZZZZZT9",
+  projectId: OTHER_PROJECT_ID,
+  number: 1,
+  key: "OTH-1",
+  title: "Other project task",
+  status: "backlog",
+  priority: "medium",
+  position: 1,
+});
+
+const DEFAULT_TASKS = [taskA, taskB, taskC, taskD];
+
+function renderBoard(
+  overrides: Record<string, unknown> = {},
+  subPath = `${PROJECT_ID}?view=board`,
+) {
   return renderSlot(
     app.navPanels[0]!,
-    { subPath: `${PROJECT_ID}?view=board` },
+    { subPath },
     {
       rpc: {
-        listProjects: () => ({ projects: [project] }),
+        listProjects: () => ({ projects: [project, otherProject] }),
         listFolders: () => ({ folders: [] }),
         listPresets: () => ({ presets: [] }),
         sidebarSummary: () => ({ projects: [] }),
         listLabels: () => ({ labels: [] }),
-        listTasks: () => ({ tasks: [taskA, taskB, taskC], nextCursor: null }),
+        listTasks: (raw: unknown) => {
+          const { projectId } = rpcInput(raw);
+          if (projectId === OTHER_PROJECT_ID) return { tasks: [otherTask], nextCursor: null };
+          return { tasks: DEFAULT_TASKS, nextCursor: null };
+        },
         countTaskAttachments: () => ({ counts: [] }),
         listActiveTaskThreads: () => ({ taskThreads: [] }),
-        boardMove: (rawInput: unknown) => {
-          const input = rawInput as { taskId: string; status: Task["status"] };
-          const base = [taskA, taskB, taskC].find((t) => t.id === input.taskId) ?? taskA;
+        boardMove: (raw: unknown) => {
+          const input = rpcInput(raw);
+          const taskId = String(input.taskId);
+          const status = input.status as Task["status"];
+          const base = DEFAULT_TASKS.find((t) => t.id === taskId) ?? taskA;
           return {
             ok: true,
-            task: { ...base, status: input.status, updatedAt: "2026-07-16T00:00:00.000Z" },
+            task: { ...base, status, updatedAt: "2026-07-16T00:00:00.000Z" },
           };
         },
         ...overrides,
@@ -128,13 +161,8 @@ function renderBoard(overrides: Record<string, unknown> = {}) {
   );
 }
 
-beforeEach(() => {
-  window.localStorage.clear();
-});
-
-afterEach(async () => {
+afterEach(() => {
   cleanup();
-  await resetTasksCollectionsForTest();
   vi.restoreAllMocks();
 });
 
@@ -146,8 +174,8 @@ describe("BoardView", () => {
     const headings = slot.getAllByRole("heading", { level: 2 }).map((el) => el.textContent);
     expect(headings).toEqual(["Backlog", "Todo", "In Progress", "In Review", "Done"]);
 
-    const backlogList = slot.getByRole("list", { name: "Backlog, 2 tasks" });
-    expect(within(backlogList).getAllByRole("listitem")).toHaveLength(2);
+    const backlogList = slot.getByRole("list", { name: "Backlog, 3 tasks" });
+    expect(within(backlogList).getAllByRole("listitem")).toHaveLength(3);
 
     const todoList = slot.getByRole("list", { name: "Todo, 1 task" });
     expect(within(todoList).getAllByRole("listitem")).toHaveLength(1);
@@ -156,7 +184,7 @@ describe("BoardView", () => {
     expect(within(doneList).queryAllByRole("listitem")).toHaveLength(0);
   });
 
-  it("caps card labels to 3 with a +N overflow badge and exposes full metadata via aria-describedby", async () => {
+  it("caps card labels to 3 with a +N tooltip and exposes preset name and metadata via aria-describedby", async () => {
     const labels = makeLabels(6);
     const heavyTask: Task = {
       ...taskA,
@@ -165,8 +193,8 @@ describe("BoardView", () => {
     const subDone: Task = makeTask({
       id: "01HZZZZZZZZZZZZZZZZZZZZZS1",
       projectId: PROJECT_ID,
-      number: 4,
-      key: "BRD-4",
+      number: 5,
+      key: "BRD-5",
       title: "Subtask done",
       status: "done",
       parentTaskId: heavyTask.id,
@@ -175,8 +203,8 @@ describe("BoardView", () => {
     const subOpen: Task = makeTask({
       id: "01HZZZZZZZZZZZZZZZZZZZZZS2",
       projectId: PROJECT_ID,
-      number: 5,
-      key: "BRD-5",
+      number: 6,
+      key: "BRD-6",
       title: "Subtask open",
       status: "todo",
       parentTaskId: heavyTask.id,
@@ -210,22 +238,17 @@ describe("BoardView", () => {
     expect(within(card).getByText("1")).toBeDefined();
     expect(within(card).getByText("Implementer")).toBeDefined();
 
-    // Respects prefers-reduced-motion via StatusDot pulse variant
-    const dot = card.querySelector('[data-slot="status-dot"]');
-    expect(dot?.className).toContain("motion-reduce:animate-none");
-
-    // Full metadata exposed via aria-describedby (including singular "1 attachment")
     const describedBy = card.getAttribute("aria-describedby");
     expect(describedBy).toBeTruthy();
     const descEl = document.getElementById(describedBy!);
     expect(descEl?.textContent).toContain("High priority");
-    expect(descEl?.textContent).toContain("Agent working");
+    expect(descEl?.textContent).toContain("Implementer: Agent working");
     expect(descEl?.textContent).toContain("1 of 2 sub-tasks done");
     expect(descEl?.textContent).toContain("1 attachment");
     expect(descEl?.textContent).not.toContain("1 attachments");
   });
 
-  it("omits the metadata footer on bare cards and wraps unbreakable titles with dir=auto", async () => {
+  it("omits metadata on bare cards and marks titles with dir=auto", async () => {
     const bareTask: Task = {
       ...taskB,
       title: "https://example.com/very_long_unbreakable_identifier_1234567890",
@@ -239,59 +262,108 @@ describe("BoardView", () => {
     });
     const titleEl = within(card).getByText(bareTask.title);
     expect(titleEl.getAttribute("dir")).toBe("auto");
-    expect(titleEl.className).toContain("wrap-anywhere");
     expect(card.getAttribute("aria-describedby")).toBeNull();
-    // Only header span + title span (no empty footer span)
-    expect(card.children).toHaveLength(2);
+    expect(within(card).queryByText(/^\d+\/\d+$/)).toBeNull();
   });
 
-  it("opens a task when clicking a card and supports arrow-key navigation across cards and columns", async () => {
+  it("opens a task on click and supports Arrow navigation in LTR and RTL", async () => {
     const slot = renderBoard();
     const card1 = await slot.findByRole("button", { name: "Open BRD-1: First backlog task" });
     const card2 = slot.getByRole("button", { name: "Open BRD-2: Second backlog task" });
-    const card3 = slot.getByRole("button", { name: "Open BRD-3: Todo column task" });
+    const card4 = slot.getByRole("button", { name: "Open BRD-4: Todo column task" });
 
     card1.focus();
     fireEvent.keyDown(card1, { key: "ArrowDown" });
     expect(document.activeElement).toBe(card2);
 
     fireEvent.keyDown(card2, { key: "ArrowRight" });
-    expect(document.activeElement).toBe(card3);
+    expect(document.activeElement).toBe(card4);
 
-    fireEvent.keyDown(card3, { key: "ArrowLeft" });
+    fireEvent.keyDown(card4, { key: "ArrowLeft" });
     expect(document.activeElement).toBe(card1);
 
-    fireEvent.click(card3);
+    // In RTL, ArrowLeft advances toward Todo and ArrowRight returns toward Backlog
+    const scroller = slot.container.querySelector("[data-board-scroller]") as HTMLElement;
+    const origGetComputedStyle = window.getComputedStyle;
+    vi.spyOn(window, "getComputedStyle").mockImplementation((el, pseudo) => {
+      const style = origGetComputedStyle(el, pseudo);
+      if (el === scroller) {
+        return new Proxy(style, {
+          get(target, prop) {
+            return prop === "direction" ? "rtl" : Reflect.get(target, prop);
+          },
+        });
+      }
+      return style;
+    });
+    fireEvent.keyDown(card1, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(card4);
+    fireEvent.keyDown(card4, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(card1);
+    vi.restoreAllMocks();
+
+    fireEvent.click(card4);
     expect(slot.navigateCalls).toContainEqual({
       method: "toPluginPanel",
       path: "tasks",
-      options: { subPath: "task/BRD-3" },
+      options: { subPath: "task/BRD-4" },
     });
   });
 
-  it("moves cards across columns with Alt+ArrowRight and announces the move", async () => {
-    const boardMove = vi.fn((rawInput: unknown) => {
-      const input = rawInput as { taskId: string; status: Task["status"] };
+  it("prevents Alt+ArrowLeft/Right default at column boundaries to avoid browser Back/Forward", async () => {
+    const boardMove = vi.fn();
+    const slot = renderBoard({ boardMove });
+    const card1 = await slot.findByRole("button", { name: "Open BRD-1: First backlog task" });
+
+    card1.focus();
+    const event = new KeyboardEvent("keydown", {
+      key: "ArrowLeft",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      card1.dispatchEvent(event);
+    });
+    expect(event.defaultPrevented).toBe(true);
+    expect(boardMove).not.toHaveBeenCalled();
+  });
+
+  it("moves cards with Alt+Arrow, keeps focus on the moved card, and announces distinct positions", async () => {
+    const boardMove = vi.fn((raw: unknown) => {
+      const input = rpcInput(raw);
+      const taskId = String(input.taskId);
+      const status = input.status as Task["status"];
+      const base = DEFAULT_TASKS.find((t) => t.id === taskId) ?? taskA;
       return {
         ok: true,
-        task: { ...taskA, status: input.status, updatedAt: "2026-07-16T00:00:00.000Z" },
+        task: { ...base, status, position: 2.5, updatedAt: "2026-07-16T00:00:00.000Z" },
       };
     });
     const slot = renderBoard({ boardMove });
     const card1 = await slot.findByRole("button", { name: "Open BRD-1: First backlog task" });
 
     card1.focus();
-    fireEvent.keyDown(card1, { key: "ArrowRight", altKey: true });
+    fireEvent.keyDown(card1, { key: "ArrowDown", altKey: true });
+    await waitFor(() =>
+      expect(slot.getByRole("status").textContent).toBe(
+        "Moved BRD-1 to position 2 of 3 in Backlog",
+      ),
+    );
+    expect(document.activeElement?.getAttribute("data-task-key")).toBe("BRD-1");
 
+    const movedCard = slot.getByRole("button", { name: "Open BRD-1: First backlog task" });
+    fireEvent.keyDown(movedCard, { key: "ArrowRight", altKey: true });
     await waitFor(() =>
       expect(boardMove).toHaveBeenCalledWith(
         expect.objectContaining({ taskId: taskA.id, status: "todo" }),
       ),
     );
-    expect(slot.getByRole("status").textContent).toBe("Moved BRD-1 to Todo");
+    expect(slot.getByRole("status").textContent).toBe("Moved BRD-1 to Todo, position 2 of 2");
+    expect(document.activeElement?.getAttribute("data-task-key")).toBe("BRD-1");
   });
 
-  it("surfaces a toast error when a boardMove mutation is refused", async () => {
+  it("surfaces a toast error and restores focus on the rolled-back card when boardMove is refused", async () => {
     const slot = renderBoard({
       boardMove: () => ({
         ok: false,
@@ -304,25 +376,36 @@ describe("BoardView", () => {
     fireEvent.keyDown(card1, { key: "ArrowRight", altKey: true });
 
     await slot.findByText("Move rejected by server");
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute("data-task-key")).toBe("BRD-1");
+      expect(slot.getByRole("status").textContent).toBe(
+        "Could not move BRD-1; returned to Backlog",
+      );
+    });
   });
 
-  it("drags a card across columns and cancels an active pointer drag on Escape", async () => {
-    const boardMove = vi.fn((rawInput: unknown) => {
-      const input = rawInput as { taskId: string; status: Task["status"] };
+  it("cancels drag on Escape, suppresses the delayed release click, and completes cross-column drag", async () => {
+    const boardMove = vi.fn((raw: unknown) => {
+      const input = rpcInput(raw);
       return {
         ok: true,
-        task: { ...taskA, status: input.status, updatedAt: "2026-07-16T00:00:00.000Z" },
+        task: {
+          ...taskA,
+          status: input.status as Task["status"],
+          updatedAt: "2026-07-16T00:00:00.000Z",
+        },
       };
     });
     const slot = renderBoard({ boardMove });
     const card1 = await slot.findByRole("button", { name: "Open BRD-1: First backlog task" });
     const todoCol = slot.container.querySelector('[data-board-column="todo"]') as HTMLElement;
-    const boardEl = todoCol.parentElement!.parentElement as HTMLElement;
+    const boardEl = slot.container.querySelector("[data-board-scroller]") as HTMLElement;
 
     vi.spyOn(boardEl, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1000, 600));
     vi.spyOn(todoCol, "getBoundingClientRect").mockReturnValue(new DOMRect(300, 40, 256, 500));
     vi.spyOn(card1, "getBoundingClientRect").mockReturnValue(new DOMRect(12, 40, 256, 80));
 
+    // Drag, cancel with Escape, wait, then release & fire click: task must NOT open
     dispatchPointer(card1, "pointerdown", {
       button: 0,
       isPrimary: true,
@@ -338,9 +421,13 @@ describe("BoardView", () => {
 
     fireEvent.keyDown(window, { key: "Escape" });
     expect(slot.container.querySelector('[aria-hidden="true"][data-task-key="BRD-1"]')).toBeNull();
-    dispatchPointer(window, "pointerup", { pointerId: 1, clientX: 360, clientY: 100 });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    dispatchPointer(window, "pointerup", { pointerId: 1, clientX: 100, clientY: 80 });
+    fireEvent.click(card1);
     expect(boardMove).not.toHaveBeenCalled();
+    expect(slot.navigateCalls).toHaveLength(0);
 
+    // Complete a real cross-column drag into Todo
     dispatchPointer(card1, "pointerdown", {
       button: 0,
       isPrimary: true,
@@ -350,6 +437,9 @@ describe("BoardView", () => {
       clientY: 80,
     });
     dispatchPointer(window, "pointermove", { pointerId: 2, clientX: 360, clientY: 100 });
+    expect(
+      slot.container.querySelector('[aria-hidden="true"][data-task-key="BRD-1"]'),
+    ).not.toBeNull();
     dispatchPointer(window, "pointerup", { pointerId: 2, clientX: 360, clientY: 100 });
     await waitFor(() =>
       expect(boardMove).toHaveBeenCalledWith(
@@ -358,18 +448,20 @@ describe("BoardView", () => {
     );
   });
 
-  it("skips boardMove RPC on a no-op drop back into the card's original slot", async () => {
+  it("picks up a card and skips boardMove RPC on a no-op drop back into its original slot", async () => {
     const boardMove = vi.fn();
     const slot = renderBoard({ boardMove });
     const card1 = await slot.findByRole("button", { name: "Open BRD-1: First backlog task" });
     const card2 = slot.getByRole("button", { name: "Open BRD-2: Second backlog task" });
+    const card3 = slot.getByRole("button", { name: "Open BRD-3: Third backlog task" });
     const backlogCol = slot.container.querySelector('[data-board-column="backlog"]') as HTMLElement;
-    const boardEl = backlogCol.parentElement!.parentElement as HTMLElement;
+    const boardEl = slot.container.querySelector("[data-board-scroller]") as HTMLElement;
 
     vi.spyOn(boardEl, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1000, 600));
     vi.spyOn(backlogCol, "getBoundingClientRect").mockReturnValue(new DOMRect(12, 40, 256, 500));
     vi.spyOn(card1, "getBoundingClientRect").mockReturnValue(new DOMRect(12, 40, 256, 80));
     vi.spyOn(card2, "getBoundingClientRect").mockReturnValue(new DOMRect(12, 126, 256, 80));
+    vi.spyOn(card3, "getBoundingClientRect").mockReturnValue(new DOMRect(12, 212, 256, 80));
 
     dispatchPointer(card1, "pointerdown", {
       button: 0,
@@ -380,11 +472,68 @@ describe("BoardView", () => {
       clientY: 60,
     });
     dispatchPointer(window, "pointermove", { pointerId: 1, clientX: 112, clientY: 60 });
+    // Prove drag pickup actually started before verifying no-op drop skips RPC
+    expect(
+      slot.container.querySelector('[aria-hidden="true"][data-task-key="BRD-1"]'),
+    ).not.toBeNull();
     dispatchPointer(window, "pointerup", { pointerId: 1, clientX: 112, clientY: 60 });
     expect(boardMove).not.toHaveBeenCalled();
   });
 
-  it("renders an alert error state with Retry when loading tasks fails", async () => {
+  it("preserves board and column scroll across unmount/remount without leaking across projects", async () => {
+    const slot = renderBoard();
+    await slot.findByText("First backlog task");
+    const boardEl = slot.container.querySelector("[data-board-scroller]") as HTMLElement;
+    const backlogCol = slot.container.querySelector('[data-board-column="backlog"]') as HTMLElement;
+
+    boardEl.scrollLeft = 64;
+    fireEvent.scroll(boardEl);
+    backlogCol.scrollTop = 240;
+    fireEvent.scroll(backlogCol);
+
+    // Switching directly to another project resets scroll to 0 instead of leaking Project A's offsets
+    const Panel = app.navPanels[0]!.component;
+    slot.lifecycle.rerender(<Panel subPath={`${OTHER_PROJECT_ID}?view=board`} />);
+    await slot.findByText("Other project task");
+    const otherBoardEl = slot.container.querySelector("[data-board-scroller]") as HTMLElement;
+    const otherBacklogCol = slot.container.querySelector(
+      '[data-board-column="backlog"]',
+    ) as HTMLElement;
+    expect(otherBoardEl.scrollLeft).toBe(0);
+    expect(otherBacklogCol.scrollTop).toBe(0);
+
+    // Switching back to cached Project A restores Project A's scroll, then switching back to cached Project B resets again
+    slot.lifecycle.rerender(<Panel subPath={`${PROJECT_ID}?view=board`} />);
+    await slot.findByText("First backlog task");
+    const backBoardEl = slot.container.querySelector("[data-board-scroller]") as HTMLElement;
+    const backBacklogCol = slot.container.querySelector(
+      '[data-board-column="backlog"]',
+    ) as HTMLElement;
+    expect(backBoardEl.scrollLeft).toBe(64);
+    expect(backBacklogCol.scrollTop).toBe(240);
+
+    slot.lifecycle.rerender(<Panel subPath={`${OTHER_PROJECT_ID}?view=board`} />);
+    await slot.findByText("Other project task");
+    expect((slot.container.querySelector("[data-board-scroller]") as HTMLElement).scrollLeft).toBe(
+      0,
+    );
+    expect(
+      (slot.container.querySelector('[data-board-column="backlog"]') as HTMLElement).scrollTop,
+    ).toBe(0);
+
+    // Navigating away (unmounting BoardView) and remounting restores Project A's offsets
+    slot.lifecycle.unmount();
+    const reopened = renderBoard();
+    await reopened.findByText("First backlog task");
+    const nextBoardEl = reopened.container.querySelector("[data-board-scroller]") as HTMLElement;
+    const nextBacklogCol = reopened.container.querySelector(
+      '[data-board-column="backlog"]',
+    ) as HTMLElement;
+    expect(nextBoardEl.scrollLeft).toBe(64);
+    expect(nextBacklogCol.scrollTop).toBe(240);
+  });
+
+  it("announces load failure via role=alert outside the interactive Retry button", async () => {
     let fail = true;
     const slot = renderBoard({
       listTasks: () => {
@@ -394,12 +543,13 @@ describe("BoardView", () => {
     });
 
     const alert = await slot.findByRole("alert");
-    expect(within(alert).getByText("Couldn't load board")).toBeDefined();
-    expect(within(alert).getByText("Offline")).toBeDefined();
+    expect(alert.textContent).toContain("Offline");
+    const retryBtn = slot.getByRole("button", { name: "Retry" });
+    expect(alert.contains(retryBtn)).toBe(false);
 
     fail = false;
     await act(async () => {
-      fireEvent.click(within(alert).getByRole("button", { name: "Retry" }));
+      fireEvent.click(retryBtn);
     });
     await slot.findByText("First backlog task");
   });

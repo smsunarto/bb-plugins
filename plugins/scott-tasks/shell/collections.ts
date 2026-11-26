@@ -257,6 +257,10 @@ export class TaskGoneError extends Error {
   }
 }
 
+export function hasPendingWrites(task: Task): boolean {
+  return (task as { $hasPendingWrites?: boolean }).$hasPendingWrites === true;
+}
+
 export function editTask(taskId: string, edit: TaskEdit): Promise<unknown> {
   if (!tasksCollection.has(taskId)) return Promise.reject(new TaskGoneError());
   const transaction = tasksCollection.update(taskId, (draft) => {

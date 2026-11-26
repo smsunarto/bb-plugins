@@ -128,7 +128,7 @@ export function PriorityIcon({
           rx="1"
           className={
             priority === "none"
-              ? "fill-muted-foreground opacity-55"
+              ? "fill-muted-foreground opacity-65"
               : index < active
                 ? "fill-muted-foreground"
                 : "fill-muted"

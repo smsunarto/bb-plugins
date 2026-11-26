@@ -1,3 +1,4 @@
+import { resetBoardScrollForTest } from "../views/board/index.js";
 import { resetTasksCollectionsForTest } from "./collections.js";
 import { resetQuerySnapshotStateForTest } from "./query-snapshot.js";
 import { setTasksRpc, tasksQueryClient } from "./query.js";
@@ -12,5 +13,6 @@ export async function resetTasksDataForTest(): Promise<void> {
   tasksQueryClient.clear();
   resetTasksUiForTest();
   resetQuerySnapshotStateForTest();
+  resetBoardScrollForTest();
   setTasksRpc(null);
 }
