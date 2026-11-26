@@ -2330,22 +2330,25 @@
   }
 
   /* History back and forward have the phone's own back gesture; the drawer's
-   * top row, in the app sidebar and in Settings, keeps only its header slot.
-   * Let the row size to its contents so an empty row collapses instead of
-   * reserving a blank chrome-row band, while a row with a header slot keeps
-   * its full chrome-row height. */
+   * top row, in the app sidebar and in Settings, keeps only its header slot. */
   .dark [data-testid$="sidebar-top-reserve-row"] button[aria-label="Go back"],
   .dark [data-testid$="sidebar-top-reserve-row"] button[aria-label="Go forward"] {
     display: none;
   }
 
-  .dark [data-testid$="sidebar-top-reserve-row"] {
-    height: auto;
-    min-height: 0;
-  }
+  /* On phones (coarse pointer), let the reserve row size to its contents so an
+   * empty row collapses instead of reserving a blank chrome-row band, while a
+   * row with a header slot keeps its full chrome-row height. Narrow desktop
+   * windows (fine pointer) keep the 48px row for window drag and controls. */
+  @media (pointer: coarse) {
+    .dark [data-testid$="sidebar-top-reserve-row"] {
+      height: auto;
+      min-height: 0;
+    }
 
-  .dark [data-testid$="sidebar-top-reserve-row"] [data-sidebar-header-slot] {
-    min-height: var(--bb-app-chrome-row-height);
+    .dark [data-testid$="sidebar-top-reserve-row"] [data-sidebar-header-slot] {
+      min-height: var(--bb-app-chrome-row-height);
+    }
   }
 
   /* No end padding: the first and last 44px buttons sit concentric with the

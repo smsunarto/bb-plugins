@@ -619,29 +619,28 @@ describe("bb Monokai contract audit", () => {
     expect(substringCount).toBeLessThanOrEqual(37);
   });
 
-  test("collapses empty phone sidebar top reserve rows while keeping header slots at chrome-row height", () => {
-    const compactRules = styleRules(theme).filter((rule) =>
-      rule.atRules.includes("@media (max-width: 767px)"),
-    );
-    const reserveRow = compactRules.find(
+  test("collapses empty phone sidebar top reserve rows only on coarse pointers while keeping header slots at chrome-row height", () => {
+    const isPhoneMedia = (atRules: string[]) =>
+      atRules.includes("@media (max-width: 767px) and (pointer: coarse)") ||
+      (atRules.includes("@media (max-width: 767px)") &&
+        atRules.includes("@media (pointer: coarse)"));
+
+    const reserveRows = styleRules(theme).filter(
       (rule) => rule.selector === '.dark [data-testid$="sidebar-top-reserve-row"]',
     );
-    expect(reserveRow?.body).toContain("height: auto;");
-    expect(reserveRow?.body).toContain("min-height: 0;");
+    expect(reserveRows).toHaveLength(1);
+    expect(isPhoneMedia(reserveRows[0]!.atRules)).toBe(true);
+    expect(reserveRows[0]!.body).toContain("height: auto;");
+    expect(reserveRows[0]!.body).toContain("min-height: 0;");
 
-    const headerSlot = compactRules.find(
+    const headerSlots = styleRules(theme).filter(
       (rule) =>
         rule.selector ===
         '.dark [data-testid$="sidebar-top-reserve-row"] [data-sidebar-header-slot]',
     );
-    expect(headerSlot?.body).toContain("min-height: var(--bb-app-chrome-row-height);");
-
-    const desktopReserveRows = styleRules(theme).filter(
-      (rule) =>
-        !rule.atRules.includes("@media (max-width: 767px)") &&
-        rule.selector === '.dark [data-testid$="sidebar-top-reserve-row"]',
-    );
-    expect(desktopReserveRows).toHaveLength(0);
+    expect(headerSlots).toHaveLength(1);
+    expect(isPhoneMedia(headerSlots[0]!.atRules)).toBe(true);
+    expect(headerSlots[0]!.body).toContain("min-height: var(--bb-app-chrome-row-height);");
   });
 
   test("keeps phone text fields at the 16px iOS zoom floor", () => {

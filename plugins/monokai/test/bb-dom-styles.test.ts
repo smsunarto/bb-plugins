@@ -239,3 +239,94 @@ test("does not double-paint New thread halftone at fractional width 767.5px", as
     await page.close();
   }
 });
+
+test("collapses empty sidebar top reserve row only on phones while preserving header slots and narrow fine-pointer windows", async () => {
+  const html = `
+    <!doctype html>
+    <html class="dark">
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <style>
+          :root { --bb-app-chrome-row-height: 3rem; }
+          @layer utilities {
+            .h-chrome { display: flex; align-items: center; height: var(--bb-app-chrome-row-height); }
+            .slot-wrap { display: flex; height: 100%; flex: 1; }
+            .slot { display: flex; height: 100%; flex: 1; align-items: center; }
+          }
+        </style>
+        <style>${themeCss}</style>
+      </head>
+      <body>
+        <div data-testid="app-sidebar-top-reserve-row" class="h-chrome">
+          <div>
+            <button type="button" aria-label="Go back">Back</button>
+            <button type="button" aria-label="Go forward">Forward</button>
+          </div>
+        </div>
+        <div data-testid="settings-sidebar-top-reserve-row" class="h-chrome">
+          <div class="slot-wrap">
+            <div data-sidebar-header-slot="" class="slot">
+              <input aria-label="Search settings" style="height: 36px" />
+            </div>
+          </div>
+          <div>
+            <button type="button" aria-label="Go back">Back</button>
+            <button type="button" aria-label="Go forward">Forward</button>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const measure = async (opts: {
+    viewport: { width: number; height: number };
+    isMobile: boolean;
+    hasTouch: boolean;
+  }) => {
+    const context = await browser.newContext(opts);
+    const page = await context.newPage();
+    try {
+      await page.setContent(html);
+      return await page.evaluate(() => {
+        const emptyRow = document.querySelector('[data-testid="app-sidebar-top-reserve-row"]')!;
+        const slotRow = document.querySelector('[data-testid="settings-sidebar-top-reserve-row"]')!;
+        const backBtn = emptyRow.querySelector('button[aria-label="Go back"]')!;
+        return {
+          coarse: matchMedia("(pointer: coarse)").matches,
+          emptyHeight: Math.round(emptyRow.getBoundingClientRect().height),
+          slotHeight: Math.round(slotRow.getBoundingClientRect().height),
+          backDisplay: getComputedStyle(backBtn).display,
+        };
+      });
+    } finally {
+      await context.close();
+    }
+  };
+
+  expect(
+    await measure({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true }),
+  ).toEqual({
+    coarse: true,
+    emptyHeight: 0,
+    slotHeight: 48,
+    backDisplay: "none",
+  });
+
+  expect(
+    await measure({ viewport: { width: 700, height: 900 }, isMobile: false, hasTouch: false }),
+  ).toEqual({
+    coarse: false,
+    emptyHeight: 48,
+    slotHeight: 48,
+    backDisplay: "none",
+  });
+
+  expect(
+    await measure({ viewport: { width: 1280, height: 900 }, isMobile: false, hasTouch: false }),
+  ).toEqual({
+    coarse: false,
+    emptyHeight: 48,
+    slotHeight: 48,
+    backDisplay: "inline-block",
+  });
+});
