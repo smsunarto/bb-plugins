@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { afterEach, describe, it } from "bun:test";
+import { afterEach, describe, it, spyOn } from "bun:test";
 import type { ExperimentalSidebarNavigationItem } from "@get-bb/plugin-sdk/app";
 import { installDom } from "@bb-plugins/testing";
 
@@ -210,7 +210,7 @@ describe("CapyNavigation", () => {
     });
 
     it.each([false, true])(
-      "renders beside New thread and Search on compact=%s when Captain runs and opens New Captain",
+      "renders at the end of visible rows on compact=%s when Captain runs and opens New Captain",
       async (compact) => {
         let opened = 0;
         const published = {
@@ -227,9 +227,9 @@ describe("CapyNavigation", () => {
           await waitFor(() =>
             assert.deepEqual(rowIds(slot), [
               "__bb__/new-thread",
-              NEW_CAPTAIN_NAV_ITEM_ID,
               SEARCH,
               "__bb__/extensions",
+              NEW_CAPTAIN_NAV_ITEM_ID,
             ]),
           );
           fireEvent.click(button);
@@ -240,68 +240,32 @@ describe("CapyNavigation", () => {
       },
     );
 
-    it("renders New Captain even when New thread is hidden, in New thread's former slot", async () => {
+    it("renders New Captain even when New thread is hidden", async () => {
       const published = { settle() {}, canSettle: () => false, openNewCaptain() {} };
       publishSidebarActions(published);
       try {
-        const hiddenFirst = [
+        const list = [
           item("__bb__/new-thread", "New thread", { kind: "new-thread" }, "new-thread", {
             isVisible: false,
           }),
           item(SEARCH, "Search threads", { kind: "search-threads" }, "search"),
           item("__bb__/extensions", "Plugins", { kind: "open-extensions" }, "extensions"),
         ];
-        const firstSlot = mount(hiddenFirst, { plugins: CAPTAIN_RUNNING });
-        await firstSlot.findByRole("button", { name: "New Captain" });
-        assert.deepEqual(rowIds(firstSlot), [NEW_CAPTAIN_NAV_ITEM_ID, SEARCH, "__bb__/extensions"]);
-        cleanup();
-
-        const hiddenSecond = [
-          item(SEARCH, "Search threads", { kind: "search-threads" }, "search"),
-          item("__bb__/new-thread", "New thread", { kind: "new-thread" }, "new-thread", {
-            isVisible: false,
-          }),
-          item("__bb__/extensions", "Plugins", { kind: "open-extensions" }, "extensions"),
-        ];
-        const secondSlot = mount(hiddenSecond, { plugins: CAPTAIN_RUNNING });
-        await secondSlot.findByRole("button", { name: "New Captain" });
-        assert.deepEqual(rowIds(secondSlot), [
-          SEARCH,
-          NEW_CAPTAIN_NAV_ITEM_ID,
-          "__bb__/extensions",
-        ]);
-      } finally {
-        forgetSidebarActions(published);
-      }
-    });
-
-    it("reserves row space while availability loads and swaps without adding a row", async () => {
-      const published = { settle() {}, canSettle: () => false, openNewCaptain() {} };
-      publishSidebarActions(published);
-      let resolveList!: (value: { plugins: typeof CAPTAIN_RUNNING }) => void;
-      const listPlugins = () =>
-        new Promise<{ plugins: typeof CAPTAIN_RUNNING }>((resolve) => {
-          resolveList = resolve;
-        });
-      try {
-        const slot = mount(items(), { listPlugins });
-        const scroller = slot.container.querySelector("[data-gtd-nav-scroll]")!;
-        assert.ok(scroller.querySelector("[data-gtd-new-captain-placeholder]"));
-        assert.equal(slot.queryByRole("button", { name: "New Captain" }), null);
-        const beforeCount = scroller.children.length;
-
-        resolveList({ plugins: CAPTAIN_RUNNING });
+        const slot = mount(list, { plugins: CAPTAIN_RUNNING });
         await slot.findByRole("button", { name: "New Captain" });
-        assert.equal(scroller.querySelector("[data-gtd-new-captain-placeholder]"), null);
-        assert.equal(scroller.children.length, beforeCount);
+        assert.deepEqual(rowIds(slot), [SEARCH, "__bb__/extensions", NEW_CAPTAIN_NAV_ITEM_ID]);
       } finally {
         forgetSidebarActions(published);
       }
     });
 
-    it("retries failures and starting status, and re-reads on plugins-changed and reconnect", async () => {
+    it("stays hidden when the availability read times out and recovers on plugins-changed and real reconnect", async () => {
       const published = { settle() {}, canSettle: () => false, openNewCaptain() {} };
       publishSidebarActions(published);
+      const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
+      const timeoutSpy = spyOn(AbortSignal, "timeout").mockImplementation(() =>
+        originalTimeout(20),
+      );
       const handlers = new Map<string, Set<(event: unknown) => void>>();
       const emit = (eventName: string, payload: unknown) => {
         for (const cb of handlers.get(eventName) ?? []) cb(payload);
@@ -319,29 +283,54 @@ describe("CapyNavigation", () => {
         return () => set.delete(callback);
       };
       let calls = 0;
-      let mode: "fail" | "starting" | "disabled" | "running" = "fail";
-      const listPlugins = async () => {
+      let mode: "hang" | "running" | "disabled" = "hang";
+      const listPlugins = () => {
         calls += 1;
-        if (mode === "fail") {
-          mode = "starting";
-          throw new Error("network blip");
-        }
-        if (mode === "starting") {
-          mode = "running";
-          return { plugins: [{ id: "captain", enabled: true, status: "starting" }] };
-        }
+        if (mode === "hang") return new Promise<never>(() => {});
         if (mode === "disabled") {
-          return { plugins: [{ id: "captain", enabled: false, status: "disabled" }] };
+          return Promise.resolve({
+            plugins: [{ id: "captain", enabled: false, status: "disabled" }],
+          });
         }
-        return { plugins: CAPTAIN_RUNNING };
+        return Promise.resolve({ plugins: CAPTAIN_RUNNING });
       };
       try {
         const slot = mount(items(), { listPlugins, subscribe });
-        // Recovers from failure -> starting -> running via bounded retries.
-        await slot.findByRole("button", { name: "New Captain" }, { timeout: 2000 });
-        assert.equal(calls, 3);
+        // Renders nothing while loading, and stays hidden after timeout.
+        assert.equal(slot.queryByRole("button", { name: "New Captain" }), null);
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 45));
+        });
+        assert.equal(slot.queryByRole("button", { name: "New Captain" }), null);
+        assert.equal(calls, 1);
 
-        // plugins-changed disables it.
+        // First connect is not a reconnect and must not trigger a re-read.
+        act(() => {
+          emit("realtime:connection", {
+            state: "connecting",
+            reconnected: false,
+            reconnectDelayMs: null,
+          });
+          emit("realtime:connection", {
+            state: "connected",
+            reconnected: false,
+            reconnectDelayMs: null,
+          });
+        });
+        assert.equal(calls, 1);
+
+        // plugins-changed recovers it.
+        mode = "running";
+        act(() =>
+          emit("system:changed", {
+            entity: "system",
+            type: "changed",
+            changes: ["plugins-changed"],
+          }),
+        );
+        await slot.findByRole("button", { name: "New Captain" });
+
+        // plugins-changed hides it, then a real reconnect restores it.
         mode = "disabled";
         act(() =>
           emit("system:changed", {
@@ -354,7 +343,6 @@ describe("CapyNavigation", () => {
           assert.ok(slot.queryByRole("button", { name: "New Captain" }) === null),
         );
 
-        // Reconnect re-reads and restores it.
         mode = "running";
         act(() =>
           emit("realtime:connection", {
@@ -366,12 +354,13 @@ describe("CapyNavigation", () => {
         act(() =>
           emit("realtime:connection", {
             state: "connected",
-            reconnected: true,
+            reconnected: false,
             reconnectDelayMs: null,
           }),
         );
         await slot.findByRole("button", { name: "New Captain" });
       } finally {
+        timeoutSpy.mockRestore();
         forgetSidebarActions(published);
       }
     });

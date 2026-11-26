@@ -22,7 +22,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { cn } from "../../lib/utils";
-import { ThreadCard } from "./thread-card";
+import { NeedsYouCount, ThreadCard } from "./thread-card";
 import { SlimRow } from "./slim-row";
 import { rowActionPlan, type ActiveThreadShelf, type RowCommand } from "./thread-actions";
 import { RowMenuArea, type RowMenuTarget } from "./row-menu";
@@ -203,15 +203,18 @@ function InboxList({
     () => projects.filter((project) => !project.isPersonal).map((project) => project.id),
     [projects],
   );
-  // Captain's shelf depends only on Captain-origin threads (plus `captains` RPC
-  // once answered), independent of plugin availability. Captain home projects
-  // come from `homeProjects` RPC with a synchronous Captain-only fallback.
-  const {
-    available: captainAvailable,
-    captainIds,
-    homeProjectIds,
-    needsYou,
-  } = useCaptainRoster(threads);
+  // Captain's shelf depends only on Captain-origin threads (unioned with
+  // `captains` RPC ids once answered), independent of plugin availability.
+  const { available: captainAvailable, captainIds, needsYou } = useCaptainRoster(threads);
+  // Any project holding a Captain-origin root thread draws flat on every shelf
+  // (Settled included) and is excluded from New Captain repo choices.
+  const captainProjectIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const thread of threads) {
+      if (isLongLivedThread(thread) && thread.parentThreadId === null) ids.add(thread.projectId);
+    }
+    return ids;
+  }, [threads]);
   const { tree, shelves, foldingThreads, toggleThread, revealFamily } = useInboxTree(
     threads,
     lifecycle,
@@ -224,7 +227,7 @@ function InboxList({
   );
   const shelvedTotal = Object.values(shelves).reduce((total, rows) => total + rows.length, 0);
   const searching = searchQuery.trim().length > 0;
-  const grouped = repositoryGroupsEnabled && shouldGroupByProject(shelves, homeProjectIds);
+  const grouped = repositoryGroupsEnabled && shouldGroupByProject(shelves, captainProjectIds);
   const { isGroupCollapsed, toggleGroup } = useCollapsedGroups();
   // A dropped group draws in its new slot before bb's write lands: the order
   // the drop predicts stands in for bb's until project-order-changed
@@ -239,8 +242,7 @@ function InboxList({
         shelves[shelf],
         orderedProjectIds,
         (projectId) => personalProjectIds.has(projectId),
-        (projectId) =>
-          shelf === "captains" || (shelf !== "settled" && homeProjectIds.has(projectId)),
+        (projectId) => shelf === "captains" || captainProjectIds.has(projectId),
       );
     return {
       pinned: groupsFor("pinned"),
@@ -251,7 +253,7 @@ function InboxList({
       snoozed: groupsFor("snoozed"),
       settled: groupsFor("settled"),
     };
-  }, [shelves, orderedProjectIds, personalProjectIds, homeProjectIds]);
+  }, [shelves, orderedProjectIds, personalProjectIds, captainProjectIds]);
   const { pinned, captains, nextAction, waiting, slopcop } = groupedShelves;
   const { shelfViews, windowLayout, captainsOpen, waitingOpen, slopcopOpen } = useShelfWindow(
     groupedShelves,
@@ -319,8 +321,8 @@ function InboxList({
     onNavigate();
   });
   const captainRepos = useMemo(
-    () => (newCaptain === null ? [] : repoChoices(projects, homeProjectIds)),
-    [newCaptain, projects, homeProjectIds],
+    () => (newCaptain === null ? [] : repoChoices(projects, captainProjectIds)),
+    [newCaptain, projects, captainProjectIds],
   );
   const sdk = useSdk();
   // One drag context for both payloads (lib/sidebar-drag): a row onto a row
@@ -486,7 +488,7 @@ function InboxList({
           attention={group.attention}
           expanded={searching || !isGroupCollapsed(key)}
           onToggle={() => toggleGroup(key)}
-          onNewThread={homeProjectIds.has(group.projectId) ? undefined : onNewThread}
+          onNewThread={onNewThread}
           {...projectMoveProps(
             group.projectId,
             groupIds,
@@ -1251,16 +1253,6 @@ function ShelfHeader({
     );
   }
 
-  const attentionCue =
-    folded && attention > 0 ? (
-      <span
-        data-gtd-shelf-attention={attention}
-        className="shrink-0 rounded bg-muted px-1 font-mono text-2xs text-attention"
-      >
-        {attention > 99 ? "99+" : attention}
-      </span>
-    ) : null;
-
   // The heading owns the sticky pin and the list's measurement. The button
   // inside it reaches back over the heading's left inset (app.css), so it
   // stays the whole hit target.
@@ -1285,7 +1277,7 @@ function ShelfHeader({
       >
         {title}
         {rule}
-        {attentionCue}
+        {folded ? <NeedsYouCount count={attention} /> : null}
       </button>
     </h2>
   );

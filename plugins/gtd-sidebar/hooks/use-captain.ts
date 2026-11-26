@@ -2,11 +2,10 @@
 //
 // Shelf membership does not depend on Captain plugin availability: Captain-origin
 // threads (`isLongLivedThread`) always land on the Captains shelf from first paint,
-// refined by Captain's `captains` RPC once it answers. Plugin availability gates
-// only the New Captain navigation row and Captain RPCs (`captains`, `homeProjects`,
-// `needsYou`). One shared per-client cache serves both navigation and the inbox,
-// retrying transient failures or `"starting"` up to a deadline and re-reading on
-// `plugins-changed` and realtime reconnects without polling.
+// unioned with Captain's `captains` RPC ids when that answer exists (the RPC only
+// adds, never removes). Availability gates only the New Captain navigation row and
+// Captain RPCs, via one per-SDK cached read raced against `AbortSignal.timeout`
+// and refreshed on `plugins-changed` and real realtime reconnects.
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
@@ -23,230 +22,142 @@ const NO_IDS: ReadonlySet<string> = new Set();
 const NO_COUNTS: Readonly<Record<string, number>> = {};
 /** Statuses in which Captain's server answers its RPCs. */
 const SERVING = new Set(["running", "degraded"]);
-/** Bounded retry backoff for `"starting"` or transient `plugins.list` failures. */
-const RETRY_DELAYS_MS = [250, 750, 2000] as const;
+const AVAILABILITY_TIMEOUT_MS = 5_000;
 
-export type CaptainAvailability = "loading" | "available" | "unavailable";
-
-type CaptainPluginList = Awaited<ReturnType<ReturnType<typeof useSdk>["plugins"]["list"]>>;
-type CaptainPluginStatus = "available" | "starting" | "unavailable";
-
-interface CaptainAvailabilityStore {
-  status: CaptainAvailability;
-  started: boolean;
-  inFlight: boolean;
-  dirty: boolean;
-  retryIndex: number;
-  retryTimer: ReturnType<typeof setTimeout> | null;
-  unsubscribes: (() => void)[];
-  sawNonConnected: boolean;
+interface CaptainAvailabilityCache {
+  available: boolean;
+  pending: Promise<void> | null;
+  subscribed: boolean;
+  sawReconnect: boolean;
   listeners: Set<() => void>;
 }
 
-const availabilityStores = new WeakMap<object, CaptainAvailabilityStore>();
+const availabilityCaches = new WeakMap<object, CaptainAvailabilityCache>();
 
-function classifyPlugins({ plugins }: CaptainPluginList): CaptainPluginStatus {
-  const captain = plugins.find((plugin) => plugin.id === CAPTAIN_PLUGIN_ID);
-  if (captain === undefined || !captain.enabled) return "unavailable";
-  if (SERVING.has(captain.status)) return "available";
-  if (captain.status === "starting") return "starting";
-  return "unavailable";
-}
-
-function getAvailabilityStore(sdk: ReturnType<typeof useSdk>): CaptainAvailabilityStore {
-  let store = availabilityStores.get(sdk);
-  if (store === undefined) {
-    store = {
-      status: "loading",
-      started: false,
-      inFlight: false,
-      dirty: false,
-      retryIndex: 0,
-      retryTimer: null,
-      unsubscribes: [],
-      sawNonConnected: false,
+function getAvailabilityCache(sdk: ReturnType<typeof useSdk>): CaptainAvailabilityCache {
+  let cache = availabilityCaches.get(sdk);
+  if (cache === undefined) {
+    cache = {
+      available: false,
+      pending: null,
+      subscribed: false,
+      sawReconnect: false,
       listeners: new Set(),
     };
-    availabilityStores.set(sdk, store);
+    availabilityCaches.set(sdk, cache);
   }
-  return store;
+  return cache;
 }
 
-function setStoreStatus(store: CaptainAvailabilityStore, next: CaptainAvailability): void {
-  if (store.status === next) return;
-  store.status = next;
-  for (const listener of store.listeners) listener();
-}
-
-function clearRetryTimer(store: CaptainAvailabilityStore): void {
-  if (store.retryTimer !== null) {
-    clearTimeout(store.retryTimer);
-    store.retryTimer = null;
-  }
-}
-
-function scheduleRetry(sdk: ReturnType<typeof useSdk>, store: CaptainAvailabilityStore): void {
-  if (store.listeners.size === 0) return;
-  const delay = RETRY_DELAYS_MS[store.retryIndex];
-  if (delay === undefined) {
-    store.retryIndex = 0;
-    setStoreStatus(store, "unavailable");
-    return;
-  }
-  store.retryIndex += 1;
-  clearRetryTimer(store);
-  store.retryTimer = setTimeout(() => {
-    store.retryTimer = null;
-    if (store.listeners.size > 0) runAvailabilityRead(sdk, store);
-  }, delay);
-}
-
-function runAvailabilityRead(
-  sdk: ReturnType<typeof useSdk>,
-  store: CaptainAvailabilityStore,
-): void {
-  if (store.inFlight) {
-    store.dirty = true;
-    return;
-  }
-  store.started = true;
-  store.inFlight = true;
-  store.dirty = false;
-  clearRetryTimer(store);
-  const finish = (outcome: CaptainPluginStatus | "error") => {
-    store.inFlight = false;
-    if (store.dirty && store.listeners.size > 0) {
-      store.dirty = false;
-      runAvailabilityRead(sdk, store);
+function raceWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  const signal = AbortSignal.timeout(ms);
+  return new Promise<T>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
       return;
     }
-    if (outcome === "available" || outcome === "unavailable") {
-      store.retryIndex = 0;
-      setStoreStatus(store, outcome);
-      return;
-    }
-    scheduleRetry(sdk, store);
-  };
-  void sdk.plugins.list().then(
-    (result) => finish(classifyPlugins(result)),
-    () => finish("error"),
-  );
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    void promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+        return undefined;
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+        return undefined;
+      },
+    );
+  });
 }
 
-function triggerRefresh(sdk: ReturnType<typeof useSdk>, store: CaptainAvailabilityStore): void {
-  store.retryIndex = 0;
-  clearRetryTimer(store);
-  runAvailabilityRead(sdk, store);
-}
-
-function attachSubscriptions(
+function refreshAvailability(
   sdk: ReturnType<typeof useSdk>,
-  store: CaptainAvailabilityStore,
+  cache: CaptainAvailabilityCache,
 ): void {
-  if (store.unsubscribes.length > 0 || typeof sdk.subscribe !== "function") return;
-  store.unsubscribes.push(
-    sdk.subscribe({
-      event: "system:changed",
-      callback: (event) => {
-        if (event.changes.includes("plugins-changed")) triggerRefresh(sdk, store);
-      },
-    }),
-    sdk.subscribe({
-      event: "realtime:connection",
-      callback: (event) => {
-        if (event.state !== "connected") {
-          store.sawNonConnected = true;
-          return;
-        }
-        if (event.reconnected || store.sawNonConnected) {
-          store.sawNonConnected = false;
-          triggerRefresh(sdk, store);
-        }
-      },
-    }),
-  );
+  const request = raceWithTimeout(sdk.plugins.list(), AVAILABILITY_TIMEOUT_MS)
+    .then(
+      ({ plugins }) =>
+        plugins.some(
+          (plugin) =>
+            plugin.id === CAPTAIN_PLUGIN_ID && plugin.enabled && SERVING.has(plugin.status),
+        ),
+      () => false,
+    )
+    .then((next) => {
+      if (cache.pending === request && cache.available !== next) {
+        cache.available = next;
+        for (const listener of cache.listeners) listener();
+      }
+      return undefined;
+    });
+  cache.pending = request;
 }
 
-function detachSubscriptions(store: CaptainAvailabilityStore): void {
-  clearRetryTimer(store);
-  for (const unsubscribe of store.unsubscribes) unsubscribe();
-  store.unsubscribes.length = 0;
-  store.sawNonConnected = false;
-}
-
-/**
- * Shared Captain plugin availability for this SDK client: `"loading"` while the
- * initial read, `"starting"` state, or bounded retry is in flight; `"available"`
- * when Captain is enabled and serving; `"unavailable"` once absent, disabled, or
- * retries exhaust their deadline. Re-reads on `plugins-changed` and reconnect.
- */
-export function useCaptainAvailability(): CaptainAvailability {
-  const sdk = useSdk();
-  const store = getAvailabilityStore(sdk);
-  const subscribe = useCallback(
-    (listener: () => void) => {
-      store.listeners.add(listener);
-      attachSubscriptions(sdk, store);
-      if (!store.started) runAvailabilityRead(sdk, store);
-      return () => {
-        store.listeners.delete(listener);
-        if (store.listeners.size === 0) detachSubscriptions(store);
-      };
+function ensureSubscribed(sdk: ReturnType<typeof useSdk>, cache: CaptainAvailabilityCache): void {
+  if (cache.subscribed || typeof sdk.subscribe !== "function") return;
+  cache.subscribed = true;
+  sdk.subscribe({
+    event: "system:changed",
+    callback: (event) => {
+      if (event.changes.includes("plugins-changed")) refreshAvailability(sdk, cache);
     },
-    [sdk, store],
-  );
-  const getSnapshot = useCallback(() => store.status, [store]);
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  });
+  sdk.subscribe({
+    event: "realtime:connection",
+    callback: (event) => {
+      if (event.state === "disconnected" || (event.state === "connecting" && event.reconnected)) {
+        cache.sawReconnect = true;
+        return;
+      }
+      if (event.state === "connected" && (event.reconnected || cache.sawReconnect)) {
+        cache.sawReconnect = false;
+        refreshAvailability(sdk, cache);
+      }
+    },
+  });
 }
 
 /**
- * Whether Captain is installed, enabled and serving, from the shared per-client
- * read of bb's plugin list. False while loading and when unavailable.
+ * Whether Captain is installed, enabled and serving, from one cached per-SDK
+ * read of bb's plugin list raced against a timeout. Re-reads on `plugins-changed`
+ * and on a real reconnect; a failed or timed-out read leaves it false until the
+ * next event.
  */
 export function useCaptainAvailable(): boolean {
-  return useCaptainAvailability() === "available";
-}
-
-/**
- * Projects whose threads in `threads` are exclusively Captain threads. Used as
- * the synchronous first-paint and offline fallback for Captain's home project so
- * a Captain living in a code project leaves that project's folder untouched.
- */
-function captainOnlyProjectIds(
-  threads: readonly PluginSidebarThread[],
-  captainIds: ReadonlySet<string>,
-): ReadonlySet<string> {
-  const seen = new Set<string>();
-  const mixed = new Set<string>();
-  for (const thread of threads) {
-    seen.add(thread.projectId);
-    if (!captainIds.has(thread.id)) mixed.add(thread.projectId);
-  }
-  const only = new Set<string>();
-  for (const projectId of seen) {
-    if (!mixed.has(projectId)) only.add(projectId);
-  }
-  return only.size === 0 ? NO_IDS : only;
+  const sdk = useSdk();
+  const cache = getAvailabilityCache(sdk);
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      cache.listeners.add(listener);
+      ensureSubscribed(sdk, cache);
+      if (cache.pending === null) refreshAvailability(sdk, cache);
+      return () => {
+        cache.listeners.delete(listener);
+      };
+    },
+    [sdk, cache],
+  );
+  const getSnapshot = useCallback(() => cache.available, [cache]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 export interface CaptainRoster {
   /** Whether the Captain plugin is confirmed running and serving RPCs. */
   available: boolean;
-  /** Captain thread ids: synchronous Captain-origin unioned with `captains` RPC. */
+  /** Captain thread ids: Captain-origin threads unioned with `captains` RPC ids. */
   captainIds: ReadonlySet<string>;
-  /** Projects dedicated to Captains: `homeProjects` RPC or Captain-only projects. */
-  homeProjectIds: ReadonlySet<string>;
   /** Each listed Captain's Needs you count, by thread id; empty when unavailable. */
   needsYou: Readonly<Record<string, number>>;
 }
 
 /**
- * Captain shelf membership, Captain home projects, and Needs-you counts:
+ * Captain shelf membership and Needs-you counts:
  * - Shelf membership is independent of plugin availability: Captain-origin
  *   threads always land on the Captains shelf from first paint, unioned with
- *   Captain's `captains` RPC when that answer exists.
- * - Home projects come from Captain's `homeProjects` RPC when available, with a
- *   synchronous fallback of projects holding nothing but Captain threads.
+ *   Captain's `captains` RPC ids when that answer exists (the RPC only adds).
  * - Needs-you counts batch-read only while Captain is confirmed serving.
  */
 export function useCaptainRoster(threads: readonly PluginSidebarThread[]): CaptainRoster {
@@ -258,15 +169,7 @@ export function useCaptainRoster(threads: readonly PluginSidebarThread[]): Capta
     input: NO_INPUT,
     enabled: available,
   });
-  const homeProjects = useRpcQuery({
-    contract: captainContract,
-    pluginId: CAPTAIN_PLUGIN_ID,
-    method: "homeProjects",
-    input: NO_INPUT,
-    enabled: available,
-  });
   const rpcIds = captains.data?.ids;
-  const rpcHomeProjects = homeProjects.data?.projectIds;
 
   // Joined, so an unchanged Captain roster keeps the same Set identity.
   const joinedIds = useMemo(() => {
@@ -282,15 +185,6 @@ export function useCaptainRoster(threads: readonly PluginSidebarThread[]): Capta
   const captainIds = useMemo<ReadonlySet<string>>(
     () => (joinedIds === "" ? NO_IDS : new Set(joinedIds.split(","))),
     [joinedIds],
-  );
-
-  const joinedHomeProjects = useMemo(() => {
-    if (rpcHomeProjects !== undefined) return rpcHomeProjects.join(",");
-    return [...captainOnlyProjectIds(threads, captainIds)].join(",");
-  }, [rpcHomeProjects, threads, captainIds]);
-  const homeProjectIds = useMemo<ReadonlySet<string>>(
-    () => (joinedHomeProjects === "" ? NO_IDS : new Set(joinedHomeProjects.split(","))),
-    [joinedHomeProjects],
   );
 
   // Only ask `needsYou` for ids Captain's own `captains` RPC listed.
@@ -315,8 +209,5 @@ export function useCaptainRoster(threads: readonly PluginSidebarThread[]): Capta
   });
   const needsYou = (available && counts.data) || NO_COUNTS;
 
-  return useMemo(
-    () => ({ available, captainIds, homeProjectIds, needsYou }),
-    [available, captainIds, homeProjectIds, needsYou],
-  );
+  return useMemo(() => ({ available, captainIds, needsYou }), [available, captainIds, needsYou]);
 }

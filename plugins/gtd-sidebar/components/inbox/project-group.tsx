@@ -140,8 +140,7 @@ export function ProjectGroup({
         label={`New thread in ${name}`}
         icon="Plus"
         className="gtd-project-group-new"
-        onClick={onNewThread}
-        projectId={projectId}
+        onClick={() => onNewThread(projectId)}
         onFocusVisibleChange={setNewFocusVisible}
       />
     </div>
@@ -200,24 +199,21 @@ function HeaderButton({
   icon,
   className,
   onClick,
-  projectId,
   onFocusVisibleChange,
 }: {
   label: string;
   icon: IconName;
   className: string;
-  onClick?: (projectId: string) => void;
-  projectId: string;
+  onClick: () => void;
   onFocusVisibleChange: (focusVisible: boolean) => void;
 }) {
-  if (onClick === undefined) return null;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
           aria-label={label}
-          onClick={() => onClick(projectId)}
+          onClick={onClick}
           onFocus={(event) => onFocusVisibleChange(event.currentTarget.matches(":focus-visible"))}
           onBlur={() => onFocusVisibleChange(false)}
           className={className}
@@ -238,7 +234,7 @@ export interface ProjectGroupProps extends HeaderMeasureProps {
   attention: number;
   expanded: boolean;
   onToggle: () => void;
-  onNewThread?: (projectId: string) => void;
+  onNewThread: (projectId: string) => void;
   /** Move handlers, absent where the move cannot run (edge groups, personal). */
   onMoveUp?: () => void;
   onMoveDown?: () => void;

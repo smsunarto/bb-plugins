@@ -27,7 +27,7 @@ import {
 } from "../ui/dropdown-menu";
 import { Icon } from "../hugeicon";
 import { MenuSurface } from "../inbox/menu-surface";
-import { useCaptainAvailability } from "../../hooks/use-captain";
+import { useCaptainAvailable } from "../../hooks/use-captain";
 import { openNewCaptain, useHasSidebarActions } from "../../lib/sidebar-actions-bridge";
 import { markScrolled, revealFocusedRow, useNavScroll } from "./nav-scroll";
 
@@ -48,49 +48,17 @@ function activationTarget(event: MouseEvent): "current" | "tab" {
 
 export const NEW_CAPTAIN_NAV_ITEM_ID = "gtd-sidebar/new-captain";
 
-/**
- * Index in `visible` where the New Captain slot sits: right after New thread
- * when New thread is visible, in New thread's former slot when hidden, or first.
- */
-function newCaptainInsertIndex(items: readonly NavigationItem[]): number {
-  let visibleBefore = 0;
-  for (const item of items) {
-    if (item.action.kind === "new-thread") {
-      return item.isVisible ? visibleBefore + 1 : visibleBefore;
-    }
-    if (item.isVisible) visibleBefore += 1;
-  }
-  return 0;
-}
-
 export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigationProps) {
   const navigation = useSidebarNavigation();
   const { items, activeItemId, isShortcutModifierHeld, actions } = navigation;
-  const captainAvailability = useCaptainAvailability();
+  const captainAvailable = useCaptainAvailable();
   const hasActions = useHasSidebarActions();
-  const showNewCaptain = captainAvailability === "available" && hasActions;
-  const reserveNewCaptain = captainAvailability === "loading" && hasActions;
-  const hasNewCaptainSlot = showNewCaptain || reserveNewCaptain;
+  const showNewCaptain = captainAvailable && hasActions;
   const isCoarsePointer = usePointerCoarse();
   const isPhone = isCompactViewport && isCoarsePointer;
   const hidden = items.filter((item) => !item.isVisible);
   const visible = items.filter((item) => item.isVisible);
-  const insertAt = newCaptainInsertIndex(items);
-  const scroller = useNavScroll(
-    activeItemId,
-    isPhone,
-    visible.length + (hasNewCaptainSlot ? 1 : 0),
-  );
-
-  const renderItem = (item: NavigationItem) => (
-    <NavigationRow
-      key={item.id}
-      item={item}
-      isActive={item.id === activeItemId}
-      showShortcut={isShortcutModifierHeld}
-      actions={actions}
-    />
-  );
+  const scroller = useNavScroll(activeItemId, isPhone, visible.length + (showNewCaptain ? 1 : 0));
 
   return (
     <ContextMenu>
@@ -107,17 +75,17 @@ export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigat
             onScroll={markScrolled}
             onFocus={revealFocusedRow}
           >
-            {visible.slice(0, insertAt).map(renderItem)}
-            {showNewCaptain ? (
-              <NewCaptainRow />
-            ) : reserveNewCaptain ? (
-              <div
-                aria-hidden
-                data-gtd-new-captain-placeholder=""
-                className={cn(ROW_CLASS, "pointer-events-none opacity-0")}
+            {visible.map((item) => (
+              <NavigationRow
+                key={item.id}
+                item={item}
+                isActive={item.id === activeItemId}
+                showShortcut={isShortcutModifierHeld}
+                actions={actions}
               />
-            ) : null}
-            {visible.slice(insertAt).map(renderItem)}
+            ))}
+            {/* Trailing position so late availability shifts no visible nav rows. */}
+            {showNewCaptain ? <NewCaptainRow /> : null}
           </div>
           {hidden.length > 0 ? <MoreRow hidden={hidden} actions={actions} /> : null}
         </nav>

@@ -1988,7 +1988,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           thread("root"),
           thread("child", { parentThreadId: "root" }),
           thread("grouped", { projectId: "two" }),
-          thread("captain", { originPluginId: "captain" }),
+          thread("captain", { projectId: "proj_captains", originPluginId: "captain" }),
           thread("crew", { parentThreadId: "captain" }),
           thread("snoozed"),
           settledThread("settled"),
@@ -3205,7 +3205,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         }),
         thread("thr_c2", {
           title: "Rampage Captain",
-          projectId: "two",
+          projectId: "proj_captains",
           originPluginId: "captain",
           isPinned: true,
           pinnedAt: 2,
@@ -3242,7 +3242,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
     const captainCalls = (slot: RenderedSlot) =>
       slot.inspection.rpcCalls.filter((call) =>
-        ["captains", "homeProjects", "needsYou", "newCaptain"].includes(call.method),
+        ["captains", "needsYou", "newCaptain"].includes(call.method),
       );
 
     it("with Captain absent and no Captain-origin threads, renders no Captains shelf and asks Captain nothing", async () => {
@@ -3274,95 +3274,56 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
             .getByRole("region", { name: "Captains" })
             .querySelectorAll("[data-sidebar-thread-id]"),
         ].map((el) => el.getAttribute("data-sidebar-thread-id"));
-      // First paint: Captain-origin threads sit on Captains, and code project "two"
-      // (which also holds thr_plain_two) stays grouped.
       assert.deepEqual(readCaptains(), ["thr_c1", "thr_c2"]);
       assert.ok(view.slot.getByRole("button", { name: /^Two project/ }));
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
-      // After plugins.list settles as disabled: shelf and grouping are unchanged.
       assert.deepEqual(readCaptains(), ["thr_c1", "thr_c2"]);
       assert.ok(view.slot.getByRole("button", { name: /^Two project/ }));
+      assert.equal(view.slot.queryByRole("button", { name: /^Captains project/ }), null);
       assert.equal(view.slot.queryByRole("button", { name: /^New Captain directing/ }), null);
       assert.equal(view.slot.queryAllByRole("button", { name: /^New Captain/ }).length, 0);
       assert.deepEqual(captainCalls(view.slot), []);
     });
 
-    it("keeps a code project grouped when a Captain lives in it", async () => {
-      const host = { ...captainHostState(), plugins: CAPTAIN_RUNNING };
+    it("shelves Captain-origin threads synchronously and unions RPC-only ids without removing origin threads", async () => {
+      const threads = [
+        thread("thr_origin", {
+          title: "Origin Captain",
+          projectId: "proj_captains",
+          originPluginId: "captain",
+        }),
+        thread("thr_rpc_only", {
+          title: "RPC-only Captain",
+          projectId: "proj_captains",
+        }),
+        thread("thr_plain_one", { title: "Plain one", projectId: "one" }),
+        thread("thr_plain_two", { title: "Plain two", projectId: "two" }),
+      ];
+      const host = { ...captainHostState(threads), plugins: CAPTAIN_RUNNING };
       const view = mount(host, {}, "", {
         rpc: {
-          captains: async () => ({ ids: ["thr_c1", "thr_c2"] }),
-          homeProjects: async () => ({ projectIds: ["proj_captains"] }),
-          needsYou: async () => ({ thr_c1: 0, thr_c2: 0 }),
+          // RPC lists only thr_rpc_only — must add thr_rpc_only and NEVER remove thr_origin.
+          captains: async () => ({ ids: ["thr_rpc_only"] }),
+          needsYou: async () => ({ thr_rpc_only: 0 }),
         } as never,
       });
-      await waitFor(() =>
-        assert.ok(view.slot.inspection.rpcCalls.some((call) => call.method === "homeProjects")),
-      );
-      const captainsRegion = view.slot.getByRole("region", { name: "Captains" });
-      assert.deepEqual(
-        [...captainsRegion.querySelectorAll("[data-sidebar-thread-id]")].map((el) =>
-          el.getAttribute("data-sidebar-thread-id"),
-        ),
-        ["thr_c1", "thr_c2"],
-      );
-      // Code project "two" holds Captain thr_c2 and plain thread thr_plain_two:
-      // "two" keeps its folder header and stays available in New Captain repos.
-      const nextAction = view.slot.getByRole("region", { name: "Next Action" });
-      assert.ok(within(nextAction).getByRole("button", { name: /^Two project/ }));
-      assert.ok(within(nextAction).getByRole("button", { name: /^One project/ }));
-      act(() => triggerNewCaptain());
-      const dialog = within(await screen.findByRole("dialog", { name: "New Captain" }));
-      assert.ok(dialog.getByRole("checkbox", { name: "Two" }));
-      assert.equal(dialog.queryByRole("checkbox", { name: "Captains" }), null);
+      const readCaptains = () =>
+        [
+          ...view.slot
+            .getByRole("region", { name: "Captains" })
+            .querySelectorAll("[data-sidebar-thread-id]"),
+        ].map((el) => el.getAttribute("data-sidebar-thread-id"));
+      // First paint: Captain-origin thread already sits on Captains with no Captains folder.
+      assert.deepEqual(readCaptains(), ["thr_origin"]);
+      assert.equal(view.slot.queryByRole("button", { name: /^Captains project/ }), null);
+      // After RPC answers: both origin and RPC-only threads sit on Captains.
+      await waitFor(() => assert.deepEqual(readCaptains().sort(), ["thr_origin", "thr_rpc_only"]));
+      assert.equal(view.slot.queryByRole("button", { name: /^Captains project/ }), null);
     });
 
-    it("shelves Captains synchronously on first paint and keeps them flat when captains RPC fails", async () => {
-      // First paint: plugins.list has not resolved yet — Captains must already
-      // sit on the Captains shelf with no "Captains" folder flash.
-      const pendingHost: HostState = {
-        ...captainHostState(),
-        listPlugins: () => new Promise<never>(() => {}),
-      };
-      const pending = mount(pendingHost);
-      const firstPaintCaptains = pending.slot.getByRole("region", { name: "Captains" });
-      assert.deepEqual(
-        [...firstPaintCaptains.querySelectorAll("[data-sidebar-thread-id]")].map((el) =>
-          el.getAttribute("data-sidebar-thread-id"),
-        ),
-        ["thr_c1", "thr_c2"],
-      );
-      assert.equal(pending.slot.queryByRole("button", { name: /^Captains project/ }), null);
-      cleanup();
-
-      // Failed captains RPC while Captain runs: never falls back to a Captains folder.
-      const failingHost: HostState = { ...captainHostState(), plugins: CAPTAIN_RUNNING };
-      const failing = mount(failingHost, {}, "", {
-        rpc: {
-          captains: async () => {
-            throw new Error("captain unavailable");
-          },
-          homeProjects: async () => {
-            throw new Error("captain unavailable");
-          },
-        } as never,
-      });
-      await waitFor(() =>
-        assert.ok(failing.slot.inspection.rpcCalls.some((call) => call.method === "captains")),
-      );
-      const stillCaptains = failing.slot.getByRole("region", { name: "Captains" });
-      assert.deepEqual(
-        [...stillCaptains.querySelectorAll("[data-sidebar-thread-id]")].map((el) =>
-          el.getAttribute("data-sidebar-thread-id"),
-        ),
-        ["thr_c1", "thr_c2"],
-      );
-      assert.equal(failing.slot.queryByRole("button", { name: /^Captains project/ }), null);
-    });
-
-    it("places listed Captains on a dedicated flat Captains shelf, keeps Settled Captains collapsed by default, and shows summed Needs-you cue when folded", async () => {
+    it("places Captains on a flat shelf with no Captains folder on any shelf including Settled, and shows summed Needs-you cue when folded", async () => {
       const threads = [
         thread("thr_c1", {
           title: "Plugins Captain",
@@ -3407,14 +3368,12 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const view = mount(host, {}, "", {
         rpc: {
           captains: async () => ({ ids: ["thr_c1", "thr_c2"] }),
-          homeProjects: async () => ({ projectIds: ["proj_captains"] }),
           needsYou: async () => ({ thr_c1: 3, thr_c2: 1 }),
         } as never,
       });
       await waitFor(() => assert.equal(countOf(view.slot, "thr_c1"), "3"));
       const captainsRegion = view.slot.getByRole("region", { name: "Captains" });
-      // Every listed Captain appears in Captains (with its nested crew child),
-      // flat with no project-group folder header, wrapped in .gtd-project-group-rows
+      // Listed Captains appear flat (with nested crew child) wrapped in .gtd-project-group-rows
       // so phone leaf rows align with neighbouring grouped shelves.
       assert.deepEqual(
         [...captainsRegion.querySelectorAll("[data-sidebar-thread-id]")].map((el) =>
@@ -3424,27 +3383,16 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       );
       assert.equal(captainsRegion.querySelectorAll(".gtd-project-group").length, 0);
       assert.ok(captainsRegion.querySelector("ul.gtd-project-group-rows"));
-      // Settled rows from the Captains home project follow the same collapsed-by-default
-      // treatment as other Settled groups (not always expanded or forced first, and no New thread +).
+      // Code projects without Captains stay grouped, while the Captains project draws flat
+      // on every shelf including Settled.
+      const nextRegion = view.slot.getByRole("region", { name: "Next Action" });
+      assert.ok(within(nextRegion).getByRole("button", { name: /^One project/ }));
+      assert.ok(within(nextRegion).getByRole("button", { name: /^Two project/ }));
       fireEvent.click(view.slot.getByRole("button", { name: "Settled (2)" }));
       const settledRegion = view.slot.getByRole("region", { name: "Settled" });
-      const settledHeaders = [
-        ...settledRegion.querySelectorAll(".gtd-project-group-header button[aria-expanded]"),
-      ];
-      assert.equal(settledHeaders.length, 2);
-      assert.match(settledHeaders[0]!.getAttribute("aria-label") ?? "", /^One project/);
-      assert.match(settledHeaders[1]!.getAttribute("aria-label") ?? "", /^Captains project/);
-      assert.equal(settledHeaders[1]!.getAttribute("aria-expanded"), "false");
-      assert.equal(
-        settledRegion.querySelector('[data-sidebar-thread-id="thr_settled_in_captains"]'),
-        null,
-      );
-      assert.equal(
-        within(settledRegion).queryByRole("button", { name: "New thread in Captains" }),
-        null,
-      );
-      fireEvent.click(settledHeaders[1]!);
       assert.ok(settledRegion.querySelector('[data-sidebar-thread-id="thr_settled_in_captains"]'));
+      assert.ok(within(settledRegion).getByRole("button", { name: /^One project/ }));
+      assert.equal(view.slot.queryByRole("button", { name: /^Captains project/ }), null);
       assert.equal(view.slot.queryByRole("button", { name: /^New Captain directing/ }), null);
       // Non-Captain threads keep their shelves and project groups.
       const pinnedRegion = view.slot.getByRole("region", { name: "Pinned" });
@@ -3468,18 +3416,18 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ),
         ["Pinned", "Captains", "Next Action", "Waiting", "Settled"],
       );
-      // Folding the Captains shelf shows its count AND the summed Needs-you cue (3 + 1 = 4).
+      // Folding the Captains shelf shows its count AND the reused NeedsYouCount cue (3 + 1 = 4).
       const toggle = within(captainsRegion).getByRole("button", { name: "Captains" });
       assert.equal(toggle.getAttribute("aria-expanded"), "true");
-      assert.equal(captainsRegion.querySelector("[data-gtd-shelf-attention]"), null);
+      assert.equal(toggle.querySelector("[data-gtd-needs-you]"), null);
       fireEvent.click(toggle);
       assert.equal(toggle.getAttribute("aria-expanded"), "false");
       assert.equal(toggle.getAttribute("aria-label"), "Captains (3), 4 need you");
-      assert.equal(captainsRegion.querySelector("[data-gtd-shelf-attention]")?.textContent, "4");
+      assert.equal(toggle.querySelector("[data-gtd-needs-you]")?.textContent, "4");
       fireEvent.click(toggle);
       assert.equal(toggle.getAttribute("aria-expanded"), "true");
       assert.equal(toggle.textContent, "Captains");
-      assert.equal(captainsRegion.querySelector("[data-gtd-shelf-attention]"), null);
+      assert.equal(toggle.querySelector("[data-gtd-needs-you]"), null);
     });
 
     it("keeps parked Captains on Snoozed/Settled with restore actions and lifts raised-hand Captains to Next Action ungrouped", async () => {
@@ -3512,7 +3460,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const view = mount(host, {}, "", {
         rpc: {
           captains: async () => ({ ids: ["thr_c_asking", "thr_c_snoozed", "thr_c_archived"] }),
-          homeProjects: async () => ({ projectIds: ["proj_captains"] }),
           needsYou: async () => ({ thr_c_asking: 0, thr_c_snoozed: 0 }),
         } as never,
       });
@@ -3524,21 +3471,16 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       // Raised-hand Captain sits ungrouped in Next Action with no Captains folder.
       const nextRegion = view.slot.getByRole("region", { name: "Next Action" });
       assert.ok(nextRegion.querySelector('[data-sidebar-thread-id="thr_c_asking"]'));
-      assert.equal(within(nextRegion).queryByRole("button", { name: /^Captains project/ }), null);
-      // Parked Captains sit on Snoozed (ungrouped) and Settled (collapsed by default) with Wake now / Un-settle.
+      // Parked Captains sit ungrouped on Snoozed and Settled with Wake now / Un-settle.
       fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
       const snoozedRegion = view.slot.getByRole("region", { name: "Snoozed" });
       assert.ok(snoozedRegion.querySelector('[data-sidebar-thread-id="thr_c_snoozed"]'));
       assert.ok(within(snoozedRegion).getByRole("button", { name: "Wake now" }));
       fireEvent.click(view.slot.getByRole("button", { name: "Settled (1)" }));
       const settledRegion = view.slot.getByRole("region", { name: "Settled" });
-      const settledCaptainsToggle = within(settledRegion).getByRole("button", {
-        name: /^Captains project/,
-      });
-      assert.equal(settledCaptainsToggle.getAttribute("aria-expanded"), "false");
-      fireEvent.click(settledCaptainsToggle);
       assert.ok(settledRegion.querySelector('[data-sidebar-thread-id="thr_c_archived"]'));
       assert.ok(within(settledRegion).getByRole("button", { name: "Un-settle" }));
+      assert.equal(view.slot.queryByRole("button", { name: /^Captains project/ }), null);
     });
 
     it("reads every Captain row's count in one batch, shows it, and hides it at 0", async () => {
@@ -3733,81 +3675,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.deepEqual(sent, [{ name: "Nav Captain", repos: ["one"] }]);
       assert.equal(host.actions.open.mock.calls[0]![0], "thr_from_nav");
       assert.equal(listPlugins.mock.calls.length, 1);
-    });
-
-    it("availability fails then recovers: nav row appears while Captains shelf stays unchanged throughout", async () => {
-      let attempt = 0;
-      const listPlugins = mock(async () => {
-        attempt += 1;
-        if (attempt === 1) throw new Error("transient failure");
-        return { plugins: CAPTAIN_RUNNING };
-      });
-      const host: HostState = {
-        ...captainHostState(),
-        listPlugins,
-      };
-      const slot = renderSlot(
-        {
-          component: ({ host: currentHost }: { host: HostState }) =>
-            createElement(
-              HostContext.Provider,
-              { value: currentHost },
-              createElement(CapyNavigation, {
-                isCompactViewport: false,
-                placement: "list",
-                experimental_Original: () => null,
-              }),
-              createElement(ThreadInbox, {
-                activeProjectId: null,
-                activeThreadId: null,
-                isCompactViewport: false,
-                onNavigate: () => {},
-                searchQuery: "",
-              }),
-            ),
-        },
-        { host },
-        {
-          sidebarNavigation: {
-            items: [
-              {
-                id: "__bb__/new-thread",
-                label: "New thread",
-                icon: { kind: "host", name: "new-thread" },
-                action: { kind: "new-thread" },
-                isDisabled: false,
-                isVisible: true,
-                isLoading: false,
-                pluginId: null,
-                shortcut: null,
-                badge: null,
-              },
-            ],
-            activeItemId: null,
-          },
-          rpc: {
-            captains: async () => ({ ids: ["thr_c1", "thr_c2"] }),
-            homeProjects: async () => ({ projectIds: ["proj_captains"] }),
-            needsYou: async () => ({ thr_c1: 0, thr_c2: 0 }),
-          } as never,
-        },
-      );
-      const captainRowIds = () =>
-        [
-          ...slot
-            .getByRole("region", { name: "Captains" })
-            .querySelectorAll("[data-sidebar-thread-id]"),
-        ].map((el) => el.getAttribute("data-sidebar-thread-id"));
-      // Frame 0: Captains shelf already renders; nav reserves space via useLayoutEffect.
-      assert.deepEqual(captainRowIds(), ["thr_c1", "thr_c2"]);
-      assert.ok(slot.container.querySelector("[data-gtd-new-captain-placeholder]"));
-      assert.equal(slot.queryByRole("button", { name: "New Captain" }), null);
-
-      // After first failure + retry recovery: nav button appears, shelf never jumped.
-      await slot.findByRole("button", { name: "New Captain" }, { timeout: 2000 });
-      assert.equal(slot.container.querySelector("[data-gtd-new-captain-placeholder]"), null);
-      assert.deepEqual(captainRowIds(), ["thr_c1", "thr_c2"]);
-      assert.equal(listPlugins.mock.calls.length, 2);
     });
   });
 }
