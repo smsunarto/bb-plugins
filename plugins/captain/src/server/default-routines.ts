@@ -1,6 +1,7 @@
 import type { InstructionFiles } from "@bb-plugins/instructions";
 import {
   ROUTINES_PER_CAPTAIN,
+  type Routine,
   type RoutineFields,
   type RoutineView,
 } from "../contract/routines.ts";
@@ -16,6 +17,8 @@ import type { Store } from "./store.ts";
  * `instructions/routines/`.
  */
 export type DefaultRoutineSpec = {
+  /** Stable per-routine key for the per-(captain, spec) seeded notice. */
+  readonly key: string;
   readonly name: string;
   readonly cron: string;
   /** Path relative to `instructions/` (without `.md`), read through `instructionFiles`. */
@@ -25,11 +28,13 @@ export type DefaultRoutineSpec = {
 /** Staggered by 30 minutes in the bb server's time zone so the two never land in one turn. */
 export const DEFAULT_ROUTINES: readonly DefaultRoutineSpec[] = [
   {
+    key: "backlog-grooming",
     name: "Backlog grooming",
     cron: "0 9 * * *",
     instructionFile: "routines/backlog-grooming",
   },
   {
+    key: "drive-sweep",
     name: "Drive sweep",
     cron: "30 9 * * *",
     instructionFile: "routines/drive-sweep",
@@ -39,43 +44,51 @@ export const DEFAULT_ROUTINES: readonly DefaultRoutineSpec[] = [
 export type SeedResult = {
   /** False only when a transient error prevented seeding, so maintenance retries. */
   complete: boolean;
-  created: RoutineView[];
   warnings: string[];
 };
 
 export type SeedDeps = {
-  store: Pick<
-    Store,
-    | "captain"
-    | "routinesOf"
-    | "defaultRoutinesSeeded"
-    | "markDefaultRoutinesSeeded"
-    | "liveCaptains"
-  >;
+  store: Pick<Store, "routinesOf" | "defaultRoutineSeeded" | "markDefaultRoutineSeeded">;
   files: InstructionFiles;
   now: () => number;
   timezone: string;
   isDisposed: () => boolean;
   isLiveInStore: (captainId: string) => boolean;
+  markArchived: (captainId: string) => void;
   getThread: (threadId: string) => Promise<{ deletedAt?: unknown; archivedAt: number | null }>;
   createRoutine: (captain: RoutineOwner, fields: RoutineFields) => Promise<RoutineView>;
 };
 
-const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
-function hasRoutineNamed(deps: Pick<SeedDeps, "store">, captainId: string, name: string): boolean {
+/** Built-in routines not yet marked seeded for this Captain. */
+export function unseededSpecs(
+  store: Pick<Store, "defaultRoutineSeeded">,
+  captainId: string,
+): DefaultRoutineSpec[] {
+  return DEFAULT_ROUTINES.filter((spec) => !store.defaultRoutineSeeded(captainId, spec.key));
+}
+
+function hasRoutineNamed(routines: readonly Pick<Routine, "name">[], name: string): boolean {
   const wanted = name.toLowerCase();
-  return deps.store.routinesOf(captainId).some((routine) => routine.name.toLowerCase() === wanted);
+  return routines.some((routine) => routine.name.toLowerCase() === wanted);
 }
 
 function capWarning(captainName: string, routineName: string): string {
   return `default routine ${JSON.stringify(routineName)} not added to ${captainName}: already at the ${ROUTINES_PER_CAPTAIN}-routine limit`;
 }
 
+function markAllSeeded(deps: SeedDeps, captainId: string): void {
+  const at = deps.now();
+  for (const spec of DEFAULT_ROUTINES) deps.store.markDefaultRoutineSeeded(captainId, spec.key, at);
+}
+
 /**
  * Read the Captain thread to decide whether defaults should be seeded now.
  * Deleted threads are marked seeded so later passes skip them quietly;
- * archived threads wait without failing maintenance.
+ * archived threads are recorded in `archived` and skipped without failing maintenance.
  */
 async function checkTarget(
   deps: SeedDeps,
@@ -86,119 +99,128 @@ async function checkTarget(
     const thread = await deps.getThread(captain.threadId);
     if (deps.isDisposed()) return { state: "retry", warning: "" };
     if (thread.deletedAt != null) {
-      deps.store.markDefaultRoutinesSeeded(captain.threadId, deps.now());
+      markAllSeeded(deps, captain.threadId);
       return { state: "skip" };
     }
-    return thread.archivedAt !== null ? { state: "skip" } : { state: "ready" };
+    if (thread.archivedAt !== null) {
+      deps.markArchived(captain.threadId);
+      return { state: "skip" };
+    }
+    return { state: "ready" };
   } catch (error) {
     if (deps.isDisposed()) return { state: "retry", warning: "" };
     if (isMissing(error) || isNotFound(error)) {
-      deps.store.markDefaultRoutinesSeeded(captain.threadId, deps.now());
+      markAllSeeded(deps, captain.threadId);
       return { state: "skip" };
     }
     return {
       state: "retry",
-      warning: `default routines of ${captain.name} not seeded yet: ${errorText(error)}`,
+      warning: `default routines of ${captain.name} not seeded yet: ${errorMessage(error)}`,
     };
   }
 }
 
 type StepOutcome =
-  | { outcome: "created"; view: RoutineView }
-  | { outcome: "skipped"; warning?: string }
+  | { outcome: "done"; warning?: string }
   | { outcome: "stop" }
   | { outcome: "retry"; warning: string };
 
-/** Seed one built-in routine for a live Captain; existing names and full caps are skipped. */
+/**
+ * Seed one built-in routine for a live Captain and mark it seeded as soon as
+ * it is created or skipped (by existing name or the 20-routine cap).
+ */
 async function seedOne(
   deps: SeedDeps,
   captain: RoutineOwner,
   spec: DefaultRoutineSpec,
 ): Promise<StepOutcome> {
-  if (hasRoutineNamed(deps, captain.threadId, spec.name)) return { outcome: "skipped" };
-  if (deps.store.routinesOf(captain.threadId).length >= ROUTINES_PER_CAPTAIN) {
-    return { outcome: "skipped", warning: capWarning(captain.name, spec.name) };
+  const existing = deps.store.routinesOf(captain.threadId);
+  if (hasRoutineNamed(existing, spec.name)) {
+    deps.store.markDefaultRoutineSeeded(captain.threadId, spec.key, deps.now());
+    return { outcome: "done" };
+  }
+  if (existing.length >= ROUTINES_PER_CAPTAIN) {
+    deps.store.markDefaultRoutineSeeded(captain.threadId, spec.key, deps.now());
+    return { outcome: "done", warning: capWarning(captain.name, spec.name) };
   }
   try {
     const instruction = deps.files.read(spec.instructionFile);
-    const view = await deps.createRoutine(captain, {
+    await deps.createRoutine(captain, {
       name: spec.name,
       instruction,
       schedule: { cron: spec.cron, timezone: deps.timezone },
     });
-    return { outcome: "created", view };
+    if (!deps.isDisposed()) {
+      deps.store.markDefaultRoutineSeeded(captain.threadId, spec.key, deps.now());
+    }
+    return { outcome: "done" };
   } catch (error) {
-    return classifyFailure(deps, captain, spec.name, error);
+    return classifyFailure(deps, captain, spec, error);
   }
 }
 
 function classifyFailure(
   deps: SeedDeps,
   captain: RoutineOwner,
-  routineName: string,
+  spec: DefaultRoutineSpec,
   error: unknown,
 ): StepOutcome {
   if (deps.isDisposed()) return { outcome: "retry", warning: "" };
-  if (hasRoutineNamed(deps, captain.threadId, routineName)) return { outcome: "skipped" };
+  const existing = deps.store.routinesOf(captain.threadId);
+  if (hasRoutineNamed(existing, spec.name)) {
+    deps.store.markDefaultRoutineSeeded(captain.threadId, spec.key, deps.now());
+    return { outcome: "done" };
+  }
   if (!deps.isLiveInStore(captain.threadId)) return { outcome: "stop" };
-  if (deps.store.routinesOf(captain.threadId).length >= ROUTINES_PER_CAPTAIN) {
-    return { outcome: "skipped", warning: capWarning(captain.name, routineName) };
+  if (existing.length >= ROUTINES_PER_CAPTAIN) {
+    deps.store.markDefaultRoutineSeeded(captain.threadId, spec.key, deps.now());
+    return { outcome: "done", warning: capWarning(captain.name, spec.name) };
   }
   return {
     outcome: "retry",
-    warning: `default routine ${JSON.stringify(routineName)} not added to ${captain.name}: ${errorText(error)}`,
+    warning: `default routine ${JSON.stringify(spec.name)} not added to ${captain.name}: ${errorMessage(error)}`,
   };
 }
 
-async function seedAllSpecs(deps: SeedDeps, captain: RoutineOwner): Promise<SeedResult> {
-  const created: RoutineView[] = [];
+async function seedPendingSpecs(
+  deps: SeedDeps,
+  captain: RoutineOwner,
+  pending: readonly DefaultRoutineSpec[],
+): Promise<SeedResult> {
   const warnings: string[] = [];
-  let complete = true;
-  for (const spec of DEFAULT_ROUTINES) {
-    if (deps.isDisposed()) return { complete: false, created, warnings };
+  for (const spec of pending) {
+    if (deps.isDisposed()) return { complete: false, warnings };
     const step = await seedOne(deps, captain, spec);
-    switch (step.outcome) {
-      case "stop":
-        return { complete: true, created, warnings };
-      case "created":
-        created.push(step.view);
-        break;
-      case "skipped":
-        if (step.warning !== undefined) warnings.push(step.warning);
-        break;
-      case "retry":
-        complete = false;
-        if (step.warning !== "") warnings.push(step.warning);
-        break;
+    if (step.outcome === "stop") return { complete: true, warnings };
+    if (step.outcome === "retry") {
+      if (step.warning !== "") warnings.push(step.warning);
+      return { complete: false, warnings };
     }
+    if (step.warning !== undefined) warnings.push(step.warning);
   }
-  if (complete && !deps.isDisposed()) {
-    deps.store.markDefaultRoutinesSeeded(captain.threadId, deps.now());
-  }
-  return { complete, created, warnings };
+  return { complete: true, warnings };
 }
 
 /**
- * Seed the built-in daily routines for one Captain once (caller holds the
- * per-Captain seed lock). Already-seeded Captains are left alone so a removed
- * default never returns; existing routines with the same name are kept as is.
+ * Seed any unseeded built-in daily routines for one Captain (caller holds the
+ * per-Captain seed lock). Each default is marked seeded as soon as it is
+ * created or skipped, so a removed default never returns even after a partial
+ * failure on another default.
  */
 export async function seedCaptainDefaults(
   deps: SeedDeps,
   captain: RoutineOwner,
 ): Promise<SeedResult> {
-  if (deps.isDisposed()) return { complete: false, created: [], warnings: [] };
-  if (deps.store.defaultRoutinesSeeded(captain.threadId)) {
-    return { complete: true, created: [], warnings: [] };
-  }
+  if (deps.isDisposed()) return { complete: false, warnings: [] };
+  const pending = unseededSpecs(deps.store, captain.threadId);
+  if (pending.length === 0) return { complete: true, warnings: [] };
   const target = await checkTarget(deps, captain);
-  if (target.state === "skip") return { complete: true, created: [], warnings: [] };
+  if (target.state === "skip") return { complete: true, warnings: [] };
   if (target.state === "retry") {
     return {
       complete: false,
-      created: [],
       warnings: target.warning === "" ? [] : [target.warning],
     };
   }
-  return seedAllSpecs(deps, captain);
+  return seedPendingSpecs(deps, captain, pending);
 }

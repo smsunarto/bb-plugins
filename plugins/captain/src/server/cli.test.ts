@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import { captainCli } from "./cli.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { parseDuration } from "./commands/routine.ts";
+import { DEFAULT_ROUTINES } from "./default-routines.ts";
 import {
   captainHost,
   clearRoutines,
@@ -238,6 +239,10 @@ describe("bb captain new", () => {
         enabled: true,
       },
     ]);
+    for (const spec of DEFAULT_ROUTINES) {
+      const stored = host.server.store.findRoutine(captainId, spec.name);
+      expect(stored?.instruction).toBe(host.server.files.read(spec.instructionFile));
+    }
 
     // Removing a default and rerunning `new` keeps the removed default absent.
     const removed = await run(host, ["routine", "remove", "Drive sweep"], captainId);
@@ -256,12 +261,17 @@ describe("bb captain new", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toContain("warning: default routine");
     const captainId = result.stdout.trim().split(/\s{2,}/u)[0] ?? "";
-    expect(host.server.store.defaultRoutinesSeeded(captainId)).toBe(false);
+    expect(host.released).toEqual([{ threadId: captainId, marked: true, registered: true }]);
+    for (const spec of DEFAULT_ROUTINES) {
+      expect(host.server.store.defaultRoutineSeeded(captainId, spec.key)).toBe(false);
+    }
     expect(host.server.store.routinesOf(captainId)).toEqual([]);
 
     host.automations.down = false;
     await host.server.routines.maintain();
-    expect(host.server.store.defaultRoutinesSeeded(captainId)).toBe(true);
+    for (const spec of DEFAULT_ROUTINES) {
+      expect(host.server.store.defaultRoutineSeeded(captainId, spec.key)).toBe(true);
+    }
     expect(host.server.store.routinesOf(captainId).map((r) => r.name)).toEqual([
       "Backlog grooming",
       "Drive sweep",

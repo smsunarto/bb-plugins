@@ -264,8 +264,8 @@ export const NOTICE = {
   answerHealth: (askId: string) => `health:answer:${askId}`,
   /** The one-time backfill of `task_owners`, marked sent once it ran to the end. */
   ownerBackfill: "owner-backfill",
-  /** A Captain's built-in daily routines seeded once; a removed default never comes back. */
-  defaultRoutines: (threadId: string) => `default-routines:${threadId}`,
+  /** One built-in daily routine seeded once for a Captain; a removed default never comes back. */
+  defaultRoutine: (threadId: string, key: string) => `default-routine:${threadId}:${key}`,
 } as const;
 
 /** Later and Skip on a banner row. */
@@ -728,12 +728,12 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     setTaskOwnerBackfilled(at: number): void {
       this.markNoticeSent(NOTICE.ownerBackfill, at);
     },
-    /** Whether a Captain's built-in default routines were seeded once: a `notices` marker. */
-    defaultRoutinesSeeded(captainId: string): boolean {
-      return this.noticeSentAt(NOTICE.defaultRoutines(captainId)) !== null;
+    /** Whether one built-in default routine was seeded for a Captain: a `notices` marker. */
+    defaultRoutineSeeded(captainId: string, key: string): boolean {
+      return this.noticeSentAt(NOTICE.defaultRoutine(captainId, key)) !== null;
     },
-    markDefaultRoutinesSeeded(captainId: string, at: number): void {
-      this.markNoticeSent(NOTICE.defaultRoutines(captainId), at);
+    markDefaultRoutineSeeded(captainId: string, key: string, at: number): void {
+      this.markNoticeSent(NOTICE.defaultRoutine(captainId, key), at);
     },
     /** Drop a Captain's ownership of a task; false when it had none. */
     releaseTaskOwner(captainId: string, taskId: string): boolean {

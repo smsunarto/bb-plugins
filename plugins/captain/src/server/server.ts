@@ -124,9 +124,9 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     (warnings) => void warnings.forEach((warning) => bb.log.warn(warning)),
     (error: unknown) => bb.log.warn(`Captain titles not checked: ${(error as Error).message}`),
   );
-  // Existing Captains without built-in daily routines get them once; maintenance retries if Automations is not up yet.
+  // Existing Captains without built-in daily routines get them once; maintenance coalesces/retries if Automations is not up yet.
   const defaultsReady = routines.backfillDefaults().then(
-    ({ warnings }) => void warnings.forEach((warning) => bb.log.warn(warning)),
+    () => undefined,
     (error: unknown) => bb.log.warn(`default routines not seeded yet: ${(error as Error).message}`),
   );
   return {

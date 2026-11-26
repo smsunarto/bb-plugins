@@ -260,16 +260,16 @@ async function apply(deps: CommandDeps, plan: Plan): Promise<StartedCaptain> {
   // Also on a rerun, so `new` converges a Captain started before the mark.
   const audienceWarning = await markPersonFacing(bb, threadId);
   if (audienceWarning !== null) warnings.push(audienceWarning);
+  if (existing === null) {
+    const releaseWarning = await releaseFirstTurn(deps, threadId);
+    if (releaseWarning !== null) warnings.push(releaseWarning);
+  }
   const seededRoutines = await deps.routines.seedDefaults({
     threadId,
     name: existing?.name ?? plan.name,
     homeProjectId: home.id,
   });
   warnings.push(...seededRoutines.warnings);
-  if (existing === null) {
-    const releaseWarning = await releaseFirstTurn(deps, threadId);
-    if (releaseWarning !== null) warnings.push(releaseWarning);
-  }
   const presets = await createMissingPresets(deps, plan.presets);
   warnings.push(...presets.warnings);
   if (presets.created.length > 0) notes.push(`created presets ${presets.created.join(", ")}`);

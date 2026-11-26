@@ -16,7 +16,12 @@ import {
   type Schedule,
 } from "../contract/routines.ts";
 import { isMissing, type AutomationsClient, type AutomationTarget } from "./automations-client.ts";
-import { seedCaptainDefaults, type SeedResult } from "./default-routines.ts";
+import {
+  errorMessage,
+  seedCaptainDefaults,
+  unseededSpecs,
+  type SeedResult,
+} from "./default-routines.ts";
 import { Refusal } from "./output.ts";
 import type { Cleanup, Store } from "./store.ts";
 
@@ -65,7 +70,6 @@ export function wakeToken(routineId: string): string {
 }
 
 export type FireResult = { state: "sent" | "queued" | "skipped"; run: RoutineRun };
-export type { SeedResult };
 
 export type Routines = ReturnType<typeof createRoutines>;
 
@@ -106,6 +110,7 @@ export function createRoutines(deps: RoutinesDeps) {
   let reconciled = false;
   let reconcileWarned = false;
   let backfillWarned = false;
+  let backfillInFlight: Promise<{ complete: boolean; warnings: string[] }> | null = null;
 
   const locks = new Map<string, Promise<unknown>>();
   /** One operation at a time per key; a failed one does not block the next. */
@@ -197,7 +202,7 @@ export function createRoutines(deps: RoutinesDeps) {
   const removing = new Set<string>();
   const archived = new Set<string>();
   const namesKey = (captainId: string) => `names:${captainId}`;
-  const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+  const message = errorMessage;
   const ownerOf = (routine: Routine): RoutineOwner => {
     const row = store.captain(routine.captainId);
     if (row === null)
@@ -909,56 +914,80 @@ export function createRoutines(deps: RoutinesDeps) {
         live.archivedAt === null
       );
     },
+    markArchived: (captainId: string) => {
+      archived.add(captainId);
+    },
     getThread: (threadId: string) =>
       bounded(bb.sdk.threads.get({ threadId }), "reading the Captain"),
     createRoutine: (captain: RoutineOwner, fields: RoutineFields) => create(captain, fields),
   };
 
   /**
-   * Seed the built-in daily routines for one Captain once. Already-seeded
-   * Captains are left alone, so a default the user removed never returns.
+   * Seed the built-in daily routines for one Captain once. Each default is
+   * marked seeded on its own, so a default the user removed never returns.
    */
   async function seedDefaults(captain: RoutineOwner): Promise<SeedResult> {
-    if (disposed) return { complete: false, created: [], warnings: [] };
-    if (store.defaultRoutinesSeeded(captain.threadId)) {
-      return { complete: true, created: [], warnings: [] };
+    if (disposed) return { complete: false, warnings: [] };
+    if (unseededSpecs(store, captain.threadId).length === 0) {
+      return { complete: true, warnings: [] };
     }
     return serial(`seed:${captain.threadId}`, () => seedCaptainDefaults(seedDeps, captain));
   }
 
   /**
-   * Seed built-in daily routines for every live Captain that has not been
-   * seeded yet. Idempotent: seeded Captains are skipped with no remote calls.
+   * Seed built-in daily routines for every live, unarchived Captain with
+   * unseeded defaults. Concurrent callers coalesce onto the in-flight pass,
+   * and transient warnings are logged once until a pass completes.
    */
   async function backfillDefaults(
     signal?: AbortSignal,
   ): Promise<{ complete: boolean; warnings: string[] }> {
     const stopped = () => signal?.aborted === true || disposed;
     if (stopped()) return { complete: false, warnings: [] };
-    const unseeded = store
-      .liveCaptains()
-      .filter((captain) => !store.defaultRoutinesSeeded(captain.threadId));
-    if (unseeded.length === 0) {
-      backfillWarned = false;
-      return { complete: true, warnings: [] };
-    }
-    let complete = true;
-    const warnings: string[] = [];
-    for (const captain of unseeded) {
-      if (stopped()) {
-        complete = false;
-        break;
+    if (backfillInFlight !== null) return backfillInFlight;
+    const pass = (async () => {
+      const unseeded = store
+        .liveCaptains()
+        .filter(
+          (captain) =>
+            !removing.has(captain.threadId) &&
+            !archived.has(captain.threadId) &&
+            unseededSpecs(store, captain.threadId).length > 0,
+        );
+      if (unseeded.length === 0) {
+        backfillWarned = false;
+        return { complete: true, warnings: [] };
       }
-      const result = await seedDefaults({
-        threadId: captain.threadId,
-        name: captain.name,
-        homeProjectId: captain.homeProjectId,
-      });
-      if (!result.complete) complete = false;
-      warnings.push(...result.warnings);
+      const results = await mapLimit(
+        unseeded,
+        (captain) =>
+          seedDefaults({
+            threadId: captain.threadId,
+            name: captain.name,
+            homeProjectId: captain.homeProjectId,
+          }),
+        signal,
+      );
+      const complete =
+        !stopped() &&
+        results.length === unseeded.length &&
+        results.every((result) => result?.complete === true);
+      const warnings = results.flatMap((result) => result?.warnings ?? []);
+      if (complete) {
+        for (const warning of warnings) bb.log.warn(warning);
+        backfillWarned = false;
+      } else if (warnings.length > 0 && !backfillWarned) {
+        for (const warning of warnings) bb.log.warn(warning);
+        backfillWarned = true;
+      }
+      return { complete, warnings };
+    })();
+    backfillInFlight = pass;
+    try {
+      return await pass;
+    } finally {
+      if (backfillInFlight === pass) backfillInFlight = null;
     }
-    if (complete) backfillWarned = false;
-    return { complete, warnings };
   }
 
   /**
@@ -976,14 +1005,9 @@ export function createRoutines(deps: RoutinesDeps) {
         bb.log.warn(`routine maintenance: ${name} skipped: ${message(error)}`);
       }
     };
-    let defaultsComplete = true;
+    let defaultsComplete = false;
     await step("defaults", async () => {
-      const result = await backfillDefaults(signal);
-      defaultsComplete = result.complete;
-      if (result.warnings.length > 0 && !backfillWarned) {
-        for (const warning of result.warnings) bb.log.warn(warning);
-        if (!result.complete) backfillWarned = true;
-      }
+      defaultsComplete = (await backfillDefaults(signal)).complete;
     });
     await step("reconcile", () => reconcile(signal));
     await step("cleanup", () => drainCleanup(signal));
