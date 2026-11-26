@@ -1,4 +1,8 @@
 import { expect, onTestFinished, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createFakePluginHost,
   makeHostResponse,
@@ -22,8 +26,10 @@ function rule(id: string, instructions: string, when: Partial<Rule["when"]> = {}
 }
 
 async function load() {
+  const dataDir = await mkdtemp(join(tmpdir(), "ai-server-test-"));
   const host = createFakePluginHost({
     pluginId: "agent-instructions",
+    dataDir,
     sdk: {
       hosts: {
         list: async () => [
@@ -47,7 +53,11 @@ async function load() {
     },
   });
   // Disposing removes the fake host's storage dir.
-  onTestFinished(() => host.harness.lifecycle.dispose());
+  onTestFinished(async () => {
+    await host.harness.lifecycle.dispose();
+    spawnSync("chmod", ["-R", "u+w", dataDir]);
+    await rm(dataDir, { recursive: true, force: true });
+  });
   await plugin(host.bb);
   return host;
 }

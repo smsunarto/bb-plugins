@@ -1,7 +1,7 @@
 import { cliCommand, PluginCliError } from "@get-bb/plugin-sdk";
 import { newRuleId, ruleSchema, type Rule } from "../../shared/rules.ts";
 import type { Target } from "../../shared/targets.ts";
-import type { AgentInstructionsContext } from "../lib/store.ts";
+import type { AgentInstructionsContext } from "../lib/context.ts";
 import { describeConditions, loadTargets } from "../lib/targets.ts";
 
 const scope = (noun: string) =>
@@ -96,7 +96,7 @@ export function add(ctx: AgentInstructionsContext) {
           projects: await resolveAll(ctx, threadId, "project", options.project, targets.projects),
         },
       });
-      await ctx.store.update((rules) => [...rules, rule]);
+      await ctx.store.updateRules((rules) => [...rules, rule]);
       return {
         exitCode: 0,
         stdout: `Added ${rule.id}, when ${describeConditions(rule.when, targets)}\n`,

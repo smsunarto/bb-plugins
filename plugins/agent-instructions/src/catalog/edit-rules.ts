@@ -1,6 +1,9 @@
 import { posix } from "node:path";
-import { MAX_TREE_BYTES } from "./model.ts";
+import { MAX_SYNC_FILE_BYTES } from "../sync/paths.ts";
 import { MAX_SKILL_FILES, parseFrontmatter, pathProblems, relativeLinks } from "./skill-rules.ts";
+
+/** Maximum total size of one skill tree. */
+export const MAX_TREE_BYTES = MAX_SYNC_FILE_BYTES;
 
 /** The largest text file the editor saves. */
 export const MAX_FILE_BYTES = 1_048_576;

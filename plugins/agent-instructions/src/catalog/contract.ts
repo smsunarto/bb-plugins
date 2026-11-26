@@ -2,11 +2,6 @@ import { z } from "zod";
 
 /** The catalog editor's RPC methods. Types only cross into the app bundle. */
 
-const origin = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("authored") }),
-  z.object({ kind: z.literal("imported"), from: z.string() }),
-]);
-
 const publishReport = z.object({
   linked: z.array(z.string()),
   relinked: z.array(z.string()),
@@ -34,12 +29,15 @@ export type PublishOutcome = z.infer<typeof publishOutcome>;
 
 export const catalogListing = z.object({
   revision: z.number(),
+  /** Server folder holding the editable source files. */
+  sourcePath: z.string(),
+  /** Sync conflict copies under `conflicts/` waiting for manual resolution. */
+  conflicts: z.array(z.string()),
   docs: z.array(
     z.object({
       id: z.string(),
       name: z.string(),
       enabled: z.boolean(),
-      origin,
       characters: z.number(),
       sha256: z.string(),
     }),
@@ -49,7 +47,6 @@ export const catalogListing = z.object({
       name: z.string(),
       description: z.string(),
       enabled: z.boolean(),
-      origin,
       treeSha: z.string(),
       files: z.array(
         z.object({
@@ -61,7 +58,7 @@ export const catalogListing = z.object({
       ),
     }),
   ),
-  /** Deleted skills and docs, kept so they can be restored; import skips them. */
+  /** Deleted skills and docs, kept in server trash so they can be restored. */
   deleted: z.array(
     z.object({ kind: z.enum(["skill", "doc"]), key: z.string(), name: z.string(), at: z.number() }),
   ),

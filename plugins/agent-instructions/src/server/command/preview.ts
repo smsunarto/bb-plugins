@@ -1,6 +1,6 @@
 import { cliCommand, PluginCliError } from "@get-bb/plugin-sdk";
 import { compose, MAX_INSTRUCTIONS_LENGTH } from "../../shared/rules.ts";
-import type { AgentInstructionsContext } from "../lib/store.ts";
+import type { AgentInstructionsContext } from "../lib/context.ts";
 import { describeConditions, loadTargets } from "../lib/targets.ts";
 
 export function preview(ctx: AgentInstructionsContext) {
@@ -25,6 +25,7 @@ export function preview(ctx: AgentInstructionsContext) {
           hint: "Send the thread a message, then retry.",
         });
       }
+      await ctx.store.reloadFromDisk("disk");
       const header = describeConditions(
         {
           hosts: [session.host.id],
@@ -34,7 +35,7 @@ export function preview(ctx: AgentInstructionsContext) {
         },
         await loadTargets(ctx.bb),
       );
-      const text = compose(ctx.store.state().rules, session);
+      const text = compose(ctx.store.rulesState().rules, session);
       if (text === null) return { exitCode: 0, stdout: `${header}\n\n(no rule matches)\n` };
       // bb cuts a plugin's instructions here, so show only what the agent gets.
       const delivered = text.slice(0, MAX_INSTRUCTIONS_LENGTH);

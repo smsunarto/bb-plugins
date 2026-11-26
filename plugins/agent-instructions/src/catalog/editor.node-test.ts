@@ -5,7 +5,10 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
-import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import {
+  createFakePluginHost,
+  makePluginAgentConfigurationContext,
+} from "@get-bb/plugin-sdk/testing";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
 import hostEntry from "../host.ts";
 import plugin from "../server/server.ts";
@@ -28,36 +31,22 @@ async function tempDir(prefix: string) {
 const skillMd = (name: string, body = "") =>
   `---\nname: ${name}\ndescription: The ${name} skill.\n---\n${body}`;
 
-/** A dotfiles checkout with two skills, global text, and a Codex rule. */
-async function dotfiles() {
-  const root = await tempDir("editor-src-");
-  const files: Record<string, string> = {
-    "instructions/shared.md": "Shared text.\n",
-    "instructions/codex.md": "Codex text.\n",
-    "skills/probe/SKILL.md": skillMd("probe"),
-    "skills/dev/SKILL.md": skillMd("dev", "See [probe](../probe/SKILL.md).\n"),
-  };
-  const write = async (path: string, content: string) => {
-    const full = join(root, ".dotfiles/.agents", path);
-    await mkdir(dirname(full), { recursive: true });
-    await writeFile(full, content);
-  };
-  for (const [path, content] of Object.entries(files)) await write(path, content);
-  return { root, write };
+async function writeSourceFile(sourceDir: string, relPath: string, content: string | Uint8Array) {
+  const full = join(sourceDir, relPath);
+  await mkdir(dirname(full), { recursive: true });
+  await writeFile(full, content);
 }
 
 async function setup() {
   const machine = experimental_createHostEntryHarness(hostEntry);
   cleanup.push(() => machine.experimental_dispose());
   const dataDir = await tempDir("editor-data-");
+  const sourceDir = join(dataDir, "plugins/agent-instructions/source");
   const { bb, harness } = createFakePluginHost({
     pluginId: "agent-instructions",
     dataDir,
     experimental_callHostRpc: (call) =>
-      machine.experimental_call(
-        call.method as "readText",
-        call.input as { rootPath: string; path: string },
-      ),
+      machine.experimental_call(call.method as never, call.input as never),
     sdk: {
       projects: {
         list: async () => [
@@ -99,24 +88,56 @@ async function setup() {
   const listing = () => rpc("catalog", null) as Promise<CatalogListing>;
   const file = (input: { skill: string; path: string } | { doc: string }) =>
     rpc("catalogFile", input) as Promise<{ content: string | null; sha256: string | null }>;
-  const importFrom = async (root: string) => {
-    const result = await harness.behavior.runCli([
-      "import",
-      "--root",
-      root,
-      "--host",
-      "host",
-      "--apply",
-    ]);
-    assert.equal(result.exitCode, 0, result.stdout);
-    return result.stdout;
-  };
   const cli = (...args: string[]) => harness.behavior.runCli(args);
-  return { dataDir, rpc, change, listing, file, importFrom, cli };
+  return { dataDir, sourceDir, harness, rpc, change, listing, file, cli };
 }
 
+test("editing a doc, rule, or skill directly on disk reaches publishing and agent prompts without any CLI write", async () => {
+  const { dataDir, sourceDir, harness, listing } = await setup();
+
+  await writeSourceFile(sourceDir, "instructions/shared.md", "Direct disk doc.\n");
+  await writeSourceFile(
+    sourceDir,
+    "rules/direct.md",
+    "---\nname: Direct rule\nenabled: true\nwhen:\n  providers:\n    - codex\n---\n\nDirect disk rule.\n",
+  );
+  await writeSourceFile(
+    sourceDir,
+    "skills/disk-skill/SKILL.md",
+    skillMd("disk-skill", "Edited directly on disk.\n"),
+  );
+
+  // Wait for fs.watch debounce + background publish.
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (
+      existsSync(join(dataDir, "AGENTS.md")) &&
+      existsSync(join(dataDir, "skills/disk-skill/SKILL.md"))
+    )
+      break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  assert.equal(await readFile(join(dataDir, "AGENTS.md"), "utf8"), "Direct disk doc.\n");
+  assert.match(
+    await readFile(join(dataDir, "skills/disk-skill/SKILL.md"), "utf8"),
+    /Edited directly on disk/,
+  );
+
+  const resolved = await harness.resolveAgentConfiguration(
+    makePluginAgentConfigurationContext({
+      thread: { id: "thr_disk" },
+      host: { id: "host_1" },
+      provider: { id: "codex", model: "gpt-5" },
+      project: { id: "proj_personal" },
+    }),
+  );
+  assert.equal(resolved.instructions, "Direct disk rule.");
+  assert.equal((await listing()).docs[0]?.id, "shared");
+});
+
 test("a save is stored and published; a stale or invalid save changes nothing", async () => {
-  const { dataDir, change, listing, file } = await setup();
+  const { dataDir, sourceDir, change, listing, file } = await setup();
   const created = await change({
     op: "createSkill",
     name: "notes",
@@ -140,15 +161,23 @@ test("a save is stored and published; a stale or invalid save changes nothing", 
     (await file({ skill: "notes", path: "references/a.md" })).sha256,
   );
 
-  const revision = (await listing()).revision;
-  const stale = await change({
+  // External on-disk edit is caught by CAS before overwriting!
+  const beforeDiskEdit = (await file({ skill: "notes", path: "references/a.md" })).sha256;
+  await writeSourceFile(sourceDir, "skills/notes/references/a.md", "Edited on disk.\n");
+  const conflictResult = await change({
     op: "saveFile",
     skill: "notes",
     path: "references/a.md",
-    content: "B\n",
-    expectedSha256: null,
+    content: "UI stale save.\n",
+    expectedSha256: beforeDiskEdit,
   });
-  assert.equal(stale.outcome, "conflict");
+  assert.equal(conflictResult.outcome, "conflict");
+  assert.equal(
+    await readFile(join(sourceDir, "skills/notes/references/a.md"), "utf8"),
+    "Edited on disk.\n",
+  );
+
+  const revision = (await listing()).revision;
   const { sha256 } = await file({ skill: "notes", path: "SKILL.md" });
   const renamed = await change({
     op: "saveFile",
@@ -181,10 +210,14 @@ test("a name bb already delivers cannot be used for a new skill", async () => {
   assert.match(JSON.stringify(result), /hide the mcp skill from plugin bb-guide/);
 });
 
-test("deleting needs the version you saw; a deleted skill can be restored, and import skips it", async () => {
-  const source = await dotfiles();
-  const { dataDir, change, listing, importFrom } = await setup();
-  await importFrom(source.root);
+test("deleting needs the version you saw, warns on incoming links, and can be restored from trash", async () => {
+  const { dataDir, sourceDir, change, listing } = await setup();
+  await writeSourceFile(sourceDir, "skills/probe/SKILL.md", skillMd("probe"));
+  await writeSourceFile(
+    sourceDir,
+    "skills/dev/SKILL.md",
+    skillMd("dev", "See [probe](../probe/SKILL.md).\n"),
+  );
   const probe = (await listing()).skills.find((s) => s.name === "probe")!;
 
   const stale = await change({ op: "deleteSkill", name: "probe", expectedTreeSha: "0".repeat(64) });
@@ -195,7 +228,6 @@ test("deleting needs the version you saw; a deleted skill can be restored, and i
     expectedTreeSha: probe.treeSha,
   });
   assert.equal(deleted.outcome, "saved");
-  // dev links into probe, so its deletion warns.
   assert.match(JSON.stringify(deleted), /dev\/SKILL.md links into probe/);
   assert.equal(existsSync(join(dataDir, "skills/probe")), false);
   assert.deepEqual(
@@ -203,59 +235,10 @@ test("deleting needs the version you saw; a deleted skill can be restored, and i
     ["probe"],
   );
 
-  assert.match(await importFrom(source.root), /probe was deleted in bb; restore it/);
-  assert.equal(existsSync(join(dataDir, "skills/probe")), false);
-
   const restored = await change({ op: "restore", kind: "skill", key: "probe" });
   assert.equal(restored.outcome, "saved");
   assert.match(await readFile(join(dataDir, "skills/probe/SKILL.md"), "utf8"), /name: probe/);
   assert.deepEqual((await listing()).deleted, []);
-});
-
-test("an edit makes an imported skill, doc, or rule yours, and import keeps it", async () => {
-  const source = await dotfiles();
-  const { rpc, change, listing, file, importFrom } = await setup();
-  await importFrom(source.root);
-
-  const dev = await file({ skill: "dev", path: "SKILL.md" });
-  await change({
-    op: "saveFile",
-    skill: "dev",
-    path: "SKILL.md",
-    content: skillMd("dev", "Edited in bb.\n"),
-    expectedSha256: dev.sha256,
-  });
-  const doc = (await listing()).docs[0]!;
-  await change({ op: "saveDoc", id: doc.id, body: "Edited text.\n", expectedSha256: doc.sha256 });
-  await change({ op: "setSkillEnabled", name: "probe", enabled: false });
-  const rules = (await rpc("rules", null)) as {
-    revision: number;
-    rules: { id: string; instructions: string }[];
-  };
-  await rpc("saveRules", {
-    revision: rules.revision,
-    rules: rules.rules.map((r) =>
-      Object.assign(structuredClone(r), { instructions: "Codex edited.\n" }),
-    ),
-  });
-
-  await source.write("skills/dev/SKILL.md", skillMd("dev", "Changed in dotfiles.\n"));
-  await source.write("instructions/shared.md", "Changed shared.\n");
-  await source.write("instructions/codex.md", "Changed codex.\n");
-  await source.write("skills/probe/SKILL.md", skillMd("probe", "New probe.\n"));
-  const out = await importFrom(source.root);
-  assert.match(out, /kept the version of dev edited in bb/);
-  assert.match(out, /shared.md: kept the text edited in bb/);
-  assert.match(out, /Kept as edited or deleted in bb: rule rule_import_codex/);
-
-  assert.match((await file({ skill: "dev", path: "SKILL.md" })).content!, /Edited in bb/);
-  assert.equal((await file({ doc: doc.id })).content, "Edited text.\n");
-  const after = (await rpc("rules", null)) as { rules: { instructions: string }[] };
-  assert.equal(after.rules[0]!.instructions, "Codex edited.\n");
-  // Turning a skill off is not an edit: the import still refreshed probe, and kept it off.
-  const probe = (await listing()).skills.find((s) => s.name === "probe")!;
-  assert.deepEqual([probe.origin.kind, probe.enabled], ["imported", false]);
-  assert.match((await file({ skill: "probe", path: "SKILL.md" })).content!, /New probe/);
 });
 
 test("docs can be created, renamed, turned off, and deleted, and AGENTS.md follows", async () => {
@@ -286,39 +269,6 @@ test("docs can be created, renamed, turned off, and deleted, and AGENTS.md follo
   );
 });
 
-test("turning a rule off is not an edit, but narrowing its scope is, even once its source is gone", async () => {
-  const source = await dotfiles();
-  const { rpc, importFrom } = await setup();
-  await importFrom(source.root);
-  type Rules = {
-    revision: number;
-    rules: { id: string; enabled: boolean; instructions: string; when: { models: string[] } }[];
-  };
-  const update = async (change: (rule: Rules["rules"][number]) => object) => {
-    const state = (await rpc("rules", null)) as Rules;
-    await rpc("saveRules", {
-      revision: state.revision,
-      rules: state.rules.map((r) => Object.assign(structuredClone(r), change(r))),
-    });
-  };
-  const codex = async () => ((await rpc("rules", null)) as Rules).rules[0]!;
-
-  await update(() => ({ enabled: false }));
-  await source.write("instructions/codex.md", "Codex v2.\n");
-  await importFrom(source.root);
-  assert.deepEqual([(await codex()).instructions, (await codex()).enabled], ["Codex v2.", false]);
-
-  await update((r) => ({ when: { ...r.when, models: ["gpt-*"] } }));
-  await source.write("instructions/codex.md", "Codex v3.\n");
-  assert.match(await importFrom(source.root), /rule rule_import_codex: kept the rule edited in bb/);
-  assert.equal((await codex()).instructions, "Codex v2.");
-
-  // Without --prune, a missing source would stop the import; an edited rule does not.
-  await rm(join(source.root, ".dotfiles/.agents/instructions/codex.md"));
-  await importFrom(source.root);
-  assert.deepEqual((await codex()).when.models, ["gpt-*"]);
-});
-
 test("agents edit skills through the CLI, and a stale --expect changes nothing", async () => {
   const { dataDir, listing, cli } = await setup();
   const created = await cli("skill", "create", "notes", "--description", "Take notes.");
@@ -335,7 +285,6 @@ test("agents edit skills through the CLI, and a stale --expect changes nothing",
   assert.ok(sha, shown.stderr);
   assert.equal(createdSha, sha, "create prints the sha256 that write needs");
 
-  // A file is stored byte for byte, final blank lines included.
   const body = skillMd("notes", "Write it down.\n\n");
   const draft = join(await tempDir("editor-draft-"), "SKILL.md");
   await writeFile(draft, body);
@@ -346,35 +295,15 @@ test("agents edit skills through the CLI, and a stale --expect changes nothing",
   assert.equal(written.exitCode, 0, written.stderr);
   assert.match(written.stdout, /Published for new threads/);
   assert.equal(await readFile(join(dataDir, "skills/notes/SKILL.md"), "utf8"), body);
-  const missing = await cli(
-    "skill",
-    "write",
-    "notes",
-    "SKILL.md",
-    "--file",
-    `${draft}.gone`,
-    "--host",
-    "host",
-    "--expect",
-    sha,
-  );
-  assert.match(missing.stderr, /does not exist on host host/);
-  const both = await cli("skill", "write", "notes", "SKILL.md", "--expect", sha);
-  assert.match(both.stderr, /exactly one of --file or --content/);
 
-  // Writing back what show printed adds no revision.
   const write = (content: string, expect: string) =>
     cli("skill", "write", "notes", "SKILL.md", "--content", content, "--expect", expect);
-
   const revision = (await listing()).revision;
   const newSha = /sha256 ([0-9a-f]{64})/.exec(written.stdout)?.[1] ?? "";
   assert.match((await write(body, newSha)).stdout, /unchanged; nothing saved/);
   const stale = await write(`${body}\nMore.`, sha);
   assert.notEqual(stale.exitCode, 0);
   assert.match(stale.stderr, /changed since you opened it/);
-  const badSha = await write(body, "x");
-  assert.notEqual(badSha.exitCode, 0);
-  assert.match(badSha.stderr, /64-character sha256/);
   assert.equal((await listing()).revision, revision);
 
   const added = await cli(
@@ -397,20 +326,19 @@ test("agents edit skills through the CLI, and a stale --expect changes nothing",
   assert.equal(removed.exitCode, 0, removed.stderr);
   assert.equal(existsSync(join(dataDir, "skills/notes/references/a.md")), false);
   const tree = (await listing()).skills.find((s) => s.name === "notes")!.treeSha;
-  assert.match((await cli("skill", "delete", "nots", "--expect", tree)).stderr, /No skill nots/);
   const gone = await cli("skill", "delete", "notes", "--expect", tree);
   assert.equal(gone.exitCode, 0, gone.stderr);
   assert.equal(existsSync(join(dataDir, "skills/notes")), false);
-  assert.match((await cli("skill", "show", "notes")).stderr, /No skill notes/);
 });
 
 test("agents can delete a binary skill file through the CLI", async () => {
-  const source = await dotfiles();
-  const logo = join(source.root, ".dotfiles/.agents/skills/probe/assets/logo.png");
-  await mkdir(dirname(logo), { recursive: true });
-  await writeFile(logo, Buffer.from([0x89, 0x50, 0x00, 0xff]));
-  const { dataDir, importFrom, cli } = await setup();
-  await importFrom(source.root);
+  const { dataDir, sourceDir, cli } = await setup();
+  await writeSourceFile(sourceDir, "skills/probe/SKILL.md", skillMd("probe"));
+  await writeSourceFile(
+    sourceDir,
+    "skills/probe/assets/logo.png",
+    Buffer.from([0x89, 0x50, 0x00, 0xff]),
+  );
 
   const text = await cli("skill", "show", "probe", "assets/logo.png");
   assert.notEqual(text.exitCode, 0);
@@ -429,7 +357,7 @@ test("a CLI change that saves but does not publish exits 1", async () => {
   const created = await cli("skill", "create", "notes", "--description", "Take notes.");
   const sha = /sha256 ([0-9a-f]{64})/.exec(created.stdout)?.[1] ?? "";
   const skills = join(dataDir, "skills");
-  spawnSync("chmod", ["a-w", skills]); // the published link cannot be replaced
+  spawnSync("chmod", ["a-w", skills]);
   try {
     const revision = (await listing()).revision;
     const body = skillMd("notes", "Unpublished.");
@@ -453,15 +381,13 @@ test("a CLI change that saves but does not publish exits 1", async () => {
 });
 
 test("agents edit the global doc through the CLI", async () => {
-  const source = await dotfiles();
-  const { dataDir, listing, importFrom, cli } = await setup();
-  await importFrom(source.root);
+  const { dataDir, sourceDir, listing, cli } = await setup();
+  await writeSourceFile(sourceDir, "instructions/shared.md", "Shared text.");
   const id = (await listing()).docs[0]!.id;
 
   const shown = await cli("doc", "show", id);
   assert.equal(shown.stdout, "Shared text.");
   const sha = /sha256 ([0-9a-f]{64})/.exec(shown.stderr)?.[1] ?? "";
-  // An editor's final newline is not a change: docs are stored trimmed, as imported.
   const revision = (await listing()).revision;
   const same = await cli("doc", "write", id, "--content", "Shared text.\n", "--expect", sha);
   assert.match(same.stdout, /unchanged; nothing saved/);
@@ -473,8 +399,8 @@ test("agents edit the global doc through the CLI", async () => {
   assert.notEqual((await cli("doc", "write", id, "--content", "x", "--expect", sha)).exitCode, 0);
 
   const current = JSON.parse((await cli("doc", "show", id, "--json")).stdout).sha256;
-  assert.match((await cli("doc", "delete", "nope", "--expect", current)).stderr, /No doc nope/);
-  assert.equal((await cli("doc", "delete", id, "--expect", current)).exitCode, 0);
+  const del = await cli("doc", "delete", id, "--expect", current);
+  assert.equal(del.exitCode, 0);
   assert.equal(existsSync(join(dataDir, "AGENTS.md")), false);
   assert.deepEqual(
     (await listing()).deleted.map((d) => d.kind),

@@ -1,7 +1,7 @@
 import { cliCommand } from "@get-bb/plugin-sdk";
-import type { CatalogContext } from "../../catalog/import.ts";
 import type { PublishReport } from "../../catalog/publish.ts";
 import { MAX_INSTRUCTIONS_LENGTH, overflowingProviders, type Rule } from "../../shared/rules.ts";
+import type { AgentInstructionsContext } from "../lib/context.ts";
 
 const AGENTS_MD: Record<PublishReport["agentsMd"], string> = {
   linked: "published",
@@ -40,13 +40,14 @@ export function publishLines(report: PublishReport, findings: PublishFindings): 
   ];
 }
 
-export function publishCommand(ctx: CatalogContext) {
+export function publishCommand(ctx: AgentInstructionsContext) {
   return cliCommand({
-    summary: "Publish the catalog's skills and global instructions to bb's user tier",
+    summary: "Publish the source folder's skills and global instructions to bb's user tier",
     options: { json: { type: "boolean", description: "Print the result as JSON" } },
     async run({ options }) {
+      await ctx.store.reloadFromDisk("disk");
       const report = await ctx.publisher.run();
-      const findings = publishFindings(report, ctx.store.state().rules);
+      const findings = publishFindings(report, ctx.store.rulesState().rules);
       const stdout = options.json
         ? JSON.stringify({ ...report, ...findings }, null, 2)
         : publishLines(report, findings).join("\n");

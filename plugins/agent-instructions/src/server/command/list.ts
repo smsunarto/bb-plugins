@@ -1,5 +1,5 @@
 import { cliCommand } from "@get-bb/plugin-sdk";
-import type { AgentInstructionsContext } from "../lib/store.ts";
+import type { AgentInstructionsContext } from "../lib/context.ts";
 import { describeConditions, loadTargets } from "../lib/targets.ts";
 
 export function list(ctx: AgentInstructionsContext) {
@@ -7,7 +7,8 @@ export function list(ctx: AgentInstructionsContext) {
     summary: "List the instruction rules in the order they are applied",
     options: { json: { type: "boolean", description: "Print the rules as JSON" } },
     async run({ options }) {
-      const { rules } = ctx.store.state();
+      await ctx.store.reloadFromDisk("disk");
+      const { rules } = ctx.store.rulesState();
       if (options.json) return { exitCode: 0, stdout: `${JSON.stringify({ rules }, null, 2)}\n` };
       if (rules.length === 0) return { exitCode: 0, stdout: "No rules yet\n" };
       const targets = await loadTargets(ctx.bb);

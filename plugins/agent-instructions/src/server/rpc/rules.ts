@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { rulesStateSchema } from "../../shared/rules.ts";
-import type { AgentInstructionsContext } from "../lib/store.ts";
+import type { AgentInstructionsContext } from "../lib/context.ts";
 
 export const rulesContract = {
   experimental_description: "List the instruction rules in order, with the revision they are at",
@@ -11,5 +11,6 @@ export const rulesContract = {
 export async function rules(
   ctx: AgentInstructionsContext,
 ): Promise<z.input<typeof rulesContract.output>> {
-  return ctx.store.state();
+  await ctx.store.reloadFromDisk("disk");
+  return ctx.store.rulesState();
 }

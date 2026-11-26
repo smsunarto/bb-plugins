@@ -63,9 +63,18 @@ function Overview({ listing }: { listing: CatalogListing }) {
       ))}
       <p className="pe-meta pe-wrap">
         bb gives every agent the enabled global instructions as one AGENTS.md, appends the rules
-        that match its machine, provider, model, or project, and lists the enabled skills. Pick a
-        doc, rule, or skill in the sidebar to edit it.
+        that match its machine, provider, model, or project, and lists the enabled skills. Edit
+        files here or directly in <code className="pe-mono">{listing.sourcePath}</code>.
       </p>
+      {listing.conflicts.length > 0 && (
+        <Alert variant="warning" role="alert">
+          <AlertDescription>
+            {listing.conflicts.length} sync conflict{listing.conflicts.length === 1 ? "" : "s"}{" "}
+            saved under <code className="pe-mono">conflicts/</code> (not published to agents):{" "}
+            {listing.conflicts.join(", ")}
+          </AlertDescription>
+        </Alert>
+      )}
       {listing.published === null ? (
         <Alert variant="warning" role="none">
           <AlertDescription>
@@ -107,8 +116,8 @@ function facts(subject: EditorSubject) {
       name: doc.name,
       title: doc.name,
       kicker: "Global instructions",
+      relativePath: `instructions/${doc.id}.md`,
       enabled: doc.enabled,
-      origin: doc.origin,
       markdown: true,
       toggle: (enabled: boolean): CatalogChange => ({ op: "setDocEnabled", id: doc.id, enabled }),
       saveOp: (text: string, expected: string | null): CatalogChange => ({
@@ -125,8 +134,8 @@ function facts(subject: EditorSubject) {
     name: skill.name,
     title: path,
     kicker: `Skill · ${skill.name}`,
+    relativePath: `skills/${skill.name}/${path}`,
     enabled: skill.enabled,
-    origin: skill.origin,
     markdown: /\.(md|markdown)$/i.test(path),
     toggle: (enabled: boolean): CatalogChange => ({
       op: "setSkillEnabled",
@@ -398,14 +407,9 @@ function SkillToolbar(props: { skill: Skill; path: string; open: OpenFile; file:
 
 const SCRIPT = /\.(sh|py|js|ts|rb|pl)$/;
 
-/** What is true of the file itself: off, shadowed, binary, new, or imported. */
-function StateNotices(props: {
-  subject: EditorSubject;
-  facts: Facts;
-  file: LoadedFile;
-  changed: boolean;
-}) {
-  const { subject, facts: f, file, changed } = props;
+/** What is true of the file itself: off, shadowed, binary, or new. */
+function StateNotices(props: { subject: EditorSubject; facts: Facts; file: LoadedFile }) {
+  const { subject, facts: f, file } = props;
   const skill = subject.kind === "skill" ? subject : null;
   return (
     <>
@@ -445,13 +449,6 @@ function StateNotices(props: {
           </AlertDescription>
         </Alert>
       )}
-      {f.origin.kind === "imported" && changed && (
-        <Alert role="none">
-          <AlertDescription>
-            Imported from {f.origin.from}. Saving makes it yours: later imports keep your version.
-          </AlertDescription>
-        </Alert>
-      )}
     </>
   );
 }
@@ -480,7 +477,7 @@ function ResultNotices(props: {
       {moved && (
         <Alert variant="warning" role="alert">
           <AlertDescription>
-            {file.sha256 === null ? "This file was deleted" : "This file changed"} in bb after you
+            {file.sha256 === null ? "This file was deleted" : "This file changed"} on disk after you
             started editing.
           </AlertDescription>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -636,7 +633,7 @@ function LoadedEditor(props: { subject: EditorSubject; open: OpenFile; file: Loa
       ) : (
         <SkillToolbar skill={subject.skill} path={subject.path} open={open} file={file} />
       )}
-      <StateNotices subject={subject} facts={f} file={file} changed={draft !== undefined} />
+      <StateNotices subject={subject} facts={f} file={file} />
       <ResultNotices
         open={open}
         file={file}
@@ -654,14 +651,11 @@ function LoadedEditor(props: { subject: EditorSubject; open: OpenFile; file: Loa
       )}
       <footer className="pe-editor-foot">
         <span className="pe-meta">
-          {editable
-            ? `${value.length.toLocaleString()} chars`
-            : `${file.size.toLocaleString()} bytes`}
-          {file.executable && " · executable"}
+          {[!editable && `${file.size.toLocaleString()} bytes`, file.executable && "executable"]
+            .filter(Boolean)
+            .join(" · ")}
         </span>
-        <span className="pe-meta">
-          {f.origin.kind === "imported" ? `Imported from ${f.origin.from}` : "Edited in bb"}
-        </span>
+        <span className="pe-meta pe-mono">{f.relativePath}</span>
       </footer>
     </div>
   );

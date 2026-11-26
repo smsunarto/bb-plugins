@@ -37,15 +37,16 @@ const published: PublishOutcome = {
   warnings: [],
 };
 
-function listing(): CatalogListing {
+function listing(overrides: Partial<CatalogListing> = {}): CatalogListing {
   return {
     revision: 3,
+    sourcePath: "/data/plugins/agent-instructions/source",
+    conflicts: [],
     docs: [
       {
         id: "doc_shared",
         name: "Shared",
         enabled: true,
-        origin: { kind: "imported", from: "instructions/shared.md" },
         characters: 13,
         sha256: sha("d"),
       },
@@ -55,7 +56,6 @@ function listing(): CatalogListing {
         name: "dev",
         description: "Engineering workflow",
         enabled: true,
-        origin: { kind: "authored" },
         treeSha: sha("t"),
         files: [
           { path: "SKILL.md", executable: false, size: 40, text: true },
@@ -67,13 +67,13 @@ function listing(): CatalogListing {
         name: "mcp",
         description: "My MCP notes",
         enabled: false,
-        origin: { kind: "imported", from: "skills/mcp" },
         treeSha: sha("u"),
         files: [{ path: "SKILL.md", executable: false, size: 30, text: true }],
       },
     ],
     deleted: [{ kind: "skill", key: "old", name: "old", at: 1 }],
     published,
+    ...overrides,
   };
 }
 
@@ -222,7 +222,7 @@ test("a file changed elsewhere keeps the draft and asks before overwriting", asy
   });
   fake.files["dev/scripts/run.sh"] = { content: "theirs\n", sha256: sha("5") };
   fireEvent.click(slot.getByRole("button", { name: "Save" }));
-  await slot.findByText("This file changed in bb after you started editing.");
+  await slot.findByText("This file changed on disk after you started editing.");
   expect(slot.getByRole("textbox", { name: "scripts/run.sh" })).toHaveProperty("value", "mine\n");
   expect(slot.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
 
@@ -403,7 +403,27 @@ test("a new rule from the Global sidebar opens it in the rules editor", async ()
 
 test("the bare panel path opens the Global overview", async () => {
   const slot = await page("");
-  await waitFor(() => expect(slot.queryByRole("button", { name: "Add rule" })).toBeNull());
+  await slot.findByText("/data/plugins/agent-instructions/source");
+  expect(slot.queryByRole("button", { name: "Add rule" })).toBeNull();
   expect(slot.container.querySelector("[data-rule]")).toBeNull();
   slot.unmount();
+});
+
+test("overview and sidebar surface sync conflicts, and editor footer shows path without char count", async () => {
+  const fake = server({
+    catalog: () =>
+      listing({ conflicts: ["conflicts/dev-mac-20261126-043000/instructions/shared.md"] }),
+  });
+  const overview = await page("global", fake);
+  await overview.findByText(/1 sync conflict saved under/);
+  overview.unmount();
+
+  const tab = await sidebar("global", fake);
+  await tab.findByText("1 sync conflict in conflicts/");
+  tab.unmount();
+
+  const editor = await page("global/skills/dev/scripts/run.sh", fake);
+  await editor.findByText("skills/dev/scripts/run.sh");
+  expect(editor.queryByText(/chars/)).toBeNull();
+  editor.unmount();
 });

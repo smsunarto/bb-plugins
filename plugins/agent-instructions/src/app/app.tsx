@@ -3,7 +3,12 @@ import { CatalogTab } from "../catalog/app/sidebar.tsx";
 import type { CatalogListing } from "../catalog/contract.ts";
 import { DocumentsPage, DocumentsTab } from "../documents/app.tsx";
 import type { DocumentMetadata } from "../documents/model.ts";
-import { definePluginApp, experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
+import {
+  definePluginApp,
+  experimental_Icon as Icon,
+  useBbNavigate,
+  useRealtime,
+} from "@get-bb/plugin-sdk/app";
 import type { ExperimentalPageTitle, PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { PromptEditorPage, PluginsTab } from "../prompts/app/app.tsx";
 import { queryClient as promptsQueryClient } from "../prompts/app/query.ts";
@@ -35,7 +40,17 @@ import { parseRulesRoute, RulesPage } from "./rules.tsx";
 const PAGE_BLEED =
   "h-[calc(100%+var(--plugin-page-bottom-inset,0px))] mb-[calc(-1*var(--plugin-page-bottom-inset,0px))] pb-[var(--plugin-page-bottom-inset,0px)]";
 
+/** Refetches catalog, open file, and rules whenever the server folder or a mirror changes. */
+function useSourceLiveUpdates() {
+  useRealtime("sourceChanged", () => {
+    void queryClient.invalidateQueries({ queryKey: queryKey("catalog") });
+    void queryClient.invalidateQueries({ queryKey: ["catalogFile"] });
+    void queryClient.invalidateQueries({ queryKey: queryKey("rules") });
+  });
+}
+
 function AgentInstructionsPage({ subPath }: PluginNavPanelProps) {
+  useSourceLiveUpdates();
   const compact = useIsCompactViewport();
   const { section, item } = locate(subPath);
   // A phone keeps the sidebar in a closed drawer, so an editor's root shows its list here.
@@ -168,6 +183,7 @@ function EditorSwitcher({ section, className }: { section: Section; className: s
 
 /** The page's left sidebar: the editor switcher, then the current editor's file or plugin list. */
 function AgentInstructionsSidebar({ subPath }: PluginNavPanelProps) {
+  useSourceLiveUpdates();
   const { section } = locate(subPath);
   const root = useRef<HTMLDivElement>(null);
   // workaround:agent-instructions/sidebar-fill (manual removal; see workarounds.json)

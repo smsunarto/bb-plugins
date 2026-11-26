@@ -81,6 +81,12 @@ function StatusLine({
           </Button>
         )}
       </div>
+      {listing.conflicts.length > 0 && (
+        <p className="pe-meta" data-tone="warn">
+          {listing.conflicts.length} sync conflict{listing.conflicts.length === 1 ? "" : "s"} in{" "}
+          conflicts/
+        </p>
+      )}
       {refreshError !== null && (
         <output className="pe-meta" data-tone="warn">
           Showing the last list; refresh failed: {refreshError}
@@ -341,9 +347,7 @@ function DeletedRow({ entry }: { entry: Deleted }) {
         </ItemActions>
       </Item>
       {confirm && (
-        <p className="pe-meta pe-wrap px-2 pb-1">
-          This drops the saved copy. A dotfiles import adds it again if its source still exists.
-        </p>
+        <p className="pe-meta pe-wrap px-2 pb-1">This removes the saved copy permanently.</p>
       )}
       {[...failed, ...(change.error ? [change.error.message] : [])].map((error) => (
         <div key={error} className="px-2 pb-1">

@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto";
 import { publishFindings } from "../server/command/publish.ts";
+import type { AgentInstructionsContext } from "../server/lib/context.ts";
 import type { CatalogChange, CatalogListing, FileTarget, PublishOutcome } from "./contract.ts";
 import { editableText } from "./edit-rules.ts";
-import type { CatalogContext } from "./import.ts";
 import { deliveredSkills } from "./shadow.ts";
 
 /** How long the editor waits for bb to list its skills before showing the check as not done. */
@@ -18,13 +17,13 @@ function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-/** The catalog editor's RPC handlers. */
-export function catalogHandlers(ctx: CatalogContext) {
+/** The catalog editor's RPC handlers backed by the file-system source folder. */
+export function catalogHandlers(ctx: AgentInstructionsContext) {
   const outcome = (report: Parameters<typeof publishFindings>[0], at: number): PublishOutcome => ({
     ok: true,
     at,
     report,
-    ...publishFindings(report, ctx.store.state().rules),
+    ...publishFindings(report, ctx.store.rulesState().rules),
   });
 
   async function publishNow(): Promise<PublishOutcome> {
@@ -69,7 +68,10 @@ export function catalogHandlers(ctx: CatalogContext) {
   }
 
   return {
-    catalog: (): CatalogListing => ({ ...ctx.catalog.listing(), published: lastPublish() }),
+    async catalog(): Promise<CatalogListing> {
+      await ctx.store.reloadFromDisk("disk");
+      return { ...ctx.store.listing(), published: lastPublish() };
+    },
 
     async catalogShadows() {
       try {
@@ -78,7 +80,7 @@ export function catalogHandlers(ctx: CatalogContext) {
           SHADOW_TIMEOUT_MS,
           "Listing skills",
         );
-        const shadows = ctx.catalog
+        const shadows = ctx.store
           .publishable()
           .filter((s) => owners.has(s.name))
           .map((s) => ({ name: s.name, owner: owners.get(s.name)! }));
@@ -88,15 +90,16 @@ export function catalogHandlers(ctx: CatalogContext) {
       }
     },
 
-    catalogFile(target: FileTarget) {
-      const file = ctx.catalog.file(target);
+    async catalogFile(target: FileTarget) {
+      await ctx.store.reloadFromDisk("disk");
+      const file = ctx.store.file(target);
       if (file === null && "doc" in target)
         throw new Error("This doc is not in the catalog; it may have been deleted.");
       // A missing skill file opens empty, and saving creates it.
       if (file === null) return { content: "", sha256: null, size: 0, executable: false };
       return {
         content: editableText(file.bytes),
-        sha256: createHash("sha256").update(file.bytes).digest("hex"),
+        sha256: file.sha256,
         size: file.bytes.length,
         executable: file.executable,
       };
@@ -107,11 +110,14 @@ export function catalogHandlers(ctx: CatalogContext) {
         const error = await shadowError(change.name.trim());
         if (error) return { outcome: "invalid" as const, errors: [error] };
       }
-      const result = ctx.catalog.change(change, "editor");
+      const result = await ctx.store.change(change);
       if (result.outcome !== "saved") return result;
       return { ...result, published: await publishWithin() };
     },
 
-    publishCatalog: () => publishWithin(),
+    async publishCatalog() {
+      await ctx.store.reloadFromDisk("disk");
+      return publishWithin();
+    },
   };
 }
