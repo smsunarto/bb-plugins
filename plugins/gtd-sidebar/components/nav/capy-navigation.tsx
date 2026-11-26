@@ -41,6 +41,9 @@ const ROW_CLASS = cn(
   "aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground",
 );
 
+/** Vertical padding expands truncate's clip box for descenders without moving the baseline. */
+const LABEL_CLASS = "min-w-0 flex-1 truncate py-1 -my-1";
+
 /** Modifier clicks open the destination in a browser tab, as in bb's own navigation. */
 function activationTarget(event: MouseEvent): "current" | "tab" {
   return event.metaKey || event.ctrlKey || event.button === 1 ? "tab" : "current";
@@ -116,7 +119,7 @@ function NewCaptainRow() {
       onClick={() => openNewCaptain()}
     >
       <Icon name="Anchor" className="gtd-nav-icon size-3.5 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1 truncate">New Captain</span>
+      <span className={LABEL_CLASS}>New Captain</span>
     </button>
   );
 }
@@ -153,7 +156,7 @@ const NavigationRow = memo(function NavigationRow({
       }}
     >
       <NavigationIcon icon={item.icon} className="gtd-nav-icon size-3.5 shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      <span className={LABEL_CLASS}>{item.label}</span>
       {showShortcut && item.shortcut !== null ? (
         <ShortcutHint
           shortcut={{
@@ -186,7 +189,7 @@ function MoreRow({ hidden, actions }: { hidden: NavigationItem[]; actions: Navig
       <DropdownMenuTrigger asChild>
         <button type="button" data-sidebar-navigation-more="" className={ROW_CLASS}>
           <Icon name="MoreHorizontal" className="gtd-nav-icon size-3.5 shrink-0" aria-hidden />
-          <span className="min-w-0 flex-1 truncate">More</span>
+          <span className={LABEL_CLASS}>More</span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="bottom" align="start" mobileTitle="More" className="min-w-48">
