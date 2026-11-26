@@ -53,6 +53,7 @@ export const threadRowActionKeySchema = z
 
 export const SHELF_IDS = [
   "pinned",
+  "captains",
   "nextAction",
   "waiting",
   "slopcop",

@@ -85,6 +85,46 @@ describe("buildInboxWindow", () => {
     expect(layout.items.map((item) => item.key)).toEqual(["shelf:pinned", "row:a", "row:b"]);
     expect([...layout.rowsStart]).toEqual([["shelf:pinned", 1]]);
   });
+
+  it("draws ungrouped groups flat while neighbouring project groups keep headers", () => {
+    const layout = buildInboxWindow(
+      [
+        {
+          shelf: "captains",
+          expanded: true,
+          groups: [{ ...group("", ["c1", "c2"]), ungrouped: true }],
+        },
+        {
+          shelf: "nextAction",
+          expanded: true,
+          groups: [
+            { ...group("", ["c-asking"]), ungrouped: true },
+            group("p1", ["a"]),
+            group("p2", ["b"]),
+          ],
+        },
+      ],
+      true,
+      () => true,
+    );
+    expect(layout.items.map((item) => item.key)).toEqual([
+      "shelf:captains",
+      "row:c1",
+      "row:c2",
+      "shelf:nextAction",
+      "row:c-asking",
+      groupCollapseKey("nextAction", "p1"),
+      "row:a",
+      groupCollapseKey("nextAction", "p2"),
+      "row:b",
+    ]);
+    expect([...layout.rowsStart]).toEqual([
+      ["shelf:captains", 1],
+      ["shelf:nextAction", 4],
+      [groupCollapseKey("nextAction", "p1"), 6],
+      [groupCollapseKey("nextAction", "p2"), 8],
+    ]);
+  });
 });
 
 describe("windowSegments", () => {

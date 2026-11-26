@@ -3,10 +3,18 @@ import { activeSectionFor, effectiveParentThreadId } from "./inbox.ts";
 import { isLongLivedThread } from "./long-lived.ts";
 
 export type InboxLifecycle = "active" | "snoozed" | "settled";
-export type InboxShelf = "pinned" | "nextAction" | "waiting" | "slopcop" | "snoozed" | "settled";
+export type InboxShelf =
+  | "pinned"
+  | "captains"
+  | "nextAction"
+  | "waiting"
+  | "slopcop"
+  | "snoozed"
+  | "settled";
 
 /** The plugin id bb stamps on threads SlopCop dispatches for its GitHub rules. */
 const SLOPCOP_PLUGIN_ID = "slopcop";
+const NO_CAPTAINS: ReadonlySet<string> = new Set();
 
 export interface InboxThreadNode {
   thread: PluginSidebarThread;
@@ -50,8 +58,13 @@ function statusPriority(thread: PluginSidebarThread): number {
   return 0;
 }
 
-function ownShelf(thread: PluginSidebarThread, lifecycle: InboxLifecycle): InboxShelf {
+function ownShelf(
+  thread: PluginSidebarThread,
+  lifecycle: InboxLifecycle,
+  captainIds: ReadonlySet<string>,
+): InboxShelf {
   if (lifecycle !== "active") return lifecycle;
+  if (captainIds.has(thread.id)) return "captains";
   if (thread.isPinned) return "pinned";
   return activeSectionFor(thread) === "next-action" ? "nextAction" : "waiting";
 }
@@ -101,12 +114,15 @@ export interface InboxSort {
   snoozedAtFor?: (thread: PluginSidebarThread) => number | null;
   /** Clock for stamping shelf moves this build observes. */
   now?: number;
+  /** Live Captain thread ids from the Captain plugin; empty when Captain is absent. */
+  captainIds?: ReadonlySet<string>;
 }
 
 interface ResolvedSort {
   arrivals: ShelfArrivals;
   snoozedAtFor(thread: PluginSidebarThread): number | null;
   now: number;
+  captainIds: ReadonlySet<string>;
 }
 
 /**
@@ -131,7 +147,9 @@ function shelfEnteredAt(
         : null;
   const seed =
     exact ??
-    (shelf === "nextAction" || shelf === "pinned" ? thread.latestAttentionAt : thread.updatedAt);
+    (shelf === "nextAction" || shelf === "pinned" || shelf === "captains"
+      ? thread.latestAttentionAt
+      : thread.updatedAt);
   // Track parked shelves too, so leaving one restamps the next arrival.
   const tracked = sort.arrivals.enteredAt(thread.id, shelf, seed, sort.now);
   return exact ?? tracked;
@@ -144,7 +162,7 @@ function createInboxNode(
   sort: ResolvedSort,
 ): InboxThreadNode {
   const lifecycle = thread.isArchived ? "settled" : lifecycleFor(thread);
-  const shelf = ownShelf(thread, lifecycle);
+  const shelf = ownShelf(thread, lifecycle, sort.captainIds);
   const matchesTitle = thread.displayTitle.toLowerCase().includes(normalizedQuery);
   return {
     thread,
@@ -163,11 +181,17 @@ function createInboxNode(
 
 /**
  * Each node's displayed parent. A child shows under its parent only when both
- * share a lifecycle; the threads themselves stay linked in bb.
+ * share a lifecycle; the threads themselves stay linked in bb. A Captain
+ * thread is always a root on the Captains shelf, never buried under another
+ * thread.
  */
-function linkedParentIds(nodes: ReadonlyMap<string, InboxThreadNode>): Map<string, string> {
+function linkedParentIds(
+  nodes: ReadonlyMap<string, InboxThreadNode>,
+  captainIds: ReadonlySet<string>,
+): Map<string, string> {
   const parents = new Map<string, string>();
   for (const node of nodes.values()) {
+    if (node.lifecycle === "active" && captainIds.has(node.thread.id)) continue;
     const parentId = effectiveParentThreadId(node.thread);
     if (
       parentId &&
@@ -257,6 +281,11 @@ function minPinOrderKey(left: string | null, right: string | null): string | nul
  * user, and a pinned descendant pins the family.
  */
 function familyShelf(node: InboxThreadNode): InboxShelf {
+  // The Captains shelf folds, so a raised hand anywhere in a Captain's family
+  // rises to Next Action rather than hiding behind a folded shelf.
+  if (node.shelf === "captains") {
+    return statusPriority(node.statusThread) >= 5 ? "nextAction" : "captains";
+  }
   if (node.shelf !== "nextAction" && node.shelf !== "waiting") {
     return node.children.some((child) => child.shelf === "pinned") ? "pinned" : node.shelf;
   }
@@ -275,19 +304,20 @@ function familyShelf(node: InboxThreadNode): InboxShelf {
 function familyComparator() {
   const shelfOrder: Record<InboxShelf, number> = {
     pinned: 0,
-    nextAction: 1,
-    waiting: 2,
-    slopcop: 3,
-    snoozed: 4,
-    settled: 5,
+    captains: 1,
+    nextAction: 2,
+    waiting: 3,
+    slopcop: 4,
+    snoozed: 5,
+    settled: 6,
   };
   // One comparator for every shelf: the family's shelf, then its place on
-  // it — Pinned follows bb's own pin order, the rest take most recent
-  // arrival first — then creation time and id.
+  // it — Pinned and Captains follow bb's pin order when pinned, the rest take
+  // most recent arrival first — then creation time and id.
   return (a: InboxThreadNode, b: InboxThreadNode) => {
     const shelfDelta = shelfOrder[a.shelf] - shelfOrder[b.shelf];
     if (shelfDelta !== 0) return shelfDelta;
-    if (a.shelf === "pinned") {
+    if (a.shelf === "pinned" || a.shelf === "captains") {
       const pinDelta = comparePinOrderKeys(a.pinOrderKey, b.pinOrderKey);
       if (pinDelta !== 0) return pinDelta;
     }
@@ -317,6 +347,7 @@ export function buildInboxTree(
     arrivals: sort.arrivals ?? createShelfArrivals(),
     snoozedAtFor: sort.snoozedAtFor ?? (() => null),
     now: sort.now ?? Date.now(),
+    captainIds: sort.captainIds ?? NO_CAPTAINS,
   };
   const nodes = new Map(
     threads.map((thread) => [
@@ -324,7 +355,7 @@ export function buildInboxTree(
       createInboxNode(thread, lifecycleFor, normalizedQuery, resolved),
     ]),
   );
-  const parents = linkedParentIds(nodes);
+  const parents = linkedParentIds(nodes, resolved.captainIds);
   const roots: InboxThreadNode[] = [];
   for (const node of nodes.values()) {
     const parentId = parents.get(node.thread.id);

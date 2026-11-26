@@ -65,6 +65,10 @@ export function buildInboxWindow(
       continue;
     }
     for (const group of groups) {
+      if (group.ungrouped) {
+        pushRows(shelf, shelfKey(shelf), group.rows);
+        continue;
+      }
       const key = groupCollapseKey(shelf, group.projectId);
       headerIndex.set(key, items.length);
       items.push({ kind: "group", key });

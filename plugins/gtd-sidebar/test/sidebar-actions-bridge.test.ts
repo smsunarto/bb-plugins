@@ -5,6 +5,7 @@ import {
   canSettleThread,
   forgetSidebarActions,
   hasSidebarActions,
+  openNewCaptain,
   publishSidebarActions,
   settleThread,
   type PublishedSidebarActions,
@@ -14,6 +15,7 @@ function fakeEntry(settled: string[], stayOpen: readonly string[] = []): Publish
   return {
     settle: (threadId) => settled.push(threadId),
     canSettle: (threadId) => !stayOpen.includes(threadId),
+    openNewCaptain: () => {},
   };
 }
 
@@ -78,5 +80,21 @@ describe("sidebar actions bridge", () => {
     assert.equal(canSettleThread("thr_1"), true);
     assert.equal(canSettleThread("thr_captain"), false);
     forgetSidebarActions(captain);
+  });
+
+  it("forwards openNewCaptain to the mounted list when published", () => {
+    let calls = 0;
+    const actions: PublishedSidebarActions = {
+      ...fakeEntry(settled),
+      openNewCaptain: () => {
+        calls += 1;
+      },
+    };
+    openNewCaptain();
+    assert.equal(calls, 0);
+    publishSidebarActions(actions);
+    openNewCaptain();
+    assert.equal(calls, 1);
+    forgetSidebarActions(actions);
   });
 });

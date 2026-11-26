@@ -1,5 +1,13 @@
 import { SlidingDisclosure } from "./sliding-disclosure";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -14,7 +22,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { cn } from "../../lib/utils";
-import { ThreadCard } from "./thread-card";
+import { NeedsYouCount, ThreadCard } from "./thread-card";
 import { SlimRow } from "./slim-row";
 import { rowActionPlan, type ActiveThreadShelf, type RowCommand } from "./thread-actions";
 import { RowMenuArea, type RowMenuTarget } from "./row-menu";
@@ -64,7 +72,7 @@ import { useStableThreads } from "../../hooks/use-stable-threads";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
 import { NewThreadFab } from "./new-thread-fab";
 import { NewCaptainDialog, type NewCaptainRequest } from "./new-captain-dialog";
-import { useCaptainAvailable, useNeedsYouCounts } from "../../hooks/use-captain";
+import { useCaptainRoster } from "../../hooks/use-captain";
 import { repoChoices } from "../../lib/new-captain";
 import { MachineAppearanceProvider } from "./machine-appearance";
 import { RenameProvider } from "./inline-rename";
@@ -195,14 +203,31 @@ function InboxList({
     () => projects.filter((project) => !project.isPersonal).map((project) => project.id),
     [projects],
   );
+  // Captain's shelf depends only on Captain-origin threads (unioned with
+  // `captains` RPC ids once answered), independent of plugin availability.
+  const { available: captainAvailable, captainIds, needsYou } = useCaptainRoster(threads);
+  // Any project holding a Captain-origin root thread draws flat on every shelf
+  // (Settled included) and is excluded from New Captain repo choices.
+  const captainProjectIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const thread of threads) {
+      if (isLongLivedThread(thread) && thread.parentThreadId === null) ids.add(thread.projectId);
+    }
+    return ids;
+  }, [threads]);
   const { tree, shelves, foldingThreads, toggleThread, revealFamily } = useInboxTree(
     threads,
     lifecycle,
     searchQuery,
+    captainIds,
+  );
+  const captainsAttention = useMemo(
+    () => shelves.captains.reduce((sum, row) => sum + (needsYou[row.node.thread.id] ?? 0), 0),
+    [shelves.captains, needsYou],
   );
   const shelvedTotal = Object.values(shelves).reduce((total, rows) => total + rows.length, 0);
   const searching = searchQuery.trim().length > 0;
-  const grouped = repositoryGroupsEnabled && shouldGroupByProject(shelves);
+  const grouped = repositoryGroupsEnabled && shouldGroupByProject(shelves, captainProjectIds);
   const { isGroupCollapsed, toggleGroup } = useCollapsedGroups();
   // A dropped group draws in its new slot before bb's write lands: the order
   // the drop predicts stands in for bb's until project-order-changed
@@ -213,20 +238,24 @@ function InboxList({
   const orderedProjectIds = overriddenProjectOrder(projectOrderOverride, projectOrder);
   const groupedShelves = useMemo(() => {
     const groupsFor = (shelf: InboxShelf): ProjectGroupRows[] =>
-      groupRowsByProject(shelves[shelf], orderedProjectIds, (projectId) =>
-        personalProjectIds.has(projectId),
+      groupRowsByProject(
+        shelves[shelf],
+        orderedProjectIds,
+        (projectId) => personalProjectIds.has(projectId),
+        (projectId) => shelf === "captains" || captainProjectIds.has(projectId),
       );
     return {
       pinned: groupsFor("pinned"),
+      captains: groupsFor("captains"),
       nextAction: groupsFor("nextAction"),
       waiting: groupsFor("waiting"),
       slopcop: groupsFor("slopcop"),
       snoozed: groupsFor("snoozed"),
       settled: groupsFor("settled"),
     };
-  }, [shelves, orderedProjectIds, personalProjectIds]);
-  const { pinned, nextAction, waiting, slopcop } = groupedShelves;
-  const { shelfViews, windowLayout, waitingOpen, slopcopOpen } = useShelfWindow(
+  }, [shelves, orderedProjectIds, personalProjectIds, captainProjectIds]);
+  const { pinned, captains, nextAction, waiting, slopcop } = groupedShelves;
+  const { shelfViews, windowLayout, captainsOpen, waitingOpen, slopcopOpen } = useShelfWindow(
     groupedShelves,
     grouped,
     searching,
@@ -240,19 +269,25 @@ function InboxList({
       (
         [
           ["pinned", pinned],
+          ["captains", captainsOpen ? captains : []],
           ["nextAction", nextAction],
           ["waiting", waitingOpen ? waiting : []],
           ["slopcop", slopcopOpen ? slopcop : []],
         ] as const
       ).flatMap(([shelf, groups]) =>
         groups.flatMap((group) =>
-          grouped && !searching && isGroupCollapsed(groupCollapseKey(shelf, group.projectId))
+          grouped &&
+          !group.ungrouped &&
+          !searching &&
+          isGroupCollapsed(groupCollapseKey(shelf, group.projectId))
             ? []
             : group.rows.map((row) => ({ shelf, row })),
         ),
       ),
     [
       pinned,
+      captains,
+      captainsOpen,
       nextAction,
       waiting,
       waitingOpen,
@@ -273,16 +308,11 @@ function InboxList({
   });
   // The phone pill starts a thread in the project on screen, if any.
   const onNewThreadFab = useCommittedEvent(() => onNewThread(activeProjectId));
-  // Captain's entry points: New Captain beside each project's new-thread
-  // button, and each Captain row's Needs you count. Both stay out of the list
-  // until bb reports the Captain plugin running.
-  const captainAvailable = useCaptainAvailable();
-  const needsYou = useNeedsYouCounts(captainAvailable, threads);
   const [newCaptain, setNewCaptain] = useState<NewCaptainRequest | null>(null);
   const newCaptainSeq = useRef(0);
-  const onNewCaptain = useCommittedEvent((projectId: string) => {
+  const onNewCaptain = useCommittedEvent(() => {
     newCaptainSeq.current += 1;
-    setNewCaptain({ seq: newCaptainSeq.current, projectId });
+    setNewCaptain({ seq: newCaptainSeq.current, projectId: activeProjectId });
   });
   const closeNewCaptain = useCommittedEvent(() => setNewCaptain(null));
   const onCaptainStarted = useCommittedEvent((threadId: string) => {
@@ -290,14 +320,10 @@ function InboxList({
     navigate.toThread(threadId);
     onNavigate();
   });
-  const captainRepos = useMemo(() => {
-    if (newCaptain === null) return [];
-    // A Captain's own project holds Captains, not code.
-    const captainProjects = new Set(
-      threads.filter((thread) => thread.id in needsYou).map((thread) => thread.projectId),
-    );
-    return repoChoices(projects, captainProjects);
-  }, [newCaptain, threads, needsYou, projects]);
+  const captainRepos = useMemo(
+    () => (newCaptain === null ? [] : repoChoices(projects, captainProjectIds)),
+    [newCaptain, projects, captainProjectIds],
+  );
   const sdk = useSdk();
   // One drag context for both payloads (lib/sidebar-drag): a row onto a row
   // nests, a row onto a project header lifts it back out, and a group header
@@ -422,7 +448,19 @@ function InboxList({
         );
   };
   const renderGroups = (shelf: InboxShelf, groups: readonly ProjectGroupRows[]) => {
-    const groupIds = groups.map((group) => group.projectId);
+    if (!grouped) {
+      return (
+        <ul className="flex flex-col">
+          {renderRows(
+            shelf,
+            shelfKey(shelf),
+            groups.flatMap((group) => group.rows),
+            false,
+          )}
+        </ul>
+      );
+    }
+    const groupIds = groups.filter((group) => !group.ungrouped).map((group) => group.projectId);
     // The shelf's sortable list is its groups that bb can reorder, in
     // rendered order: the personal project and any stale id are out — never
     // draggable, never a landing spot — while staying put where they render.
@@ -430,6 +468,15 @@ function InboxList({
       ? []
       : groupIds.filter((projectId) => orderedProjectIds.includes(projectId));
     const renderGroup = (group: ProjectGroupRows) => {
+      if (group.ungrouped) {
+        // Carry `.gtd-project-group-rows` so phone leaf rows share the exact
+        // left column with neighbouring grouped shelves.
+        return (
+          <ul key={shelfKey(shelf)} className="gtd-project-group-rows flex flex-col">
+            {renderRows(shelf, shelfKey(shelf), group.rows, true)}
+          </ul>
+        );
+      }
       const key = groupCollapseKey(shelf, group.projectId);
       const Group = sortableIds.includes(group.projectId) ? SortableProjectGroup : ProjectGroup;
       return (
@@ -442,7 +489,6 @@ function InboxList({
           expanded={searching || !isGroupCollapsed(key)}
           onToggle={() => toggleGroup(key)}
           onNewThread={onNewThread}
-          onNewCaptain={captainAvailable ? onNewCaptain : undefined}
           {...projectMoveProps(
             group.projectId,
             groupIds,
@@ -460,19 +506,10 @@ function InboxList({
         </Group>
       );
     };
-    return grouped ? (
+    return (
       <SortableContext id={shelf} items={sortableIds} strategy={verticalListSortingStrategy}>
         {groups.map(renderGroup)}
       </SortableContext>
-    ) : (
-      <ul className="flex flex-col">
-        {renderRows(
-          shelf,
-          shelfKey(shelf),
-          groups.flatMap((group) => group.rows),
-          false,
-        )}
-      </ul>
     );
   };
 
@@ -489,6 +526,7 @@ function InboxList({
     visibleActiveRows,
     threads: sidebar.threads,
     archive: pendingArchives.archive,
+    openNewCaptain: onNewCaptain,
   });
   // The shared menu asks for its row as the list has it now, so an open menu
   // follows the thread's state and closes when the thread leaves the list.
@@ -563,6 +601,7 @@ function InboxList({
                     key={label}
                     label={label}
                     count={shelves[shelf].length}
+                    attention={shelf === "captains" ? captainsAttention : 0}
                     isCompactViewport={isCompactViewport}
                     fold={fold}
                     measureRef={inboxWindow.measureRef}
@@ -627,6 +666,7 @@ function useShelfWindow(
   searching: boolean,
   isGroupCollapsed: (key: string) => boolean,
 ) {
+  const [showCaptains, setShowCaptains] = useState(true);
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showSettled, setShowSettled] = useState(false);
   // Waiting and SlopCop are the active shelves worth folding away: Waiting's
@@ -636,13 +676,20 @@ function useShelfWindow(
   const [showSlopcop, setShowSlopcop] = useState(false);
   // Pinned and Next Action always show; the rest fold, and a search opens
   // them all.
+  const captainsOpen = showCaptains || searching;
   const waitingOpen = showWaiting || searching;
   const slopcopOpen = showSlopcop || searching;
   const snoozedOpen = showSnoozed || searching;
   const settledOpen = showSettled || searching;
-  // Every shelf in the order it draws.
+  // Every shelf in the order it draws. Captains sit right below Pinned so
+  // explicit pins stay first while long-lived Captains stay above Next Action.
   const shelfViews: readonly ShelfView[] = [
     { shelf: "pinned", label: "Pinned" },
+    {
+      shelf: "captains",
+      label: "Captains",
+      fold: { expanded: captainsOpen, onToggle: () => setShowCaptains((open) => !open) },
+    },
     { shelf: "nextAction", label: "Next Action" },
     {
       shelf: "waiting",
@@ -670,6 +717,7 @@ function useShelfWindow(
       buildInboxWindow(
         [
           { shelf: "pinned", expanded: true, groups: groupedShelves.pinned },
+          { shelf: "captains", expanded: captainsOpen, groups: groupedShelves.captains },
           { shelf: "nextAction", expanded: true, groups: groupedShelves.nextAction },
           { shelf: "waiting", expanded: waitingOpen, groups: groupedShelves.waiting },
           { shelf: "slopcop", expanded: slopcopOpen, groups: groupedShelves.slopcop },
@@ -681,6 +729,7 @@ function useShelfWindow(
       ),
     [
       groupedShelves,
+      captainsOpen,
       waitingOpen,
       slopcopOpen,
       snoozedOpen,
@@ -690,7 +739,7 @@ function useShelfWindow(
       isGroupCollapsed,
     ],
   );
-  return { shelfViews, windowLayout, waitingOpen, slopcopOpen };
+  return { shelfViews, windowLayout, captainsOpen, waitingOpen, slopcopOpen };
 }
 
 /**
@@ -856,6 +905,7 @@ function useRowCommands({
   visibleActiveRows,
   threads,
   archive,
+  openNewCaptain,
 }: {
   activeThreadId: PluginThreadListProps["activeThreadId"];
   onNavigate: PluginThreadListProps["onNavigate"];
@@ -868,6 +918,7 @@ function useRowCommands({
   threads: readonly PluginSidebarThread[];
   /** bb's own Archive for one thread, confirmation included. */
   archive: (thread: PluginThreadActionTarget) => void;
+  openNewCaptain: () => void;
 }) {
   const navigate = useBbNavigate();
   // bb's split placement rules, or a plain open; either one expands the
@@ -953,13 +1004,14 @@ function useRowCommands({
     archiveIfActive(threads, threadId, archive);
   });
 
-  // The palette's settle row runs this same dispatcher, and a mounted list
-  // is the only place it exists.
-  useEffect(() => {
-    const published = { settle, canSettle };
+  // The palette's settle row and navigation's New Captain action run through
+  // this mounted list. Publish in a layout effect so navigation sees the
+  // handler before first paint and avoids cold-load layout shift.
+  useLayoutEffect(() => {
+    const published = { settle, canSettle, openNewCaptain };
     publishSidebarActions(published);
     return () => forgetSidebarActions(published);
-  }, [settle, canSettle]);
+  }, [settle, canSettle, openNewCaptain]);
 
   const command = useCommittedEvent((command: RowCommand) => {
     switch (command.kind) {
@@ -1000,6 +1052,7 @@ function useInboxTree(
   threads: readonly PluginSidebarThread[],
   lifecycle: LifecycleApi,
   searchQuery: string,
+  captainIds: ReadonlySet<string>,
 ) {
   // Folded families are the backend's `expandedThreads` preference, kept
   // across reloads and windows. Folded project groups stay session state below.
@@ -1026,9 +1079,10 @@ function useInboxTree(
         {
           arrivals,
           snoozedAtFor: lifecycle.snoozedAtFor,
+          captainIds,
         },
       ),
-    [lifecycle, searchQuery, threads, arrivals],
+    [lifecycle, searchQuery, threads, arrivals, captainIds],
   );
   const shelves = useMemo(() => {
     const rows = (shelf: (typeof tree)[number]["shelf"]) =>
@@ -1039,6 +1093,7 @@ function useInboxTree(
       );
     return {
       pinned: rows("pinned"),
+      captains: rows("captains"),
       nextAction: rows("nextAction"),
       waiting: rows("waiting"),
       slopcop: rows("slopcop"),
@@ -1118,6 +1173,7 @@ function InboxStatus({ message }: { message: string }) {
 function Shelf({
   label,
   count,
+  attention = 0,
   fold,
   children,
   isCompactViewport,
@@ -1126,6 +1182,7 @@ function Shelf({
 }: {
   label: string;
   count: number;
+  attention?: number;
   fold?: ShelfFold;
   children: React.ReactNode;
   isCompactViewport: boolean;
@@ -1135,6 +1192,7 @@ function Shelf({
       <ShelfHeader
         label={label}
         count={count}
+        attention={attention}
         fold={fold}
         isCompactViewport={isCompactViewport}
         measureRef={measureRef}
@@ -1152,11 +1210,13 @@ function Shelf({
 /**
  * One header for every shelf, collapsible or not, so a folded Waiting reads
  * exactly like a folded Snoozed. The count only shows while the shelf is
- * closed, where it is the shelf's whole footprint.
+ * closed, where it is the shelf's whole footprint; a folded shelf with asks
+ * carries its attention count so folding never hides them.
  */
 function ShelfHeader({
   label,
   count,
+  attention = 0,
   fold,
   isCompactViewport,
   measureRef,
@@ -1164,13 +1224,15 @@ function ShelfHeader({
 }: {
   label: string;
   count: number;
+  attention?: number;
   fold?: ShelfFold;
   isCompactViewport: boolean;
 } & HeaderMeasureProps) {
   const mutedClass = isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70";
+  const folded = fold?.expanded === false;
   const title = (
     <span className={cn("text-2xs font-medium", mutedClass)}>
-      {fold?.expanded === false ? `${label} (${count})` : label}
+      {folded ? `${label} (${count})` : label}
     </span>
   );
   const rule = <span className="h-px flex-1 bg-sidebar-border" />;
@@ -1200,6 +1262,11 @@ function ShelfHeader({
         type="button"
         onClick={fold.onToggle}
         aria-expanded={fold.expanded}
+        aria-label={
+          folded && attention > 0
+            ? `${label} (${count}), ${attention} ${attention === 1 ? "needs" : "need"} you`
+            : undefined
+        }
         // The folded count is the only sign of a fold; there is no chevron.
         // `cursor-pointer` is explicit because Tailwind v4's preflight gives a button `cursor: default`,
         // and the whole header is the hit target for collapsing the shelf.
@@ -1210,6 +1277,7 @@ function ShelfHeader({
       >
         {title}
         {rule}
+        {folded ? <NeedsYouCount count={attention} /> : null}
       </button>
     </h2>
   );

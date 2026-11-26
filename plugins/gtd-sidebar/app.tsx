@@ -14,6 +14,7 @@ import {
   type LegacyThreadHeaderActionSlots,
 } from "./components/header/header-settle";
 import { mountHeaderSettleStyle } from "./components/header/header-settle-style";
+import { disposeCaptainAvailability } from "./hooks/use-captain";
 import { cancelComposeKeyboardHandoff } from "./lib/compose-keyboard";
 import { mountPhoneDrawer } from "./lib/phone-drawer";
 import { mountPhoneDrawerStyle } from "./lib/phone-drawer-style";
@@ -86,5 +87,11 @@ export default definePluginApp((app) => {
         disposeStyle();
       };
     },
+  });
+
+  // Unsubscribe Captain availability listeners when this bundle swaps or disables.
+  app.contentScripts.register({
+    id: "captain-availability",
+    mount: () => disposeCaptainAvailability,
   });
 });

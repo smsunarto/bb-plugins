@@ -759,7 +759,7 @@ function ActivityCounts({
  * A Captain's Needs you count: the items its banner holds, in the attention
  * color the project header uses for its own needs-you count. Nothing at 0.
  */
-function NeedsYouCount({ count }: { count: number }) {
+export function NeedsYouCount({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
     <span

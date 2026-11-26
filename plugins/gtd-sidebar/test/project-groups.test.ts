@@ -209,6 +209,7 @@ describe("project groups", () => {
     assert.equal(
       shouldGroupByProject({
         pinned: empty,
+        captains: empty,
         nextAction: one,
         waiting: empty,
         slopcop: empty,
@@ -220,6 +221,7 @@ describe("project groups", () => {
     assert.equal(
       shouldGroupByProject({
         pinned: empty,
+        captains: empty,
         nextAction: one,
         waiting: empty,
         slopcop: empty,
@@ -228,10 +230,43 @@ describe("project groups", () => {
       }),
       true,
     );
+    // Captains render flat on their own shelf, so their project does not count.
+    assert.equal(
+      shouldGroupByProject({
+        pinned: empty,
+        captains: rows([thread("cap", { projectId: "proj_captains" })]),
+        nextAction: one,
+        waiting: empty,
+        slopcop: empty,
+        snoozed: empty,
+        settled: empty,
+      }),
+      false,
+    );
+    // An ungrouped Captain-holding project on another shelf does not earn headers either.
+    assert.equal(
+      shouldGroupByProject(
+        {
+          pinned: empty,
+          captains: empty,
+          nextAction: one,
+          waiting: empty,
+          slopcop: empty,
+          snoozed: empty,
+          settled: rows(
+            [thread("old-cap", { projectId: "proj_captains", isArchived: true })],
+            "settled",
+          ),
+        },
+        new Set(["proj_captains"]),
+      ),
+      false,
+    );
     // A child from another project does not count: it sits under its root.
     assert.equal(
       shouldGroupByProject({
         pinned: empty,
+        captains: empty,
         nextAction: rows([
           thread("root"),
           thread("child", { parentThreadId: "root", projectId: "two" }),
@@ -242,6 +277,27 @@ describe("project groups", () => {
         settled: empty,
       }),
       false,
+    );
+  });
+
+  it("keeps ungrouped projects flat ahead of named project groups", () => {
+    const groups = groupRowsByProject(
+      rows([
+        thread("a", { projectId: "one", latestAttentionAt: 300 }),
+        thread("cap-other", { projectId: "proj_captains", latestAttentionAt: 200 }),
+        thread("b", { projectId: "two", latestAttentionAt: 100 }),
+      ]),
+      ["two", "one"],
+      () => false,
+      (projectId) => projectId === "proj_captains",
+    );
+    assert.deepEqual(
+      groups.map((group) => [group.projectId, Boolean(group.ungrouped), ids(group)]),
+      [
+        ["", true, ["cap-other"]],
+        ["two", false, ["b"]],
+        ["one", false, ["a"]],
+      ],
     );
   });
 

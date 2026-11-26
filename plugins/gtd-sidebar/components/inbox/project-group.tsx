@@ -36,9 +36,8 @@ export function SortableProjectGroup(props: ProjectGroupProps) {
  * header carries only the project name. The count shows while the group is
  * folded, where it is the group's whole footprint: `needs-you / total` when
  * something in it asks for the user, the total alone otherwise. Hovering the
- * header trades the count for a new-thread button, and a New Captain button
- * beside it while the Captain plugin runs. Compact viewports keep the count
- * and both buttons visible for touch access.
+ * header trades the count for a new-thread button. Compact viewports keep the
+ * count and button visible for touch access.
  *
  * Right-clicking the header offers "Move up" / "Move down", and a sortable
  * group drags by its header — both reorder the project in bb's own order,
@@ -59,7 +58,6 @@ export function ProjectGroup({
   expanded,
   onToggle,
   onNewThread,
-  onNewCaptain,
   onMoveUp,
   onMoveDown,
   isCompactViewport,
@@ -138,15 +136,6 @@ export function ProjectGroup({
           </span>
         )}
       </button>
-      {onNewCaptain === undefined ? null : (
-        <HeaderButton
-          label={`New Captain directing ${name}`}
-          icon="Anchor"
-          className="gtd-project-group-new gtd-project-group-captain"
-          onClick={() => onNewCaptain(projectId)}
-          onFocusVisibleChange={setNewFocusVisible}
-        />
-      )}
       <HeaderButton
         label={`New thread in ${name}`}
         icon="Plus"
@@ -202,8 +191,8 @@ function spokenCount(families: number, attention: number) {
 }
 
 /**
- * One of the header's start buttons, New thread or New Captain, reporting
- * keyboard focus so the header can hide its count.
+ * The header's start button (New thread), reporting keyboard focus so the
+ * header can hide its count.
  */
 function HeaderButton({
   label,
@@ -246,8 +235,6 @@ export interface ProjectGroupProps extends HeaderMeasureProps {
   expanded: boolean;
   onToggle: () => void;
   onNewThread: (projectId: string) => void;
-  /** Opens New Captain with this project picked; absent while Captain is not running. */
-  onNewCaptain?: (projectId: string) => void;
   /** Move handlers, absent where the move cannot run (edge groups, personal). */
   onMoveUp?: () => void;
   onMoveDown?: () => void;

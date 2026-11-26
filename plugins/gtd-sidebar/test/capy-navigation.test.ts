@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
-import { afterEach, describe, it } from "bun:test";
+import { afterEach, describe, it, spyOn } from "bun:test";
 import type { ExperimentalSidebarNavigationItem } from "@get-bb/plugin-sdk/app";
 import { installDom } from "@bb-plugins/testing";
 
 installDom();
-const { cleanup, fireEvent } = await import("@testing-library/react");
-const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
+const { act, cleanup, fireEvent, waitFor } = await import("@testing-library/react");
+const { installTestPluginRuntime, loadPluginApp, mountPluginContentScripts, renderSlot } =
+  await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
-const { CapyNavigation } = await import("../components/nav/capy-navigation.tsx");
+const { CapyNavigation, NEW_CAPTAIN_NAV_ITEM_ID } =
+  await import("../components/nav/capy-navigation.tsx");
+const { forgetSidebarActions, publishSidebarActions } =
+  await import("../lib/sidebar-actions-bridge.ts");
+const { disposeCaptainAvailability } = await import("../hooks/use-captain.ts");
 
 const SEARCH = "__bb__/search-threads";
 const originalMatchMedia = window.matchMedia;
@@ -46,10 +51,19 @@ function items(
 
 function mount(
   list = items(),
-  options: { isShortcutModifierHeld?: boolean; activeItemId?: string | null } = {},
+  options: {
+    isShortcutModifierHeld?: boolean;
+    activeItemId?: string | null;
+    plugins?: readonly { id: string; enabled: boolean; status: string }[];
+    listPlugins?: () => Promise<{
+      plugins: readonly { id: string; enabled: boolean; status: string }[];
+    }>;
+    subscribe?: (args: { event: string; callback: (event: unknown) => void }) => () => void;
+  } = {},
   isCompactViewport = false,
   coarsePointer = isCompactViewport,
 ): ReturnType<typeof renderSlot> {
+  const { plugins, listPlugins, subscribe, ...sidebarNavigation } = options;
   window.matchMedia = (query) => ({
     media: query,
     matches: coarsePointer && query === "(pointer: coarse)",
@@ -63,7 +77,15 @@ function mount(
   return renderSlot(
     { component: CapyNavigation },
     { isCompactViewport, placement: "list", experimental_Original: () => null },
-    { sidebarNavigation: { items: list, activeItemId: null, ...options } },
+    {
+      sidebarNavigation: { items: list, activeItemId: null, ...sidebarNavigation },
+      sdk: {
+        subscribe: (subscribe ?? (() => () => {})) as never,
+        plugins: {
+          list: (listPlugins ?? (async () => ({ plugins: plugins ?? [] }))) as never,
+        },
+      },
+    },
   );
 }
 
@@ -73,6 +95,7 @@ const rowIds = (slot: ReturnType<typeof mount>) =>
   );
 
 afterEach(() => {
+  disposeCaptainAvailability();
   cleanup();
   window.matchMedia = originalMatchMedia;
 });
@@ -159,6 +182,321 @@ describe("CapyNavigation", () => {
     };
     assert.deepEqual(row(true), { text: "Search threadsCtrl K", keys: "Control+K" });
     assert.deepEqual(row(false), { text: "Search threads", keys: "Control+K" });
+  });
+
+  describe("New Captain entry", () => {
+    const CAPTAIN_RUNNING = [{ id: "captain", enabled: true, status: "running" }];
+
+    it("does not render when Captain is absent or disabled", async () => {
+      const absent = mount();
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      assert.equal(absent.queryByRole("button", { name: "New Captain" }), null);
+      cleanup();
+
+      const disabled = mount(items(), {
+        plugins: [{ id: "captain", enabled: false, status: "disabled" }],
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      assert.equal(disabled.queryByRole("button", { name: "New Captain" }), null);
+    });
+
+    it("does not render when Captain runs without a mounted inbox handler", async () => {
+      const slot = mount(items(), { plugins: CAPTAIN_RUNNING });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      assert.equal(slot.queryByRole("button", { name: "New Captain" }), null);
+    });
+
+    it.each([false, true])(
+      "renders at the end of visible rows on compact=%s when Captain runs and opens New Captain",
+      async (compact) => {
+        let opened = 0;
+        const published = {
+          settle() {},
+          canSettle: () => false,
+          openNewCaptain: () => {
+            opened += 1;
+          },
+        };
+        publishSidebarActions(published);
+        try {
+          const slot = mount(items(), { plugins: CAPTAIN_RUNNING }, compact, compact);
+          const button = await slot.findByRole("button", { name: "New Captain" });
+          await waitFor(() =>
+            assert.deepEqual(rowIds(slot), [
+              "__bb__/new-thread",
+              SEARCH,
+              "__bb__/extensions",
+              NEW_CAPTAIN_NAV_ITEM_ID,
+            ]),
+          );
+          fireEvent.click(button);
+          assert.equal(opened, 1);
+        } finally {
+          forgetSidebarActions(published);
+        }
+      },
+    );
+
+    it("renders New Captain even when New thread is hidden", async () => {
+      const published = { settle() {}, canSettle: () => false, openNewCaptain() {} };
+      publishSidebarActions(published);
+      try {
+        const list = [
+          item("__bb__/new-thread", "New thread", { kind: "new-thread" }, "new-thread", {
+            isVisible: false,
+          }),
+          item(SEARCH, "Search threads", { kind: "search-threads" }, "search"),
+          item("__bb__/extensions", "Plugins", { kind: "open-extensions" }, "extensions"),
+        ];
+        const slot = mount(list, { plugins: CAPTAIN_RUNNING });
+        await slot.findByRole("button", { name: "New Captain" });
+        assert.deepEqual(rowIds(slot), [SEARCH, "__bb__/extensions", NEW_CAPTAIN_NAV_ITEM_ID]);
+      } finally {
+        forgetSidebarActions(published);
+      }
+    });
+
+    it("hides the row when a refresh times out and recovers on plugins-changed and real reconnect", async () => {
+      const published = { settle() {}, canSettle: () => false, openNewCaptain() {} };
+      publishSidebarActions(published);
+      const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
+      const timeoutSpy = spyOn(AbortSignal, "timeout").mockImplementation(() =>
+        originalTimeout(20),
+      );
+      const handlers = new Map<string, Set<(event: unknown) => void>>();
+      const emit = (eventName: string, payload: unknown) => {
+        for (const cb of handlers.get(eventName) ?? []) cb(payload);
+      };
+      const subscribe = ({
+        event,
+        callback,
+      }: {
+        event: string;
+        callback: (e: unknown) => void;
+      }) => {
+        const set = handlers.get(event) ?? new Set();
+        set.add(callback);
+        handlers.set(event, set);
+        return () => set.delete(callback);
+      };
+      let calls = 0;
+      let mode: "hang" | "running" | "disabled" = "running";
+      const listPlugins = () => {
+        calls += 1;
+        if (mode === "hang") return new Promise<never>(() => {});
+        if (mode === "disabled") {
+          return Promise.resolve({
+            plugins: [{ id: "captain", enabled: false, status: "disabled" }],
+          });
+        }
+        return Promise.resolve({ plugins: CAPTAIN_RUNNING });
+      };
+      try {
+        const slot = mount(items(), { listPlugins, subscribe });
+        await slot.findByRole("button", { name: "New Captain" });
+        assert.equal(calls, 1);
+
+        // First connect is not a reconnect and must not trigger a re-read.
+        act(() => {
+          emit("realtime:connection", {
+            state: "connecting",
+            reconnected: false,
+            reconnectDelayMs: null,
+          });
+          emit("realtime:connection", {
+            state: "connected",
+            reconnected: false,
+            reconnectDelayMs: null,
+          });
+        });
+        assert.equal(calls, 1);
+
+        // Make plugins.list hang on refresh: the 20ms timeout must clear the visible row.
+        mode = "hang";
+        act(() =>
+          emit("system:changed", {
+            entity: "system",
+            type: "changed",
+            changes: ["plugins-changed"],
+          }),
+        );
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+        });
+        assert.equal(slot.queryByRole("button", { name: "New Captain" }), null);
+
+        // plugins-changed recovers it.
+        mode = "running";
+        act(() =>
+          emit("system:changed", {
+            entity: "system",
+            type: "changed",
+            changes: ["plugins-changed"],
+          }),
+        );
+        await slot.findByRole("button", { name: "New Captain" });
+
+        // plugins-changed hides it, then a real reconnect restores it.
+        mode = "disabled";
+        act(() =>
+          emit("system:changed", {
+            entity: "system",
+            type: "changed",
+            changes: ["plugins-changed"],
+          }),
+        );
+        await waitFor(() =>
+          assert.ok(slot.queryByRole("button", { name: "New Captain" }) === null),
+        );
+
+        mode = "running";
+        act(() =>
+          emit("realtime:connection", {
+            state: "disconnected",
+            reconnected: false,
+            reconnectDelayMs: 500,
+          }),
+        );
+        act(() =>
+          emit("realtime:connection", {
+            state: "connected",
+            reconnected: false,
+            reconnectDelayMs: null,
+          }),
+        );
+        await slot.findByRole("button", { name: "New Captain" });
+      } finally {
+        timeoutSpy.mockRestore();
+        forgetSidebarActions(published);
+      }
+    });
+
+    it("unsubscribes listeners on bundle dispose so reload triggers one read per event and disable triggers none", async () => {
+      const published = { settle() {}, canSettle: () => false, openNewCaptain() {} };
+      publishSidebarActions(published);
+      const handlers = new Map<string, Set<(event: unknown) => void>>();
+      const emit = (eventName: string, payload: unknown) => {
+        for (const cb of handlers.get(eventName) ?? []) cb(payload);
+      };
+      const subscribe = ({
+        event,
+        callback,
+      }: {
+        event: string;
+        callback: (e: unknown) => void;
+      }) => {
+        const set = handlers.get(event) ?? new Set();
+        set.add(callback);
+        handlers.set(event, set);
+        return () => set.delete(callback);
+      };
+      let calls = 0;
+      const listPlugins = async () => {
+        calls += 1;
+        return { plugins: CAPTAIN_RUNNING };
+      };
+      try {
+        // Generation 1 mounts, then disposes on simulated bundle swap.
+        const first = mount(items(), { listPlugins, subscribe });
+        await first.findByRole("button", { name: "New Captain" });
+        assert.equal(calls, 1);
+        disposeCaptainAvailability();
+        cleanup();
+
+        // Generation 2 mounts on the same event bus: one plugins-changed event triggers one read.
+        const second = mount(items(), { listPlugins, subscribe });
+        await second.findByRole("button", { name: "New Captain" });
+        assert.equal(calls, 2);
+        act(() =>
+          emit("system:changed", {
+            entity: "system",
+            type: "changed",
+            changes: ["plugins-changed"],
+          }),
+        );
+        await act(async () => {});
+        assert.equal(calls, 3);
+
+        // After plugin disable / dispose, events trigger zero reads.
+        disposeCaptainAvailability();
+        cleanup();
+        act(() => {
+          emit("system:changed", {
+            entity: "system",
+            type: "changed",
+            changes: ["plugins-changed"],
+          });
+          emit("realtime:connection", {
+            state: "disconnected",
+            reconnected: false,
+            reconnectDelayMs: 500,
+          });
+          emit("realtime:connection", {
+            state: "connected",
+            reconnected: true,
+            reconnectDelayMs: null,
+          });
+        });
+        await act(async () => {});
+        assert.equal(calls, 3);
+      } finally {
+        forgetSidebarActions(published);
+      }
+    });
+
+    it("wires captain-availability disposal through app.tsx contentScripts", async () => {
+      const published = { settle() {}, canSettle: () => false, openNewCaptain() {} };
+      publishSidebarActions(published);
+      const handlers = new Map<string, Set<(event: unknown) => void>>();
+      const emit = (eventName: string, payload: unknown) => {
+        for (const cb of handlers.get(eventName) ?? []) cb(payload);
+      };
+      const subscribe = ({
+        event,
+        callback,
+      }: {
+        event: string;
+        callback: (e: unknown) => void;
+      }) => {
+        const set = handlers.get(event) ?? new Set();
+        set.add(callback);
+        handlers.set(event, set);
+        return () => set.delete(callback);
+      };
+      let calls = 0;
+      const listPlugins = async () => {
+        calls += 1;
+        return { plugins: CAPTAIN_RUNNING };
+      };
+      const app = await loadPluginApp(() => import("../app.tsx"));
+      const scripts = await mountPluginContentScripts(app, { pluginId: "gtd-sidebar" });
+      try {
+        const slot = mount(items(), { listPlugins, subscribe });
+        await slot.findByRole("button", { name: "New Captain" });
+        assert.equal(calls, 1);
+
+        await scripts.lifecycle.dispose();
+        cleanup();
+        act(() =>
+          emit("system:changed", {
+            entity: "system",
+            type: "changed",
+            changes: ["plugins-changed"],
+          }),
+        );
+        await act(async () => {});
+        assert.equal(calls, 1);
+      } finally {
+        await scripts.lifecycle.dispose();
+        forgetSidebarActions(published);
+      }
+    });
   });
 
   describe("phone scrolling", () => {

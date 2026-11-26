@@ -10,6 +10,8 @@ export interface ProjectGroup {
   families: number;
   /** Families whose status asks for the user. */
   attention: number;
+  /** True when these rows draw flat on the shelf with no project folder header. */
+  ungrouped?: boolean;
 }
 
 /** True when the row's status glyph says the user is needed. */
@@ -53,20 +55,32 @@ function familyNeedsUser(node: InboxThreadNode): boolean {
  * A project missing from the order — a stale thread view, mostly — sorts
  * after every known project and before the personal one.
  */
+function ensureNamedGroup(groups: Map<string, ProjectGroup>, projectId: string): ProjectGroup {
+  let group = groups.get(projectId);
+  if (group === undefined) {
+    group = { projectId, rows: [], families: 0, attention: 0 };
+    groups.set(projectId, group);
+  }
+  return group;
+}
+
 export function groupRowsByProject(
   rows: readonly VisibleInboxRow[],
   projectOrder: readonly string[] = [],
   isProjectless: (projectId: string) => boolean = () => false,
+  isUngrouped: (projectId: string) => boolean = () => false,
 ): ProjectGroup[] {
   const groups = new Map<string, ProjectGroup>();
+  let ungrouped: ProjectGroup | null = null;
   let current: ProjectGroup | null = null;
   for (const row of rows) {
     if (row.depth === 0 || current === null) {
       const projectId = row.node.thread.projectId;
-      current = groups.get(projectId) ?? null;
-      if (current === null) {
-        current = { projectId, rows: [], families: 0, attention: 0 };
-        groups.set(projectId, current);
+      if (isUngrouped(projectId)) {
+        ungrouped ??= { projectId: "", rows: [], families: 0, attention: 0, ungrouped: true };
+        current = ungrouped;
+      } else {
+        current = ensureNamedGroup(groups, projectId);
       }
       current.families += 1;
       // The family's loudest status, not the root's own: the count shows while
@@ -83,6 +97,7 @@ export function groupRowsByProject(
       (rank.get(b.projectId) ?? projectOrder.length),
   );
   return [
+    ...(ungrouped === null ? [] : [ungrouped]),
     ...ordered.filter((group) => !isProjectless(group.projectId)),
     ...ordered.filter((group) => isProjectless(group.projectId)),
   ];
@@ -239,14 +254,22 @@ export function groupStartsCollapsed(key: string): boolean {
   return key.startsWith(groupCollapseKey("settled", ""));
 }
 
-/** Group headers earn their space only once a second project shows up. */
+const NO_UNGROUPED_PROJECTS: ReadonlySet<string> = new Set();
+
+/** Group headers earn their space only once a second grouped project shows up. */
 export function shouldGroupByProject(
   shelves: Readonly<Record<InboxShelf, readonly VisibleInboxRow[]>>,
+  ungroupedProjectIds: ReadonlySet<string> = NO_UNGROUPED_PROJECTS,
 ): boolean {
   const projectIds = new Set<string>();
-  for (const rows of Object.values(shelves)) {
+  for (const [shelf, rows] of Object.entries(shelves)) {
+    // Captains and Captain-holding projects draw flat without folder headers,
+    // so they never earn group headers for the remaining shelves.
+    if (shelf === "captains") continue;
     for (const row of rows) {
-      if (row.depth === 0) projectIds.add(row.node.thread.projectId);
+      if (row.depth === 0 && !ungroupedProjectIds.has(row.node.thread.projectId)) {
+        projectIds.add(row.node.thread.projectId);
+      }
       if (projectIds.size > 1) return true;
     }
   }
