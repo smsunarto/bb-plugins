@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { DEFAULT_ICON_GLYPH } from "../contract/icon.ts";
 import type { QueueItem } from "../contract/queue.ts";
 import { asksTag, captainContract } from "../contract/rpc.ts";
 
@@ -608,8 +609,15 @@ test("the Later icon defers the item on show", async () => {
 test("an empty queue is one clear line with an action that opens Captain Overview", async () => {
   const { slot, calls } = render(CAPTAIN, []);
   const overview = await slot.findByRole("button", { name: "Overview" });
-  expect(overview.parentElement?.textContent).toBe("All clearOverview");
-  expect(overview.parentElement?.querySelector("ul")).toBeNull();
+  const row = overview.parentElement!;
+  expect(row.textContent).toBe("All clearOverview");
+  expect(row.querySelector("ul")).toBeNull();
+  const icon = row.querySelector("[data-icon]");
+  expect(icon?.getAttribute("data-icon")).toBe(DEFAULT_ICON_GLYPH);
+  expect(icon?.className).toContain("text-muted-foreground");
+  const label = slot.getByText("All clear");
+  expect(label.className).toContain("text-muted-foreground");
+  expect(label.className).not.toContain("font-medium");
   fireEvent.click(overview);
   expect(slot.experimental_panelCalls).toEqual([
     {
@@ -628,9 +636,14 @@ test("an empty queue is one clear line with an action that opens Captain Overvie
 
 test("unavailable crew does not report All clear", async () => {
   const { slot } = render(CAPTAIN, [], { crewFails: true });
-  await slot.findByText("Crew status unavailable");
+  const label = await slot.findByText("Crew status unavailable");
   expect(slot.queryByText("All clear")).toBeNull();
   expect(slot.getByRole("button", { name: "Overview" })).toBeDefined();
+  const icon = label.parentElement?.querySelector("[data-icon]");
+  expect(icon?.getAttribute("data-icon")).toBe("AlertTriangle");
+  expect(icon?.className).toContain("text-warning-text");
+  expect(label.className).toContain("font-medium");
+  expect(label.className).toContain("text-foreground");
 });
 
 test("a blocked crew row opens its thread", async () => {
@@ -996,11 +1009,24 @@ test.each([
 
   failing = true;
   await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
-  await slot.findByText("Couldn’t refresh asks");
+  const stale = await slot.findByText("Couldn’t refresh asks");
   expect(slot.queryByText("All clear")).toBeNull();
-  if (items.length) expect(slot.getByRole("tab", { name: /Pick the cache/u })).toBeDefined();
+  if (items.length) {
+    expect(slot.getByRole("tab", { name: /Pick the cache/u })).toBeDefined();
+  } else {
+    const icon = stale.parentElement?.querySelector("[data-icon]");
+    expect(icon?.getAttribute("data-icon")).toBe("AlertTriangle");
+    expect(icon?.className).toContain("text-warning-text");
+    expect(stale.className).toContain("font-medium");
+  }
 
   failing = false;
   await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
   await waitFor(() => expect(slot.queryByText("Couldn’t refresh asks")).toBeNull());
+  if (!items.length) {
+    const label = await slot.findByText("All clear");
+    expect(label.parentElement?.querySelector("[data-icon]")?.getAttribute("data-icon")).toBe(
+      DEFAULT_ICON_GLYPH,
+    );
+  }
 });

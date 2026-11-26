@@ -26,6 +26,7 @@ import {
   type RefCallback,
   type RefObject,
 } from "react";
+import { DEFAULT_ICON_GLYPH } from "../contract/icon.ts";
 import {
   age,
   isSending,
@@ -38,7 +39,7 @@ import { captainContract } from "../contract/rpc.ts";
 import { surface } from "@bb-plugins/ui/surface";
 import { Alert, AlertDescription } from "./components/ui/alert.tsx";
 import { Badge } from "./components/ui/badge.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { Button, CompactButton } from "./components/ui/button.tsx";
 import { Icon } from "./components/ui/icon.tsx";
 import { Input } from "./components/ui/input.tsx";
 import { cn } from "./lib/utils.ts";
@@ -54,11 +55,10 @@ const TICK_MS = 30_000;
 const FAR = Number.MAX_SAFE_INTEGER;
 /** Every control a phone user taps gets a 44px target. */
 export const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
-const ICON_BUTTON = cn(TAP, "size-8 shrink-0");
 const MOBILE_ANSWER =
-  "max-sm:h-auto max-sm:px-2 max-sm:py-2 max-sm:text-[12px] max-sm:leading-4 max-sm:whitespace-normal";
+  "max-sm:h-auto max-sm:px-2 max-sm:py-2 max-sm:leading-4 max-sm:whitespace-normal";
 const ANSWER_ROW =
-  "col-start-2 flex min-w-0 items-start gap-1.5 max-sm:col-span-3 max-sm:col-start-1";
+  "col-start-2 flex min-w-0 items-start gap-1.5 max-sm:col-span-2 max-sm:col-start-1";
 const HORIZONTAL_SCROLL = "overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
 export const CAPTAIN_OVERVIEW_TAB = {
   id: "overview",
@@ -123,16 +123,33 @@ function Banner({ captainId }: { captainId: string }) {
   );
 }
 
-function QueueStatus({ id, label }: { id: string; label: string }) {
+function QueueStatus({ id, label, degraded }: { id: string; label: string; degraded: boolean }) {
   const panel = useAppPanel();
   return (
-    <div className="flex min-w-0 items-center gap-2 px-3 text-xs text-muted-foreground">
-      <span id={id}>{label}</span>
+    <div className="flex min-h-8 w-full min-w-0 items-center gap-1.5 bg-background/70 px-3 py-1.5 text-xs text-foreground pointer-coarse:py-0">
+      <Icon
+        name={degraded ? "AlertTriangle" : DEFAULT_ICON_GLYPH}
+        aria-hidden
+        className={cn(
+          "size-3.5 shrink-0",
+          degraded ? "text-warning-text" : "text-muted-foreground",
+        )}
+      />
+      <span
+        id={id}
+        className={cn(
+          "min-w-0 flex-1 truncate",
+          degraded ? "font-medium text-foreground" : "text-muted-foreground",
+        )}
+      >
+        {label}
+      </span>
       <Button
         type="button"
-        size="sm"
-        variant="link"
-        className={cn(TAP, "h-7 px-1")}
+        size="xs"
+        variant="ghost"
+        tone="muted"
+        className={cn(TAP, "-mr-1.5 h-5 px-1.5 font-normal focus-visible:ring-inset")}
         onClick={() => panel.openTab({ tab: CAPTAIN_OVERVIEW_TAB })}
       >
         Overview
@@ -234,11 +251,12 @@ function Queue({
   };
 
   // The final editor can hand focus to the same frame after All clear mounts.
+  // Captain renders `chrome: "bare"` and owns the PromptStackCard shell directly
+  // so `surface.hairline` paints cleanly outside `bg-background/70` and `bg-popover`
+  // (avoiding inset hairline washout under t3-composer) and clips at the 8px radius.
   const frame = {
     ref: setRoot,
-    "data-bb-plugin": "captain",
-    "data-bb-plugin-scope-captain": "",
-    className: "flex min-w-0 flex-col text-xs outline-none focus-visible:outline-1",
+    className: "flex min-w-0 flex-col text-xs text-foreground outline-none focus-visible:outline-1",
     onFocus: (event: FocusEvent<HTMLElement>) => {
       keyboardFocus.current = event.target.matches(":focus-visible");
     },
@@ -252,129 +270,147 @@ function Queue({
   };
   if (item === undefined || kind === undefined) {
     if (!emptyLabel && !root) return null;
+    const degraded = asksError !== undefined || crewError !== undefined;
     return (
-      <div {...frame} tabIndex={-1} aria-describedby={emptyLabel ? id : undefined}>
-        {emptyLabel ? <QueueStatus id={id} label={emptyLabel} /> : null}
-      </div>
+      <section
+        aria-label="captain"
+        data-bb-plugin="captain"
+        data-bb-plugin-scope-captain=""
+        className={cn(
+          surface.hairline,
+          "overflow-hidden rounded-lg bg-surface-raised-solid empty:hidden",
+        )}
+      >
+        <div {...frame} tabIndex={-1} aria-describedby={emptyLabel ? id : undefined}>
+          {emptyLabel ? <QueueStatus id={id} label={emptyLabel} degraded={degraded} /> : null}
+        </div>
+      </section>
     );
   }
   return (
-    <div
-      {...frame}
-      role="toolbar"
-      tabIndex={0}
-      aria-label={`Needs you, ${items.length} item${items.length === 1 ? "" : "s"}`}
-      aria-keyshortcuts={kind === "ship" ? "1 2 L" : "1 2 3 4 5 6 7 8 9 Enter L"}
-      data-testid="captain-needs-you"
-      onKeyDown={onKeyDown}
+    <section
+      aria-label="captain"
+      data-bb-plugin="captain"
+      data-bb-plugin-scope-captain=""
+      className={cn(surface.hairline, "overflow-hidden rounded-lg bg-surface-raised-solid")}
     >
-      {showTabs ? (
-        <QueueTabs
-          id={id}
-          tabs={tabs}
-          waitingCount={waiting.length}
-          selected={item}
-          laterCount={laterCount}
-          now={now}
-          onSelect={select}
-          tabRef={focusReturnRef}
-        />
-      ) : null}
       <div
-        id={`${id}-panel`}
-        role={showTabs ? "tabpanel" : undefined}
-        aria-labelledby={showTabs ? `${id}-${item.key}` : undefined}
-        className={cn(
-          showTabs && surface.divider,
-          "grid min-w-0 grid-cols-[18px_minmax(0,1fr)_18px] gap-x-2 gap-y-2.5 px-3 pt-2.5 pb-3",
-        )}
+        {...frame}
+        role="toolbar"
+        tabIndex={0}
+        aria-label={`Needs you, ${items.length} item${items.length === 1 ? "" : "s"}`}
+        aria-keyshortcuts={kind === "ship" ? "1 2 L" : "1 2 3 4 5 6 7 8 9 Enter L"}
+        data-testid="captain-needs-you"
+        onKeyDown={onKeyDown}
       >
-        <Icon
-          name={BANNER_ICONS[kind]}
-          aria-hidden
-          className="mt-0.5 size-3.5 justify-self-center text-warning-text"
-        />
-        <Heading item={item} asksError={asksError} crewError={crewError} />
-        {detail ? (
-          <div className="col-start-2 min-w-0">
-            {plan ? (
-              <div
-                key={item.key}
-                id={`${id}-plan`}
-                className={cn(
-                  DETAIL_BOX,
-                  planOpen ? "max-h-[12lh] overflow-y-auto" : "max-h-[6.5lh] overflow-hidden",
-                )}
-                onScroll={(event) => {
-                  if (!planOpen)
-                    revealFocusedDetail(event.currentTarget, () => patchUi({ planOpen: true }));
-                }}
-              >
-                <Markdown content={detail} className={DETAIL_TEXT} />
-              </div>
-            ) : (
-              <Detail key={item.key} content={detail} onToggleGone={onToggleGone} />
-            )}
-          </div>
-        ) : null}
-        {editing ? (
-          <div
-            key={item.key}
-            ref={focusReturnRef}
-            data-captain-answer-row=""
-            className={ANSWER_ROW}
-          >
-            <OtherAnswer
-              value={other}
-              pending={pending}
-              showCancel
-              onChange={setOther}
-              onCancel={() => {
-                restoreOtherFocus.current = true;
-                setOther(null);
-              }}
-              onSubmit={(text) => {
-                void answer(item.id, text).then((accepted) => {
-                  if (accepted) {
-                    recordAnswer(item.id, text);
-                    setOther(null);
-                  }
-                  return accepted;
-                });
-              }}
-            />
-          </div>
-        ) : (
-          <AnswerRow
-            item={item}
-            kind={kind}
-            actions={actions}
-            pending={pending}
-            later={later}
-            openOther={() => setOther("")}
-            focusOther={focusOther}
-            plan={
-              plan
-                ? {
-                    id: `${id}-plan`,
-                    open: planOpen,
-                    toggle: () => {
-                      const content = document.getElementById(`${id}-plan`);
-                      if (planOpen && content) content.scrollTop = 0;
-                      patchUi({ planOpen: !planOpen });
-                    },
-                  }
-                : null
-            }
+        {showTabs ? (
+          <QueueTabs
+            id={id}
+            tabs={tabs}
+            waitingCount={waiting.length}
+            selected={item}
+            laterCount={laterCount}
+            now={now}
+            onSelect={select}
+            tabRef={focusReturnRef}
           />
-        )}
-        {error ? (
-          <Alert variant="destructive" role="none" className="col-start-2 min-w-0">
-            <AlertDescription className="break-words">{error}</AlertDescription>
-          </Alert>
         ) : null}
+        <div
+          id={`${id}-panel`}
+          role={showTabs ? "tabpanel" : undefined}
+          aria-labelledby={showTabs ? `${id}-${item.key}` : undefined}
+          className={cn(
+            showTabs && surface.divider,
+            "grid min-w-0 grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 gap-y-2 bg-popover px-3 py-2.5",
+          )}
+        >
+          <Icon
+            name={BANNER_ICONS[kind]}
+            aria-hidden
+            className="mt-px size-3.5 shrink-0 text-warning-text"
+          />
+          <Heading item={item} asksError={asksError} crewError={crewError} />
+          {detail ? (
+            <div className="col-start-2 min-w-0">
+              {plan ? (
+                <div
+                  key={item.key}
+                  id={`${id}-plan`}
+                  className={cn(
+                    DETAIL_BOX,
+                    planOpen ? "max-h-[12lh] overflow-y-auto" : "max-h-[6.5lh] overflow-hidden",
+                  )}
+                  onScroll={(event) => {
+                    if (!planOpen)
+                      revealFocusedDetail(event.currentTarget, () => patchUi({ planOpen: true }));
+                  }}
+                >
+                  <Markdown content={detail} className={DETAIL_TEXT} />
+                </div>
+              ) : (
+                <Detail key={item.key} content={detail} onToggleGone={onToggleGone} />
+              )}
+            </div>
+          ) : null}
+          {editing ? (
+            <div
+              key={item.key}
+              ref={focusReturnRef}
+              data-captain-answer-row=""
+              className={ANSWER_ROW}
+            >
+              <OtherAnswer
+                value={other}
+                pending={pending}
+                showCancel
+                onChange={setOther}
+                onCancel={() => {
+                  restoreOtherFocus.current = true;
+                  setOther(null);
+                }}
+                onSubmit={(text) => {
+                  void answer(item.id, text).then((accepted) => {
+                    if (accepted) {
+                      recordAnswer(item.id, text);
+                      setOther(null);
+                    }
+                    return accepted;
+                  });
+                }}
+              />
+            </div>
+          ) : (
+            <AnswerRow
+              item={item}
+              kind={kind}
+              actions={actions}
+              pending={pending}
+              later={later}
+              openOther={() => setOther("")}
+              focusOther={focusOther}
+              plan={
+                plan
+                  ? {
+                      id: `${id}-plan`,
+                      open: planOpen,
+                      toggle: () => {
+                        const content = document.getElementById(`${id}-plan`);
+                        if (planOpen && content) content.scrollTop = 0;
+                        patchUi({ planOpen: !planOpen });
+                      },
+                    }
+                  : null
+              }
+            />
+          )}
+          {error ? (
+            <Alert variant="destructive" role="none" className="col-start-2 min-w-0">
+              <AlertDescription className="break-words">{error}</AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -441,7 +477,7 @@ function AnswerRow({
             <ActionButton key={action.label} action={action} index={index} bannerKind={kind} />
           ))}
           {plan ? (
-            <Button
+            <CompactButton
               type="button"
               size="sm"
               variant="outline"
@@ -450,38 +486,39 @@ function AnswerRow({
               aria-controls={plan.id}
               onClick={plan.toggle}
             >
-              <Icon name="FileText" aria-hidden data-icon="inline-start" />
+              <Icon name="FileText" aria-hidden data-icon="inline-start" className="size-3.5!" />
               {plan.open ? "Close plan" : "Read plan"}
-            </Button>
+            </CompactButton>
           ) : null}
         </div>
       ) : null}
-      <Button
+      <CompactButton
         type="button"
-        size="icon"
+        size="icon-sm"
         variant="outline"
-        className={cn(ICON_BUTTON, "text-muted-foreground")}
+        className={cn(TAP, "text-muted-foreground hover:text-foreground")}
         aria-label="Later"
         aria-keyshortcuts="L"
         aria-description="Hide for an hour"
         onClick={later}
       >
-        <Icon name="Clock" aria-hidden />
-      </Button>
+        <Icon name="Clock" aria-hidden className="size-3.5!" />
+      </CompactButton>
       {showOther ? (
-        <Button
+        <CompactButton
           ref={focusOther}
           type="button"
           size="sm"
           variant="ghost"
+          tone="muted"
           aria-label="Other…"
-          className={cn(TAP, "shrink-0 gap-1.5 text-muted-foreground")}
+          className={cn(TAP, "px-2")}
           onClick={openOther}
         >
           <svg
             data-icon="inline-start"
             aria-hidden="true"
-            className="size-3.5"
+            className="size-3.5!"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -492,7 +529,7 @@ function AnswerRow({
             <path d="M13 21h8m.174-14.188a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
           </svg>
           <span>Other…</span>
-        </Button>
+        </CompactButton>
       ) : null}
     </div>
   );
@@ -686,9 +723,9 @@ function QueueTabs({
   tabRef: RefCallback<HTMLButtonElement>;
 }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-2 px-3 py-1.5">
+    <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 bg-background/70 px-3 py-1">
       <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground" aria-live="polite">
-        <Badge variant="warning" className="min-w-4.5">
+        <Badge variant="warning" size="sm" className="min-w-4.5 tabular-nums">
           {waitingCount}
         </Badge>
         waiting
@@ -720,15 +757,16 @@ function QueueTabs({
               id={`${id}-${entry.key}`}
               role="tab"
               type="button"
-              size="sm"
+              size="xs"
               variant="ghost"
+              tone={active ? "default" : "muted"}
               aria-controls={`${id}-panel`}
               aria-selected={active}
               tabIndex={active ? 0 : -1}
               className={cn(
                 TAP,
-                "h-6 max-w-42 shrink-0 gap-1.5 px-2 max-sm:h-auto max-sm:max-w-52 max-sm:py-1.5 max-sm:text-[12px] max-sm:leading-4",
-                active ? "bg-(--surface-selected) text-foreground" : "text-muted-foreground",
+                "max-w-42 gap-1.5 max-sm:h-auto max-sm:max-w-52 max-sm:py-1.5 max-sm:leading-4",
+                active && "bg-(--surface-selected) text-foreground",
               )}
               onClick={() => onSelect(entry)}
             >
@@ -745,7 +783,11 @@ function QueueTabs({
             </Button>
           );
         })}
-        {laterCount > 0 ? <Badge variant="outline">{laterCount} later</Badge> : null}
+        {laterCount > 0 ? (
+          <Badge variant="outline" size="sm">
+            {laterCount} later
+          </Badge>
+        ) : null}
       </div>
     </div>
   );
@@ -763,14 +805,11 @@ function Heading({
   const text = title(item);
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <p
-        dir="auto"
-        className="m-0 text-[13px] leading-[18px] font-medium wrap-anywhere text-foreground"
-      >
+      <p dir="auto" className="m-0 text-xs leading-snug font-medium wrap-anywhere text-foreground">
         {text}
       </p>
       {item.task && !text.includes(item.task) ? (
-        <span className="font-mono text-[11px] text-muted-foreground">{item.task}</span>
+        <span className="font-mono text-2xs text-muted-foreground">{item.task}</span>
       ) : null}
       {asksError !== undefined ? (
         <span className="text-muted-foreground" title={asksError}>
@@ -806,15 +845,16 @@ export function ActionButton({
   /** The caller's spacing, such as the Overview's grid; the banner keeps its own. */
   className?: string;
 }) {
+  const Control = bannerKind ? CompactButton : Button;
   return (
-    <Button
+    <Control
       type="button"
       size="sm"
       variant={action.primary ? "default" : "outline"}
       className={cn(
         TAP,
         bannerKind
-          ? cn(MOBILE_ANSWER, "shrink-0 max-sm:min-w-0")
+          ? cn(MOBILE_ANSWER, "max-sm:min-w-0")
           : "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal",
         bannerKind &&
           action.primary &&
@@ -827,7 +867,7 @@ export function ActionButton({
       {bannerKind && action.recommended ? (
         <Icon
           name={bannerKind === "ship" ? "GitMerge" : "Star"}
-          className={cn("size-3", bannerKind !== "ship" && "fill-current")}
+          className={cn("size-3!", bannerKind !== "ship" && "fill-current")}
           aria-hidden
           data-icon="inline-start"
         />
@@ -847,7 +887,7 @@ export function ActionButton({
           Recommended
         </span>
       ) : null}
-    </Button>
+    </Control>
   );
 }
 
@@ -892,7 +932,7 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
   const id = useId();
   return (
     <div className="min-w-0">
-      <div className="relative min-w-0 after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:hidden after:h-6 after:max-h-full after:bg-linear-to-b after:from-transparent after:to-(--surface-raised-solid) data-[preview-fade]:after:block">
+      <div className="relative min-w-0 after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:hidden after:h-6 after:max-h-full after:bg-linear-to-b after:from-transparent after:to-popover data-[preview-fade]:after:block">
         <div
           ref={box}
           id={id}
@@ -908,13 +948,11 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
       <Button
         ref={toggle}
         type="button"
-        size="sm"
+        size="xs"
         variant="ghost"
+        tone="muted"
         hidden
-        className={cn(
-          TAP,
-          "flex h-6 w-full justify-center rounded-none px-1 text-muted-foreground [&[hidden]]:hidden",
-        )}
+        className={cn(TAP, "flex w-full justify-center rounded-none px-1 [&[hidden]]:hidden")}
         aria-controls={id}
         aria-expanded={open}
         onClick={() => {
@@ -928,11 +966,11 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
         <span
           className={cn(
             surface.edge,
-            "flex items-center gap-1 rounded-full bg-(--surface-raised-solid) px-2.5 py-0.5 text-[11px]",
+            "flex items-center gap-1 rounded-full bg-popover px-2.5 py-0.5 text-xs",
           )}
         >
           {open ? "Less" : "More"}
-          <Icon name={open ? "ChevronUp" : "ChevronDown"} aria-hidden className="size-3" />
+          <Icon name={open ? "ChevronUp" : "ChevronDown"} aria-hidden />
         </span>
       </Button>
     </div>
@@ -1113,31 +1151,43 @@ export function OtherAnswer({
         maxLength={200}
         value={value}
         readOnly={showCancel && pending}
-        className={cn(TAP, "h-8 min-w-0 flex-1")}
+        className={cn(TAP, showCancel ? "h-7 text-xs" : "h-8", "min-w-0 flex-1")}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={cancelOnEscape}
       />
-      <Button
-        type="submit"
-        size="sm"
-        className={TAP}
-        disabled={value.trim() === "" || pending}
-        onKeyDown={cancelOnEscape}
-      >
-        Send
-      </Button>
       {showCancel ? (
+        <CompactButton
+          type="submit"
+          size="sm"
+          className={TAP}
+          disabled={value.trim() === "" || pending}
+          onKeyDown={cancelOnEscape}
+        >
+          Send
+        </CompactButton>
+      ) : (
         <Button
+          type="submit"
+          size="sm"
+          className={TAP}
+          disabled={value.trim() === "" || pending}
+          onKeyDown={cancelOnEscape}
+        >
+          Send
+        </Button>
+      )}
+      {showCancel ? (
+        <CompactButton
           type="button"
           size="sm"
           variant="ghost"
-          className={TAP}
+          className={cn(TAP, "px-2")}
           disabled={pending}
           onClick={onCancel}
           onKeyDown={cancelOnEscape}
         >
           Cancel
-        </Button>
+        </CompactButton>
       ) : null}
     </form>
   );

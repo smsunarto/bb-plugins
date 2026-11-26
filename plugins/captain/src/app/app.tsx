@@ -45,7 +45,7 @@ export default definePluginApp((app) => {
   app.composer.customize({
     id: "needs-you",
     scopes: ["thread"],
-    banners: [{ id: "needs-you", chrome: "card", component: NeedsYouBanner }],
+    banners: [{ id: "needs-you", chrome: "bare", component: NeedsYouBanner }],
   });
   // Every thread menu, the sidebar's right-click menu included: adopt the
   // thread into a Captain's crew. One shared `captains` read decides each row.
