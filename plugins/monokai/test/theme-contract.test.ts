@@ -619,6 +619,30 @@ describe("bb Monokai contract audit", () => {
     expect(substringCount).toBeLessThanOrEqual(37);
   });
 
+  test("collapses empty phone sidebar top reserve rows only on coarse pointers while keeping header slots at chrome-row height", () => {
+    const isPhoneMedia = (atRules: string[]) =>
+      atRules.includes("@media (max-width: 767px) and (pointer: coarse)") ||
+      (atRules.includes("@media (max-width: 767px)") &&
+        atRules.includes("@media (pointer: coarse)"));
+
+    const reserveRows = styleRules(theme).filter(
+      (rule) => rule.selector === '.dark [data-testid$="sidebar-top-reserve-row"]',
+    );
+    expect(reserveRows).toHaveLength(1);
+    expect(isPhoneMedia(reserveRows[0]!.atRules)).toBe(true);
+    expect(reserveRows[0]!.body).toContain("height: auto;");
+    expect(reserveRows[0]!.body).toContain("min-height: 0;");
+
+    const headerSlots = styleRules(theme).filter(
+      (rule) =>
+        rule.selector ===
+        '.dark [data-testid$="sidebar-top-reserve-row"] [data-sidebar-header-slot]',
+    );
+    expect(headerSlots).toHaveLength(1);
+    expect(isPhoneMedia(headerSlots[0]!.atRules)).toBe(true);
+    expect(headerSlots[0]!.body).toContain("min-height: var(--bb-app-chrome-row-height);");
+  });
+
   test("keeps phone text fields at the 16px iOS zoom floor", () => {
     expect(theme).toContain(
       '@media (max-width: 767px) and (pointer: coarse) {\n  .dark .bb-markdown-prose[contenteditable="true"],\n  .dark input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),\n  .dark textarea,\n  .dark select {\n    font-size: 16px;',
