@@ -9,11 +9,15 @@ A brief is the task's description. Every role dispatched on the task reads the s
 
 ## Write it
 
-1. Copy the template below into `briefs/<slug>.md` in your Drive, the path your Captain rules name.
-   - **If you need the target branch or the checkout:** `bb tasks project show <KEY>` names the repo's bb project, and `bb project show <id>` its checkout path. Without a branch from the user, the target is the repo's default branch.
-2. Fill every section, including the `Target branch:` and `Remote:` lines. Use `direct ship` when the repo is on `captain-ship`'s direct-ship list; `yes` keeps such a repo on the PR path. `captain-ship` classifies the repo again at ship time. Each done-means item must be something you can check yourself from the commits, tests, PR, pushed branch or a run.
-3. Create the task: `bb captain create --project <KEY> --title "<title>" --description-file <Drive>/briefs/<slug>.md`. It prints the new key and lists the task on your Overview.
-4. Dispatch it: `bb captain dispatch <key> --role Implement`. Implement plans its own work before it builds.
+1. **Before the first dispatch to a project:** run `bb tasks project show <KEY>` and `bb project show <id>` to check its checkout path and default execution host. Compare that host against `CAPTAIN.md`; if shared project defaults disagree, open one `bb captain ask` covering them before dispatching. Without a branch from the user, the target is the repo's default branch (from git in the checkout or `bb project branches <id>`).
+2. Copy the template below into `briefs/<slug>.md` in your Drive, the path your Captain rules name.
+3. Fill every section, including the `Target branch:` and `Remote:` lines.
+   - Quote the user's request verbatim in the opening, redacting secrets or credentials per `Leave out` and prefixing every quoted line with `> `.
+   - Before naming a library, component, doc, or third-party API, verify and link the exact reference (URL, package, or file path). Resolve any ambiguous name — or ask the user — before dispatching.
+   - Match `Remote:` to `CAPTAIN.md`'s push rules and `captain-ship`'s direct-ship list: `direct ship` for a direct-ship repo, `yes` for the PR path, or `none` for local-only commits. `captain-ship` classifies the repo again at ship time.
+   - Write each done-means item as a check you can run yourself from the commits, tests, PR, pushed branch, or a run. List platform hard limits (sizes, character caps, API surface, target version) and realistic live-environment parity as checkable items.
+4. Create the task: `bb captain create --project <KEY> --title "<title>" --description-file <Drive>/briefs/<slug>.md`. It prints the new key and lists the task on your Overview.
+5. Dispatch it: `bb captain dispatch <key> --role Implement`. Implement plans its own work before it builds.
    - **If the task is research or design only:** still dispatch Implement, and say "no code" in the brief. Implement then attaches its result to its `Final:` report, with no commit, push or PR. Write done-means you can check from that attachment. When the report arrives, check the attachment, set the task `done` with `bb tasks update <key> --status done`, and archive the crew thread with `bb thread archive <id>`. Record no review verdict and open no ship ask.
 
 The brief is done when every section is filled and each done-means item names a check.
@@ -21,10 +25,12 @@ The brief is done when every section is filled and each done-means item names a 
 ```text
 You are a crew thread for the <name> Captain.
 
-<The change in one or two sentences.>
+> <User's request verbatim, with secrets redacted per Leave out and `> ` on every line.>
+
+<The change in one or two sentences, with exact links to every referenced library, doc, or file.>
 
 ## Done means
-<Testable outcomes, numbered, each with the check that shows it. The Captain and Review check against these.>
+<Testable outcomes, numbered, each with the check that shows it, including platform hard limits (sizes, API surface) and realistic live-environment parity where relevant. The Captain and Review check against these.>
 
 ## Out of scope
 <Where this thread's ownership ends: files, features, repos it must not touch.>

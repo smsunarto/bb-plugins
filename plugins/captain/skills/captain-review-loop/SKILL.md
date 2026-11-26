@@ -34,11 +34,13 @@ Review checks a change against its brief through blind lens subagents and report
 
 1. Write the kept findings to one file in your Drive, such as `findings/<task>-r<round>.md`.
 2. Send them to the original implementer in one message: `bb captain tell <task> --role Implement --message-file <file>`. Never send findings one at a time, and never start a new implementer for them.
-3. When the implementer reports its fix, re-verify with the original Review thread: `bb captain tell <task> --role Review --message-file <file>`, naming the new head. It fast-forwards to that head first.
+3. When the implementer reports its fix, re-verify with the original Review thread: `bb captain tell <task> --role Review --message-file <file>`, naming the prior reviewed head, the new head, and the findings it should re-check, with no implementer claims. It fast-forwards to that head first.
+   - **If the Review thread is replaced** (for example after a rate-limit restart, which starts from the brief alone): send it the prior reviewed head, the current round's head, open findings, accepted decisions, and re-check scope, with no implementer claims.
 
 ## Stop
 
 - Stop when a round finds only rare edge cases. File those as follow-up tasks with `bb captain create`, then record `review passed`.
+- **When most findings sit in code the last fix added, or round 1 has more than about 10 findings:** stop patching. Step back to redesign or simplify the mechanism — removing the fragile layer or asking the user with `bb captain ask` — instead of running another fix round.
 - Stop and ask the user, with `bb captain ask`, when the same finding survives two fix rounds. Keep options ≤12 columns (wide characters count 2) with no ⭐/markers, such as `Fix again` or `Accept`; the finding goes in `--detail-file`.
 
 The loop is done when the task's `review` verdict is `passed` or `skipped`.
