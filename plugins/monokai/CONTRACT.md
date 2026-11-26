@@ -473,10 +473,9 @@ and composes its surfaces differently, so the adapter maps the shared roles as f
   it and brighten the result.
 - The macOS framed window takes Capy's desktop shell: the sidebar lies flat on
   the frame with no card or outline, and the page below the title bar is
-  Capy's inset panel. bb's own 8px frame lip keeps it off the window's edges,
-  all four corners round at 12px, and it draws the unframed page's 0.5 CSS px
-  8% shell-ink edge, which the New thread screen drops. bb's card mask and
-  title-bar seam are replaced.
+  Capy's borderless inset panel. bb's own 8px frame lip keeps it off the
+  window's edges and all four corners round at 12px. bb's card mask, inset
+  edge, title-bar seam, and 1px border reservations are removed.
 - On desktop widths the outer sidebars move on Capy's timing, with its
   ease-out-quint curve. The left sidebar opens over 200ms and closes over
   150ms, and its contents fade and drift 16px behind it. The right panel takes
@@ -492,10 +491,10 @@ and composes its surfaces differently, so the adapter maps the shared roles as f
   text is the opaque `#99999A`, and readback, faint, and focus tiers are shell
   ink at 55%, 30%, and 25%. Capy's dimmer `#737374` tier is not used because
   it reaches only 3.95:1 on the panel.
-- On desktop widths the page sits in Capy's inset panel: an 8px gap from the
-  frame on every side, 12px corners, and a 0.5 CSS px 8%
-  shell-ink edge. The New thread screen drops this edge. The New thread screen centers its composer and paints a
-  static dither of `#566A9E` squares behind it, Capy's halftone ink.
+- On desktop widths the page sits in Capy's borderless inset panel: an 8px gap
+  from the frame on every side and 12px corners, with no outer frame border on
+  any page. The New thread screen centers its composer and paints a static
+  dither of `#566A9E` squares behind it, Capy's halftone ink.
 - Feedback, code-text, comment, and ANSI hue roles are byte-identical to this
   contract. bb gives backtick-delimited inline code the shared 8% ink layer
   while fenced code remains on content `#181818`. bb maps ANSI black

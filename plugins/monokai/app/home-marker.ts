@@ -2,7 +2,7 @@ import { useLayoutEffect } from "react";
 
 // bb marks no route on the page, so the New thread screen announces itself:
 // bb mounts homepage sections only there, and this one draws nothing. The
-// theme hides the page outlines while the attribute is present.
+// theme uses the attribute for the phone halftone backdrop and right-panel toggle.
 const HOME_ATTRIBUTE = "data-monokai-home";
 
 export interface AttributeTarget {
@@ -31,7 +31,7 @@ export function markHome(target: AttributeTarget): () => void {
   return markPage(target, HOME_ATTRIBUTE);
 }
 
-/** Layout effect: the mark lands before the first paint, so no edge flashes. */
+/** Layout effect: the mark lands before the first paint, so the phone backdrop and toggle never flash. */
 export function HomeMarker(): null {
   useLayoutEffect(() => markHome(document.documentElement), []);
   return null;

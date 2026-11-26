@@ -1,5 +1,6 @@
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 
+import { FRAME_BORDER_CSS } from "./frame-border.ts";
 import { NEW_TAB_LAUNCHER_CSS } from "./new-tab-launcher.ts";
 import { SEARCH_FIELDS_CSS } from "./search-fields.ts";
 
@@ -19,7 +20,7 @@ export function mountBbDomStyles({
   if (signal.aborted) return () => {};
   const style = doc.createElement("style");
   style.setAttribute(STYLE_ATTRIBUTE, "");
-  style.textContent = SEARCH_FIELDS_CSS + NEW_TAB_LAUNCHER_CSS;
+  style.textContent = FRAME_BORDER_CSS + SEARCH_FIELDS_CSS + NEW_TAB_LAUNCHER_CSS;
   doc.head.append(style);
   return () => style.remove();
 }
