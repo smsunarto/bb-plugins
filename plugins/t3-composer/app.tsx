@@ -43,6 +43,7 @@ export default definePluginApp((app) => {
     id: "branch-picker-style",
     mount: ({ signal }) => mountBranchPickerStyle(document, signal),
   });
+  // workaround:t3-composer/prompt-stack-banner-chrome
   app.contentScripts.register({
     id: "prompt-stack-banner-style",
     mount: ({ signal }) => mountPromptStackBannerStyle(document, signal),

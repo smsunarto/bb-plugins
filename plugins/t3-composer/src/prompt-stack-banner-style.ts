@@ -1,59 +1,46 @@
 /**
- * Unified frame, hairline, fill, and divider styles for every banner card in
- * BB's prompt stack (`[data-promptbox-shell] > div:first-child`).
+ * Unified frame, hairline, disclosure divider, and no-icon-glimmer styles for
+ * every banner card in BB's prompt stack (`[data-promptbox-shell] > div:first-child`).
  *
- * Why one shared content-script stylesheet instead of per-card rules:
- * - BB's `PromptStackCard` draws a 1px `border-border` edge, while T3 Composer
- *   uses a one-device-pixel hairline (`--t3-composer-ring-width` /
- *   `--t3-composer-hairline`). An inset `box-shadow` on the `<section>` itself
- *   paints beneath child fills (`bg-popover` on expanded bodies, `bg-background/70`
- *   on active rows) and washes out or disappears. Painting the hairline on
- *   `::after` above children keeps every card's edge crisp and identical.
- * - Several core banners (`ThreadBackgroundCommandsCard`, `ActiveChildThreadsCard`,
- *   `ThreadTodoCard`, `CollapsibleActiveStackCard`) apply `activityRowClass("active")`
- *   (`bg-background/70 shadow-xs ring-1 ring-border/60`) on top of
- *   `PromptStackCard`'s `bg-surface-raised-solid`, making them darker than
- *   neighbouring cards (`Workflow`, `Model fallback`, `Provider requirement`,
- *   `Machine status`, `Thread context`, `Queued messages`, and `chrome: "card"`
- *   plugin banners). Neutralizing that inner wash/ring at rest puts every card
- *   on one shared `bg-surface-raised-solid` fill.
- * - Every rule targets all prompt-stack cards through one semantic selector
- *   (no Tailwind utility classes, no per-card ids, no per-card aria-labels).
+ * Design:
+ * - Tag each top-level prompt-stack banner `<section>` with `data-t3-prompt-stack-card`
+ *   by walking only the prompt stack's outer `<div>` wrappers and stopping at the
+ *   first `<section>` on every branch. Nested `<section>` elements inside a card
+ *   (disclosure bodies, inline `PendingInteractionShell`, queued-message inline
+ *   editors) are never tagged, and the outer card never loses its tag when one
+ *   opens inside it.
+ * - Every CSS rule anchors on `[data-t3-prompt-stack-card]` or `[data-prompt-stack-peek]`
+ *   with zero `:has()`, zero Tailwind utility classes, and zero bare-`span`
+ *   structural selectors into core banner insides.
+ * - Active-row wash/ring neutralization targets only core's own stable toggle
+ *   button IDs (`#thread-prompt-banner-child-threads-toggle`, `#thread-todo-card-toggle`);
+ *   core banners without stable inner hooks keep the shared frame and are tracked
+ *   for native core unification.
+ * - Banner icons never glimmer, shimmer, shine, or pulse in any state.
  *
  * Depends on BB's prompt-stack DOM: `[data-promptbox-shell] > div:first-child`
- * holding `<section>` cards directly, inside `[data-bb-plugin-root]`, or inside
- * workflow stack wrapper `<div>`s, with collapsible bodies as child
- * `<section aria-hidden="true|false">` elements.
+ * holding top-level `<section>` cards directly, inside `[data-bb-plugin-root]`,
+ * or inside workflow/peek wrapper `<div>`s, with collapsible disclosure bodies
+ * rendered as `section[role="region"][aria-hidden="true|false"]`.
  */
-const MARK = "data-t3-prompt-stack-banner-style";
+const STYLE_MARK = "data-t3-prompt-stack-banner-style";
+export const CARD_ATTR = "data-t3-prompt-stack-card";
 
-/**
- * Every banner card `<section>` in the prompt stack: excludes collapsible
- * disclosure bodies (`[role="region"]`, `[aria-hidden]`) and outer group
- * wrappers that contain nested banner card `<section>`s (such as the
- * workflows plugin's multi-run wrapper).
- */
-export const PROMPT_STACK_CARD_SELECTOR =
-  '[data-promptbox-shell] > div:first-child section:not([role="region"]):not([aria-hidden]):not(:has(section:not([role="region"]):not([aria-hidden])))';
-
+const SHELL = "[data-promptbox-shell]";
+const CARD = `[${CARD_ATTR}]`;
 const PEEK_LAYER = "[data-promptbox-shell] > div:first-child [data-prompt-stack-peek]";
 
 export const PROMPT_STACK_BANNER_CSS = `
-/* One frame, hairline, and label/value typography tokens for every prompt-stack
-   card. Painting the hairline on ::after above full-width headers and opaque
-   expanded bodies keeps every card's edge crisp and identical. */
-${PROMPT_STACK_CARD_SELECTOR} {
-  --prompt-banner-label-weight: 500;
-  --prompt-banner-label-color: var(--foreground);
-  --prompt-banner-value-weight: 400;
-  --prompt-banner-value-color: var(--muted-foreground);
+/* One frame and one-device-pixel hairline for every prompt-stack card, painted
+   above full-width headers and opaque expanded bodies so nothing washes it out. */
+${CARD} {
   position: relative;
   overflow: hidden;
   border-width: 0;
   min-height: 32px !important;
 }
 
-${PROMPT_STACK_CARD_SELECTOR}::after,
+${CARD}::after,
 ${PEEK_LAYER}::after {
   content: "";
   position: absolute;
@@ -67,64 +54,43 @@ ${PEEK_LAYER} {
   border-width: 0;
 }
 
-/* Core active-row banners paint bg-background/70 + shadow-xs + ring-1 over
-   PromptStackCard's bg-surface-raised-solid. Clear that inner wash and ring at
-   rest so every prompt-stack card shares one fill while keeping hover and focus. */
-${PROMPT_STACK_CARD_SELECTOR} > button[aria-expanded]:not(:focus-visible),
-${PROMPT_STACK_CARD_SELECTOR} > div[role="group"]:not(:focus-visible),
-${PROMPT_STACK_CARD_SELECTOR} > div:first-child > button[aria-expanded]:not(:focus-visible),
-${PROMPT_STACK_CARD_SELECTOR} > div:first-child > div[aria-label]:not(:focus-visible) {
+/* Prompt-stack banner icons never glimmer, shimmer, shine, or pulse in any state.
+   Text running treatments (.animate-shine on spans) are left untouched. */
+${CARD} .animate-shine-icon,
+${CARD} .animate-pulse,
+${CARD} svg:not(.animate-spin) {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  animation: none !important;
+  will-change: auto !important;
+}
+
+/* Clear active-row wash/ring on core's stable disclosure toggle button IDs so
+   those interactive buttons share the card surface at rest while preserving
+   hover and focus-visible rings. */
+${CARD} #thread-prompt-banner-child-threads-toggle:not(:focus-visible),
+${CARD} #thread-todo-card-toggle:not(:focus-visible) {
   box-shadow: none;
 }
 
-${PROMPT_STACK_CARD_SELECTOR} > button[aria-expanded]:not(:hover),
-${PROMPT_STACK_CARD_SELECTOR} > div[role="group"]:not(:hover),
-${PROMPT_STACK_CARD_SELECTOR} > div:first-child > button[aria-expanded]:not(:hover),
-${PROMPT_STACK_CARD_SELECTOR} > div:first-child > div[aria-label]:not(:hover) {
+${CARD} #thread-prompt-banner-child-threads-toggle:not(:hover),
+${CARD} #thread-todo-card-toggle:not(:hover) {
   background-color: transparent;
 }
 
-/* Shared label/value typography and icon-to-text gap across every prompt-stack
-   header row: primary labels are 12px medium foreground; secondary values are
-   12px regular muted-foreground; multi-line alert headers match the 6px icon gap. */
-${PROMPT_STACK_CARD_SELECTOR} > button[aria-expanded] > svg + span:not(:has(span)),
-${PROMPT_STACK_CARD_SELECTOR} > button[aria-expanded] > span:has(> svg) + span:not(:has(span)),
-${PROMPT_STACK_CARD_SELECTOR} > div:first-child > button[aria-expanded] > svg + span:not(:has(span)),
-${PROMPT_STACK_CARD_SELECTOR} > div:first-child > button[aria-expanded] > img + span:not(:has(span)),
-${PROMPT_STACK_CARD_SELECTOR} > div:first-child > div[role="status"] > svg + span:not(:has(span)),
-${PROMPT_STACK_CARD_SELECTOR} > div:first-child > div[role="status"] > img + span:not(:has(span)),
-${PROMPT_STACK_CARD_SELECTOR} > div[role="status"] > svg + span:not(:has(span)),
-${PROMPT_STACK_CARD_SELECTOR} > div[role="group"] > button[aria-expanded] > svg + span:not(:has(span)),
-${PROMPT_STACK_CARD_SELECTOR} > div:first-child > div[aria-label] > svg + span > span:first-child,
-${PROMPT_STACK_CARD_SELECTOR} > div:first-child > button[aria-expanded] > svg + span > span:first-child,
-${PROMPT_STACK_CARD_SELECTOR} > button[aria-expanded] > svg + span > span:first-child {
-  font-weight: var(--prompt-banner-label-weight);
-  color: var(--prompt-banner-label-color);
-}
-
-${PROMPT_STACK_CARD_SELECTOR} > div:first-child > div[aria-label] > svg + span > span:nth-child(2) {
-  font-weight: var(--prompt-banner-value-weight);
-  color: var(--prompt-banner-value-color);
-  -webkit-text-fill-color: currentColor;
-}
-
-${PROMPT_STACK_CARD_SELECTOR} > div[role="alert"] > div:first-child {
-  gap: 0.375rem;
-}
-
-/* Collapsed disclosure bodies reserve a 1px transparent border-top on some cards,
-   exposing a strip of card fill below the header. Drop it while closed, and draw
-   a matching one-device-pixel divider above opaque bodies when open. */
-${PROMPT_STACK_CARD_SELECTOR} > section[aria-hidden="true"] {
+/* Disclosure bodies (both direct core children and plugin-wrapped segments such
+   as bb--git/changed-files and rpiv-todo): drop reserved 1px border-top while
+   collapsed, and draw a matching one-device-pixel hairline when expanded. */
+${CARD} section[aria-hidden="true"] {
   border-top-width: 0;
 }
 
-${PROMPT_STACK_CARD_SELECTOR} > section[aria-hidden="false"] {
+${CARD} section[aria-hidden="false"] {
   position: relative;
   border-top-width: 0;
 }
 
-${PROMPT_STACK_CARD_SELECTOR} > section[aria-hidden="false"]::before {
+${CARD} section[aria-hidden="false"]::before {
   content: "";
   position: absolute;
   inset-inline: 0;
@@ -135,16 +101,119 @@ ${PROMPT_STACK_CARD_SELECTOR} > section[aria-hidden="false"]::before {
 }
 `;
 
+/** Collects top-level banner card `<section>` elements inside a prompt stack without
+ *  descending into any `<section>` (so nested disclosure bodies, inline pending
+ *  interactions, and queued-message editors are never treated as cards). */
+function collectTopLevelCards(container: Element, out: Set<Element>): void {
+  for (let child = container.firstElementChild; child !== null; child = child.nextElementSibling) {
+    if (child.tagName === "SECTION") {
+      if (
+        child.getAttribute("role") !== "region" &&
+        !child.hasAttribute("aria-hidden") &&
+        child.getAttribute("data-presentation") !== "inline"
+      ) {
+        out.add(child);
+      }
+      continue;
+    }
+    if (child.tagName === "DIV") {
+      collectTopLevelCards(child, out);
+    }
+  }
+}
+
+/** Syncs `CARD_ATTR` on every top-level card in `stack`, removing stale marks. */
+export function syncPromptStackCards(stack: Element): void {
+  const next = new Set<Element>();
+  collectTopLevelCards(stack, next);
+
+  for (const marked of stack.querySelectorAll(`[${CARD_ATTR}]`)) {
+    if (!next.has(marked)) marked.removeAttribute(CARD_ATTR);
+  }
+  for (const card of next) {
+    if (!card.hasAttribute(CARD_ATTR)) card.setAttribute(CARD_ATTR, "");
+  }
+}
+
+function collectShells(node: Node, out: Element[]): void {
+  if (!(node instanceof Element)) return;
+  if (node.matches(SHELL)) out.push(node);
+  if (node.childElementCount > 0) {
+    for (const found of node.querySelectorAll(SHELL)) out.push(found);
+  }
+}
+
+function hasElementMutation(records: readonly MutationRecord[]): boolean {
+  for (const record of records) {
+    for (const node of record.addedNodes) {
+      if (node instanceof Element) return true;
+    }
+    for (const node of record.removedNodes) {
+      if (node instanceof Element) return true;
+    }
+  }
+  return false;
+}
+
 export function mountPromptStackBannerStyle(document: Document, signal: AbortSignal): () => void {
   if (signal.aborted) return () => {};
 
   const style = document.createElement("style");
-  style.setAttribute(MARK, "");
+  style.setAttribute(STYLE_MARK, "");
   style.textContent = PROMPT_STACK_BANNER_CSS;
   document.head.append(style);
 
+  const watchedStacks = new Map<Element, MutationObserver>();
+
+  const watchShell = (shell: Element) => {
+    if (shell.parentElement?.closest("section") !== null) return;
+    const stack = shell.firstElementChild;
+    if (stack === null || watchedStacks.has(stack)) return;
+    syncPromptStackCards(stack);
+    const observer = new MutationObserver((records) => {
+      if (!hasElementMutation(records)) return;
+      syncPromptStackCards(stack);
+    });
+    observer.observe(stack, { childList: true, subtree: true });
+    watchedStacks.set(stack, observer);
+  };
+
+  const unwatchShell = (shell: Element) => {
+    const stack = shell.firstElementChild;
+    if (stack === null) return;
+    const observer = watchedStacks.get(stack);
+    if (!observer) return;
+    observer.disconnect();
+    watchedStacks.delete(stack);
+    for (const marked of stack.querySelectorAll(`[${CARD_ATTR}]`)) {
+      marked.removeAttribute(CARD_ATTR);
+    }
+  };
+
+  for (const shell of document.querySelectorAll(SHELL)) watchShell(shell);
+
+  const bodyObserver = new MutationObserver((records) => {
+    const added: Element[] = [];
+    const removed: Element[] = [];
+    for (const record of records) {
+      for (const node of record.addedNodes) collectShells(node, added);
+      for (const node of record.removedNodes) collectShells(node, removed);
+    }
+    for (const shell of removed) if (!shell.isConnected) unwatchShell(shell);
+    for (const shell of added) if (shell.isConnected) watchShell(shell);
+  });
+  bodyObserver.observe(document.body, { childList: true, subtree: true });
+
   const dispose = () => {
     signal.removeEventListener("abort", dispose);
+    bodyObserver.disconnect();
+    for (const [stack, observer] of watchedStacks) {
+      observer.disconnect();
+      for (const marked of stack.querySelectorAll(`[${CARD_ATTR}]`)) {
+        marked.removeAttribute(CARD_ATTR);
+      }
+    }
+    watchedStacks.clear();
     style.remove();
   };
   signal.addEventListener("abort", dispose, { once: true });

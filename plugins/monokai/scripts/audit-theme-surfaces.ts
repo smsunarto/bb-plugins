@@ -56,7 +56,7 @@ try {
       const style=getComputedStyle(e);const color=style.backgroundColor;
       const alpha=color.startsWith('rgba')?Number(color.split(',').at(-1).replace(')','')):1;
       if(Math.abs(alpha-expected)>.005) throw Error(name+'/'+kind+': '+color);
-      const child=e.querySelector('[data-promptbox-editor-scroll],.gap-0\\\\.5');
+      const child=e.querySelector('[data-promptbox-editor-scroll]');
       if(child && getComputedStyle(child).backgroundColor!=='rgba(0, 0, 0, 0)') throw Error(kind+' paints its layout twice');
       return {parent:name,kind,fill:color,clip:style.backgroundClip};
     });

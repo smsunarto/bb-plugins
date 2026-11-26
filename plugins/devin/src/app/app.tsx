@@ -229,7 +229,12 @@ function CloudBanner() {
           {active === null ? (
             <span className="truncate">Starting a cloud session…</span>
           ) : (
-            <Button asChild className="min-w-0 shrink" size="xs" variant="link">
+            <Button
+              asChild
+              className="min-w-0 shrink max-md:pointer-coarse:min-h-11"
+              size="xs"
+              variant="link"
+            >
               <a href={active.url} rel="noreferrer" target="_blank" title={active.url}>
                 <span className="truncate">Open in Devin</span>
               </a>
@@ -242,12 +247,12 @@ function CloudBanner() {
           data-state={data.state}
           variant={active === null ? "secondary" : "info"}
         >
-          <StatusDot tone="current" size="sm" pulse={active === null} />
+          <StatusDot tone="current" size="sm" />
           {active === null ? "Starting" : "Active"}
         </Badge>
       </div>
 
-      <InputGroup>
+      <InputGroup className="max-md:pointer-coarse:min-h-11">
         <InputGroupInput
           aria-label="Devin attach command"
           className="min-w-0 font-mono text-xs"
@@ -260,7 +265,7 @@ function CloudBanner() {
           <InputGroupButton
             type="button"
             aria-label="Copy Devin attach command"
-            className="w-20"
+            className="w-20 max-md:pointer-coarse:min-h-11"
             disabled={active === null}
             onClick={() => void copy()}
           >

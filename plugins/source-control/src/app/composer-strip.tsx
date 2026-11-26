@@ -155,7 +155,7 @@ export function StripSummary({
       data-bb-plugin="source-control"
       data-testid="sc-strip"
       className={cx(
-        "flex min-h-6 min-w-0 items-center gap-1.5 overflow-hidden px-2 py-1 text-xs leading-4 whitespace-nowrap",
+        "flex min-h-6 min-w-0 flex-1 items-center gap-1.5 overflow-hidden px-2 py-1 text-xs leading-4 whitespace-nowrap",
         STACKED,
       )}
       title={chips.map((chip) => chip.label).join(" · ") || undefined}
@@ -163,10 +163,9 @@ export function StripSummary({
       {first && (
         <span
           className={cx(
-            "flex min-w-0 shrink-0 items-center gap-1.5",
+            "flex max-w-full min-w-0 shrink-0 items-center gap-1.5",
             first.tone,
             LEAD_TOUCH,
-            "@max-[34rem]/promptbox-shell:max-w-full",
           )}
         >
           <Icon
@@ -174,11 +173,11 @@ export function StripSummary({
             className={cx("size-3.5 shrink-0", leadIcon.tone)}
             aria-hidden
           />
-          <span className="@max-[34rem]/promptbox-shell:truncate">{first.text}</span>
+          <span className="min-w-0 truncate">{first.text}</span>
         </span>
       )}
       {rest.length > 0 && (
-        <span className="flex min-w-0 items-center gap-1.5 @max-[34rem]/promptbox-shell:self-stretch">
+        <span className="flex max-w-full min-w-0 items-center gap-1.5 overflow-hidden @max-[34rem]/promptbox-shell:self-stretch">
           {rest.map((part) => (
             <span
               key={part.text}

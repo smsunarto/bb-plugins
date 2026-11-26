@@ -242,9 +242,10 @@ function Queue({
   };
 
   // The final editor can hand focus to the same frame after All clear mounts.
-  // Host `chrome: "card"` owns the outer PromptStackCard frame and edge; this
-  // inner wrapper clips expanded popover surfaces to the card's 8px radius even
-  // when core's PluginComposerBanners wrapper omits overflow-hidden.
+  // workaround:captain/composer-banner-clip
+  // Host `chrome: "card"` owns the outer PromptStackCard frame and edge; keep
+  // overflow-hidden + rounded-lg here so expanded popover surfaces clip cleanly
+  // until core's PluginComposerBanners wrapper adds overflow-hidden.
   const frameClassName =
     "flex min-w-0 flex-col overflow-hidden rounded-lg text-xs text-foreground outline-none focus-visible:outline-1";
   const frameHandlers = {

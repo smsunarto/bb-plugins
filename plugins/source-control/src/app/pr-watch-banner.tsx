@@ -198,7 +198,7 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
         </Hint>
       </div>
       {stop.error ? (
-        <p className="m-0 px-2 pb-1 text-[11px] text-destructive-text">{stop.error.message}</p>
+        <p className="m-0 px-3 pb-1 text-[11px] text-destructive-text">{stop.error.message}</p>
       ) : null}
       <CollapsibleContent>
         <WatchDetails watch={watch} />
@@ -219,7 +219,7 @@ function WatchDetails({ watch }: { watch: PrWatchView }) {
   ].filter(Boolean);
   const { checks } = watch.checks;
   return (
-    <div className="flex min-w-0 flex-col pb-1">
+    <div className="flex min-w-0 flex-col px-1 pb-1">
       <p className="m-0 min-w-0 truncate ps-2 text-[11px] text-muted-foreground" translate="no">
         {notes.join(" · ")}
       </p>

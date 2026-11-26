@@ -16,6 +16,7 @@ import {
   todoSignalSchema,
   type TodoSnapshot,
 } from "../../shared/rpiv-todo.ts";
+import { surface } from "@bb-plugins/ui/surface";
 import { Button } from "../components/ui/button.tsx";
 import { Item } from "../components/ui/item.tsx";
 import { Spinner } from "../components/ui/spinner.tsx";
@@ -198,7 +199,7 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
             manuallyToggled.current = true;
             setExpanded((open) => !open);
           }}
-          className="flex min-h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-none px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-background/80"
+          className="flex min-h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-none px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-background/80 max-md:pointer-coarse:min-h-11"
         >
           <ListTodoIcon className="rpiv-todo-icon" />
           <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
@@ -236,7 +237,7 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
         aria-labelledby={toggleId}
         aria-hidden={!expanded}
         inert={!expanded}
-        className={`rpiv-todo-body ${expanded ? "rpiv-todo-body-open" : "rpiv-todo-body-closed"}`}
+        className={`rpiv-todo-body ${expanded ? `rpiv-todo-body-open ${surface.divider}` : "rpiv-todo-body-closed"}`}
       >
         <div className="overflow-hidden bg-popover">
           <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto px-3 pb-2 pt-2">

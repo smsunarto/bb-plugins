@@ -96,6 +96,37 @@
       },
       "afterRemoval": ["cd plugins/t3-composer && bun run typecheck && bun run test"],
       "verify": "With t3-composer enabled, pick Full Access on thread A, open thread B, then open A again: A must show Full Access without the workaround."
+    },
+    {
+      "id": "captain/composer-banner-clip",
+      "defect": "bb's PluginComposerBanners wraps chrome: 'card' plugin banners in <PromptStackCard ariaLabel={pluginId} className='empty:hidden'> without overflow-hidden, so opaque expanded child surfaces bleed past the 8px rounded corners.",
+      "verifiedOn": "0.50.1",
+      "manual": "Remove overflow-hidden rounded-lg from frameClassName in plugins/captain/src/app/banner.tsx once PluginComposerBanners adds overflow-hidden.",
+      "probe": {
+        "needed": null,
+        "fixed": null
+      },
+      "afterRemoval": ["cd plugins/captain && bun run typecheck && bun run test"],
+      "verify": "Open an expanded Captain ask banner in bb Monokai dark, default dark, and default light: its popover panel corners clip cleanly to the 8px card radius."
+    },
+    {
+      "id": "t3-composer/prompt-stack-banner-chrome",
+      "defect": "bb's PromptStackCard renders 1px border-border hairlines beneath child fills, applies activityRowClass('active') wash/ring on core toggle buttons, reserves a 1px transparent border-top on collapsed disclosure bodies, sets minHeight: 35 on ThreadPromptContextBanner, and applies .animate-shine-icon masking to running banner icons.",
+      "verifiedOn": "0.50.1",
+      "files": [
+        "plugins/t3-composer/src/prompt-stack-banner-style.ts",
+        "plugins/t3-composer/src/prompt-stack-banner-style.test.ts"
+      ],
+      "manual": "Unregister the prompt-stack-banner-style content script in plugins/t3-composer/app.tsx once bb core ships unified PromptStackCard framing, disclosure dividers, and static banner icons.",
+      "probe": {
+        "needed": null,
+        "fixed": null
+      },
+      "afterRemoval": [
+        "cd plugins/t3-composer && bun run typecheck && bun run test",
+        "bun test scripts/prompt-banner-contract.test.ts"
+      ],
+      "verify": "Open a thread with Captain, Source Control, bb--git changed files, and running core banners across bb Monokai dark, default dark, and default light: every banner shares the same 32px height, crisp hairline, disclosure divider, and un-animated leading icon."
     }
   ]
 }

@@ -23,7 +23,6 @@
 }
 .rpiv-todo-body-open {
   grid-template-rows: 1fr;
-  border-top: var(--hairline-width, 1px) solid var(--border);
   opacity: 1;
 }
 .rpiv-todo-body-closed {
