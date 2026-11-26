@@ -17,22 +17,28 @@ import {
   withClaudeWeb,
 } from "./claude-web.ts";
 import { claudeExtras, codexExtras, type ExtrasUpdate, NO_EXTRAS } from "./extras.ts";
-import { accountListSchema, type MenuAccount, type MenuProvider, poolProviders } from "./pool.ts";
+import {
+  accountListSchema,
+  type MenuAccount,
+  type MenuProvider,
+  poolProviders,
+  type SourceProviderId,
+} from "./pool.ts";
 
 export const POOL_PLUGIN_ID = "account-pool";
 
-type ExtrasReader = (provider: MenuProvider["id"], accountId: string) => Promise<ExtrasUpdate>;
+type ExtrasReader = (provider: SourceProviderId, accountId: string) => Promise<ExtrasUpdate>;
 
 /** Where the menu's accounts come from, and how to reach each one's extras. */
 export interface Source {
   kind: "pool" | "builtin";
-  providers: MenuProvider[];
+  providers: MenuProvider<SourceProviderId>[];
   /** Each call creates one fan-out batch. Observations are shared only within that batch. */
   extras(refresh?: boolean): ExtrasReader;
 }
 
 type Collected = {
-  provider: MenuProvider["id"];
+  provider: SourceProviderId;
   account: MenuAccount;
   accountKey: string | null;
   email: string | null;
@@ -42,7 +48,7 @@ function collectedAccount(
   id: string,
   resource: Parameters<typeof builtinAccount>[1],
   measurement: Measurement,
-  provider: MenuProvider["id"],
+  provider: SourceProviderId,
 ): Collected | null {
   const account = builtinAccount(id, resource, measurement, 1);
   if (account === null) return null;
@@ -177,7 +183,7 @@ async function collect(
 
 /** The CLI's own signed-in account, unless the CLI switched accounts since collection. */
 async function localExtras(
-  provider: MenuProvider["id"],
+  provider: SourceProviderId,
   accountKey: string | null | undefined,
   signal: AbortSignal,
 ) {

@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import plugin from "../src/server/server.ts";
+import { usageBarPlugin } from "../src/server/server.ts";
+
+const plugin = usageBarPlugin({ readAntigravity: async () => null });
 
 test("the plugin factory registers a menu service that stops on host shutdown", async () => {
   const { bb, harness } = createFakePluginHost({

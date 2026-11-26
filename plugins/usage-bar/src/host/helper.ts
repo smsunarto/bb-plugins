@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import antigravityMark from "../../native/antigravity.svg" with { type: "text" };
 import claudeMark from "../../native/claude.svg" with { type: "text" };
 import codexMark from "../../native/codex.svg" with { type: "text" };
 import swiftSource from "../../native/UsageBar.swift" with { type: "text" };
@@ -15,6 +16,7 @@ import swiftSource from "../../native/UsageBar.swift" with { type: "text" };
  */
 const NATIVE_FILES = {
   "UsageBar.swift": swiftSource,
+  "antigravity.svg": antigravityMark,
   "claude.svg": claudeMark,
   "codex.svg": codexMark,
 };

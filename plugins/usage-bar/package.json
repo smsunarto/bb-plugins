@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-usage-bar",
   "version": "0.1.0",
-  "description": "CodexBar-style macOS menu bar meters for Codex and Claude quota, from Account Pooler or each CLI's signed-in account.",
+  "description": "CodexBar-style macOS menu bar meters for Codex, Claude, and Antigravity quota, from Account Pooler or each CLI's signed-in account.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/usage-bar",
@@ -18,7 +18,7 @@
   },
   "bb": {
     "name": "Usage Bar",
-    "description": "Shows session, weekly, and per-model quota, limit reset credits, and extra usage for each Codex and Claude account in the macOS menu bar.",
+    "description": "Shows session, weekly, and per-model quota, limit reset credits, and extra usage for each Codex and Claude account, plus Antigravity quota, in the macOS menu bar.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {

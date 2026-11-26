@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { MenuAccount, MenuProvider, MenuWindow } from "./pool.ts";
+import type { MenuAccount, MenuWindow, SourceProviderId } from "./pool.ts";
 import { timestampSchema } from "./pool.ts";
 
 /**
@@ -14,11 +14,11 @@ export const USAGE_LIST_METHOD = "provider-usage.v1.listResources";
 export const USAGE_FETCH_METHOD = "provider-usage.v1.getResource";
 
 /** Resource `providerId` → menu provider. */
-const PROVIDERS: Record<string, MenuProvider["id"]> = {
-  codex: "codex",
-  claude: "claude",
-  "claude-code": "claude",
-};
+const PROVIDERS = new Map<string, SourceProviderId>([
+  ["codex", "codex"],
+  ["claude", "claude"],
+  ["claude-code", "claude"],
+]);
 
 export const resourceListSchema = z.object({
   resources: z.array(
@@ -132,8 +132,8 @@ export function builtinAccount(
   };
 }
 
-export function builtinProvider(resource: Resource): MenuProvider["id"] | null {
-  return PROVIDERS[resource.providerId] ?? null;
+export function builtinProvider(resource: Resource): SourceProviderId | null {
+  return PROVIDERS.get(resource.providerId) ?? null;
 }
 
 export function onHost(resource: Resource, hostId: string | null): boolean {
