@@ -130,7 +130,7 @@ export function askResolveCommand(deps: CommandDeps) {
 
 export function askShowCommand(deps: CommandDeps) {
   return cliCommand({
-    summary: "Print one ask's record: its kind, task, detail, answer and who answered it",
+    summary: "Print one ask's record: its kind, task, head, detail, answer and who answered it",
     positionals: [{ name: "id", required: true, description: "The ask id, such as a7" }],
     options: { json: JSON_OPTION },
     run(input) {

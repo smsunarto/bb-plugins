@@ -10,7 +10,7 @@ import {
 import { actingFor } from "../caller.ts";
 import { resolveTask, tasksOrRefuse } from "../crew.ts";
 import { guard, Refusal, render, type Blocker, type Item } from "../output.ts";
-import { parseVerdictField, SHIP_READY_REVIEWS, VERDICT_FIELDS } from "../roles.ts";
+import { isShipVerdict, parseVerdictField, SHIP_READY_REVIEWS, VERDICT_FIELDS } from "../roles.ts";
 import { TasksError } from "../tasks-client.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
 
@@ -60,7 +60,7 @@ export function verdictCommand(deps: CommandDeps) {
         const value = rawValue.trim().toLowerCase();
         const reason = input.options.reason?.trim() || null;
         const rawHead = input.options.head?.trim() || null;
-        const head = input.options.ship && rawHead !== null ? rawHead.toLowerCase() : rawHead;
+        const head = rawHead === null ? null : rawHead.toLowerCase();
         const field = parseVerdictField(role);
         const blockers: Blocker[] = [];
         if (field === null) {
@@ -83,7 +83,7 @@ export function verdictCommand(deps: CommandDeps) {
         if (input.options.ship && field !== null && field !== "review") {
           blockers.push({ reason: "--ship follows a review verdict", fix: "drop --ship" });
         }
-        if (input.options.ship && (head === null || !FULL_SHA.test(head))) {
+        if (input.options.ship && field === "review" && (head === null || !FULL_SHA.test(head))) {
           blockers.push({
             reason:
               head === null
@@ -142,10 +142,12 @@ export function verdictCommand(deps: CommandDeps) {
         if (field === "review") {
           notes.push(...(await supersedeShipAsks(deps, captain, task, { value, head })));
         }
-        if (input.options.ship && head !== null) {
+        if (input.options.ship && head !== null && isShipVerdict(value)) {
           const opened = await openAsk(deps, captain, {
             kind: "ship",
             task,
+            head,
+            verdict: value,
             text: shipText(task.key, task.title),
             detail: [
               `Review ${value} at ${head}.`,

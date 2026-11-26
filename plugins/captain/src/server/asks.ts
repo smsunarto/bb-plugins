@@ -4,7 +4,7 @@ import { steer } from "./crew.ts";
 import { Refusal, type Blocker, type Item } from "./output.ts";
 import { sendPush } from "./push.ts";
 import type { Captain } from "./registry.ts";
-import { SHIP_READY_REVIEWS } from "./roles.ts";
+import { isShipVerdict, SHIP_READY_REVIEWS, type ShipVerdict } from "./roles.ts";
 import { NOTICE, type Answerer, type Ask, type AskKind } from "./store.ts";
 import { TasksError, type TasksTask } from "./tasks-client.ts";
 import { clip, displayWidth } from "./width.ts";
@@ -38,6 +38,8 @@ const OPTIONS_MAX = 9;
 export type AskDraft = {
   kind: AskKind;
   task: TasksTask | Blocker | null;
+  head?: string | null;
+  verdict?: ShipVerdict | null;
   text: string;
   detail: string | Refusal;
   options: string[];
@@ -177,20 +179,17 @@ export const FULL_SHA = /^[0-9a-f]{40}$/u;
 /** The answer that closes a ship ask a newer head replaced; it is never delivered. */
 export const SUPERSEDED = "Superseded";
 
-/** The head a ship ask's detail names, from its leading `Review <verdict> at <sha>.`. */
-function shipAskHead(detail: string): string | null {
-  return /^Review \S+ at ([0-9a-f]{40})\./u.exec(detail)?.[1] ?? null;
-}
-
 /**
  * Close the task's open ship asks that no longer match its review verdict:
  * every one when the verdict is not ship-ready, else each that names another
- * head. A Merge on such an ask would cover commits no review approved. The
- * review field is the task's, so this covers every Captain's asks on it, not
- * only the recording Captain's. Each is answered `Superseded` and the task
- * gets a comment from the recording Captain. Another Captain's ask is sent its
- * answer as a resolved ask is, so that Captain stops waiting on a Merge; the
- * background check retries a failed send. The recording Captain gets no send.
+ * head or another review verdict (`passed` vs `skipped`). A Merge on such an
+ * ask would cover commits or a review state no longer current. The review field
+ * is the task's, so this covers every Captain's asks on it, not only the
+ * recording Captain's. Each is atomically answered `Superseded` only while
+ * still unanswered, and the task gets a comment only if the row changed.
+ * Another Captain's ask is sent its answer as a resolved ask is, so that
+ * Captain stops waiting on a Merge; the background check retries a failed send.
+ * The recording Captain gets no send.
  */
 export async function supersedeShipAsks(
   deps: CommandDeps,
@@ -200,18 +199,19 @@ export async function supersedeShipAsks(
 ): Promise<string[]> {
   const notes: string[] = [];
   const head = verdict.head?.toLowerCase() ?? null;
-  const keep = SHIP_READY_REVIEWS.has(verdict.value) ? head : null;
+  const keepVerdict = isShipVerdict(verdict.value) && head !== null ? verdict.value : null;
   const recorded = `review ${verdict.value}${head === null ? "" : ` at ${head}`}`;
   const stale = deps.store
     .openAsksOnTask(task.key)
     .filter((ask) => ask.kind === "ship")
-    .filter((ask) => keep === null || shipAskHead(ask.detail) !== keep);
+    .filter((ask) => keepVerdict === null || ask.head !== head || ask.verdict !== keepVerdict);
+  const owners = new Set<string>();
   for (const ask of stale) {
     const at = deps.now();
-    deps.store.answerAsk(ask.id, SUPERSEDED, "captain", at);
     const own = ask.captainId === captain.threadId;
     // The recording Captain knows; another Captain hears it, so it stops waiting on a Merge.
-    if (own) deps.store.markAnswerDelivered(ask.id, at);
+    if (!deps.store.answerAsk(ask.id, SUPERSEDED, "captain", at, { delivered: own })) continue;
+    owners.add(ask.captainId);
     const owner = own
       ? null
       : (deps.registry.get(ask.captainId) ?? deps.store.captain(ask.captainId));
@@ -231,8 +231,7 @@ export async function supersedeShipAsks(
         notes.push(`warning: ${ask.id}: ${failed}; the background check retries it`);
     }
   }
-  if (stale.length > 0) {
-    const owners = new Set(stale.map((ask) => ask.captainId));
+  if (owners.size > 0) {
     deps.bb.rpc.experimental_invalidate([...owners].map(asksTag));
   }
   return notes;
@@ -245,10 +244,14 @@ function recordAsk(deps: CommandDeps, captain: Captain, draft: AskDraft) {
   const resolved = target === null || "key" in target;
   const task = resolved ? target : null;
   const taskKey = task?.key ?? null;
+  const head = draft.head ?? null;
+  const verdict = draft.verdict ?? null;
   const options = draft.kind === "ship" ? [...SHIP_OPTIONS] : draft.options.map((o) => o.trim());
-  const existing = resolved
-    ? deps.store.findOpenAsk(captain.threadId, draft.kind, taskKey, text)
-    : null;
+  const existing = !resolved
+    ? null
+    : draft.kind === "ship" && taskKey !== null && head !== null && verdict !== null
+      ? deps.store.findOpenShipAsk(captain.threadId, taskKey, head, verdict)
+      : deps.store.findOpenAsk(captain.threadId, draft.kind, taskKey, text);
   const blockers = askBlockers({ ...draft, hasTask: target !== null }, existing?.options);
   if (!resolved) blockers.push(target);
   if (existing === null) blockers.push(...optionLabelBlockers(options));
@@ -259,6 +262,8 @@ function recordAsk(deps: CommandDeps, captain: Captain, draft: AskDraft) {
       captainId: captain.threadId,
       taskKey,
       kind: draft.kind,
+      head,
+      verdict,
       text,
       detail: draft.detail.trim(),
       options,
@@ -330,10 +335,19 @@ export function askItem(ask: Ask, state: string): Item {
     id: ask.id,
     ok: true,
     state,
-    detail: [ask.kind, ask.taskKey ?? "-", ask.answer ?? ask.text].join("  "),
+    detail: [
+      ask.kind,
+      ask.taskKey ?? "-",
+      ask.head === null ? null : `@${ask.head}`,
+      ask.answer ?? ask.text,
+    ]
+      .filter((part) => part !== null)
+      .join("  "),
     data: {
       kind: ask.kind,
       task: ask.taskKey,
+      head: ask.head,
+      verdict: ask.verdict,
       text: ask.text,
       options: ask.options,
       answer: ask.answer,
@@ -392,7 +406,8 @@ export async function deliverAnswer(
   }
   // The attempt count decides when an answer turns into a health row.
   const changed = () => deps.bb.rpc.experimental_invalidate([asksTag(ask.captainId)]);
-  const subject = ask.taskKey === null ? ask.text : `${ask.taskKey} ${ask.text}`;
+  const base = ask.taskKey === null ? ask.text : `${ask.taskKey} ${ask.text}`;
+  const subject = ask.head === null ? base : `${base} @${ask.head}`;
   try {
     await steer(
       deps.bb,
@@ -454,6 +469,16 @@ export type Resolved = { ask: Ask; state: "answered" | "undelivered"; notes: str
  * terminal). Only the ask's own Captain thread may answer from a thread, and
  * never a ship ask's first answer: Merge is the user's alone. Throws a `Refusal`.
  */
+function alreadyAnsweredBlocker(ask: Ask & { answer: string }): Blocker {
+  return {
+    reason: `${ask.id} was already answered ${JSON.stringify(ask.answer)}`,
+    fix:
+      ask.kind === "ship"
+        ? `once Review has passed: bb captain verdict ${ask.taskKey ?? "<task>"} review passed --head <sha> --ship`
+        : "open a new ask with bb captain ask",
+  };
+}
+
 export async function resolveAsk(
   deps: CommandDeps,
   address: string,
@@ -474,19 +499,12 @@ export async function resolveAsk(
     blockers.push({ reason: "an answer is one line of words", fix: '--answer "Merge"' });
   }
   if (ask.answer !== null && ask.answer !== answer) {
-    blockers.push({
-      reason: `${id} was already answered ${JSON.stringify(ask.answer)}`,
-      fix:
-        ask.kind === "ship"
-          ? `once Review has passed: bb captain verdict ${ask.taskKey ?? "<task>"} review passed --head <sha> --ship`
-          : "open a new ask with bb captain ask",
-    });
+    blockers.push(alreadyAnsweredBlocker({ ...ask, answer: ask.answer }));
   }
   if (blockers.length > 0 || captain === null) throw new Refusal(blockers);
 
   const notes: string[] = [];
-  if (ask.answer === null) {
-    deps.store.answerAsk(id, answer, by, deps.now());
+  if (ask.answer === null && deps.store.answerAsk(id, answer, by, deps.now())) {
     deps.bb.rpc.experimental_invalidate([asksTag(ask.captainId)]);
     if (ask.taskKey !== null) {
       const task = await deps.tasks.getTaskByKey(ask.taskKey).catch(() => null);
@@ -499,6 +517,9 @@ export async function resolveAsk(
   }
   const answered = deps.store.ask(id);
   if (answered === null || answered.answer === null) throw new Error(`${id} lost its answer`);
+  if (answered.answer !== answer) {
+    throw new Refusal([alreadyAnsweredBlocker({ ...answered, answer: answered.answer })]);
+  }
   let state: Resolved["state"] = "answered";
   if (answered.answerDeliveredAt === null) {
     const warning = await deliverAnswer(deps, { ...answered, answer: answered.answer });

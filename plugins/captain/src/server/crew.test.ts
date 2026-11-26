@@ -703,13 +703,278 @@ describe("bb captain verdict", () => {
     expect(bare.stderr).toContain("--ship needs the head the review judged");
     expect(short.exitCode).toBe(1);
     expect(short.stderr).toContain("--ship needs the full 40-character head");
-    expect(json(atFirst.stdout).results[1]).toMatchObject({ id: "a1", state: "open" });
-    expect(json(atSecond.stdout).results[1]).toMatchObject({ id: "a2", state: "open" });
-    expect(json(rerun.stdout).results[1]).toMatchObject({ id: "a2", state: "exists" });
+    expect(json(atFirst.stdout).results[1]).toMatchObject({
+      id: "a1",
+      state: "open",
+      head: first,
+      verdict: "passed",
+    });
+    expect(json(atSecond.stdout).results[1]).toMatchObject({
+      id: "a2",
+      state: "open",
+      head: second,
+      verdict: "passed",
+    });
+    expect(json(rerun.stdout).results[1]).toMatchObject({
+      id: "a2",
+      state: "exists",
+      head: second,
+      verdict: "passed",
+    });
     expect(host.tasks.comments.map((comment) => comment.body)).toEqual([
       expect.stringContaining(`Review passed at ${first}.`),
       `Superseded: a1 does not match the recorded review passed at ${second}; a Merge on it grants nothing.`,
       expect.stringContaining(`Review passed at ${second}.`),
+    ]);
+  });
+
+  test("stored head case does not depend on --ship, and triage --ship gets only the drop --ship blocker", async () => {
+    const { host, as } = await crewHost();
+    const upper = "AB".repeat(20);
+    const lower = upper.toLowerCase();
+
+    const plain = await as(["verdict", "BBPLUGINS-1", "review", "passed", "--head", upper]);
+    const withShip = await as([
+      "verdict",
+      "BBPLUGINS-2",
+      "review",
+      "passed",
+      "--head",
+      upper,
+      "--ship",
+    ]);
+    const triageBare = await as([
+      "verdict",
+      "BBPLUGINS-1",
+      "triage",
+      "reproduced",
+      "--ship",
+      "--json",
+    ]);
+    const triageShort = await as([
+      "verdict",
+      "BBPLUGINS-1",
+      "triage",
+      "reproduced",
+      "--head",
+      "abc123",
+      "--ship",
+      "--json",
+    ]);
+
+    expect(plain.exitCode).toBe(0);
+    expect(withShip.exitCode).toBe(0);
+    expect(plain.stdout).toBe(`BBPLUGINS-1  recorded  review passed @${lower}\n`);
+    const heads = host.tasks.calls
+      .filter((call) => call.method === "setField")
+      .map((call) => (call.input as { head: string | null }).head);
+    expect(heads).toEqual([lower, lower]);
+    expect(host.server.store.ask("a1")?.head).toBe(lower);
+    for (const refused of [triageBare, triageShort]) {
+      expect(refused.exitCode).toBe(1);
+      expect(json(refused.stdout).blockers).toEqual([
+        { reason: "--ship follows a review verdict", fix: "drop --ship" },
+      ]);
+    }
+  });
+
+  test("retitling a task reuses the open ship ask for the same head; passed supersedes a skipped ask at that head", async () => {
+    const { host, captainId, as } = await crewHost();
+    const head = "c".repeat(40);
+
+    const skipped = await as([
+      "verdict",
+      "BBPLUGINS-1",
+      "review",
+      "skipped",
+      "--head",
+      head,
+      "--reason",
+      "Docs only",
+      "--ship",
+      "--json",
+    ]);
+    // Retitle and rerun skipped at the same head: still one open ship ask.
+    host.tasks.tasks[0]!.title = "Render PR images (retitled)";
+    const skippedAgain = await as([
+      "verdict",
+      "BBPLUGINS-1",
+      "review",
+      "skipped",
+      "--head",
+      head,
+      "--reason",
+      "Docs only",
+      "--ship",
+      "--json",
+    ]);
+    // A passed review at the same head supersedes the skipped ask and opens a passed one.
+    const passed = await as([
+      "verdict",
+      "BBPLUGINS-1",
+      "review",
+      "passed",
+      "--head",
+      head,
+      "--ship",
+      "--json",
+    ]);
+    // Retitle again and rerun passed at the same head: reuses a2, never opens a third.
+    host.tasks.tasks[0]!.title = "Render PR images (v3)";
+    const passedAgain = await as([
+      "verdict",
+      "BBPLUGINS-1",
+      "review",
+      "passed",
+      "--head",
+      head,
+      "--ship",
+      "--json",
+    ]);
+
+    expect(json(skipped.stdout).results[1]).toMatchObject({
+      id: "a1",
+      state: "open",
+      head,
+      verdict: "skipped",
+    });
+    expect(json(skippedAgain.stdout).results[1]).toMatchObject({
+      id: "a1",
+      state: "exists",
+      head,
+      verdict: "skipped",
+    });
+    expect(host.server.store.ask("a1")).toMatchObject({
+      answer: "Superseded",
+      verdict: "skipped",
+    });
+    expect(json(passed.stdout).results[1]).toMatchObject({
+      id: "a2",
+      state: "open",
+      head,
+      verdict: "passed",
+    });
+    expect(host.server.store.ask("a2")?.detail).toMatch(
+      new RegExp(`^Review passed at ${head}\\.`, "u"),
+    );
+    expect(json(passedAgain.stdout).results[1]).toMatchObject({
+      id: "a2",
+      state: "exists",
+      head,
+      verdict: "passed",
+    });
+    expect(host.server.store.asksOf(captainId, { open: true }).map((ask) => ask.id)).toEqual([
+      "a2",
+    ]);
+
+    // Downgrading passed back to skipped without --ship supersedes a2.
+    await as([
+      "verdict",
+      "BBPLUGINS-1",
+      "review",
+      "skipped",
+      "--head",
+      head,
+      "--reason",
+      "Reclassified",
+    ]);
+    expect(host.server.store.ask("a2")?.answer).toBe("Superseded");
+    expect(host.server.store.asksOf(captainId, { open: true })).toEqual([]);
+  });
+
+  test("ship ask head is stored on the row, printed in status, --json and the answer line, and legacy null-head rows are superseded", async () => {
+    const { host, captainId, as } = await crewHost();
+    const head = "d".repeat(40);
+    // Legacy row opened before the head column existed: prose names `head`, row does not.
+    host.server.store.openAsk({
+      captainId,
+      taskKey: "BBPLUGINS-1",
+      kind: "ship",
+      text: "Merge BBPLUGINS-1: Render PR images",
+      detail: `Review passed at ${head}. Merge lets the Captain ship it.`,
+      options: ["Merge", "Hold"],
+      askedAt: 500,
+    });
+
+    const opened = await as([
+      "verdict",
+      "BBPLUGINS-1",
+      "review",
+      "passed",
+      "--head",
+      head,
+      "--ship",
+      "--json",
+    ]);
+    const statusText = await as(["status"]);
+    const statusJson = await as(["status", "--json"]);
+    const resolved = await run(host, ["ask", "resolve", "a2", "--answer", "Merge", "--json"]);
+
+    // Legacy a1 was superseded even though its prose detail named `head`.
+    expect(host.server.store.ask("a1")).toMatchObject({ head: null, answer: "Superseded" });
+    expect(json(opened.stdout).results[1]).toMatchObject({ id: "a2", head, verdict: "passed" });
+    expect(statusText.stdout).toContain(
+      `a2  ask  BBPLUGINS-1  Merge BBPLUGINS-1: Render PR images @${head}`,
+    );
+    const askStatusRow = (
+      JSON.parse(statusJson.stdout) as { rows: { id: string; head: string | null }[] }
+    ).rows.find((row) => row.id === "a2");
+    expect(askStatusRow).toMatchObject({ id: "a2", head });
+    expect(json(resolved.stdout).results[0]).toMatchObject({ id: "a2", head, answer: "Merge" });
+    expect(host.sent.at(-1)).toMatchObject({
+      threadId: captainId,
+      text: `[captain] a2 answered "Merge" · BBPLUGINS-1 Merge BBPLUGINS-1: Render PR images @${head}`,
+    });
+  });
+
+  test("supersede is atomic: a user answer recorded mid-supersede is neither marked delivered nor commented Superseded", async () => {
+    const { host, captainId, as } = await crewHost();
+    const first = "a".repeat(40);
+    const second = "b".repeat(40);
+    await as(["verdict", "BBPLUGINS-1", "review", "passed", "--head", first, "--ship"]);
+    // A second stale ship ask on the same task (e.g. a legacy row opened before head was stored).
+    host.server.store.openAsk({
+      captainId,
+      taskKey: "BBPLUGINS-1",
+      kind: "ship",
+      head: first,
+      verdict: "passed",
+      text: "Merge BBPLUGINS-1: old title",
+      detail: `Review passed at ${first}.`,
+      options: ["Merge", "Hold"],
+      askedAt: 2_000,
+    });
+    // While superseding a1 awaits createComment, the user answers a2 Merge (with send failing so delivery stays null).
+    host.sendFails.add(captainId);
+    let raced = false;
+    host.tasks.onComment = async (body) => {
+      if (!raced && body.startsWith("Superseded: a1")) {
+        raced = true;
+        await run(host, ["ask", "resolve", "a2", "--answer", "Merge"]);
+      }
+    };
+
+    const result = await as(["verdict", "BBPLUGINS-1", "review", "findings", "--head", second]);
+
+    expect(result.exitCode).toBe(0);
+    expect(raced).toBe(true);
+    expect(host.server.store.ask("a1")).toMatchObject({
+      answer: "Superseded",
+      answeredBy: "captain",
+    });
+    expect(host.server.store.ask("a1")?.answerDeliveredAt).not.toBeNull();
+    // a2 kept the user's Merge, stayed undelivered for retry, and got no Superseded comment.
+    expect(host.server.store.ask("a2")).toMatchObject({
+      answer: "Merge",
+      answeredBy: "user",
+      answerDeliveredAt: null,
+    });
+    expect(
+      host.tasks.comments
+        .filter((comment) => comment.body.startsWith("Superseded:"))
+        .map((c) => c.body),
+    ).toEqual([
+      `Superseded: a1 does not match the recorded review findings at ${second}; a Merge on it grants nothing.`,
     ]);
   });
 });
@@ -1339,12 +1604,14 @@ describe("the Merge gate: only the Captain or the user acts for a Captain", () =
       id: "a1",
       kind: "ship",
       task: "BBPLUGINS-1",
+      head,
+      verdict: "passed",
       answer: "Merge",
       answeredBy: "user",
       detail: expect.stringContaining(`Review passed at ${head}.`),
     });
     expect((await as(["ask", "show", "a1"])).stdout).toBe(
-      "a1  answered  ship  BBPLUGINS-1  Merge  by user\n",
+      `a1  answered  ship  BBPLUGINS-1  @${head}  Merge  by user\n`,
     );
   });
 

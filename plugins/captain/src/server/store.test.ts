@@ -62,13 +62,17 @@ describe("Captain storage migration histories", () => {
   const routineRunId = "ALTER TABLE routine_runs ADD COLUMN automation_run_id TEXT";
   const routineRunIndex = `DROP INDEX routine_runs_by_routine;
    CREATE INDEX routine_runs_by_routine ON routine_runs (routine_id, at DESC, id DESC)`;
-  const taskOwners = MIGRATIONS.at(-1) ?? "";
-  const mainOrder = [answerer, routineRunId, routineRunIndex, taskOwners];
+  const taskOwners = MIGRATIONS[firstDivergentSlot + 3] ?? "";
+  const askHead = "ALTER TABLE asks ADD COLUMN head TEXT";
+  const askVerdict =
+    "ALTER TABLE asks ADD COLUMN verdict TEXT CHECK (verdict IN ('passed', 'skipped'))";
+  const mainOrder = [answerer, routineRunId, routineRunIndex, taskOwners, askHead, askVerdict];
   // Live: the routines branch ran at 21-22 before answered_by merged, which took 23.
-  const liveOrder = [routineRunId, routineRunIndex, answerer, taskOwners];
+  const liveOrder = [routineRunId, routineRunIndex, answerer, taskOwners, askHead, askVerdict];
 
-  test("task_owners is the last migration, after the routines and answered_by", () => {
+  test("ask head and verdict are the last migrations, after task_owners", () => {
     expect(taskOwners).toMatch(/^CREATE TABLE task_owners \(/u);
+    expect(MIGRATIONS.slice(-2)).toEqual([askHead, askVerdict]);
     expect(MIGRATIONS.length).toBe(firstDivergentSlot + mainOrder.length);
   });
 
@@ -76,14 +80,16 @@ describe("Captain storage migration histories", () => {
     { name: "fresh", deployed: null, expected: mainOrder },
     { name: "main after #238", deployed: [answerer], expected: mainOrder },
     { name: "main before task_owners", deployed: mainOrder.slice(0, 3), expected: mainOrder },
+    { name: "main before ask head/verdict", deployed: mainOrder.slice(0, 4), expected: mainOrder },
     { name: "live recovery", deployed: liveOrder.slice(0, 3), expected: liveOrder },
+    { name: "live before ask head/verdict", deployed: liveOrder.slice(0, 4), expected: liveOrder },
     {
       name: "routines before recovery",
       deployed: [routineRunId, routineRunIndex],
       expected: liveOrder,
     },
   ])(
-    "$name preserves migration slots, asks, routine runs and adoptions, and ends with task_owners",
+    "$name preserves migration slots, asks, routine runs and adoptions, and ends with ask head/verdict",
     ({ deployed, expected }) => {
       const { bb, harness } = createFakePluginHost({ pluginId: "captain" });
       onTestFinished(() => harness.lifecycle.dispose());
@@ -134,7 +140,12 @@ describe("Captain storage migration histories", () => {
           });
         }
         if (deployed.includes(answerer)) {
-          expect(store.ask("a1")).toMatchObject({ answer: "Yes", answeredBy: "user" });
+          expect(store.ask("a1")).toMatchObject({
+            answer: "Yes",
+            answeredBy: "user",
+            head: null,
+            verdict: null,
+          });
           expect(store.pendingAdoption("thr_old", "thr_captain")).toEqual({
             taskId: "task_1",
             taskKey: "BBP-1",
@@ -142,16 +153,19 @@ describe("Captain storage migration histories", () => {
         }
       }
 
+      const head = "a".repeat(40);
       const ask = store.openAsk({
         captainId: "thr_captain",
-        taskKey: null,
-        kind: "decision",
-        text: "Continue?",
+        taskKey: "BBP-2",
+        kind: "ship",
+        head,
+        verdict: "passed",
+        text: "Merge BBP-2",
         detail: "",
-        options: [],
+        options: ["Merge", "Hold"],
         askedAt: 4,
       });
-      store.answerAsk(ask.id, "Yes", "captain", 5);
+      expect(store.answerAsk(ask.id, "Yes", "captain", 5)).toBe(true);
       const run = store.recordRoutineRun({
         routineId: "r1",
         automationRunId: "arun_new",
@@ -171,7 +185,12 @@ describe("Captain storage migration histories", () => {
 
       const reopened = openStore(bb);
       expect(ledger()).toEqual(upgraded);
-      expect(reopened.ask(ask.id)).toMatchObject({ answer: "Yes", answeredBy: "captain" });
+      expect(reopened.ask(ask.id)).toMatchObject({
+        answer: "Yes",
+        answeredBy: "captain",
+        head,
+        verdict: "passed",
+      });
       expect(reopened.routineTestResult("r1", "arun_new")).toEqual(run);
       expect(reopened.pendingAdoption("thr_new", "thr_captain")).toEqual({
         taskId: "task_2",
@@ -180,6 +199,52 @@ describe("Captain storage migration histories", () => {
       expect(reopened.ownedTaskIds("thr_captain")).toEqual(new Set(["task_3"]));
     },
   );
+});
+
+test("answerAsk records answer and optional delivery atomically only while unanswered", async () => {
+  const host = await captainHost();
+  const store = host.server.store;
+  const open = store.openAsk({
+    captainId: "thr_c",
+    taskKey: "BBP-1",
+    kind: "ship",
+    head: "a".repeat(40),
+    verdict: "passed",
+    text: "Merge BBP-1",
+    detail: "Review passed.",
+    options: ["Merge", "Hold"],
+    askedAt: 1,
+  });
+  const answered = store.openAsk({
+    captainId: "thr_c",
+    taskKey: "BBP-1",
+    kind: "ship",
+    head: "b".repeat(40),
+    verdict: "passed",
+    text: "Merge BBP-1",
+    detail: "Review passed.",
+    options: ["Merge", "Hold"],
+    askedAt: 2,
+  });
+
+  expect(store.answerAsk(open.id, "Superseded", "captain", 10, { delivered: true })).toBe(true);
+  expect(store.ask(open.id)).toMatchObject({
+    answer: "Superseded",
+    answeredBy: "captain",
+    answeredAt: 10,
+    answerDeliveredAt: 10,
+  });
+
+  expect(store.answerAsk(answered.id, "Merge", "user", 20)).toBe(true);
+  expect(store.answerAsk(answered.id, "Superseded", "captain", 30, { delivered: true })).toBe(
+    false,
+  );
+  expect(store.ask(answered.id)).toMatchObject({
+    answer: "Merge",
+    answeredBy: "user",
+    answeredAt: 20,
+    answerDeliveredAt: null,
+  });
 });
 
 describe("routines", () => {
