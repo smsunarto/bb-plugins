@@ -189,16 +189,21 @@ function isFiltering(criteria: TaskMatchCriteria): boolean {
   );
 }
 
+export function parentIsForcedOpen(
+  parentId: string,
+  criteria: TaskMatchCriteria,
+  visibleChildren: ReadonlyMap<string, readonly Task[]>,
+): boolean {
+  return isFiltering(criteria) && (visibleChildren.get(parentId)?.length ?? 0) > 0;
+}
+
 export function parentIsOpen(
   parentId: string,
   expanded: readonly string[],
   criteria: TaskMatchCriteria,
   visibleChildren: ReadonlyMap<string, readonly Task[]>,
 ): boolean {
-  return (
-    expanded.includes(parentId) ||
-    (isFiltering(criteria) && (visibleChildren.get(parentId)?.length ?? 0) > 0)
-  );
+  return expanded.includes(parentId) || parentIsForcedOpen(parentId, criteria, visibleChildren);
 }
 
 export function taskMatches(task: Task, criteria: TaskMatchCriteria): boolean {

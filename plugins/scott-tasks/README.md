@@ -45,7 +45,7 @@ Held for a newer bb / Plugin SDK (live bb `0.50.1` runs `@get-bb/plugin-sdk`
   (`bbPluginSdk >=0.6.160`).
 - [#7875](https://github.com/get-bb/bb/pull/7875) (`bce7015f`): requires
   `experimental_BbHttpError` and server-branded SDK errors
-  (`bbPluginSdk >=0.6.167`).
+  (`bbPluginSdk >=0.6.173`).
 - [#8047](https://github.com/get-bb/bb/pull/8047) (`1c8e7434`): requires
   `PluginMentionSearchContext.experimental_signal` (`bbPluginSdk >=0.6.183`).
 - [#7956](https://github.com/get-bb/bb/pull/7956) (`29173ce7`): requires

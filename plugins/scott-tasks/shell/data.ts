@@ -3,7 +3,6 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import { useQuery, type QueryKey } from "@tanstack/react-query";
 import {
   inArray,
-  isNull,
   useLiveQuery,
   type Context,
   type InitialQueryBuilder,
@@ -119,18 +118,18 @@ export type ListTasks =
   | { phase: "failed"; error: string }
   | { phase: "ready"; tasks: Task[]; closedPending: boolean };
 
-/** Tasks with a live agent thread; `topLevelOnly` leaves out sub-tasks. */
-export function useActiveTasks({
-  topLevelOnly = false,
-  enabled = true,
-}: { topLevelOnly?: boolean; enabled?: boolean } = {}): ListTasks & { retry: () => void } {
+const NO_ACTIVE_TASKS: Task[] = [];
+
+/** Tasks with a live agent thread. */
+export function useActiveTasks({ enabled = true }: { enabled?: boolean } = {}): ListTasks & {
+  retry: () => void;
+} {
   const { links, byTaskId } = useActiveThreadLinks();
   const taskIds = useMemo(() => [...byTaskId.keys()].sort(), [byTaskId]);
   const runs = enabled && links.isReady;
-  const tasks = useTasksLiveQuery(["active-tasks", topLevelOnly, runs ? taskIds : null], (q) => {
+  const tasks = useTasksLiveQuery(["active-tasks", runs ? taskIds : null], (q) => {
     if (!runs) return undefined;
-    const active = q.from({ task: tasksCollection }).where(({ task }) => inArray(task.id, taskIds));
-    return topLevelOnly ? active.where(({ task }) => isNull(task.parentTaskId)) : active;
+    return q.from({ task: tasksCollection }).where(({ task }) => inArray(task.id, taskIds));
   });
   const retry = () => {
     links.retry();
@@ -144,7 +143,7 @@ export function useActiveTasks({
     };
   }
   if (!links.isReady || !tasks.isReady) return { phase: "loading", retry };
-  return { phase: "ready", tasks: tasks.data ?? [], closedPending: false, retry };
+  return { phase: "ready", tasks: tasks.data ?? NO_ACTIVE_TASKS, closedPending: false, retry };
 }
 
 export function useMentionItems() {

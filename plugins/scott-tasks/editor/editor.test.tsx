@@ -148,13 +148,34 @@ describe("links", () => {
     "[run](javascript:alert(1))",
     '<a href="java\nscript:alert(1)">run</a>',
     '<a href=" javascript:alert(1)">run</a>',
-  ])("never renders a script link: %s", (markdown) => {
+    "[run](ms-msdt:/id%20PCWDiagnostic)",
+    "[edit](vscode-insiders://file/etc/passwd)",
+    "[custom](custom-scheme:payload)",
+    "[data](data:text/html,<script>alert(1)</script>)",
+    "[phish](//evil.com/phish)",
+    '<a href="/\\evil.com/phish">phish</a>',
+    '<a href="\\\\evil.com/phish">phish</a>',
+  ])("never renders an unsafe link: %s", (markdown) => {
     const editor = new Editor({
       extensions: createEditorExtensions(),
       content: markdown,
     });
     try {
       expect(editor.getHTML()).not.toContain("href");
+    } finally {
+      editor.destroy();
+    }
+  });
+
+  it("locks target and rel on raw HTML anchor tags", () => {
+    const editor = new Editor({
+      extensions: createEditorExtensions(),
+      content: '<a href="https://example.com/guide" target="_self" rel="opener">Guide</a>',
+    });
+    try {
+      const anchor = editor.view.dom.querySelector("a");
+      expect(anchor?.getAttribute("target")).toBe("_blank");
+      expect(anchor?.getAttribute("rel")).toBe("noopener noreferrer nofollow");
     } finally {
       editor.destroy();
     }
@@ -176,6 +197,29 @@ describe("links", () => {
       expect(slot.navigateCalls).toEqual([{ method: "openUrl", url: "https://example.com/guide" }]);
     },
   );
+
+  it("prevents default navigation when openUrl declines or a relative link has no handler", async () => {
+    const slot = renderSlot(
+      { component: TasksEditor },
+      {
+        value: "See [Guide](https://example.com/guide) and [Setup](docs/setup.md).",
+        onChange: () => undefined,
+        readOnly: true,
+      },
+      { openUrl: () => false },
+    );
+    const guideLink = await slot.findByRole("link", { name: "Guide" });
+    const guideClick = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    guideLink.dispatchEvent(guideClick);
+    expect(guideClick.defaultPrevented).toBe(true);
+    expect(slot.navigateCalls).toEqual([{ method: "openUrl", url: "https://example.com/guide" }]);
+
+    const setupLink = await slot.findByRole("link", { name: "Setup" });
+    const setupClick = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    setupLink.dispatchEvent(setupClick);
+    expect(setupClick.defaultPrevented).toBe(true);
+    expect(slot.navigateCalls).toHaveLength(1);
+  });
 
   it.each([{ shiftKey: true }, { button: 2 }])(
     "leaves selection gestures on a link alone (%o)",

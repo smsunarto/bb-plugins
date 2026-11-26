@@ -1,6 +1,7 @@
 import { memo, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { Label, Project, Task, TaskThread } from "../../shared/contract.js";
 import { Badge } from "@/components/ui/badge";
+import { CompactButton } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { StatusDot } from "@/components/ui/status-dot";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -191,6 +192,8 @@ export const TaskRow = memo(function TaskRow({
     >
       <div
         data-task-key={task.key}
+        data-child={child || undefined}
+        data-muted={muted || undefined}
         onKeyDown={(event) => {
           // Menus portal out of the row; their events still bubble through React.
           if (
@@ -211,6 +214,7 @@ export const TaskRow = memo(function TaskRow({
         aria-busy={pending || undefined}
         className={cn(
           "group relative grid min-h-14 w-full grid-cols-[2.75rem_minmax(0,1fr)] grid-rows-[1.75rem_1.75rem] items-center gap-x-2 px-3 text-left hover:bg-state-hover pointer-coarse:grid-rows-[1.5rem_2.75rem]",
+          subTasks !== undefined && "pointer-coarse:grid-rows-[2.75rem_2.75rem]",
           "pointer-fine:@md:h-9 pointer-fine:@md:min-h-9 pointer-fine:@md:grid-cols-[1.25rem_var(--task-key-width,3.7rem)_1.25rem_minmax(0,1fr)_minmax(0,9rem)_2.25rem_4.25rem] pointer-fine:@md:grid-rows-1 pointer-fine:@md:pl-7 pointer-fine:@md:pr-6",
           child && "pl-9 pointer-fine:@md:pl-12",
           selected && "bg-surface-selected",
@@ -268,22 +272,29 @@ export const TaskRow = memo(function TaskRow({
           onOpenChange={(next) => setOpenMenu(next ? "status" : null)}
           className="col-start-1 row-start-1 justify-self-center pointer-coarse:row-span-2 pointer-coarse:size-11 pointer-coarse:self-start pointer-coarse:pb-4 pointer-fine:@md:col-start-3"
         />
-        <span className="pointer-events-none relative col-start-2 row-start-1 flex min-w-0 items-center gap-1.5 pointer-coarse:self-end pointer-fine:@md:col-start-4">
+        <span
+          className={cn(
+            "pointer-events-none relative col-start-2 row-start-1 flex min-w-0 items-center gap-1.5 pointer-fine:@md:col-start-4",
+            subTasks === undefined ? "pointer-coarse:self-end" : "pointer-coarse:self-center",
+          )}
+        >
           <span className="min-w-0 truncate text-sm font-semibold pointer-fine:@md:text-[0.9375rem] pointer-fine:@md:font-medium">
             {task.title}
           </span>
           {subTasks !== undefined ? (
-            <button
+            <CompactButton
               type="button"
+              variant="outline"
+              size="xs"
               aria-expanded={subTasksOpen}
               aria-label={`${subTasksOpen ? "Collapse" : "Expand"} sub-tasks of ${task.key}`}
               disabled={subTasksLocked}
               onClick={() => onToggleSubTasks?.(task.id)}
-              className="pointer-events-auto relative z-10 inline-flex h-5 shrink-0 items-center gap-0.5 rounded-sm border border-border-hairline px-1.5 text-2xs tabular-nums text-muted-foreground hover:bg-state-hover hover:text-foreground disabled:opacity-70 max-md:pointer-coarse:h-11 max-md:pointer-coarse:min-w-11 max-md:pointer-coarse:justify-center"
+              className="pointer-events-auto relative z-10 h-5 shrink-0 gap-0.5 px-1.5 text-2xs tabular-nums text-muted-foreground disabled:opacity-70 pointer-coarse:h-11 pointer-coarse:min-w-11"
             >
               <Icon name={subTasksOpen ? "ChevronDown" : "ChevronRight"} className="size-3" />
               {subTasks.done}/{subTasks.total}
-            </button>
+            </CompactButton>
           ) : null}
         </span>
         <span className="pointer-events-none relative col-start-2 row-start-2 flex max-w-[calc(100%-4.25rem)] min-w-0 items-center gap-1 self-center justify-self-end text-2xs text-muted-foreground pointer-fine:@md:col-span-3 pointer-fine:@md:col-start-5 pointer-fine:@md:row-start-1 pointer-fine:@md:grid pointer-fine:@md:w-full pointer-fine:@md:max-w-none pointer-fine:@md:grid-cols-[minmax(0,1fr)_2.25rem_4.25rem] pointer-fine:@md:self-center">

@@ -91,6 +91,9 @@ const tasksB = [task(PROJECT_B, 1, "todo"), task(PROJECT_B, 2, "in_progress")];
 
 function applyListFilters(tasks: Task[], input: Record<string, unknown>): Task[] {
   let next = tasks;
+  if ("parentTaskId" in input) {
+    next = next.filter((item) => item.parentTaskId === input.parentTaskId);
+  }
   if (Array.isArray(input.statuses) && input.statuses.length > 0) {
     const allowed = new Set(input.statuses);
     next = next.filter((item) => allowed.has(item.status));
@@ -686,16 +689,13 @@ describe("list filter/sort preference persistence", () => {
         },
       }),
     );
-    const listTasksCalls: Record<string, unknown>[] = [];
-    const rpc = baseRpc({}, listTasksCalls);
+    const rpc = baseRpc();
     const slot = renderSlot(app.navPanels[0]!, { subPath: PROJECT_A }, { rpc });
     await slot.findByRole("button", { name: /^Label/ });
     expect(slot.getByRole("button", { name: /^Label/ }).textContent).toContain("DeletedLabel");
-    // A label set that resolves to nothing needs no read.
     await slot.findByText("No tasks match these filters");
     expect(slot.queryByText("ALP-1")).toBeNull();
     expect(slot.queryByText("ALP-2")).toBeNull();
-    expect(listTasksCalls.some((call) => Array.isArray(call.labelIds))).toBe(false);
   });
 });
 

@@ -235,6 +235,20 @@ export function ListFilterBar({
             ) : null}
           </CompactButton>
         </CollapsibleTrigger>
+        {hasActiveFilters(filters) || search !== "" ? (
+          <CompactButton
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              onChange(EMPTY_FILTERS);
+              onSearchChange("");
+            }}
+            className="shrink-0 gap-1 text-muted-foreground max-md:pointer-coarse:h-11"
+          >
+            <Icon name="X" className="size-3" />
+            Clear
+          </CompactButton>
+        ) : null}
         <span className="ml-auto hidden whitespace-nowrap text-2xs tabular-nums text-muted-foreground @md:inline">
           {taskCount === undefined ? "" : `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`}
         </span>
@@ -282,20 +296,6 @@ export function ListFilterBar({
               selectedValues={filters.labelNames}
               onChange={(labelNames) => onChange({ ...filters, labelNames })}
             />
-          ) : null}
-          {hasActiveFilters(filters) || search !== "" ? (
-            <CompactButton
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                onChange(EMPTY_FILTERS);
-                onSearchChange("");
-              }}
-              className="shrink-0 gap-1 text-muted-foreground max-md:pointer-coarse:h-11"
-            >
-              <Icon name="X" className="size-3" />
-              Clear
-            </CompactButton>
           ) : null}
         </div>
       </CollapsibleContent>

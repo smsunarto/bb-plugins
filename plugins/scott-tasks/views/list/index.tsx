@@ -35,7 +35,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { isImeComposing, isNonImeKey } from "@/lib/ime-keyboard";
+import { isImeComposing } from "@/lib/ime-keyboard";
 import { useListTasks } from "./data.js";
 import {
   EMPTY_FILTERS,
@@ -67,7 +67,7 @@ import {
   groupTasksByStatus,
   labelFilterOptions,
   listTaskCount,
-  parentIsOpen,
+  parentIsForcedOpen,
   selectedLabelIds,
   STATUS_LABELS,
   taskMatches,
@@ -81,6 +81,7 @@ import { isBareKey } from "./property-menus.js";
 const NO_LABELS: readonly Label[] = [];
 const NO_TASKS: readonly Task[] = [];
 const NO_PROJECTS: readonly Project[] = [];
+const EMPTY_STATUSES: readonly TaskStatus[] = [];
 const BULK_STATUS_CONCURRENCY = 4;
 
 /** A row with an optimistic edit the server has not confirmed yet. */
@@ -109,6 +110,7 @@ interface FlatRow {
   task: Task;
   child: boolean;
   open: boolean;
+  locked: boolean;
 }
 
 function readRow(container: HTMLElement, key: string) {
@@ -186,6 +188,10 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
       filters: backlogOnly ? { ...next, statuses: current.filters.statuses } : next,
     }));
   };
+  const handleSearchChange = useCallback((next: string) => {
+    setSelection(new Set());
+    setSearch(next);
+  }, []);
   const setSort = (next: TaskSort) => {
     updatePreference((current) => ({ ...current, sort: next }));
   };
@@ -267,19 +273,22 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
   const loadedTasks = tasksQuery.phase === "ready" ? tasksQuery.tasks : NO_TASKS;
   const activeIds = tasksQuery.phase === "ready" ? tasksQuery.activeIds : null;
   const topLevelTasks = useMemo(
-    () => loadedTasks.filter((task) => task.parentTaskId === null),
-    [loadedTasks],
+    () =>
+      loadedTasks.filter(
+        (task) => task.parentTaskId === null && (!backlogOnly || task.status === "backlog"),
+      ),
+    [loadedTasks, backlogOnly],
   );
   const allChildrenByParent = useMemo(() => childrenByParent(loadedTasks), [loadedTasks]);
   const matchCriteria = useMemo(
     (): TaskMatchCriteria => ({
-      statuses,
+      statuses: backlogOnly ? EMPTY_STATUSES : filters.statuses,
       priorities: filters.priorities,
       labelIds,
       search,
       activeIds,
     }),
-    [statuses, filters.priorities, labelIds, search, activeIds],
+    [backlogOnly, filters.statuses, filters.priorities, labelIds, search, activeIds],
   );
   const { visible: visibleChildren, totals: childTotals } = useMemo(
     () => childrenForList(allChildrenByParent, matchCriteria, sort),
@@ -289,12 +298,14 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
     () => displayRows(topLevelTasks, matchCriteria, visibleChildren),
     [topLevelTasks, matchCriteria, visibleChildren],
   );
+  const emptyWhilePending =
+    tasksQuery.phase === "ready" && displayTasks.length === 0 && tasksQuery.closedPending;
   const taskCount = useMemo(
     () =>
-      tasksQuery.phase === "ready"
+      tasksQuery.phase === "ready" && !emptyWhilePending
         ? listTaskCount(displayTasks, matchCriteria, visibleChildren)
         : undefined,
-    [tasksQuery.phase, displayTasks, matchCriteria, visibleChildren],
+    [tasksQuery.phase, emptyWhilePending, displayTasks, matchCriteria, visibleChildren],
   );
   const widestKeys = useMemo(() => widestKeysByPrefix(loadedTasks), [loadedTasks]);
   const groups = useMemo(
@@ -302,11 +313,12 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
       groupTasksByStatus(sortTasks(displayTasks, sort)).map((group) => {
         const rows: FlatRow[] = [];
         for (const task of group.tasks) {
-          const open = parentIsOpen(task.id, expanded, matchCriteria, visibleChildren);
-          rows.push({ task, child: false, open });
+          const locked = parentIsForcedOpen(task.id, matchCriteria, visibleChildren);
+          const open = locked || expanded.includes(task.id);
+          rows.push({ task, child: false, open, locked });
           if (!open) continue;
           for (const child of visibleChildren.get(task.id) ?? []) {
-            rows.push({ task: child, child: true, open: false });
+            rows.push({ task: child, child: true, open: false, locked: false });
           }
         }
         return { status: group.status, count: group.tasks.length, rows };
@@ -321,8 +333,8 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
   const openTaskRef = useRef<(taskKey: string) => void>(() => {});
   const openTask = useCallback((taskKey: string) => openTaskRef.current(taskKey), []);
   const selectedTasks = useMemo(
-    () => loadedTasks.filter((task) => selection.has(task.id)),
-    [selection, loadedTasks],
+    () => orderedTasks.filter((task) => selection.has(task.id)),
+    [selection, orderedTasks],
   );
   const bulkStatusPending = useTasksUi((state) => state.bulkStatusPending);
   const setBulkStatus = async (status: TaskStatus) => {
@@ -399,11 +411,16 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
   });
 
   const viewport = useRowWindowViewport(scrollRef, groups);
+  const anchorGroups = useMemo(
+    () =>
+      groups.map((group) => ({
+        status: group.status,
+        tasks: group.rows.map((row) => row.task),
+      })),
+    [groups],
+  );
   const anchorLayout = {
-    groups: groups.map((group) => ({
-      status: group.status,
-      tasks: group.rows.map((row) => row.task),
-    })),
+    groups: anchorGroups,
     collapsed,
     rowHeight: viewport.rowHeight,
     headerHeight: viewport.headerHeight,
@@ -510,17 +527,12 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
       const checkboxRow = target.matches('[role="checkbox"]')
         ? target.closest<HTMLElement>("[data-task-key]")
         : null;
-      const propertyRow = target.matches(
-        '[aria-keyshortcuts="S"], [aria-keyshortcuts="P"], [aria-keyshortcuts="L"]',
-      )
-        ? target.closest<HTMLElement>("[data-task-key]")
-        : null;
       const rowKey =
-        target.dataset.openTask ?? checkboxRow?.dataset.taskKey ?? propertyRow?.dataset.taskKey;
+        target.dataset.openTask ?? target.closest<HTMLElement>("[data-task-key]")?.dataset.taskKey;
       const page = listRef.current?.closest("[data-scott-tasks-page]");
       if (target !== document.body && !page?.contains(target)) return;
       if (hasOpenOverlay()) return;
-      if (isNonImeKey(event, "Escape") && selectedTasks.length > 0) {
+      if (event.key === "Escape" && selectedTasks.length > 0) {
         event.preventDefault();
         setSelection(new Set());
         if (checkboxRow && rowKey) readRow(container, rowKey)?.focus({ preventScroll: true });
@@ -549,7 +561,7 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
         description={tasksQuery.error}
       />
     );
-  } else if (tasksQuery.phase === "loading") {
+  } else if (tasksQuery.phase === "loading" || emptyWhilePending) {
     body = <LoadingRows />;
   } else if (displayTasks.length === 0) {
     if (filtered) {
@@ -645,7 +657,7 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
             {!isCollapsed ? (
               <>
                 {hiddenAbove > 0 ? <div aria-hidden style={{ height: hiddenAbove }} /> : null}
-                {group.rows.slice(start, end).map(({ task, child, open }) => (
+                {group.rows.slice(start, end).map(({ task, child, open, locked }) => (
                   <TaskRow
                     key={task.id}
                     task={task}
@@ -653,7 +665,7 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
                     muted={!taskMatches(task, matchCriteria)}
                     subTasks={child ? undefined : childTotals.get(task.id)}
                     subTasksOpen={open}
-                    subTasksLocked={open && !expanded.includes(task.id)}
+                    subTasksLocked={locked}
                     onToggleSubTasks={child ? undefined : toggleSubTasks}
                     activeThreads={activeThreads.get(task.id)}
                     project={projectsById.get(task.projectId)}
@@ -685,7 +697,7 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
         filters={visibleFilters}
         onChange={setFilters}
         search={search}
-        onSearchChange={setSearch}
+        onSearchChange={handleSearchChange}
         sort={sort}
         onSortChange={setSort}
         labelOptions={labelOptions}

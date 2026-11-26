@@ -162,5 +162,10 @@ describe("sub-task matching and widest keys", () => {
     expect(listTaskCount([parent], criteria, visible)).toBe(1);
     expect(listTaskCount([parent], emptyCriteria, visible)).toBe(1);
     expect(widestKeysByPrefix([parent, doneChild, otherChild])).toEqual(["TSK-12"]);
+
+    const bothMatch: TaskMatchCriteria = { ...emptyCriteria, statuses: ["todo"] };
+    const { visible: todoVisible } = childrenForList(grouped, bothMatch, "manual");
+    expect(displayRows([parent], bothMatch, todoVisible)).toHaveLength(1);
+    expect(listTaskCount([parent], bothMatch, todoVisible)).toBe(2);
   });
 });
