@@ -122,11 +122,6 @@
   {
     "file": "plugins/genui/ui/components/Acceptance.tsx",
     "rule": "hairline-literal",
-    "source": "{criterion.required ? null : <span className=\"ml-1 rounded-sm bg-surface-recessed px-1 text-[10.5px] font-normal text-muted-foreground\">optional</span>}"
-  },
-  {
-    "file": "plugins/genui/ui/components/Acceptance.tsx",
-    "rule": "hairline-literal",
     "source": "{criterion.required ? null : <span className=\"ml-1 rounded-sm bg-surface-recessed px-1 text-[10.5px] text-muted-foreground\">optional</span>}"
   },
   {
@@ -346,11 +341,6 @@
   },
   {
     "file": "plugins/genui/ui/components/Dependencies.tsx",
-    "rule": "edge-opacity",
-    "source": "<ul className=\"m-0 flex min-w-0 list-none flex-col divide-y divide-border/50 p-0\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/Dependencies.tsx",
     "rule": "hairline-literal",
     "source": "<span className=\"shrink-0 font-mono text-[12.5px] leading-5 text-foreground\">{item.name}</span>"
   },
@@ -358,11 +348,6 @@
     "file": "plugins/genui/ui/components/Dependencies.tsx",
     "rule": "hairline-literal",
     "source": "const label = <span className=\"min-w-0 truncate font-mono text-[12.5px] leading-5 text-foreground\">{name}</span>;"
-  },
-  {
-    "file": "plugins/genui/ui/components/Dependencies.tsx",
-    "rule": "universal-bucket",
-    "source": "<ul className=\"m-0 flex min-w-0 list-none flex-col divide-y divide-border/50 p-0\">"
   },
   {
     "file": "plugins/genui/ui/components/EditableTable.tsx",
@@ -602,11 +587,6 @@
   {
     "file": "plugins/genui/ui/components/Transcript.tsx",
     "rule": "edge-opacity",
-    "source": "<li key={comparison.track} className=\"flex min-w-0 items-baseline gap-2 border-b border-border/40 py-1 text-xs leading-5 last:border-b-0\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/Transcript.tsx",
-    "rule": "edge-opacity",
     "source": "className=\"absolute bottom-0 h-full border-l border-border/70 pl-1 text-[10.5px] leading-4 tabular-nums text-muted-foreground\""
   },
   {
@@ -728,11 +708,6 @@
     "file": "plugins/genui/ui/components/Treemap.tsx",
     "rule": "raw-color",
     "source": "return `color-mix(in oklab, ${color} ${group < GROUP_COLORS.length ? amount : Math.round(amount * 0.6)}%, var(--background))`;"
-  },
-  {
-    "file": "plugins/genui/ui/components/Video.tsx",
-    "rule": "universal-bucket",
-    "source": "<figure className=\"m-0 min-w-0 space-y-2\">"
   },
   {
     "file": "plugins/genui/ui/components/Waterfall.tsx",
@@ -1042,11 +1017,6 @@
   {
     "file": "plugins/genui/ui/components/decisions.tsx",
     "rule": "edge-opacity",
-    "source": "<ol aria-label=\"Steps\" className=\"m-0 flex min-w-0 list-none flex-col divide-y divide-border/60 p-0\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/decisions.tsx",
-    "rule": "edge-opacity",
     "source": "<p className=\"m-0 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/60 px-3 py-2 text-[11px] leading-4 text-muted-foreground\">"
   },
   {
@@ -1078,11 +1048,6 @@
     "file": "plugins/genui/ui/components/decisions.tsx",
     "rule": "raw-color",
     "source": "return `color-mix(in oklch, var(--color-timeline-accent, var(--primary)) ${Math.round(4 + ratio * 34)}%, transparent)`;"
-  },
-  {
-    "file": "plugins/genui/ui/components/decisions.tsx",
-    "rule": "universal-bucket",
-    "source": "<ol aria-label=\"Steps\" className=\"m-0 flex min-w-0 list-none flex-col divide-y divide-border/60 p-0\">"
   },
   {
     "file": "plugins/genui/ui/components/diagram.tsx",
@@ -1220,11 +1185,6 @@
     "source": "lit && !selected && \"ring-[var(--color-timeline-accent,var(--primary))]\","
   },
   {
-    "file": "plugins/genui/ui/components/references.tsx",
-    "rule": "universal-bucket",
-    "source": "<DialogHeader className=\"min-w-0 gap-1 space-y-0 pr-6\">"
-  },
-  {
     "file": "plugins/genui/ui/components/threads.tsx",
     "rule": "arbitrary-edge",
     "source": "live && \"animate-pulse shadow-[0_0_0_3px_color-mix(in_oklch,var(--color-timeline-accent,var(--primary))_22%,transparent)] motion-reduce:animate-none\","
@@ -1276,16 +1236,6 @@
   },
   {
     "file": "plugins/genui/ui/components/tracking.tsx",
-    "rule": "edge-opacity",
-    "source": "<ul className=\"m-0 flex min-w-0 list-none flex-col divide-y divide-border/60 p-0\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/tracking.tsx",
-    "rule": "edge-opacity",
-    "source": "<ul className=\"m-0 flex min-w-0 list-none flex-col divide-y divide-border/60 p-0\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/tracking.tsx",
     "rule": "hairline-literal",
     "source": "<div className=\"relative h-6 min-w-0 border-b border-border text-[10.5px] tabular-nums text-muted-foreground\" aria-hidden>"
   },
@@ -1293,11 +1243,6 @@
     "file": "plugins/genui/ui/components/tracking.tsx",
     "rule": "hairline-literal",
     "source": "<span className=\"inline-flex h-5 items-center pl-1 text-[10.5px] tabular-nums text-muted-foreground\">+{names.length - shown.length}</span>"
-  },
-  {
-    "file": "plugins/genui/ui/components/tracking.tsx",
-    "rule": "hairline-literal",
-    "source": "<span className=\"inline-flex min-w-0 max-w-[11rem] items-center gap-1 rounded-full border border-border px-1 text-[10.5px] leading-[18px] text-muted-foreground\">"
   },
   {
     "file": "plugins/genui/ui/components/tracking.tsx",
@@ -1338,16 +1283,6 @@
     "file": "plugins/genui/ui/components/tracking.tsx",
     "rule": "raw-color",
     "source": "style={{ left: `${left}%`, width: `${width}%`, background: `color-mix(in oklch, ${color} 24%, transparent)` }}"
-  },
-  {
-    "file": "plugins/genui/ui/components/tracking.tsx",
-    "rule": "universal-bucket",
-    "source": "<ul className=\"m-0 flex min-w-0 list-none flex-col divide-y divide-border/60 p-0\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/tracking.tsx",
-    "rule": "universal-bucket",
-    "source": "<ul className=\"m-0 flex min-w-0 list-none flex-col divide-y divide-border/60 p-0\">"
   },
   {
     "file": "plugins/genui/ui/components/viewer.tsx",

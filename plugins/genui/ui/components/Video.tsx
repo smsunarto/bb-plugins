@@ -146,7 +146,7 @@ function VideoFile({
     );
 
   return (
-    <figure className="m-0 min-w-0 space-y-2">
+    <figure className="m-0 flex min-w-0 flex-col gap-2">
       {playback.status === "loading" ? (
         <output
           style={{ aspectRatio: size === null ? "16 / 9" : `${size[0]} / ${size[1]}` }}

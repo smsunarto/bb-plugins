@@ -3,8 +3,25 @@ import {
   makePluginAgentConfigurationContext,
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import plugin from "./server";
+
+describe("zero-argument calls", () => {
+  it("accept null, nothing, or an empty object", async () => {
+    const host = createFakePluginHost({ pluginId: "genui" });
+    // Disposing removes the fake host's storage dir.
+    onTestFinished(() => host.harness.lifecycle.dispose());
+    await plugin(host.bb);
+    for (const input of [null, undefined, {}]) {
+      expect(await host.harness.behavior.callRpc("gallery_list", input as never)).toMatchObject({
+        names: expect.any(Array),
+      });
+      expect(await host.harness.behavior.callRpc("sketch_font", input as never)).toMatchObject({
+        dataUrl: expect.stringMatching(/^data:/),
+      });
+    }
+  });
+});
 
 describe("the plugin's settings", () => {
   it("lists Animations, on by default, beside Web lookups and Repair broken UI", async () => {
@@ -243,6 +260,46 @@ describe("repairing a reply whose UI block fails", () => {
       await idle(BROKEN);
       await idle(BROKEN.replace("Here are", "Next"));
       expect(sent()).toHaveLength(2);
+    } finally {
+      await host.harness.lifecycle.dispose();
+    }
+  });
+
+  it("returns before hashing or reading storage for a reply without a ```ui block once the thread's state is known", async () => {
+    const { host, idle, sent } = await setup();
+    try {
+      const reads = vi.spyOn(host.bb.storage.kv, "get");
+      await idle("First reply."); // the thread's state, read once
+      expect(reads).toHaveBeenCalledTimes(1);
+      await idle("No blocks here.");
+      await idle(null);
+      await idle("A ```ui mention inline, not a fence.");
+      expect(reads).toHaveBeenCalledTimes(1);
+      await idle(BROKEN);
+      expect(reads).toHaveBeenCalledTimes(2);
+      expect(sent()).toHaveLength(1);
+      // A repair is pending: its answer is read even without a block.
+      await idle("Done, fixed.");
+      expect(reads).toHaveBeenCalledTimes(3);
+      await idle("Nothing else.");
+      expect(reads).toHaveBeenCalledTimes(3);
+      await idle(BROKEN.replace("Here are", "Later"));
+      expect(sent()).toHaveLength(2);
+    } finally {
+      await host.harness.lifecycle.dispose();
+    }
+  });
+
+  it("reads a repair asked before a restart, so its answer is never repaired", async () => {
+    const { host, idle, sent } = await setup();
+    try {
+      await host.bb.storage.kv.set("repair:thr_person", { asked: "an earlier process's reply" });
+      await idle("Here it is, fixed."); // the answer, though it holds no block
+      expect(await host.bb.storage.kv.get("repair:thr_person")).toMatchObject({
+        answered: expect.any(String),
+      });
+      await idle(BROKEN);
+      expect(sent()).toHaveLength(1);
     } finally {
       await host.harness.lifecycle.dispose();
     }

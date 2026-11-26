@@ -44,7 +44,7 @@ import {
   sketchFontDataUrl,
 } from "./data-source";
 import { checkApp, MAX_APP_CHARS } from "./core/appLint";
-import { brokenUiBlocks, checkSpec, renderReplyMarkdown } from "./fallback";
+import { brokenUiBlocks, checkSpec, mayHaveUiBlock, renderReplyMarkdown } from "./fallback";
 import type { Value } from "./core/types";
 import {
   MAX_PATH_FILTERS,
@@ -193,8 +193,9 @@ export const rpcContract = defineRpcContract({
     output: z.object({ markdown: z.string() }),
   },
   // The UI gallery page: example specs in gallery/, which load files from gallery/.
+  // Zero-argument calls: BB's CLI and older clients send null or nothing.
   gallery_list: {
-    input: z.object({}),
+    input: z.object({}).nullish(),
     output: z.object({ names: z.array(z.string()) }),
   },
   gallery_get: {
@@ -223,7 +224,7 @@ export const rpcContract = defineRpcContract({
   },
   // Excalifont for Excalidraw-style diagrams (Diagram), as a data URL.
   sketch_font: {
-    input: z.object({}),
+    input: z.object({}).nullish(),
     output: z.object({ dataUrl: z.string() }),
   },
   // Web lookups (web/lookups.ts); each answers with a failure value when webLookups is off.
@@ -414,19 +415,45 @@ export default async function plugin(bb: BbPluginApi) {
   // agent answers a repair, so the next reply, whatever it holds, is that
   // answer and is never repaired; then `{answered}`, so the same idle
   // delivered again does nothing.
+  //
+  // Most idles end on a reply without a ```ui block and no repair pending:
+  // those return before hashing or touching storage. `loaded` holds threads
+  // whose stored state this process has read (it alone writes it), and
+  // `pending` those of them holding `{asked}`. Bounded; oldest forgotten first.
+  const loaded = new Set<string>();
+  const pending = new Set<string>();
+  const markLoaded = (threadId: string, asked: boolean) => {
+    loaded.delete(threadId);
+    loaded.add(threadId);
+    if (loaded.size > MAX_PERSON_THREADS) {
+      const oldest = loaded.values().next().value!;
+      loaded.delete(oldest);
+      pending.delete(oldest);
+    }
+    if (asked) pending.add(threadId);
+    else pending.delete(threadId);
+  };
   bb.events.on("thread.idle", async ({ thread, lastAssistantText }) => {
     if (!repairThreads.has(thread.id)) return;
+    if (
+      loaded.has(thread.id) &&
+      !pending.has(thread.id) &&
+      (lastAssistantText === null || !mayHaveUiBlock(lastAssistantText))
+    )
+      return;
     const stateKey = `repair:${thread.id}`;
     const reply = lastAssistantText === null ? null : replyKey(lastAssistantText);
     const state = await bb.storage.kv.get<RepairState>(stateKey);
+    markLoaded(thread.id, state?.asked !== undefined);
     if (reply !== null && (state?.asked === reply || state?.answered === reply)) return;
     if (state?.asked !== undefined) {
       if (reply === null) await bb.storage.kv.delete(stateKey);
       else await bb.storage.kv.set(stateKey, { answered: reply } satisfies RepairState);
+      markLoaded(thread.id, false);
       return;
     }
-    if (lastAssistantText === null || reply === null || !(await repairSettings.get()).uiRepair)
-      return;
+    if (lastAssistantText === null || reply === null || !mayHaveUiBlock(lastAssistantText)) return;
+    if (!(await repairSettings.get()).uiRepair) return;
     const broken = brokenUiBlocks(lastAssistantText);
     if (broken.length === 0) return;
     try {
@@ -440,6 +467,7 @@ export default async function plugin(bb: BbPluginApi) {
       if (latest?.type !== "turn/completed" || latest.data.status !== "completed") return;
       const blocks = broken.map(({ block, errors }) => `Block ${block}:\n${errors}`).join("\n");
       await bb.storage.kv.set(stateKey, { asked: reply } satisfies RepairState);
+      markLoaded(thread.id, true);
       try {
         await bb.sdk.threads.send({
           threadId: thread.id,
@@ -456,6 +484,7 @@ export default async function plugin(bb: BbPluginApi) {
       } catch (error) {
         // Not asked, so the next reply is not an answer to a repair.
         await bb.storage.kv.delete(stateKey);
+        markLoaded(thread.id, false);
         throw error;
       }
     } catch (error) {

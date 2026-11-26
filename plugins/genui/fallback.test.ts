@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DataRequest, LoadedData } from "./core";
-import { checkSpec, renderReplyMarkdown } from "./fallback";
+import { brokenUiBlocks, checkSpec, mayHaveUiBlock, renderReplyMarkdown } from "./fallback";
 import { compile, evaluate, initialState } from "./core";
 import { localImages } from "./core/markdown";
 
@@ -168,4 +168,32 @@ it("checks videos after input changes and posters through the image loader", asy
   expect(images).toEqual(["poster.png"]);
   expect(result.report).toContain("missing.mp4: file not found");
   expect(result.report).toContain("Open in BB to play");
+});
+
+describe("mayHaveUiBlock", () => {
+  const broken = 'Card("Plan", [Choice("Plan", ["Basic", "Pro"])])';
+  it("finds every fence brokenUiBlocks reads", () => {
+    for (const text of [
+      `Intro\n\`\`\`ui\n${broken}\n\`\`\``,
+      `\`\`\` ui\n${broken}\n\`\`\``,
+      `   \`\`\`\`UI\n${broken}\n\`\`\`\``,
+      `~~~ui\n${broken}\n~~~`,
+    ]) {
+      expect(brokenUiBlocks(text)).toHaveLength(1);
+      expect(mayHaveUiBlock(text)).toBe(true);
+    }
+  });
+
+  it("passes over replies brokenUiBlocks would find nothing in", () => {
+    for (const text of [
+      "No blocks here.",
+      "Inline ```ui mention, not a fence.",
+      `\`\`\`uikit\n${broken}\n\`\`\``,
+      `\`\`\`app\n<p>hi</p>\n\`\`\``,
+      `    \`\`\`ui\n    ${broken}\n    \`\`\``,
+    ]) {
+      expect(brokenUiBlocks(text)).toEqual([]);
+      expect(mayHaveUiBlock(text)).toBe(false);
+    }
+  });
 });

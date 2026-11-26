@@ -182,6 +182,7 @@ export function openSourceStore(bb: BbPluginApi) {
   let watcher: FSWatcher | null = null;
   let watchTimer: ReturnType<typeof setTimeout> | null = null;
   let watching = false;
+  let diskDirty = true;
   let disposed = false;
 
   // Serialize all disk reads/writes and reloads through one queue.
@@ -348,11 +349,13 @@ export function openSourceStore(bb: BbPluginApi) {
     if (walked.tooLarge.length > 0)
       bb.log.warn(`source: skipped oversized files: ${walked.tooLarge.slice(0, 10).join(", ")}`);
     if (walked.truncated) {
+      diskDirty = true;
       bb.log.warn(
         `source: sync cap reached (${Object.keys(walked.manifest).length} files); keeping previous state to avoid partial truncation`,
       );
       return { changed: false, catalogChanged: false, rulesChanged: false, manifestChanged: false };
     }
+    if (watcher !== null) diskDirty = false;
 
     const nextTrash = await readTrashMeta();
     const trashChanged =
@@ -1092,12 +1095,16 @@ export function openSourceStore(bb: BbPluginApi) {
             const parts = filename.split(/[\\/]/);
             if (parts.some((p) => p && isIgnoredEntryName(p))) return;
           }
+          diskDirty = true;
           scheduleWatchReload();
         });
+        if (booted && !lastWalk.truncated) diskDirty = false;
         watcher.on("error", (error) => {
+          diskDirty = true;
           bb.log.warn(`source watcher error: ${error.message}`);
         });
       } catch (error) {
+        diskDirty = true;
         bb.log.warn(
           `could not start source folder watch: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -1113,12 +1120,14 @@ export function openSourceStore(bb: BbPluginApi) {
       }
       watcher?.close();
       watcher = null;
+      diskDirty = true;
       this.startWatch();
     },
 
     dispose(): void {
       disposed = true;
       watching = false;
+      diskDirty = true;
       if (watchTimer) {
         clearTimeout(watchTimer);
         watchTimer = null;
@@ -1127,6 +1136,9 @@ export function openSourceStore(bb: BbPluginApi) {
       watcher = null;
       listeners.clear();
     },
+
+    /** True when the filesystem watcher is active and has observed no local disk edits since the last reload. */
+    isDiskClean: (): boolean => watcher !== null && !diskDirty && !lastWalk.truncated,
 
     onChange(listener: (event: SourceChangeEvent) => void): () => void {
       listeners.add(listener);

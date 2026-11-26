@@ -37,9 +37,12 @@
  * counts as open. Both effects run once per closed → open cycle of each shelf:
  * dragging an open shelf and letting it spring back does neither.
  *
- * The attribute filter keeps the observer off streaming timeline text. During a
- * drag the page's style changes every frame; each batch reads a few attributes
- * and inline properties and no layout.
+ * The observers run only at bb's compact width, where both shelves exist. They
+ * watch the page's inline `style` and `data-vaul-animate` directly on the page
+ * itself (`subtree: false`), never document-wide. Document-wide, only the rare
+ * `data-sidebar-shelf` and `data-state` attributes are watched so a page or
+ * right panel mounted after the script is picked up immediately. Each batch
+ * reads a few attributes and inline properties and no layout.
  */
 import { nativeHaptic } from "./native-haptics";
 
@@ -108,6 +111,20 @@ export interface PhoneDrawerEffects {
   opened: () => void;
 }
 
+/** bb's compact breakpoint (`COMPACT_VIEWPORT_QUERY` in bb's shared UI). */
+export const COMPACT_VIEWPORT_QUERY = "(max-width: 767px)";
+
+type CompactQuery = Pick<MediaQueryList, "matches" | "addEventListener" | "removeEventListener">;
+
+export interface PhoneDrawerOptions {
+  /**
+   * Gates the observers on bb's compact layout, the only one with shelves.
+   * Defaults to the window's `matchMedia(COMPACT_VIEWPORT_QUERY)`; `null`, or a
+   * window without `matchMedia`, tracks at every width.
+   */
+  compact?: CompactQuery | null;
+}
+
 export function mountPhoneDrawer(
   document: Document,
   signal: AbortSignal,
@@ -115,9 +132,41 @@ export function mountPhoneDrawer(
     opening: (inset) => dismissKeyboard(document, inset),
     opened: () => nativeHaptic("selection"),
   },
+  options: PhoneDrawerOptions = {},
 ): () => void {
   if (signal.aborted) return () => {};
 
+  const compact =
+    options.compact !== undefined
+      ? options.compact
+      : (document.defaultView?.matchMedia?.(COMPACT_VIEWPORT_QUERY) ?? null);
+  let stopTracking: (() => void) | null = null;
+  const sync = () => {
+    const active = compact === null || compact.matches;
+    if (active && stopTracking === null) {
+      stopTracking = trackShelves(document, effects);
+    } else if (!active && stopTracking !== null) {
+      stopTracking();
+      stopTracking = null;
+    }
+  };
+  sync();
+  compact?.addEventListener("change", sync);
+
+  let disposed = false;
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    signal.removeEventListener("abort", dispose);
+    compact?.removeEventListener("change", sync);
+    stopTracking?.();
+    stopTracking = null;
+  };
+  signal.addEventListener("abort", dispose, { once: true });
+  return dispose;
+}
+
+function trackShelves(document: Document, effects: PhoneDrawerEffects): () => void {
   const page: Page = { inset: null, panel: null };
   for (const element of document.querySelectorAll(`${INSET}, ${PANEL}`)) {
     if (element.matches(INSET)) page.inset ??= element;
@@ -146,23 +195,31 @@ export function mountPhoneDrawer(
     }
   };
 
-  const observer = new MutationObserver((records) => {
+  const applyRecord = (record: MutationRecord): boolean => {
+    const { target, attributeName } = record;
+    if (!(target instanceof Element)) return false;
+    if (attributeName === PANEL_STATE) {
+      if (target.getAttribute("data-testid") !== PANEL_TESTID) return false;
+      // bb mounts the panel closed, so a new panel's first flip starts from closed.
+      if (target !== page.panel) cycles.right = "closed";
+      page.panel = target;
+      return true;
+    }
+    if (attributeName === SHELF) {
+      if (!target.matches(INSET)) return false;
+      page.inset = target;
+      return true;
+    }
+    return target === page.inset;
+  };
+
+  const handle = (records: MutationRecord[]) => {
     let changed = false;
     for (const record of records) {
-      const { target, attributeName } = record;
-      if (!(target instanceof Element)) continue;
-      if (attributeName === PANEL_STATE) {
-        if (target.getAttribute("data-testid") !== PANEL_TESTID) continue;
-        // bb mounts the panel closed, so a new panel's first flip starts from closed.
-        if (target !== page.panel) cycles.right = "closed";
-        page.panel = target;
-        changed = true;
-      } else if (target.matches(INSET)) {
-        page.inset = target;
-        changed = true;
-      }
+      if (applyRecord(record)) changed = true;
     }
     if (!changed) return;
+    if (page.inset?.isConnected !== true) page.inset = document.querySelector(INSET);
     if (page.panel?.isConnected !== true && slideOffset(page.inset) < 0) {
       // Only the right panel slides the page left. Find the panel bb mounted
       // since the last one went away; it may already be open, as after
@@ -172,14 +229,34 @@ export function mountPhoneDrawer(
     }
     advance("left");
     advance("right");
-  });
-  observer.observe(document.documentElement, {
-    subtree: true,
-    attributes: true,
-    attributeFilter: [SHELF, ANIMATING, PANEL_STATE, "style"],
-  });
+    wire();
+  };
 
-  const dispose = () => observer.disconnect();
-  signal.addEventListener("abort", dispose, { once: true });
-  return dispose;
+  const observer = new MutationObserver(handle);
+  let wired = false;
+  const observed: Page = { inset: null, panel: null };
+  /** (Re)points the observer at the current page and panel, each without `subtree`. */
+  function wire() {
+    if (wired && observed.inset === page.inset && observed.panel === page.panel) return;
+    const pending = wired ? observer.takeRecords() : [];
+    observer.disconnect();
+    observer.observe(document.documentElement, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: [SHELF, PANEL_STATE],
+    });
+    if (page.inset !== null) {
+      observer.observe(page.inset, { attributes: true, attributeFilter: [ANIMATING, "style"] });
+    }
+    if (page.panel !== null) {
+      observer.observe(page.panel, { attributes: true, attributeFilter: [PANEL_STATE] });
+    }
+    wired = true;
+    observed.inset = page.inset;
+    observed.panel = page.panel;
+    if (pending.length > 0) handle(pending);
+  }
+  wire();
+
+  return () => observer.disconnect();
 }

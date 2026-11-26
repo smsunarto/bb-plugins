@@ -1,6 +1,11 @@
-import { MarkdownEditor } from "@bb-plugins/markdown-editor";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { definePluginApp, useBbNavigate, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  definePluginApp,
+  useBbNavigate,
+  useRealtime,
+  useRealtimeConnectionState,
+  useRpc,
+} from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "./server";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -18,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ExecutionSettings } from "./execution-settings";
 import type { Run, RunStatus, ThreadRequest } from "./lib/types";
@@ -888,13 +894,16 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
 
           <ExecutionSettings value={request} onChange={setRequest} />
           <div className="flex min-w-0 flex-col gap-2">
-            <span className="text-sm font-semibold">Review instructions</span>
-            <MarkdownEditor
+            <Label htmlFor={`${fieldId}-prompt`} className="text-sm font-semibold">
+              Review instructions
+            </Label>
+            <Textarea
+              id={`${fieldId}-prompt`}
               aria-label="Review instructions"
               readOnly={saving}
               value={prompt}
-              onChange={setPrompt}
-              className="min-h-32 w-full resize-y rounded-md border border-input bg-background p-3 text-sm leading-relaxed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              onChange={(event) => setPrompt(event.target.value)}
+              className="min-h-32 w-full resize-y text-sm leading-relaxed"
               placeholder="What should the agent check and report?"
             />
           </div>
@@ -959,21 +968,77 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
     </div>
   );
 }
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.length > 0 ? error.message : fallback;
+}
+
+function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface-destructive p-3 text-xs text-destructive-text"
+    >
+      <span className="min-w-0 flex-1">{message}</span>
+      <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+        Retry
+      </Button>
+    </div>
+  );
+}
+
 function Activity({ runs }: { runs: Run[] }) {
   const navigate = useBbNavigate();
   const rpc = useRpc<typeof rpcContract>();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [comments, setComments] = useState<Record<string, CommentView[]>>({});
+  const [commentsLoading, setCommentsLoading] = useState<Record<string, boolean>>({});
+  const [commentsError, setCommentsError] = useState<Record<string, string | null>>({});
+  const commentSeqRef = useRef<Record<string, number>>({});
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const loadComments = useCallback(
+    (runId: string) => {
+      const seq = (commentSeqRef.current[runId] ?? 0) + 1;
+      commentSeqRef.current[runId] = seq;
+      setCommentsLoading((current) => ({ ...current, [runId]: true }));
+      setCommentsError((current) => ({ ...current, [runId]: null }));
+      void rpc
+        .call("getRunComments", { runId })
+        .then((result) => {
+          if (!mountedRef.current || commentSeqRef.current[runId] !== seq) return;
+          setComments((current) => ({
+            ...current,
+            [runId]: result.comments as CommentView[],
+          }));
+          setCommentsError((current) => ({ ...current, [runId]: null }));
+        })
+        .catch((error: unknown) => {
+          if (!mountedRef.current || commentSeqRef.current[runId] !== seq) return;
+          setCommentsError((current) => ({
+            ...current,
+            [runId]: errorMessage(error, "Could not load comments."),
+          }));
+        })
+        .finally(() => {
+          if (!mountedRef.current || commentSeqRef.current[runId] !== seq) return;
+          setCommentsLoading((current) => ({ ...current, [runId]: false }));
+        });
+    },
+    [rpc],
+  );
 
   const expand = (runId: string) => {
-    setExpanded((current) => (current === runId ? null : runId));
-    if (comments[runId] === undefined) {
-      void rpc.call("getRunComments", { runId }).then((result) => {
-        setComments((current) => ({
-          ...current,
-          [runId]: result.comments as CommentView[],
-        }));
-      });
+    const nextExpanded = expanded === runId ? null : runId;
+    setExpanded(nextExpanded);
+    if (nextExpanded !== null && comments[runId] === undefined && !commentsLoading[runId]) {
+      loadComments(runId);
     }
   };
 
@@ -1036,6 +1101,15 @@ function Activity({ runs }: { runs: Run[] }) {
               ) : null}
               {expanded === run.id ? (
                 <div className="mt-2 flex flex-col gap-2 border-l-2 border-border pl-3 @container">
+                  {commentsLoading[run.id] && comments[run.id] === undefined ? (
+                    <p className="text-xs text-muted-foreground">Loading comments…</p>
+                  ) : null}
+                  {commentsError[run.id] ? (
+                    <LoadError
+                      message={commentsError[run.id] as string}
+                      onRetry={() => loadComments(run.id)}
+                    />
+                  ) : null}
                   {(comments[run.id] ?? []).map((comment, index) => (
                     // Below 480px the path and the excerpt each take a full line; wider,
                     // the excerpt drops below a long path rather than shrink to a sliver.
@@ -1081,28 +1155,163 @@ const ACCOUNT_LABEL =
 
 function SlopCopPanel() {
   const rpc = useRpc<typeof rpcContract>();
+  const connectionState = useRealtimeConnectionState();
   const [tab, setTab] = useState<"rules" | "activity">("rules");
   const [editing, setEditing] = useState<RuleView | null | "new">(() => openRule);
   const [rules, setRules] = useState<RuleView[]>([]);
+  const [rulesLoaded, setRulesLoaded] = useState(false);
+  const [rulesLoading, setRulesLoading] = useState(true);
+  const [rulesError, setRulesError] = useState<string | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
+  const [runsLoaded, setRunsLoaded] = useState(false);
+  const [runsLoading, setRunsLoading] = useState(true);
+  const [runsError, setRunsError] = useState<string | null>(null);
   const [ghLogin, setGhLogin] = useState<string | null>(null);
+  const [statusState, setStatusState] = useState<"loading" | "ready" | "error">("loading");
+  const [statusError, setStatusError] = useState<string | null>(null);
+
+  const mountedRef = useRef(true);
+  const rulesSeqRef = useRef(0);
+  const runsSeqRef = useRef(0);
+  const runsInFlightRef = useRef(false);
+  const runsQueuedRef = useRef(false);
+  const statusSeqRef = useRef(0);
+  const prevConnectionStateRef = useRef(connectionState);
+  const hasConnectedRef = useRef(connectionState === "connected");
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const loadRules = useCallback(() => {
+    const seq = ++rulesSeqRef.current;
+    void rpc
+      .call("listRules", null)
+      .then((result) => {
+        if (!mountedRef.current || rulesSeqRef.current !== seq) return;
+        setRules(result.rules as RuleView[]);
+        setRulesLoaded(true);
+        setRulesError(null);
+      })
+      .catch((error: unknown) => {
+        if (!mountedRef.current || rulesSeqRef.current !== seq) return;
+        setRulesError(errorMessage(error, "Could not load rules."));
+      })
+      .finally(() => {
+        if (!mountedRef.current || rulesSeqRef.current !== seq) return;
+        setRulesLoading(false);
+      });
+  }, [rpc]);
+
+  const retryRules = useCallback(() => {
+    setRulesLoading(true);
+    setRulesError(null);
+    loadRules();
+  }, [loadRules]);
+
+  const loadRuns = useCallback(
+    (coalesce: boolean) => {
+      function run(shouldCoalesce: boolean) {
+        if (shouldCoalesce && runsInFlightRef.current) {
+          runsQueuedRef.current = true;
+          return;
+        }
+        runsInFlightRef.current = true;
+        const seq = ++runsSeqRef.current;
+        void rpc
+          .call("listRuns", { limit: 50 })
+          .then((result) => {
+            if (!mountedRef.current || runsSeqRef.current !== seq) return;
+            setRuns(result.runs);
+            setRunsLoaded(true);
+            setRunsError(null);
+          })
+          .catch((error: unknown) => {
+            if (!mountedRef.current || runsSeqRef.current !== seq) return;
+            setRunsError(errorMessage(error, "Could not load runs."));
+          })
+          .finally(() => {
+            if (runsSeqRef.current === seq) {
+              runsInFlightRef.current = false;
+            }
+            if (!mountedRef.current) return;
+            if (runsQueuedRef.current && !runsInFlightRef.current) {
+              runsQueuedRef.current = false;
+              run(true);
+              return;
+            }
+            if (runsSeqRef.current === seq) {
+              setRunsLoading(false);
+            }
+          });
+      }
+      run(coalesce);
+    },
+    [rpc],
+  );
+
+  const retryRuns = useCallback(() => {
+    setRunsLoading(true);
+    setRunsError(null);
+    loadRuns(false);
+  }, [loadRuns]);
+
+  const handleRunsChanged = useCallback(() => {
+    loadRuns(true);
+  }, [loadRuns]);
+
+  const loadStatus = useCallback(() => {
+    const seq = ++statusSeqRef.current;
+    void rpc
+      .call("status", null)
+      .then((result) => {
+        if (!mountedRef.current || statusSeqRef.current !== seq) return;
+        setGhLogin(result.ghLogin);
+        setStatusState("ready");
+        setStatusError(null);
+      })
+      .catch((error: unknown) => {
+        if (!mountedRef.current || statusSeqRef.current !== seq) return;
+        setStatusState("error");
+        setStatusError(errorMessage(error, "Could not check gh status."));
+      });
+  }, [rpc]);
+
+  const retryStatus = useCallback(() => {
+    setStatusState((current) => (current === "ready" ? current : "loading"));
+    setStatusError(null);
+    loadStatus();
+  }, [loadStatus]);
 
   const refresh = useCallback(() => {
-    void rpc.call("listRules", null).then((result) => {
-      setRules(result.rules as RuleView[]);
-    });
-    void rpc.call("listRuns", { limit: 50 }).then((result) => {
-      setRuns(result.runs);
-    });
-    void rpc.call("status", null).then((result) => {
-      setGhLogin(result.ghLogin);
-    });
-  }, [rpc]);
+    loadRules();
+    loadRuns(false);
+    loadStatus();
+  }, [loadRules, loadRuns, loadStatus]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
-  useRealtime("runs-changed", refresh);
+
+  useEffect(() => {
+    const prev = prevConnectionStateRef.current;
+    const shouldRefresh =
+      connectionState === "connected" &&
+      prev !== "connected" &&
+      (prev === "reconnecting" || hasConnectedRef.current);
+    if (connectionState === "connected") {
+      hasConnectedRef.current = true;
+    }
+    prevConnectionStateRef.current = connectionState;
+    if (shouldRefresh) {
+      refresh();
+    }
+  }, [connectionState, refresh]);
+
+  useRealtime("runs-changed", handleRunsChanged);
 
   if (editing !== null) {
     return (
@@ -1115,7 +1324,7 @@ function SlopCopPanel() {
               ruleDrafts.delete(editing === "new" ? "new" : editing.id);
               openRule = null;
               setEditing(null);
-              refresh();
+              loadRules();
             }}
           />
         </div>
@@ -1141,7 +1350,25 @@ function SlopCopPanel() {
         </Tabs>
         {/* The account label sits between the tabs and "New rule", truncating
             if it must; a narrow panel moves it to its own line under them. */}
-        {ghLogin === null ? (
+        {statusState === "loading" ? (
+          <span className={`${ACCOUNT_LABEL} text-subtle-foreground`}>Checking gh…</span>
+        ) : statusState === "error" ? (
+          <span
+            className={`${ACCOUNT_LABEL} text-destructive-text`}
+            title={statusError ?? undefined}
+          >
+            gh status unavailable{" "}
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs text-destructive-text underline"
+              onClick={retryStatus}
+            >
+              Retry
+            </Button>
+          </span>
+        ) : ghLogin === null ? (
           <span className={`${ACCOUNT_LABEL} text-warning-text`}>gh not authenticated</span>
         ) : (
           <span className={`${ACCOUNT_LABEL} text-subtle-foreground`} title={`gh: ${ghLogin}`}>
@@ -1161,24 +1388,49 @@ function SlopCopPanel() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-[calc(1rem+var(--plugin-page-bottom-inset,0px))]">
-        <div className="mx-auto w-full max-w-3xl">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
           {tab === "rules" ? (
-            <RulesList
-              rules={rules}
-              onNew={() => {
-                openRule = "new";
-                setEditing("new");
-              }}
-              onEdit={(rule) => {
-                openRule = rule;
-                setEditing(rule);
-              }}
-              onToggle={(rule, enabled) => {
-                void rpc.call("setRuleEnabled", { id: rule.id, enabled }).then(refresh);
-              }}
-            />
+            <>
+              {rulesError !== null ? <LoadError message={rulesError} onRetry={retryRules} /> : null}
+              {!rulesLoaded && rulesLoading ? (
+                <output className="block py-8 text-center text-xs text-muted-foreground">
+                  Loading rules…
+                </output>
+              ) : rulesLoaded ? (
+                <RulesList
+                  rules={rules}
+                  onNew={() => {
+                    openRule = "new";
+                    setEditing("new");
+                  }}
+                  onEdit={(rule) => {
+                    openRule = rule;
+                    setEditing(rule);
+                  }}
+                  onToggle={(rule, enabled) => {
+                    void rpc
+                      .call("setRuleEnabled", { id: rule.id, enabled })
+                      .then(() => {
+                        loadRules();
+                      })
+                      .catch((error: unknown) => {
+                        toast.error(errorMessage(error, "Could not update rule."));
+                      });
+                  }}
+                />
+              ) : null}
+            </>
           ) : (
-            <Activity runs={runs} />
+            <>
+              {runsError !== null ? <LoadError message={runsError} onRetry={retryRuns} /> : null}
+              {!runsLoaded && runsLoading ? (
+                <output className="block py-8 text-center text-xs text-muted-foreground">
+                  Loading runs…
+                </output>
+              ) : runsLoaded ? (
+                <Activity runs={runs} />
+              ) : null}
+            </>
           )}
         </div>
       </div>

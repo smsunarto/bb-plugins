@@ -204,9 +204,7 @@ async function fileList(online = true, truncated = false) {
 test("typing filters a complete cached list without extra host requests", async () => {
   const slot = await fileList();
   const row = (path: string) =>
-    slot.container
-      .querySelector("file-tree-container")
-      ?.shadowRoot?.querySelector(`[data-item-path="${path}"]`);
+    slot.container.querySelector<HTMLElement>(`[data-item-path="${path}"]`);
   await waitFor(() => expect(row("AGENTS.md")).toBeTruthy());
   fireEvent.change(slot.getByRole("searchbox", { name: "Find instruction or skill file" }), {
     target: { value: ".agents" },

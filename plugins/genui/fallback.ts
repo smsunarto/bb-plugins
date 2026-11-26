@@ -87,6 +87,18 @@ function findFences(lines: readonly string[]): Fence[] {
   return fences;
 }
 
+/** A ```ui (or ~~~ui) fence opening anywhere in the text, as findFences reads one. */
+const UI_FENCE_OPEN = /^ {0,3}(?:`{3,}|~{3,})\s*ui(?![A-Za-z0-9_-])/im;
+
+/**
+ * Whether the text may hold a ```ui block: one regex test, so a reply without
+ * one skips hashing, storage reads and compiling. False means brokenUiBlocks
+ * would find nothing.
+ */
+export function mayHaveUiBlock(text: string): boolean {
+  return UI_FENCE_OPEN.test(text);
+}
+
 /**
  * Local (bb-plugins): the reply's ```ui blocks that show an error card or
  * drop part of themselves, numbered from 1 in reply order, each with its

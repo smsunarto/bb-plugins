@@ -321,7 +321,7 @@ function hash(text: string): string {
  * never drawn here keeps the tallest of its placeholders (the font loading,
  * then BB's "Rendering diagram..."), so it moves once, when it draws.
  */
-function useDrawnHeight(element: RefObject<HTMLDivElement | null>, dark: boolean, source: string): void {
+export function useDrawnHeight(element: RefObject<HTMLDivElement | null>, dark: boolean, source: string): void {
   useLayoutEffect(() => {
     const box = element.current;
     if (box === null) return;
@@ -350,16 +350,24 @@ function useDrawnHeight(element: RefObject<HTMLDivElement | null>, dark: boolean
       if (!holding && drawn()) rememberHeight(key, box.offsetHeight);
     });
     // A box held at a fixed height doesn't resize as its content changes: watch the content.
+    // Releasing writes styles; the drawn height is read a frame later, after
+    // the browser's own layout, never forced inside the mutation callback.
+    let frame: number | null = null;
+    const measure = () => {
+      frame = null;
+      if (drawn()) rememberHeight(key, box.offsetHeight);
+    };
     const content = new MutationObserver(() => {
       if (!holding || !settled()) return;
       release();
-      if (drawn()) rememberHeight(key, box.offsetHeight);
+      if (frame === null) frame = requestAnimationFrame(measure);
     });
     observer.observe(box);
     content.observe(box, { childList: true, subtree: true });
     return () => {
       observer.disconnect();
       content.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
       release();
     };
   }, [element, dark, source]);

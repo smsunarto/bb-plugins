@@ -6,12 +6,15 @@ import type {
 import { join } from "node:path";
 import type { syncHostSignals } from "./host-contract.ts";
 import {
+  DEFAULT_SYNC_IO_CONCURRENCY,
   deleteSyncFileAndPrune,
   ensureSourceFolders,
   isIgnoredEntryName,
   READ_BATCH_BYTES,
   readSyncFile,
+  runWithConcurrency,
   sameManifest,
+  throwIfAborted,
   walkSyncTree,
   writeSyncFileAtomic,
   type SyncManifest,
@@ -28,6 +31,7 @@ type MirrorState = {
   mirrorDir: string;
   activeWatch: ExperimentalHostWatchSubscription | null;
   watchStarting: Promise<void> | null;
+  abortListenerAttached: boolean;
   lastKnownManifest: SyncManifest;
   statCache: WalkStatCache;
   applying: number;
@@ -45,6 +49,7 @@ function stateFor(mirrorDir: string): MirrorState {
       mirrorDir,
       activeWatch: null,
       watchStarting: null,
+      abortListenerAttached: false,
       lastKnownManifest: Object.create(null) as SyncManifest,
       statCache: new Map(),
       applying: 0,
@@ -84,7 +89,10 @@ function enqueueWatchCheck(state: MirrorState, context: Context): void {
           state.pendingAfterApply = true;
           return;
         }
-        const walked = await walkSyncTree(state.mirrorDir, { statCache: state.statCache });
+        const walked = await walkSyncTree(state.mirrorDir, {
+          statCache: state.statCache,
+          signal: context.lifecycle.signal,
+        });
         if (!sameManifest(walked.manifest, state.lastKnownManifest)) {
           state.lastKnownManifest = walked.manifest;
           await context.experimental_emitSignal("mirrorChanged", { mirrorDir: state.mirrorDir });
@@ -128,6 +136,7 @@ async function disposeMirrorState(state: MirrorState): Promise<void> {
 }
 
 async function ensureWatch(mirrorDir: string, context: Context): Promise<void> {
+  throwIfAborted(context.signal);
   await ensureSourceFolders(mirrorDir);
   const state = stateFor(mirrorDir);
   if (state.activeWatch) return;
@@ -146,13 +155,16 @@ async function ensureWatch(mirrorDir: string, context: Context): Promise<void> {
       onWatchEvent(state, context),
     );
     state.activeWatch = subscription;
-    context.lifecycle.signal.addEventListener(
-      "abort",
-      () => {
-        void disposeMirrorState(state).finally(() => mirrorStates.delete(mirrorDir));
-      },
-      { once: true },
-    );
+    if (!state.abortListenerAttached) {
+      state.abortListenerAttached = true;
+      context.lifecycle.signal.addEventListener(
+        "abort",
+        () => {
+          void disposeMirrorState(state).finally(() => mirrorStates.delete(mirrorDir));
+        },
+        { once: true },
+      );
+    }
   })().finally(() => {
     state.watchStarting = null;
   });
@@ -168,36 +180,47 @@ export async function disposeSyncHost(): Promise<void> {
 /** Host RPC handlers for maintaining and watching the plugin's editable mirror. */
 export const syncHostHandlers = {
   async mirrorInfo(_input: null, context: Context) {
+    throwIfAborted(context.signal);
     const { mirrorDir } = pathsFor(context);
     await ensureSourceFolders(mirrorDir);
     return { mirrorDir };
   },
 
   async mirrorEnsureWatch(_input: null, context: Context) {
+    throwIfAborted(context.signal);
     const { mirrorDir } = pathsFor(context);
     await ensureWatch(mirrorDir, context);
     const state = stateFor(mirrorDir);
-    const walked = await walkSyncTree(mirrorDir, { statCache: state.statCache });
+    const walked = await walkSyncTree(mirrorDir, {
+      statCache: state.statCache,
+      signal: context.signal,
+    });
     state.lastKnownManifest = walked.manifest;
     return { mirrorDir, ...walked };
   },
 
   async mirrorSnapshot(_input: null, context: Context) {
+    throwIfAborted(context.signal);
     const { mirrorDir } = pathsFor(context);
     await ensureSourceFolders(mirrorDir);
     const state = stateFor(mirrorDir);
-    const walked = await walkSyncTree(mirrorDir, { statCache: state.statCache });
+    const walked = await walkSyncTree(mirrorDir, {
+      statCache: state.statCache,
+      signal: context.signal,
+    });
     state.lastKnownManifest = walked.manifest;
     return { mirrorDir, ...walked };
   },
 
   async mirrorReadFiles(input: { paths: string[] }, context: Context) {
+    throwIfAborted(context.signal);
     const { mirrorDir } = pathsFor(context);
     const files: { path: string; executable: boolean; sha256: string; base64: string }[] = [];
     const missing: string[] = [];
     let totalBytes = 0;
 
     for (const relPath of input.paths) {
+      throwIfAborted(context.signal);
       const read = await readSyncFile(mirrorDir, relPath);
       if (read === null) {
         missing.push(relPath);
@@ -229,6 +252,7 @@ export const syncHostHandlers = {
     },
     context: Context,
   ) {
+    throwIfAborted(context.signal);
     const { mirrorDir, tmpDir } = pathsFor(context);
     await ensureSourceFolders(mirrorDir);
     const state = stateFor(mirrorDir);
@@ -237,45 +261,67 @@ export const syncHostHandlers = {
     const conflicts: string[] = [];
     try {
       // Execute deletes BEFORE writes so file<->directory replacements never hit ENOTDIR/EISDIR.
-      for (const op of input.deletes) {
-        const current = await readSyncFile(mirrorDir, op.path);
-        if (current === null) {
+      await runWithConcurrency(
+        input.deletes,
+        DEFAULT_SYNC_IO_CONCURRENCY,
+        async (op) => {
+          throwIfAborted(context.signal);
+          const current = await readSyncFile(mirrorDir, op.path);
+          if (current === null) {
+            applied.push(op.path);
+            delete state.lastKnownManifest[op.path];
+            state.statCache.delete(op.path);
+            return;
+          }
+          if (current.sha256 !== op.expectedSha256) {
+            conflicts.push(op.path);
+            return;
+          }
+          await deleteSyncFileAndPrune(mirrorDir, op.path);
           applied.push(op.path);
           delete state.lastKnownManifest[op.path];
           state.statCache.delete(op.path);
-          continue;
-        }
-        if (current.sha256 !== op.expectedSha256) {
-          conflicts.push(op.path);
-          continue;
-        }
-        await deleteSyncFileAndPrune(mirrorDir, op.path);
-        applied.push(op.path);
-        delete state.lastKnownManifest[op.path];
-        state.statCache.delete(op.path);
-      }
-      for (const op of input.writes) {
-        const current = await readSyncFile(mirrorDir, op.path);
-        const currentSha = current?.sha256 ?? null;
-        if (currentSha !== op.expectedSha256) {
-          conflicts.push(op.path);
-          continue;
-        }
-        const bytes = Buffer.from(op.base64, "base64");
-        const written = await writeSyncFileAtomic(mirrorDir, tmpDir, op.path, bytes, op.executable);
-        applied.push(op.path);
-        state.lastKnownManifest[op.path] = {
-          sha256: written.sha256,
-          executable: op.executable,
-          size: written.size,
-        };
-        state.statCache.delete(op.path);
-      }
+        },
+        context.signal,
+      );
+
+      await runWithConcurrency(
+        input.writes,
+        DEFAULT_SYNC_IO_CONCURRENCY,
+        async (op) => {
+          throwIfAborted(context.signal);
+          const current = await readSyncFile(mirrorDir, op.path);
+          const currentSha = current?.sha256 ?? null;
+          if (currentSha !== op.expectedSha256) {
+            conflicts.push(op.path);
+            return;
+          }
+          const bytes = Buffer.from(op.base64, "base64");
+          const written = await writeSyncFileAtomic(
+            mirrorDir,
+            tmpDir,
+            op.path,
+            bytes,
+            op.executable,
+          );
+          applied.push(op.path);
+          state.lastKnownManifest[op.path] = {
+            sha256: written.sha256,
+            executable: op.executable,
+            size: written.size,
+          };
+          state.statCache.delete(op.path);
+        },
+        context.signal,
+      );
 
       if (input.includeManifest === false) {
         return { applied, conflicts };
       }
-      const walked = await walkSyncTree(mirrorDir, { statCache: state.statCache });
+      const walked = await walkSyncTree(mirrorDir, {
+        statCache: state.statCache,
+        signal: context.signal,
+      });
       // Keep `state.lastKnownManifest` reflecting only what we applied so any concurrent
       // local edit to an unrelated path still triggers `mirrorChanged` on the watch check.
       return { applied, conflicts, manifest: walked.manifest };

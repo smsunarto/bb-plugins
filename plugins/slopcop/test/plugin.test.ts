@@ -497,6 +497,73 @@ it("settles cleanly finished review threads and leaves the rest open", async () 
   }
 });
 
+it("reads only a review thread's newest error events when it fails without detail", async () => {
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "slopcop",
+    settings: { settleFinishedThreads: false },
+    sdk: {
+      threads: {
+        events: {
+          list: () => [
+            {
+              id: "evt_2",
+              scope: "thread",
+              threadId: "thr_failing",
+              seq: 2,
+              createdAt: 2,
+              type: "provider/error",
+              data: { message: "model not found" },
+            },
+            {
+              id: "evt_1",
+              scope: "thread",
+              threadId: "thr_failing",
+              seq: 1,
+              createdAt: 1,
+              type: "system/error",
+              data: { message: "older" },
+            },
+          ],
+        },
+      },
+    },
+  });
+  try {
+    await plugin(bb);
+    const store = createStore(bb.storage.database() as never);
+    const listCalls = () => harness.sdk.callsTo("threads.events.list");
+
+    // Not a review thread: no event-log read at all.
+    await harness.behavior.emitThreadEvent("thread.failed", {
+      thread: makeThreadResponse({ id: "thr_unrelated" }),
+      error: null,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(listCalls()).toHaveLength(0);
+
+    store.insertRun(makeRun({ id: "run_failing", threadId: "thr_failing" }));
+    await harness.behavior.emitThreadEvent("thread.failed", {
+      thread: makeThreadResponse({ id: "thr_failing" }),
+      error: null,
+    });
+    await vi.waitFor(() =>
+      expect(store.getRun("run_failing")).toMatchObject({
+        status: "failed",
+        detail: expect.stringContaining("provider/error: model not found"),
+      }),
+    );
+    expect(listCalls()).toHaveLength(1);
+    expect(listCalls()[0]?.[0]).toMatchObject({
+      threadId: "thr_failing",
+      order: "desc",
+      limit: "10",
+      types: ["provider/error", "system/error"],
+    });
+  } finally {
+    await harness.lifecycle.dispose();
+  }
+});
+
 it("counts review threads that predate a reload against the concurrency cap", async () => {
   let { bb, harness } = createFakePluginHost({
     pluginId: "slopcop",

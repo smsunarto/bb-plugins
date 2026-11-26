@@ -1,15 +1,17 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
-import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { z } from "zod";
-import { promisify } from "node:util";
+import { runGroupProcess } from "./lib/group-process";
 import { reviewCheckoutContract } from "./lib/review-checkout-contract";
 
-const exec = promisify(execFile);
 /** Inside the server's 300 s `prepare` call, so git stops before the server abandons it. */
 const PREPARE_BUDGET_MS = 290_000;
+/**
+ * Runs git through the SDK's host toolchain in its own process group, so an
+ * abort or timeout also stops the `git-remote-https`/`ssh` helpers it started.
+ */
 async function git(
   source: string,
   args: string[],
@@ -17,13 +19,12 @@ async function git(
   timeout = 120_000,
   env: Record<string, string> = {},
 ) {
-  const result = await exec("git", ["-C", source, ...args], {
+  return runGroupProcess("git", ["-C", source, ...args], {
     signal,
     timeout,
     maxBuffer: 1024 * 1024,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env },
+    env: { GIT_TERMINAL_PROMPT: "0", ...env },
   });
-  return result.stdout.trim();
 }
 const exists = (target: string) =>
   stat(target).then(

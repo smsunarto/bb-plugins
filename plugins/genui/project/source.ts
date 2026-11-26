@@ -38,6 +38,7 @@ import {
   type CheckoutProblem,
   type CheckoutTarget,
 } from "./checkout";
+import { LruMap, THREAD_CACHE } from "./lru";
 import { createSnapshots, fitChanges, PATCH_BYTES, SNAPSHOT_BYTES, snapshotKey, type SnapshotStorage } from "./snapshots";
 
 /** Keep what is shown in this reply block (`blockKey`), or replace what was kept (`refresh`). */
@@ -309,7 +310,7 @@ export function createProjectSource(bb: BbPluginApi, storage: SnapshotStorage = 
     return providers.names;
   }
 
-  const models = new Map<string, { at: number; model: string | null; reasoning: string | null }>();
+  const models = new LruMap<string, { at: number; model: string | null; reasoning: string | null }>(THREAD_CACHE);
   async function threadModel(threadId: string): Promise<{ model: string | null; reasoning: string | null }> {
     const cached = models.get(threadId);
     if (cached !== undefined && Date.now() - cached.at < CACHE_MS) return cached;

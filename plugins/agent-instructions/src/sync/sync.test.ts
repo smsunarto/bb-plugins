@@ -15,10 +15,16 @@ import plugin from "../server/server.ts";
 import {
   deleteSyncFileAndPrune,
   readSyncFile,
+  runWithConcurrency,
   SymlinkRefusedError,
+  walkSyncTree,
   writeSyncFileAtomic,
 } from "./paths.ts";
 import { syncManifestSchema } from "./host-contract.ts";
+import { hostContract, hostSignals } from "../host-contract.ts";
+import { openSourceStore } from "../source/store.ts";
+import { openSyncManager } from "./manager.ts";
+import { disposeSyncHost, syncHostHandlers } from "./host.ts";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
@@ -419,4 +425,294 @@ test("#31 & #32: sync --host scopes to one host and non-parsed files sync across
   );
   // Build Linux was NOT synced when --host host_mac was passed!
   expect(existsSync(join(otherMirrorDir, "instructions/notes.txt"))).toBe(false);
+});
+
+test("mirror-sync propagates service AbortSignal to host.call and unblocks queued host slots on abort", async () => {
+  const serverDataDir = await makeTemp("sync-abort-server-");
+  const seenSignals: Array<{ hostId: string; signal: AbortSignal | undefined }> = [];
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "agent-instructions",
+    dataDir: serverDataDir,
+    experimental_callHostRpc: (call) => {
+      seenSignals.push({ hostId: call.hostId, signal: call.signal });
+      return new Promise((_, reject) => {
+        if (call.signal?.aborted) {
+          reject(new Error("aborted"));
+          return;
+        }
+        call.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      });
+    },
+    sdk: {
+      subscribe: () => () => undefined,
+      system: { config: async () => ({ primaryHostId: "host_server" }) as never },
+      hosts: {
+        list: async () => [
+          makeHostResponse({ id: "host_server", name: "Server", status: "connected" }),
+          makeHostResponse({ id: "host_1", name: "H1", status: "connected" }),
+          makeHostResponse({ id: "host_2", name: "H2", status: "connected" }),
+          makeHostResponse({ id: "host_3", name: "H3", status: "connected" }),
+          makeHostResponse({ id: "host_4", name: "H4", status: "connected" }),
+          makeHostResponse({ id: "host_5", name: "H5", status: "connected" }),
+        ],
+      },
+      providers: { list: async () => [] },
+      projects: { list: async () => [] },
+    },
+  });
+  cleanup.push(() => harness.lifecycle.dispose());
+  await plugin(bb);
+
+  const service = harness.behavior.runService("mirror-sync");
+  await new Promise((r) => setTimeout(r, 40));
+  // 4 hosts occupy MAX_CONCURRENT_HOSTS slots; host_5 is queued in withHostSlot.
+  expect(seenSignals.length).toBe(4);
+  for (const entry of seenSignals) {
+    expect(entry.signal).toBeDefined();
+    expect(entry.signal?.aborted).toBe(false);
+  }
+
+  service.controller.abort();
+  await service.done;
+  for (const entry of seenSignals) {
+    expect(entry.signal?.aborted).toBe(true);
+  }
+  // Queued host_5 never started a host.call after abort.
+  expect(seenSignals.length).toBe(4);
+});
+
+test("walkSyncTree, mirrorApplyOps, and runWithConcurrency respect AbortSignal and bounded concurrency", async () => {
+  const dir = await makeTemp("sync-walk-abort-");
+  for (let i = 0; i < 16; i++) {
+    await writeText(join(dir, `instructions/f-${String(i).padStart(2, "0")}.md`), `body-${i}\n`);
+  }
+
+  // Bounded concurrency check.
+  let active = 0;
+  let maxActive = 0;
+  await runWithConcurrency(
+    Array.from({ length: 24 }, (_, i) => i),
+    8,
+    async () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((r) => setTimeout(r, 5));
+      active--;
+    },
+  );
+  expect(maxActive).toBeLessThanOrEqual(8);
+  expect(maxActive).toBeGreaterThan(1);
+
+  // Aborted walkSyncTree rejects immediately.
+  const aborted = new AbortController();
+  aborted.abort();
+  await expect(walkSyncTree(dir, { signal: aborted.signal })).rejects.toThrow(/abort/i);
+
+  // Aborted mirrorApplyOps rejects before mutating files.
+  const hostDataDir = await makeTemp("sync-host-abort-");
+  const hostHarness = experimental_createHostEntryHarness(hostEntry, {
+    experimental_paths: { dataDir: hostDataDir, tempDir: join(hostDataDir, "tmp") },
+  });
+  cleanup.push(() => hostHarness.experimental_dispose());
+  await expect(
+    hostHarness.experimental_call(
+      "mirrorApplyOps",
+      {
+        writes: [
+          {
+            path: "instructions/should-not-exist.md",
+            executable: false,
+            base64: Buffer.from("nope").toString("base64"),
+            expectedSha256: null,
+          },
+        ],
+        deletes: [],
+      },
+      { signal: aborted.signal },
+    ),
+  ).rejects.toThrow(/abort/i);
+  expect(existsSync(join(hostDataDir, "mirror/instructions/should-not-exist.md"))).toBe(false);
+});
+
+test("ensureWatch attaches lifecycle abort listener only once across watch-error restarts", async () => {
+  const hostDataDir = await makeTemp("sync-watch-listener-");
+  const lifecycleController = new AbortController();
+  let abortAddCount = 0;
+  const origAdd = lifecycleController.signal.addEventListener.bind(lifecycleController.signal);
+  lifecycleController.signal.addEventListener = ((...args: Parameters<typeof origAdd>) => {
+    if (args[0] === "abort") abortAddCount++;
+    return origAdd(...args);
+  }) as typeof origAdd;
+
+  let watchListener: ((event: { kind: "watch-error"; message: string }) => void) | null = null;
+  let watchCount = 0;
+  const fakeContext = {
+    signal: new AbortController().signal,
+    lifecycle: { signal: lifecycleController.signal },
+    experimental_paths: { dataDir: hostDataDir, tempDir: join(hostDataDir, "tmp") },
+    experimental_emitSignal: async () => undefined,
+    experimental_watch: async (
+      _opts: unknown,
+      listener: (event: { kind: "watch-error"; message: string }) => void,
+    ) => {
+      watchCount++;
+      watchListener = listener;
+      return { dispose: async () => undefined };
+    },
+    experimental_retainWorker: () => ({ dispose: async () => undefined }),
+  };
+
+  cleanup.push(() => disposeSyncHost());
+  await syncHostHandlers.mirrorEnsureWatch(null, fakeContext as never);
+  expect(watchCount).toBe(1);
+  expect(abortAddCount).toBe(1);
+
+  // Trigger watch-error twice and re-arm watch both times.
+  watchListener!({ kind: "watch-error", message: "transient" });
+  await syncHostHandlers.mirrorEnsureWatch(null, fakeContext as never);
+  watchListener!({ kind: "watch-error", message: "transient2" });
+  await syncHostHandlers.mirrorEnsureWatch(null, fakeContext as never);
+
+  expect(watchCount).toBe(3);
+  expect(abortAddCount).toBe(1);
+});
+
+test("onWorkerExit skips primary/disconnected hosts and applies exponential backoff on repeated exits", async () => {
+  const serverDataDir = await makeTemp("sync-exit-backoff-");
+  const ensureCalls: Array<{ hostId: string; at: number }> = [];
+  let failHost = true;
+
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "agent-instructions",
+    dataDir: serverDataDir,
+    experimental_callHostRpc: async (call) => {
+      if (call.method === "mirrorEnsureWatch") {
+        ensureCalls.push({ hostId: call.hostId, at: Date.now() });
+        if (failHost) throw new Error("worker crashed");
+      }
+      return {
+        mirrorDir: `/fake/${call.hostId}`,
+        manifest: {},
+        symlinks: [],
+        tooLarge: [],
+        truncated: false,
+      };
+    },
+    sdk: {
+      subscribe: () => () => undefined,
+      system: { config: async () => ({ primaryHostId: "host_server" }) as never },
+      hosts: {
+        list: async () => [
+          makeHostResponse({ id: "host_server", name: "Server", status: "connected" }),
+          makeHostResponse({ id: "host_mac", name: "Mac", status: "connected" }),
+          makeHostResponse({ id: "host_offline", name: "Offline", status: "disconnected" }),
+        ],
+      },
+      providers: { list: async () => [] },
+      projects: { list: async () => [] },
+    },
+  });
+  cleanup.push(() => harness.lifecycle.dispose());
+
+  const store = openSourceStore(bb);
+  await store.load();
+  const host = bb.hosts.experimental_client({
+    contract: hostContract,
+    experimental_signals: hostSignals,
+  });
+  openSyncManager({ bb, store, host, workerExitBaseDelayMs: 40 });
+
+  const service = harness.behavior.runService("mirror-sync");
+  try {
+    await new Promise((r) => setTimeout(r, 30));
+    ensureCalls.length = 0;
+
+    // Primary and disconnected hosts are ignored completely.
+    await harness.behavior.experimental_emitHostWorkerExit("host_server");
+    await harness.behavior.experimental_emitHostWorkerExit("host_offline");
+    await new Promise((r) => setTimeout(r, 70));
+    expect(ensureCalls).toHaveLength(0);
+
+    // First exit waits ~40ms; a duplicate exit while pending is coalesced.
+    const t0 = Date.now();
+    await harness.behavior.experimental_emitHostWorkerExit("host_mac");
+    await harness.behavior.experimental_emitHostWorkerExit("host_mac");
+    await new Promise((r) => setTimeout(r, 70));
+    expect(ensureCalls).toHaveLength(1);
+    expect(ensureCalls[0]!.at - t0).toBeGreaterThanOrEqual(30);
+
+    // Second exit backs off to ~80ms (should NOT fire at 45ms, should fire by 120ms).
+    failHost = false;
+    const t1 = Date.now();
+    await harness.behavior.experimental_emitHostWorkerExit("host_mac");
+    await new Promise((r) => setTimeout(r, 45));
+    expect(ensureCalls).toHaveLength(1);
+    await new Promise((r) => setTimeout(r, 75));
+    expect(ensureCalls).toHaveLength(2);
+    expect(ensureCalls[1]!.at - t1).toBeGreaterThanOrEqual(65);
+  } finally {
+    service.controller.abort();
+    await service.done;
+    store.dispose();
+  }
+});
+
+test("reconcile skips redundant per-host store.reloadFromDisk when local disk has not changed", async () => {
+  const serverDataDir = await makeTemp("sync-skip-reload-");
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "agent-instructions",
+    dataDir: serverDataDir,
+    experimental_callHostRpc: async (call) => ({
+      mirrorDir: `/fake/${call.hostId}`,
+      manifest: {},
+      symlinks: [],
+      tooLarge: [],
+      truncated: false,
+    }),
+    sdk: {
+      subscribe: () => () => undefined,
+      system: { config: async () => ({ primaryHostId: "host_server" }) as never },
+      hosts: {
+        list: async () => [
+          makeHostResponse({ id: "host_server", name: "Server", status: "connected" }),
+          makeHostResponse({ id: "host_mac", name: "Mac", status: "connected" }),
+          makeHostResponse({ id: "host_other", name: "Other", status: "connected" }),
+        ],
+      },
+      providers: { list: async () => [] },
+      projects: { list: async () => [] },
+    },
+  });
+  cleanup.push(() => harness.lifecycle.dispose());
+
+  const store = openSourceStore(bb);
+  await store.load();
+  store.startWatch();
+  let reloadCalls = 0;
+  const origReload = store.reloadFromDisk.bind(store);
+  store.reloadFromDisk = ((...args: Parameters<typeof origReload>) => {
+    reloadCalls++;
+    return origReload(...args);
+  }) as typeof origReload;
+
+  const host = bb.hosts.experimental_client({
+    contract: hostContract,
+    experimental_signals: hostSignals,
+  });
+  const sync = openSyncManager({ bb, store, host });
+  const service = harness.behavior.runService("mirror-sync");
+  try {
+    await new Promise((r) => setTimeout(r, 40));
+    // With watcher active and no local disk edits, startup sync across 2 hosts skips reloadFromDisk.
+    expect(store.isDiskClean()).toBe(true);
+    expect(reloadCalls).toBe(0);
+
+    // Explicit syncNowAll reloads disk once for the entire wave, not once per host.
+    await sync.syncNowAll();
+    expect(reloadCalls).toBe(1);
+  } finally {
+    service.controller.abort();
+    await service.done;
+    store.dispose();
+  }
 });

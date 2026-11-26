@@ -381,7 +381,7 @@ function GlobalApply({ file, disabled }: { file: DocumentFile; disabled: boolean
       </p>
     );
   return (
-    <div className="space-y-2 text-xs text-muted-foreground">
+    <div className="flex flex-col gap-2 text-xs text-muted-foreground">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span>Save edits this checkout. Apply updates this machine’s installed copies.</span>
         <Button

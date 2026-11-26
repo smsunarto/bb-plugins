@@ -130,7 +130,7 @@ function Owners({ names }: { names: readonly string[] }) {
   if (names.length === 0) return null;
   const shown = names.slice(0, 3);
   return (
-    <span className="flex shrink-0 -space-x-1" aria-label={`Assigned to ${names.join(", ")}`}>
+    <span className="flex shrink-0 [&>span+span]:-ml-1" aria-label={`Assigned to ${names.join(", ")}`}>
       {shown.map((name) => (
         <Avatar key={name} name={name} />
       ))}
