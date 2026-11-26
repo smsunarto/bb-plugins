@@ -26,6 +26,7 @@ import {
   type RefCallback,
   type RefObject,
 } from "react";
+import { DEFAULT_ICON_GLYPH } from "../contract/icon.ts";
 import {
   age,
   isSending,
@@ -54,11 +55,11 @@ const TICK_MS = 30_000;
 const FAR = Number.MAX_SAFE_INTEGER;
 /** Every control a phone user taps gets a 44px target. */
 export const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
-const ICON_BUTTON = cn(TAP, "size-8 shrink-0");
+const ICON_BUTTON = cn(TAP, "size-7 shrink-0");
 const MOBILE_ANSWER =
-  "max-sm:h-auto max-sm:px-2 max-sm:py-2 max-sm:text-[12px] max-sm:leading-4 max-sm:whitespace-normal";
+  "max-sm:h-auto max-sm:px-2 max-sm:py-2 max-sm:text-xs max-sm:leading-4 max-sm:whitespace-normal";
 const ANSWER_ROW =
-  "col-start-2 flex min-w-0 items-start gap-1.5 max-sm:col-span-3 max-sm:col-start-1";
+  "col-start-2 flex min-w-0 items-start gap-1.5 max-sm:col-span-2 max-sm:col-start-1";
 const HORIZONTAL_SCROLL = "overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
 export const CAPTAIN_OVERVIEW_TAB = {
   id: "overview",
@@ -123,16 +124,33 @@ function Banner({ captainId }: { captainId: string }) {
   );
 }
 
-function QueueStatus({ id, label }: { id: string; label: string }) {
+function QueueStatus({ id, label, degraded }: { id: string; label: string; degraded: boolean }) {
   const panel = useAppPanel();
   return (
-    <div className="flex min-w-0 items-center gap-2 px-3 text-xs text-muted-foreground">
-      <span id={id}>{label}</span>
+    <div className="flex min-h-8 w-full min-w-0 items-center gap-1.5 px-3 py-1.5 text-xs text-foreground pointer-coarse:py-0">
+      <Icon
+        name={degraded ? "AlertTriangle" : DEFAULT_ICON_GLYPH}
+        aria-hidden
+        className={cn(
+          "size-3.5 shrink-0",
+          degraded ? "text-warning-text" : "text-muted-foreground",
+        )}
+      />
+      <span
+        id={id}
+        className={cn(
+          "min-w-0 flex-1 truncate",
+          degraded ? "font-medium text-foreground" : "text-muted-foreground",
+        )}
+      >
+        {label}
+      </span>
       <Button
         type="button"
-        size="sm"
-        variant="link"
-        className={cn(TAP, "h-7 px-1")}
+        size="xs"
+        variant="ghost"
+        tone="muted"
+        className={cn(TAP, "-mr-1.5 h-5 shrink-0 px-1.5 text-xs font-normal")}
         onClick={() => panel.openTab({ tab: CAPTAIN_OVERVIEW_TAB })}
       >
         Overview
@@ -234,11 +252,15 @@ function Queue({
   };
 
   // The final editor can hand focus to the same frame after All clear mounts.
+  // Match core active PromptStackCard banners (`activityRowClass("active")` = `bg-background/70`
+  // inside `PromptStackCard`'s `rounded-lg border border-border bg-surface-raised-solid`,
+  // clipped with `overflow-hidden rounded-lg` since `PluginComposerBanners` omits `overflow-hidden`).
   const frame = {
     ref: setRoot,
     "data-bb-plugin": "captain",
     "data-bb-plugin-scope-captain": "",
-    className: "flex min-w-0 flex-col text-xs outline-none focus-visible:outline-1",
+    className:
+      "flex min-w-0 flex-col overflow-hidden rounded-lg bg-background/70 text-xs text-foreground outline-none focus-visible:outline-1",
     onFocus: (event: FocusEvent<HTMLElement>) => {
       keyboardFocus.current = event.target.matches(":focus-visible");
     },
@@ -252,9 +274,10 @@ function Queue({
   };
   if (item === undefined || kind === undefined) {
     if (!emptyLabel && !root) return null;
+    const degraded = asksError !== undefined || crewError !== undefined;
     return (
       <div {...frame} tabIndex={-1} aria-describedby={emptyLabel ? id : undefined}>
-        {emptyLabel ? <QueueStatus id={id} label={emptyLabel} /> : null}
+        {emptyLabel ? <QueueStatus id={id} label={emptyLabel} degraded={degraded} /> : null}
       </div>
     );
   }
@@ -286,13 +309,13 @@ function Queue({
         aria-labelledby={showTabs ? `${id}-${item.key}` : undefined}
         className={cn(
           showTabs && surface.divider,
-          "grid min-w-0 grid-cols-[18px_minmax(0,1fr)_18px] gap-x-2 gap-y-2.5 px-3 pt-2.5 pb-3",
+          "grid min-w-0 grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 gap-y-2 px-3 py-2.5",
         )}
       >
         <Icon
           name={BANNER_ICONS[kind]}
           aria-hidden
-          className="mt-0.5 size-3.5 justify-self-center text-warning-text"
+          className="mt-px size-3.5 shrink-0 text-warning-text"
         />
         <Heading item={item} asksError={asksError} crewError={crewError} />
         {detail ? (
@@ -443,14 +466,14 @@ function AnswerRow({
           {plan ? (
             <Button
               type="button"
-              size="sm"
+              size="xs"
               variant="outline"
-              className={cn(TAP, MOBILE_ANSWER, "max-sm:col-span-full")}
+              className={cn(TAP, MOBILE_ANSWER, "h-7 px-2.5 max-sm:col-span-full")}
               aria-expanded={plan.open}
               aria-controls={plan.id}
               onClick={plan.toggle}
             >
-              <Icon name="FileText" aria-hidden data-icon="inline-start" />
+              <Icon name="FileText" aria-hidden data-icon="inline-start" className="size-3.5" />
               {plan.open ? "Close plan" : "Read plan"}
             </Button>
           ) : null}
@@ -458,7 +481,7 @@ function AnswerRow({
       ) : null}
       <Button
         type="button"
-        size="icon"
+        size="icon-xs"
         variant="outline"
         className={cn(ICON_BUTTON, "text-muted-foreground")}
         aria-label="Later"
@@ -466,16 +489,16 @@ function AnswerRow({
         aria-description="Hide for an hour"
         onClick={later}
       >
-        <Icon name="Clock" aria-hidden />
+        <Icon name="Clock" aria-hidden className="size-3.5" />
       </Button>
       {showOther ? (
         <Button
           ref={focusOther}
           type="button"
-          size="sm"
+          size="xs"
           variant="ghost"
           aria-label="Other…"
-          className={cn(TAP, "shrink-0 gap-1.5 text-muted-foreground")}
+          className={cn(TAP, "h-7 shrink-0 gap-1.5 px-2 text-muted-foreground")}
           onClick={openOther}
         >
           <svg
@@ -686,9 +709,9 @@ function QueueTabs({
   tabRef: RefCallback<HTMLButtonElement>;
 }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-2 px-3 py-1.5">
+    <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 px-3 py-1">
       <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground" aria-live="polite">
-        <Badge variant="warning" className="min-w-4.5">
+        <Badge variant="warning" size="sm" className="min-w-4.5 tabular-nums">
           {waitingCount}
         </Badge>
         waiting
@@ -720,19 +743,24 @@ function QueueTabs({
               id={`${id}-${entry.key}`}
               role="tab"
               type="button"
-              size="sm"
+              size="xs"
               variant="ghost"
               aria-controls={`${id}-panel`}
               aria-selected={active}
               tabIndex={active ? 0 : -1}
               className={cn(
                 TAP,
-                "h-6 max-w-42 shrink-0 gap-1.5 px-2 max-sm:h-auto max-sm:max-w-52 max-sm:py-1.5 max-sm:text-[12px] max-sm:leading-4",
+                "h-6 max-w-42 shrink-0 gap-1.5 px-2 text-xs max-sm:h-auto max-sm:max-w-52 max-sm:py-1.5 max-sm:leading-4",
                 active ? "bg-(--surface-selected) text-foreground" : "text-muted-foreground",
               )}
               onClick={() => onSelect(entry)}
             >
-              <Icon name={BANNER_ICONS[bannerKind(entry)]} aria-hidden data-icon="inline-start" />
+              <Icon
+                name={BANNER_ICONS[bannerKind(entry)]}
+                aria-hidden
+                data-icon="inline-start"
+                className="size-3.5"
+              />
               <span
                 title={tabTitle(entry)}
                 className="min-w-0 truncate [unicode-bidi:plaintext] max-sm:line-clamp-2 max-sm:wrap-anywhere max-sm:text-start max-sm:whitespace-normal"
@@ -745,7 +773,11 @@ function QueueTabs({
             </Button>
           );
         })}
-        {laterCount > 0 ? <Badge variant="outline">{laterCount} later</Badge> : null}
+        {laterCount > 0 ? (
+          <Badge variant="outline" size="sm">
+            {laterCount} later
+          </Badge>
+        ) : null}
       </div>
     </div>
   );
@@ -763,14 +795,11 @@ function Heading({
   const text = title(item);
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <p
-        dir="auto"
-        className="m-0 text-[13px] leading-[18px] font-medium wrap-anywhere text-foreground"
-      >
+      <p dir="auto" className="m-0 text-xs leading-snug font-medium wrap-anywhere text-foreground">
         {text}
       </p>
       {item.task && !text.includes(item.task) ? (
-        <span className="font-mono text-[11px] text-muted-foreground">{item.task}</span>
+        <span className="font-mono text-2xs text-muted-foreground">{item.task}</span>
       ) : null}
       {asksError !== undefined ? (
         <span className="text-muted-foreground" title={asksError}>
@@ -809,12 +838,12 @@ export function ActionButton({
   return (
     <Button
       type="button"
-      size="sm"
+      size={bannerKind ? "xs" : "sm"}
       variant={action.primary ? "default" : "outline"}
       className={cn(
         TAP,
         bannerKind
-          ? cn(MOBILE_ANSWER, "shrink-0 max-sm:min-w-0")
+          ? cn(MOBILE_ANSWER, "h-7 shrink-0 px-2.5 max-sm:min-w-0")
           : "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal",
         bannerKind &&
           action.primary &&
@@ -892,7 +921,7 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
   const id = useId();
   return (
     <div className="min-w-0">
-      <div className="relative min-w-0 after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:hidden after:h-6 after:max-h-full after:bg-linear-to-b after:from-transparent after:to-(--surface-raised-solid) data-[preview-fade]:after:block">
+      <div className="relative min-w-0 after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:hidden after:h-6 after:max-h-full after:bg-linear-to-b after:from-transparent after:to-background data-[preview-fade]:after:block">
         <div
           ref={box}
           id={id}
@@ -908,7 +937,7 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
       <Button
         ref={toggle}
         type="button"
-        size="sm"
+        size="xs"
         variant="ghost"
         hidden
         className={cn(
@@ -928,7 +957,7 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
         <span
           className={cn(
             surface.edge,
-            "flex items-center gap-1 rounded-full bg-(--surface-raised-solid) px-2.5 py-0.5 text-[11px]",
+            "flex items-center gap-1 rounded-full bg-background px-2.5 py-0.5 text-xs",
           )}
         >
           {open ? "Less" : "More"}
@@ -1113,14 +1142,14 @@ export function OtherAnswer({
         maxLength={200}
         value={value}
         readOnly={showCancel && pending}
-        className={cn(TAP, "h-8 min-w-0 flex-1")}
+        className={cn(TAP, showCancel ? "h-7 text-xs" : "h-8", "min-w-0 flex-1")}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={cancelOnEscape}
       />
       <Button
         type="submit"
-        size="sm"
-        className={TAP}
+        size={showCancel ? "xs" : "sm"}
+        className={cn(TAP, showCancel && "h-7 px-2.5")}
         disabled={value.trim() === "" || pending}
         onKeyDown={cancelOnEscape}
       >
@@ -1129,9 +1158,9 @@ export function OtherAnswer({
       {showCancel ? (
         <Button
           type="button"
-          size="sm"
+          size="xs"
           variant="ghost"
-          className={TAP}
+          className={cn(TAP, "h-7 px-2")}
           disabled={pending}
           onClick={onCancel}
           onKeyDown={cancelOnEscape}
