@@ -614,9 +614,9 @@ test("an empty queue is one clear line with an action that opens Captain Overvie
   expect(row.querySelector("ul")).toBeNull();
   const icon = row.querySelector("[data-icon]");
   expect(icon?.getAttribute("data-icon")).toBe(DEFAULT_ICON_GLYPH);
-  expect(icon?.className).toContain("text-muted-foreground");
+  expect(icon?.className).toContain("text-foreground");
   const label = slot.getByText("All clear");
-  expect(label.className).toContain("text-muted-foreground");
+  expect(label.className).toContain("text-foreground");
   expect(label.className).not.toContain("font-medium");
   fireEvent.click(overview);
   expect(slot.experimental_panelCalls).toEqual([

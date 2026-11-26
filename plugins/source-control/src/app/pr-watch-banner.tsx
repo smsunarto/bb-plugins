@@ -103,16 +103,15 @@ function PrWatchCard({ threadId }: { threadId: string }) {
   const watches = query.data?.[threadId]?.watches ?? NO_WATCHES;
   if (watches.length === 0) return null;
   return (
-    <section
-      aria-label="Watched pull requests"
+    <div
       data-bb-plugin="source-control"
       data-testid="sc-pr-watch"
-      className="flex flex-col p-1 text-[12px]"
+      className="flex flex-col text-xs"
     >
       {watches.map((watch) => (
         <WatchedPullRequest key={prKey(watch.ref)} threadId={threadId} watch={watch} />
       ))}
-    </section>
+    </div>
   );
 }
 
@@ -142,8 +141,12 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
   const tone = expanded ? "text-foreground" : "text-muted-foreground";
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded} className="flex min-w-0 flex-col">
-      <div className="flex min-h-7 min-w-0 items-center gap-1">
-        <Item asChild size="row" className="min-h-6 min-w-0 flex-1 cursor-pointer gap-1">
+      <div className="flex min-h-8 min-w-0 items-center gap-1 px-1 py-1">
+        <Item
+          asChild
+          size="row"
+          className="min-h-6 min-w-0 flex-1 cursor-pointer gap-1.5 py-0 text-xs"
+        >
           <CollapsibleTrigger
             {...KEEP_COMPOSER_FOCUS}
             aria-label={`${key} ${watch.title}: ${summary}. ${expanded ? "Hide" : "Show"} checks`}

@@ -18,7 +18,6 @@
 
 [data-t3-composer][data-promptbox],
 [data-t3-composer-host],
-[aria-label="Thread context before sending"],
 [data-thread-context-card],
 [data-promptbox-shell] {
   --t3-composer-ring-width: var(--monokai-device-pixel, var(--t3-composer-ring-fallback));
@@ -27,7 +26,6 @@
 
 .dark [data-t3-composer][data-promptbox],
 .dark [data-t3-composer-host],
-.dark [aria-label="Thread context before sending"],
 .dark [data-thread-context-card],
 .dark [data-promptbox-shell] {
   --t3-composer-hairline: color-mix(in srgb, var(--foreground) 18%, var(--background));
@@ -435,22 +433,12 @@
   box-shadow: inset 0 0 0 var(--t3-composer-ring-width) var(--t3-composer-hairline);
 }
 
-/* BB's thread context surfaces draw a 1px border-border edge: the git inlay above
-   the composer and the floating Thread context card. Give them the card's and
-   tray's one-device-pixel hairline so every edge around the composer reads the same. */
-[aria-label="Thread context before sending"],
+/* BB's floating Thread context card draws a 1px border-border edge. Give it the
+   composer's one-device-pixel hairline; prompt-stack cards above the composer
+   share one unified stylesheet in src/prompt-stack-banner-style.ts. */
 [data-thread-context-card] {
   border-width: 0;
   box-shadow: inset 0 0 0 var(--t3-composer-ring-width) var(--t3-composer-hairline);
-}
-
-/* Without its 2px of border, the inlay's 32px row sat at the top of BB's 35px
-   minimum height, 3px closer to the top edge than the bottom. Center it; once
-   the details open, the content outgrows the minimum and this does nothing. */
-[aria-label="Thread context before sending"] {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
 }
 
 /* BB's positioned overflow fade can meet the composer's top edge. A
@@ -628,37 +616,7 @@
   }
 }
 
-/* BB stacks banner cards on the composer: plugin prompt banners and its own
-   Parent thread, Child threads, and status banners. Each draws a 1px
-   border-border edge and a 1px divider over its expanded body, and an active
-   banner's toggle adds a 1px ring inside the card's edge. Give the cards and
-   dividers the card's and tray's one-device-pixel hairline, and let the card own its
-   edge. */
-[data-promptbox-shell] section.rounded-lg.border-border {
-  border-width: 0;
-  box-shadow: inset 0 0 0 var(--t3-composer-ring-width) var(--t3-composer-hairline);
-}
-
-/* The queue card tucked under the composer keeps its shadow-lift: Tailwind
-   composes the ring into the same box-shadow. */
-[data-promptbox-shell] section.rounded-b-none.border-border {
-  border-width: 0;
-  --tw-ring-shadow: inset 0 0 0 var(--t3-composer-ring-width) var(--t3-composer-hairline);
-}
-
-[data-promptbox-shell] button[id^="thread-prompt-banner-"].ring-1 {
-  box-shadow: none;
-}
-
-/* Chrome rounds a 0.5px border up to 1px, and the body's opaque fill covers an
-   inset shadow on the body itself, so the expanded toggle draws the divider. */
-[data-promptbox-shell] section[id^="thread-prompt-banner-"].border-border {
-  border-top-width: 0;
-}
-
-[data-promptbox-shell] button[id^="thread-prompt-banner-"][aria-expanded="true"] {
-  box-shadow: inset 0 calc(-1 * var(--t3-composer-ring-width)) 0 var(--t3-composer-hairline);
-}
+/* Prompt-stack banner cards are styled uniformly in src/prompt-stack-banner-style.ts. */
 
 /* Hide BB's copy only once the card's picker has rendered. While BB disables its
    copy (plan mode, a permission snapshot, a pending question), BB's copy shows

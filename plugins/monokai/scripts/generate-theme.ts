@@ -690,26 +690,6 @@ const requiredRules: Array<{
     declarations: { "background-color": "var(--background)" },
   },
   {
-    selector: '.dark [aria-label="Thread context before sending"]',
-    declarations: { "background-color": "var(--agent-surface-background)" },
-  },
-  {
-    selector:
-      '.dark [aria-label="Thread context before sending"] > .flex.items-center.gap-0\\.5.p-1',
-    declarations: { "background-color": "transparent" },
-  },
-  {
-    selector: ".dark [data-agentation-staging-banner]",
-    declarations: {
-      "background-color": "var(--agent-surface-background)",
-      "border-color": "var(--agent-surface-border)",
-    },
-  },
-  {
-    selector: ".dark [data-agentation-staging-banner] > ul",
-    declarations: { "border-color": "var(--agent-surface-border)" },
-  },
-  {
     selector: ".dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col",
     declarations: { "background-color": palette.shell.panel },
   },

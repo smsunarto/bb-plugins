@@ -1817,11 +1817,6 @@
   {
     "file": "plugins/t3-composer/app.css",
     "rule": "raw-color",
-    "source": "border-color: color-mix(in srgb, var(--foreground) 8%, transparent);"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "raw-color",
     "source": "border-right: 0.5px solid color-mix(in srgb, var(--foreground) 8%, transparent);"
   },
   {
@@ -1868,36 +1863,6 @@
     "file": "plugins/t3-composer/app.css",
     "rule": "raw-color",
     "source": "color: color-mix(in srgb, var(--foreground) 80%, transparent);"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "utility-anchor",
-    "source": "[data-promptbox-shell] button[id^=\"thread-prompt-banner-\"].ring-1 {"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "utility-anchor",
-    "source": "[data-promptbox-shell] section.rounded-b-none.border-border {"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "utility-anchor",
-    "source": "[data-promptbox-shell] section.rounded-b-none.border-border {"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "utility-anchor",
-    "source": "[data-promptbox-shell] section.rounded-lg.border-border {"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "utility-anchor",
-    "source": "[data-promptbox-shell] section.rounded-lg.border-border {"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "utility-anchor",
-    "source": "[data-promptbox-shell] section[id^=\"thread-prompt-banner-\"].border-border {"
   },
   {
     "file": "plugins/t3-composer/app.css",

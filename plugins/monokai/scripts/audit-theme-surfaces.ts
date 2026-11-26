@@ -32,8 +32,6 @@ try {
     const cases = [
       ['User message', '<div class="rounded-xl border border-border-seam bg-surface-recessed">User message</div>', .06],
       ['Composer', '<form data-promptbox><div data-promptbox-editor-scroll>Composer editor</div></form>', .06],
-      ['Context', '<div aria-label="Thread context before sending"><div class="flex items-center gap-0.5 p-1">Context inlay</div></div>', .06],
-      ['Annotation', '<div data-agentation-staging-banner>Annotation banner</div>', .06],
       ['Embed header', '<div class="smart-embed-header">Embed header</div>', .06],
       ['Inline code', '<code class="bg-muted/70">inlineCode</code>', .08],
     ];
