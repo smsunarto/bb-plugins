@@ -1,4 +1,4 @@
-// Keep bb's floating sidebar toggle out of the phone navigation header.
+// Keep bb's floating sidebar toggle out of the phone navigation.
 const NAVIGATION = '[data-sidebar="panel"][data-vaul-drawer-direction]:has([data-gtd-phone-nav])';
 const OPEN_DRAWER = '[data-sidebar="inset"][data-sidebar-shelf="open"]';
 const TOGGLE = `${NAVIGATION} ~ ${OPEN_DRAWER} ~ [data-testid="app-sidebar-trigger-overlay"]`;

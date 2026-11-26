@@ -10,7 +10,6 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { cn } from "../../lib/utils";
 import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
 import { usePointerCoarse } from "../ui/hooks/use-pointer-coarse";
 import {
   ContextMenu,
@@ -50,9 +49,6 @@ export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigat
   const { items, activeItemId, isShortcutModifierHeld, actions } = navigation;
   const isCoarsePointer = usePointerCoarse();
   const isPhone = isCompactViewport && isCoarsePointer;
-  const search = isPhone
-    ? items.find((item) => item.isVisible && item.action.kind === "search-threads")
-    : undefined;
   const hidden = items.filter((item) => !item.isVisible);
   const visible = items.filter((item) => item.isVisible);
   const scroller = useNavScroll(activeItemId, isPhone, visible.length);
@@ -65,12 +61,6 @@ export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigat
           data-gtd-phone-nav={isPhone || undefined}
           className={cn("flex shrink-0 flex-col px-2 py-1", !isPhone && "gap-1")}
         >
-          {isPhone ? (
-            <div className="gtd-phone-nav-header">
-              <span className="gtd-phone-wordmark">bb</span>
-              {search ? <NavigationShortcut item={search} actions={actions} /> : null}
-            </div>
-          ) : null}
           <div
             ref={scroller}
             className={cn("relative flex min-h-0 flex-col", !isPhone && "gap-1")}
@@ -152,32 +142,6 @@ const NavigationRow = memo(function NavigationRow({
     </button>
   );
 });
-
-/** Phone shortcuts use the same host actions as the ordered, customizable rows. */
-function NavigationShortcut({
-  item,
-  actions,
-}: {
-  item: NavigationItem;
-  actions: NavigationActions;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      className="gtd-phone-nav-shortcut"
-      data-gtd-shortcut="search"
-      disabled={item.isDisabled}
-      aria-busy={item.isLoading || undefined}
-      aria-label={item.label}
-      onClick={(event) => actions.activate(item.id, { target: activationTarget(event) })}
-      onAuxClick={(event) => {
-        if (event.button === 1) actions.activate(item.id, { target: "tab" });
-      }}
-    >
-      <NavigationIcon icon={item.icon} className="size-5 shrink-0" />
-    </Button>
-  );
-}
 
 /** Items the user hid stay reachable here, with the editor that unhides them. */
 function MoreRow({ hidden, actions }: { hidden: NavigationItem[]; actions: NavigationActions }) {

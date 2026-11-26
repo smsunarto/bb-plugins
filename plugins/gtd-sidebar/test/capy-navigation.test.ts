@@ -130,26 +130,19 @@ describe("CapyNavigation", () => {
     assert.equal(scroller.nextElementSibling, slot.getByRole("button", { name: "More" }));
   });
 
-  it("leaves the header out of compact mouse navigation", () => {
+  it("leaves phone styling out of compact mouse navigation", () => {
     const slot = mount(items(), {}, true, false);
-    assert.equal(slot.getByRole("navigation").hasAttribute("data-gtd-phone-nav"), false);
-    assert.equal(slot.getAllByRole("button", { name: "Search threads" }).length, 1);
+    const nav = slot.getByRole("navigation");
+    assert.equal(nav.hasAttribute("data-gtd-phone-nav"), false);
+    assert.ok(nav.className.split(/\s+/).includes("gap-1"));
   });
 
-  it("keeps the phone search shortcut bound to its host action without moving their rows", () => {
+  it("starts phone navigation directly with the scrolling rows", () => {
     const slot = mount(items(), {}, true);
-    assert.deepEqual(rowIds(slot), ["__bb__/new-thread", SEARCH, "__bb__/extensions"]);
-    const search = slot.container.querySelector('[data-gtd-shortcut="search"]');
-    assert.ok(search);
-    fireEvent.click(search);
-    assert.deepEqual(slot.inspection.sidebarNavigationCalls, [
-      { method: "activate", itemId: SEARCH, target: "current" },
-    ]);
-    cleanup();
-
-    const hidden = mount(items({ isVisible: false }), {}, true);
-    assert.equal(hidden.container.querySelector('[data-gtd-shortcut="search"]'), null);
-    assert.ok(hidden.getByRole("button", { name: "More" }));
+    const nav = slot.getByRole("navigation");
+    assert.equal(nav.hasAttribute("data-gtd-phone-nav"), true);
+    assert.equal(nav.firstElementChild?.hasAttribute("data-gtd-nav-scroll"), true);
+    assert.equal(nav.children.length, 1);
   });
 
   it("shows Search's shortcut while the modifier is held", () => {

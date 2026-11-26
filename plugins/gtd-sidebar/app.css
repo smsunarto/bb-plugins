@@ -660,27 +660,12 @@
   color: var(--foreground);
 }
 
-.gtd-phone-nav-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 2px 4px 12px;
-}
-
-.gtd-phone-wordmark {
-  font-size: 30px;
-  font-weight: 750;
-  line-height: 1;
-  letter-spacing: -0.06em;
-}
-
 [data-gtd-phone-nav] [data-gtd-nav-scroll] {
-  /* Use up to 42% of the viewport, minus the 58px header, the More row
-     and 4px bottom padding. Round down so the region ends between rows. */
+  /* Use up to 42% of the viewport, minus the More row and 4px bottom padding.
+     Round down so the region ends between rows. */
   max-height: max(
     var(--gtd-nav-row-height),
-    round(down, calc(42dvh - 62px - var(--gtd-nav-row-height)), var(--gtd-nav-row-height))
+    round(down, calc(42dvh - 4px - var(--gtd-nav-row-height)), var(--gtd-nav-row-height))
   );
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -745,13 +730,4 @@
   border: 0;
   background: var(--info, var(--ring));
   font-size: 0;
-}
-
-.gtd-phone-nav-shortcut {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border-radius: 9999px;
-  background: var(--sidebar-accent);
-  color: var(--foreground);
 }
