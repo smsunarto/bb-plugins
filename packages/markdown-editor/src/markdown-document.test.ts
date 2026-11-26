@@ -64,4 +64,24 @@ describe("parseMarkdownDocument", () => {
       expect(document.frontmatter + document.body).toBe(content);
     }
   });
+
+  it("handles quoted, commented, non-string, and block-scalar titles", () => {
+    expect(parseMarkdownDocument('---\ntitle: "Hello: world" # note\n---\nbody\n').title).toBe(
+      "Hello: world",
+    );
+    expect(parseMarkdownDocument("---\ntitle: 'It''s fine'\n---\nbody\n").title).toBe("It's fine");
+    expect(
+      parseMarkdownDocument("---\ntitle: Plain title # trailing comment\n---\nbody\n").title,
+    ).toBe("Plain title");
+    expect(parseMarkdownDocument("---\ntitle: 42\n---\nbody\n").title).toBeNull();
+    expect(parseMarkdownDocument("---\ntitle: true\n---\nbody\n").title).toBeNull();
+    expect(parseMarkdownDocument("---\ntitle: >\n  Folded\n  title\n---\nbody\n").title).toBe(
+      "Folded title",
+    );
+    expect(parseMarkdownDocument('---\ntitle: "unclosed\n---\nbody\n')).toEqual({
+      frontmatter: "",
+      body: '---\ntitle: "unclosed\n---\nbody\n',
+      title: null,
+    });
+  });
 });

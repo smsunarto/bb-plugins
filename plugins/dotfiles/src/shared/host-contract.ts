@@ -38,7 +38,15 @@ export const dotfilesHostContract = defineRpcContract({
     output: z.object({ content: z.string().nullable() }).strict(),
   },
   run: {
-    input: z.object({ repoPath, command: z.string().min(1) }).strict(),
+    input: z
+      .object({
+        repoPath,
+        /** Shell source, run by the host's login shell. Never interpolate untrusted text into it. */
+        command: z.string().min(1),
+        /** Literal words after `command`, quoted by the host for the shell that runs it. */
+        args: z.array(z.string()).optional(),
+      })
+      .strict(),
     output: taskResultSchema,
   },
 });

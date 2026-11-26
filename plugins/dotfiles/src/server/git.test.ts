@@ -137,3 +137,20 @@ test("finds the machine an agent's thread runs on", async () => {
   assert.equal(await git.threadHostId("thread-on-dev"), "host_dev");
   assert.equal(await git.threadHostId("thread-without-environment"), undefined);
 });
+
+test("removing a skill sends its name as data, for the host to quote for its own shell", async () => {
+  const { git, calls } = setup();
+
+  const repo = requireRepo(await git.inspect(requireConnected(await git.target("host_dev"))));
+  await git.removeSkill(repo, "it's-a\\");
+
+  assert.deepEqual(calls.at(-1), {
+    method: "run",
+    input: {
+      repoPath: "/Users/example/git/dotfiles",
+      command: "npx -y skills remove",
+      args: ["it's-a\\", "-g", "-y"],
+    },
+    options: { hostId: "host_dev", timeoutMs: 310_000 },
+  });
+});

@@ -5,7 +5,7 @@ import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
-import hostEntry from "./host.ts";
+import hostEntry, { quoteForShell, runInLoginShell, type TaskTimers } from "./host.ts";
 
 // Git hooks export GIT_DIR and friends. Inherited from a linked worktree's pre-push hook, they
 // point this file's `git init` and commit at the real repository, which turns it bare.
@@ -211,5 +211,134 @@ test("a cancelled task settles even while a process that left its group holds it
     expect(running(escaped)).toBe(true);
   } finally {
     killQuietly(pids);
+  }
+}, 15_000);
+
+/** Words a skill name or other argument could carry that a shell would otherwise act on. */
+const hostileWords = [
+  "",
+  "plain",
+  "two words",
+  "it's",
+  "trailing\\",
+  "a\\'b",
+  "\\\\'; touch pwned; echo '",
+  "$(touch pwned)",
+  "`touch pwned`",
+  "$HOME $argv (echo x)",
+  '"double" \\"escaped\\"',
+  "~ * ? [a] {a,b} ; & | < > #",
+  "line one\nline two",
+  "tab\there",
+  "ünïcödé ✓",
+];
+
+/** What `shell` prints for each word, one per line, when it reads them quoted for `family`. */
+function echoed(shell: string, flags: readonly string[], family: "posix" | "fish"): string[] {
+  const words = hostileWords.map((word) => quoteForShell(word, family)).join(" ");
+  const output = execFileSync(shell, [...flags, `printf '%s\\0' ${words}`], {
+    cwd: scratch,
+    encoding: "utf8",
+  });
+  return output.split("\0").slice(0, -1);
+}
+
+const fish = ["/opt/homebrew/bin/fish", "/usr/local/bin/fish", "/usr/bin/fish"].find((path) =>
+  existsSync(path),
+);
+
+test("sh reads every quoted word back verbatim and runs none of it", () => {
+  expect(echoed("/bin/sh", ["-c"], "posix")).toEqual(hostileWords);
+  expect(existsSync(join(scratch, "pwned"))).toBe(false);
+});
+
+test.skipIf(fish === undefined)(
+  "fish reads every quoted word back verbatim and runs none of it",
+  () => {
+    expect(echoed(fish ?? "", ["--no-config", "-c"], "fish")).toEqual(hostileWords);
+    expect(existsSync(join(scratch, "pwned"))).toBe(false);
+  },
+);
+
+test("POSIX quoting is not safe for fish, which is why the host quotes per shell", () => {
+  // fish reads `\'` inside single quotes as an escaped quote, so this word never closes.
+  expect(quoteForShell("trailing\\", "posix")).toBe("'trailing\\'");
+  expect(quoteForShell("trailing\\", "fish")).toBe("'trailing\\\\'");
+  expect(quoteForShell("it's", "fish")).toBe("'it\\'s'");
+  expect(quoteForShell("it's", "posix")).toBe("'it'\\''s'");
+  expect(() => quoteForShell("nul\0", "posix")).toThrow(/NUL/);
+});
+
+test("task arguments reach the command as literal words", async () => {
+  const result = await host.experimental_call("run", {
+    repoPath: repo,
+    command: "printf '[%s]'",
+    args: ["two words; echo $HOME", "*"],
+  });
+
+  expect(result.exitCode).toBe(0);
+  expect(result.output.replace(noise, "")).toBe("[two words; echo $HOME][*]");
+});
+
+/** Real timers that remember which of them a task left pending or holding the process open. */
+function recordingTimers() {
+  const pending = new Set<ReturnType<typeof setTimeout>>();
+  const refd = (timer: ReturnType<typeof setTimeout>) => timer.hasRef?.() ?? true;
+  const timers: TaskTimers = {
+    set: (run, ms) => {
+      const timer = setTimeout(() => {
+        pending.delete(timer);
+        run();
+      }, ms);
+      pending.add(timer);
+      return timer;
+    },
+    clear: (timer) => {
+      pending.delete(timer);
+      clearTimeout(timer);
+    },
+  };
+  return {
+    timers,
+    /** Timers still scheduled that would keep the host daemon's event loop alive. */
+    holding: () => [...pending].filter(refd).length,
+    scheduled: () => pending.size,
+    dispose: () => {
+      for (const timer of pending) clearTimeout(timer);
+    },
+  };
+}
+
+test("a task that exits on its own leaves no timer behind", async () => {
+  const recorded = recordingTimers();
+  try {
+    const result = await runInLoginShell(
+      "exit 0",
+      repo,
+      new AbortController().signal,
+      [],
+      recorded.timers,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(recorded.scheduled()).toBe(0);
+  } finally {
+    recorded.dispose();
+  }
+});
+
+test("a cancelled task that exits on SIGTERM leaves no timer holding the host open", async () => {
+  const recorded = recordingTimers();
+  const cancel = new AbortController();
+  try {
+    const call = runInLoginShell("sleep 30 & wait", repo, cancel.signal, [], recorded.timers);
+    // Let the shell start and register its handlers before the stop.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    cancel.abort();
+
+    // It settles on close, well before the 2 s SIGKILL grace.
+    expect(await within(1_500, call)).toEqual({ exitCode: 1, output: `${noise}\n[cancelled]` });
+    expect(recorded.holding()).toBe(0);
+  } finally {
+    recorded.dispose();
   }
 }, 15_000);
