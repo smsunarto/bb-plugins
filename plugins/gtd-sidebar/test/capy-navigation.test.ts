@@ -168,6 +168,57 @@ describe("CapyNavigation", () => {
     assert.equal(nav.children.length, 1);
   });
 
+  it("gives truncated nav row labels vertical clip room under tight leading across all row types", async () => {
+    const TIGHT_LEADING = /^leading-(?:none|\[1(?:em)?\])$/;
+    const TOP_PADDING = /^(?:p|py|pt)-(?!0(?:\.0+)?$)/;
+    const BOTTOM_PADDING = /^(?:p|py|pb)-(?!0(?:\.0+)?$)/;
+    const published = { settle() {}, canSettle: () => false, openNewCaptain() {} };
+    publishSidebarActions(published);
+    try {
+      const slot = mount(
+        [
+          item("__bb__/new-thread", "New thread", { kind: "new-thread" }, "new-thread"),
+          item(
+            "agent-instructions/agent-instructions",
+            "Agent instructions",
+            { kind: "open-extensions" },
+            "extensions",
+          ),
+          item(SEARCH, "Search threads", { kind: "search-threads" }, "search", {
+            isVisible: false,
+          }),
+        ],
+        { plugins: [{ id: "captain", enabled: true, status: "running" }] },
+      );
+      await slot.findByRole("button", { name: "New Captain" });
+      const rows = [
+        ...slot.container.querySelectorAll<HTMLButtonElement>(
+          "button[data-sidebar-navigation-item], button[data-sidebar-navigation-more]",
+        ),
+      ];
+      assert.equal(rows.length, 4);
+      for (const row of rows) {
+        const rowTokens = row.className.split(/\s+/);
+        const label = row.querySelector("span.truncate");
+        assert.ok(label, `row ${row.textContent} must keep a truncated label span`);
+        const labelTokens = label.className.split(/\s+/);
+        const labelOverridesLeading = labelTokens.some((token) => token.startsWith("leading-"));
+        const hasTightLeading =
+          labelTokens.some((token) => TIGHT_LEADING.test(token)) ||
+          (!labelOverridesLeading && rowTokens.some((token) => TIGHT_LEADING.test(token)));
+        const hasVerticalPaddingRoom =
+          labelTokens.some((token) => TOP_PADDING.test(token)) &&
+          labelTokens.some((token) => BOTTOM_PADDING.test(token));
+        assert.ok(
+          !hasTightLeading || hasVerticalPaddingRoom,
+          `row ${row.textContent} must not pair tight leading with an unpadded truncate label`,
+        );
+      }
+    } finally {
+      forgetSidebarActions(published);
+    }
+  });
+
   it("shows Search's shortcut while the modifier is held", () => {
     const search = { shortcut: { label: "Ctrl K", ariaKeyShortcuts: "Control+K" } };
     const row = (held: boolean) => {
