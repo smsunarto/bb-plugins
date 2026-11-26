@@ -486,8 +486,12 @@
 
 /* The inset spans the title bar, whose band holds the page header, so the
  * mask keeps that band whole and clips everything below it to the rounded
- * page. The SVG's rx is the page radius. */
+ * page. The SVG's rx is the page radius. Clearing bb's 1px border padding
+ * and the right panel's 1px top inset keeps no `--background` rim around the
+ * right panel once `inset-edge` is gone. */
 .dark [data-framed] [data-sidebar="inset"] {
+  padding-inline: 0;
+  padding-bottom: 0;
   mask-image:
     linear-gradient(black, black),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='12'/%3E%3C/svg%3E");
@@ -505,6 +509,10 @@
 
 .dark [data-framed] [data-sidebar="inset"]::after {
   display: none;
+}
+
+.dark [data-framed] [data-sidebar="inset"] aside[data-surface-tone="sidebar"]::before {
+  top: var(--bb-window-title-bar-height);
 }
 
 
@@ -1804,7 +1812,7 @@
   }
 }
 
-@media (min-width: 768px) {
+@media (width > 767px) {
   .dark[data-monokai-home] [data-app-content-shell]::before,
   .dark[data-monokai-home] [data-app-content-shell]::after {
     display: none;

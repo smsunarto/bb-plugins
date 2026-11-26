@@ -350,8 +350,10 @@ describe("bb Monokai contract audit", () => {
       "border-color: transparent;",
     );
     // The mask keeps the title-bar band whole and rounds the page below it;
-    // the SVG's rx and the edge's radius are the same 12px.
+    // the SVG's rx is the 12px page radius.
     const inset = body('.dark [data-framed] [data-sidebar="inset"]');
+    expect(inset).toContain("padding-inline: 0;");
+    expect(inset).toContain("padding-bottom: 0;");
     expect(inset).toContain("linear-gradient(black, black)");
     expect(inset).toContain("rx='12'");
     expect(inset).toContain(
@@ -361,6 +363,9 @@ describe("bb Monokai contract audit", () => {
     expect(inset).toContain("clip-path: none;");
     expect(body('.dark [data-framed] [data-sidebar="inset-edge"]')).toBe("\n  display: none;\n");
     expect(body('.dark [data-framed] [data-sidebar="inset"]::after')).toContain("display: none;");
+    expect(
+      body('.dark [data-framed] [data-sidebar="inset"] aside[data-surface-tone="sidebar"]::before'),
+    ).toBe("\n  top: var(--bb-window-title-bar-height);\n");
     // Neither sidebar edge glows; the right divider is the page's hairline.
     expect(body('.dark [data-testid="app-sidebar-resize-handle"]::before')).toBe(
       "\n  display: none;\n",
@@ -386,9 +391,10 @@ describe("bb Monokai contract audit", () => {
     expect(
       inset.filter(({ selector }) => selector.includes("[data-app-content-shell]::after")),
     ).toEqual([]);
-    // Desktop hides both shell halftone pseudos so only #root-compose-main-panel draws them.
+    // Desktop hides both shell halftone pseudos with no dead zone above 767px
+    // so only #root-compose-main-panel draws them.
     expect(theme).toContain(
-      "@media (min-width: 768px) {\n  .dark[data-monokai-home] [data-app-content-shell]::before,\n  .dark[data-monokai-home] [data-app-content-shell]::after {\n    display: none;",
+      "@media (width > 767px) {\n  .dark[data-monokai-home] [data-app-content-shell]::before,\n  .dark[data-monokai-home] [data-app-content-shell]::after {\n    display: none;",
     );
     // The halftone starts below the macOS title bar, which bb tints translucent.
     expect(theme).toContain(

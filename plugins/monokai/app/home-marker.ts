@@ -31,7 +31,7 @@ export function markHome(target: AttributeTarget): () => void {
   return markPage(target, HOME_ATTRIBUTE);
 }
 
-/** Layout effect: the mark lands before the first paint, so no edge flashes. */
+/** Layout effect: the mark lands before the first paint, so the phone backdrop and toggle never flash. */
 export function HomeMarker(): null {
   useLayoutEffect(() => markHome(document.documentElement), []);
   return null;
