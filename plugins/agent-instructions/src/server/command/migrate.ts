@@ -18,7 +18,8 @@ export function migrateCommand(ctx: AgentInstructionsContext) {
     },
     async run({ options }) {
       const report = await ctx.store.withLock(async () => {
-        const data = await ctx.store.readLegacyData({ lenient: true });
+        // Explicit CLI migration fails loudly on unreadable legacy KV state rather than dropping rules silently.
+        const data = await ctx.store.readLegacyData({ lenient: false });
         const result = await runMigration({
           data,
           targetDir: ctx.store.sourceDir,
@@ -29,6 +30,7 @@ export function migrateCommand(ctx: AgentInstructionsContext) {
         });
         if (result.applied) {
           ctx.store.clearMigrationBlocked();
+          ctx.store.restartWatch();
           await ctx.store.reloadUnlocked("disk");
         }
         return result;

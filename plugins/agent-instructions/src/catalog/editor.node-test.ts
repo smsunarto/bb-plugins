@@ -423,3 +423,40 @@ test("agents edit the global doc through the CLI", async () => {
     ["doc"],
   );
 });
+
+test("R2 #2: Node fs.watch survives migrate --apply atomic directory swap", async () => {
+  const { dataDir, sourceDir, cli } = await setup();
+  const pluginDir = join(dataDir, "plugins/agent-instructions");
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(join(pluginDir, "data.db"));
+  db.exec(`
+    CREATE TABLE instruction_docs (id TEXT PRIMARY KEY, name TEXT NOT NULL, body TEXT NOT NULL, enabled INTEGER NOT NULL, position INTEGER NOT NULL, origin TEXT NOT NULL, rev INTEGER NOT NULL);
+  `);
+  db.prepare("INSERT INTO instruction_docs VALUES (?, ?, ?, ?, ?, ?, ?)").run(
+    "doc_1",
+    "Doc One",
+    "Initial migrated doc.",
+    1,
+    0,
+    "{}",
+    1,
+  );
+  db.close();
+
+  const mig = await cli("migrate", "--apply", "--force");
+  assert.equal(mig.exitCode, 0, mig.stderr);
+  assert.equal(await readFile(join(dataDir, "AGENTS.md"), "utf8"), "Initial migrated doc.\n");
+
+  // Wait for any rename/delete debounce event from the directory swap itself to settle first.
+  await new Promise((r) => setTimeout(r, 350));
+
+  // Edit the swapped source/ directory directly on disk -> Node's inotify watcher MUST still fire!
+  await writeSourceFile(sourceDir, "instructions/doc_1.md", "Edited after atomic swap.\n");
+  const deadline = Date.now() + 2_500;
+  while (Date.now() < deadline) {
+    const current = await readFile(join(dataDir, "AGENTS.md"), "utf8").catch(() => "");
+    if (current.includes("Edited after atomic swap.")) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.equal(await readFile(join(dataDir, "AGENTS.md"), "utf8"), "Edited after atomic swap.\n");
+});

@@ -15,15 +15,24 @@ export async function loadTargets(bb: BbPluginApi): Promise<Targets> {
   };
 }
 
+/** The environment (host and workspace path) of the thread that ran a command. */
+export async function callerEnvironment(
+  bb: BbPluginApi,
+  threadId: string | undefined,
+): Promise<{ hostId: string | undefined; path: string | undefined } | undefined> {
+  if (!threadId) return undefined;
+  const thread = await bb.sdk.threads.get({ threadId });
+  if (!thread.environmentId) return undefined;
+  const env = await bb.sdk.environments.get({ environmentId: thread.environmentId });
+  return env ? { hostId: env.hostId, path: env.path ?? undefined } : undefined;
+}
+
 /** The host of the thread that ran a command, so its paths can be read there. */
 export async function callerHost(
   bb: BbPluginApi,
   threadId: string | undefined,
 ): Promise<string | undefined> {
-  if (!threadId) return undefined;
-  const thread = await bb.sdk.threads.get({ threadId });
-  if (!thread.environmentId) return undefined;
-  return (await bb.sdk.environments.get({ environmentId: thread.environmentId }))?.hostId;
+  return (await callerEnvironment(bb, threadId))?.hostId;
 }
 
 function names(ids: readonly string[], known: readonly Target[]): string {

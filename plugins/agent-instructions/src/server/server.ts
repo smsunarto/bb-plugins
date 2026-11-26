@@ -100,16 +100,18 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   }
 
   const unsubChange = store.onChange((event) => {
-    // Disk edits and remote sync pulls must republish immediately; local UI/CLI writes
-    // already await publishCatalog/publishWithin, though rules/doc edits still notify clients.
-    if (event.reason !== "local" && event.catalogChanged) {
-      publishInBackground();
-    }
     if (event.catalogChanged || event.rulesChanged) {
       bb.realtime.publish("sourceChanged", {
         revision: event.revision,
         rulesRevision: event.rulesRevision,
       });
+    }
+    // Nothing publishes or mirror-syncs while migration is blocked (enforced in publisher & sync too).
+    if (store.migrationBlocked() !== null) return;
+    // Disk edits and remote sync pulls must republish immediately; local UI/CLI writes
+    // already await publishCatalog/publishWithin, though rules/doc edits still notify clients.
+    if (event.reason !== "local" && event.catalogChanged) {
+      publishInBackground();
     }
     if (event.catalogChanged || event.rulesChanged || event.manifestChanged) {
       if (event.reason === "local") {

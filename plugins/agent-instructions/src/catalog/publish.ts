@@ -41,6 +41,8 @@ import { treeSha } from "./tree.ts";
 
 /** What publishing reads from the catalog. */
 export type PublishSource = {
+  /** Non-null when publishing must be refused (for example, an incomplete or failed migration). */
+  publishBlocked?(): string | null;
   publishable(): { name: string; treeSha: string }[];
   skillFiles(
     name: string,
@@ -268,6 +270,8 @@ export async function publish(
   pluginId: string,
   source: PublishSource,
 ): Promise<PublishReport> {
+  const blocked = source.publishBlocked?.();
+  if (blocked) throw new Error(`Publishing blocked: ${blocked}`);
   const own = join(dataDir, "plugins", pluginId);
   const skillsDir = join(dataDir, "skills");
   const agentsMd = join(dataDir, "AGENTS.md");

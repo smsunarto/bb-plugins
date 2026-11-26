@@ -10,7 +10,7 @@ import { catalogChange, type CatalogChange } from "../../catalog/contract.ts";
 import { MAX_FILE_BYTES } from "../../catalog/edit-rules.ts";
 import type { catalogHandlers } from "../../catalog/rpc.ts";
 import type { AgentInstructionsContext } from "../lib/context.ts";
-import { callerHost } from "../lib/targets.ts";
+import { callerEnvironment } from "../lib/targets.ts";
 
 type Handlers = ReturnType<typeof catalogHandlers>;
 
@@ -61,7 +61,8 @@ export function editCommands(ctx: AgentInstructionsContext, handlers: Handlers) 
       });
     if (options.content !== undefined) return options.content;
     const file = posix.resolve(context.cwd ?? "/", options.file ?? "");
-    const threadHost = await callerHost(ctx.bb, context.threadId);
+    const env = await callerEnvironment(ctx.bb, context.threadId);
+    const threadHost = env?.hostId;
     if (context.threadId && options.host && options.host !== threadHost) {
       throw new PluginCliError("Cannot override --host to another host from inside a bb thread", {
         code: "forbidden_host",
@@ -70,12 +71,34 @@ export function editCommands(ctx: AgentInstructionsContext, handlers: Handlers) 
     const hostId = threadHost ?? options.host;
     if (!hostId)
       throw new PluginCliError("--file needs --host outside a bb thread", { code: "no_host" });
+
+    let rootPath: string;
+    if (context.threadId) {
+      // Confine thread `--file` reads to the thread's workspace or this host's editable instructions root.
+      const trustedRoots: string[] = [];
+      if (env?.path) trustedRoots.push(posix.resolve(env.path));
+      const editable = await ctx.sync.editablePathForHost(hostId).catch(() => null);
+      if (editable?.path) trustedRoots.push(posix.resolve(editable.path));
+      const matched = trustedRoots.find(
+        (root) => file === root || file.startsWith(root.endsWith("/") ? root : `${root}/`),
+      );
+      if (!matched) {
+        throw new PluginCliError(
+          `${file} is outside this thread's workspace and editable instructions folder`,
+          { code: "forbidden_path" },
+        );
+      }
+      rootPath = matched;
+    } else {
+      rootPath = posix.dirname(file);
+    }
+
     let read;
     try {
       read = await ctx.bb.sdk.files.read({
         hostId,
         path: file,
-        rootPath: posix.dirname(file),
+        rootPath,
         signal: AbortSignal.timeout(15_000),
       });
     } catch (error) {

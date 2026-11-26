@@ -181,6 +181,7 @@ export function openSourceStore(bb: BbPluginApi) {
 
   let watcher: FSWatcher | null = null;
   let watchTimer: ReturnType<typeof setTimeout> | null = null;
+  let watching = false;
   let disposed = false;
 
   // Serialize all disk reads/writes and reloads through one queue.
@@ -644,14 +645,25 @@ export function openSourceStore(bb: BbPluginApi) {
     } catch {
       return;
     }
-    const sourcePresent = await pathExists(sourceDir);
+    let sourcePresent = await pathExists(sourceDir);
     const backups = entries.filter((e) => e.startsWith(".source-backup-")).sort();
     if (!sourcePresent && backups.length > 0) {
-      // Previous swap moved sourceDir aside before crashing; restore it!
-      await rename(join(pluginDir, backups.at(-1)!), sourceDir).catch(() => undefined);
+      const latestBackup = backups.at(-1)!;
+      try {
+        // Previous swap moved sourceDir aside before crashing; restore it!
+        await rename(join(pluginDir, latestBackup), sourceDir);
+        sourcePresent = true;
+      } catch (error) {
+        bb.log.error(
+          `failed to restore interrupted migration backup ${latestBackup}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
     for (const entry of entries) {
-      if (entry.startsWith(".source-migrating-") || entry.startsWith(".source-backup-")) {
+      if (entry.startsWith(".source-migrating-")) {
+        await rm(join(pluginDir, entry), { recursive: true, force: true }).catch(() => undefined);
+      } else if (entry.startsWith(".source-backup-") && sourcePresent) {
+        // Only remove old backups once sourceDir is confirmed present.
         await rm(join(pluginDir, entry), { recursive: true, force: true }).catch(() => undefined);
       }
     }
@@ -668,10 +680,10 @@ export function openSourceStore(bb: BbPluginApi) {
       legacy = await readLegacyData({ lenient: true });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      bb.log.error(`failed to read legacy catalog/rules during startup migration: ${msg}`);
-      if (hasFiles) {
-        migrationBlockedReason = `Could not inspect legacy data alongside partial source/: ${msg}`;
-      }
+      // Block publishing and mirror sync unconditionally whether source/ is empty or partial,
+      // so an unreadable/corrupt legacy DB never unlinks existing published skills or AGENTS.md.
+      migrationBlockedReason = `Failed to read legacy catalog/rules during startup migration: ${msg}`;
+      bb.log.error(migrationBlockedReason);
       return;
     }
     const hasLegacy = legacy.docs.length > 0 || legacy.skills.length > 0 || legacy.rules.length > 0;
@@ -1050,8 +1062,9 @@ export function openSourceStore(bb: BbPluginApi) {
     markerPath,
     legacyDbPath,
 
-    /** Non-null when boot detected an unsafe partial migration state and withheld auto-publish. */
+    /** Non-null when boot detected an incomplete or failed migration state. */
     migrationBlocked: (): string | null => migrationBlockedReason,
+    publishBlocked: (): string | null => migrationBlockedReason,
     clearMigrationBlocked(): void {
       migrationBlockedReason = null;
     },
@@ -1070,7 +1083,9 @@ export function openSourceStore(bb: BbPluginApi) {
 
     /** Starts watching `sourceDir` for external edits made by agents or users. */
     startWatch(): void {
-      if (watcher || disposed) return;
+      if (disposed) return;
+      watching = true;
+      if (watcher) return;
       try {
         watcher = watch(sourceDir, { recursive: true }, (_eventType, filename) => {
           if (typeof filename === "string") {
@@ -1089,8 +1104,21 @@ export function openSourceStore(bb: BbPluginApi) {
       }
     },
 
+    /** Re-attaches `fs.watch` to `sourceDir`'s new inode after an atomic directory swap. */
+    restartWatch(): void {
+      if (disposed || !watching) return;
+      if (watchTimer) {
+        clearTimeout(watchTimer);
+        watchTimer = null;
+      }
+      watcher?.close();
+      watcher = null;
+      this.startWatch();
+    },
+
     dispose(): void {
       disposed = true;
+      watching = false;
       if (watchTimer) {
         clearTimeout(watchTimer);
         watchTimer = null;

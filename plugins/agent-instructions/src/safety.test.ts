@@ -14,7 +14,8 @@ import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/
 import { treeSha } from "./catalog/tree.ts";
 import hostEntry from "./host.ts";
 import plugin from "./server/server.ts";
-import { runMigration } from "./source/migrate.ts";
+import { parseLegacyRules, planMigration, runMigration } from "./source/migrate.ts";
+import { ANYWHERE } from "./shared/rules.ts";
 import { syncHostMethods } from "./sync/host-contract.ts";
 import {
   conflictPathFor,
@@ -444,4 +445,327 @@ test("#20: conflictPathFor bounds length <= 512, avoids nesting, and disambiguat
   expect(Buffer.byteLength(nested, "utf8")).toBeLessThanOrEqual(MAX_SYNC_PATH_BYTES);
   expect(isSafeSyncPath(nested)).toBe(true);
   expect(nested.match(/dev-mac-\d{8}-\d{6}/g)?.length).toBe(1);
+});
+
+// --- Review Round 2 regression tests ---
+
+// R2 #1: Case-insensitive duplicate legacy rule IDs must NOT drop all legacy rules, and explicit migrate must fail on unreadable KV.
+test("R2 #1: case-insensitive duplicate legacy rule IDs are preserved and explicit migrate fails on unreadable KV", async () => {
+  const legacyDupRules = [
+    {
+      id: "rule_Foo",
+      name: "A",
+      enabled: true,
+      instructions: "Alpha rule.",
+      when: { ...ANYWHERE },
+    },
+    { id: "rule_foo", name: "B", enabled: true, instructions: "Beta rule.", when: { ...ANYWHERE } },
+  ];
+  const parsed = parseLegacyRules({ revision: 1, rules: legacyDupRules }, { lenient: true });
+  expect(parsed).toHaveLength(2);
+
+  const plan = planMigration({ docs: [], skills: [], rules: parsed, deleted: [] });
+  expect(plan.errors).toEqual([]);
+  expect(plan.rules).toHaveLength(2);
+  expect(plan.rules[0]!.id.toLowerCase()).not.toBe(plan.rules[1]!.id.toLowerCase());
+
+  // Explicit `migrate` CLI must not print PASS / exit 0 when KV state is unreadable.
+  const dataDir = await makeTemp("r2-1-corrupt-kv-");
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "agent-instructions",
+    dataDir,
+    sdk: {
+      hosts: { list: async () => [] },
+      providers: { list: async () => [] },
+      projects: { list: async () => [] },
+    },
+  });
+  cleanup.push(() => harness.lifecycle.dispose());
+  await bb.storage.kv.set("state", "corrupt-not-an-object");
+  await plugin(bb);
+
+  const cliRes = await harness.behavior.runCli(["migrate"]);
+  expect(cliRes.exitCode).not.toBe(0);
+  expect(cliRes.stdout).not.toContain("PASS — 0 mismatches");
+});
+
+// R2 #2: Atomic swap in `migrate --apply` must restart fs.watch so subsequent direct disk edits still publish.
+test("R2 #2: live fs.watch survives migrate --apply atomic directory swap", async () => {
+  const dataDir = await makeTemp("r2-2-watch-");
+  const pluginDir = join(dataDir, "plugins/agent-instructions");
+  await mkdir(pluginDir, { recursive: true });
+  // Start with an empty source/ (so boot doesn't auto-migrate yet), then seed data.db and run migrate --apply --force.
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "agent-instructions",
+    dataDir,
+    sdk: {
+      hosts: { list: async () => [] },
+      providers: { list: async () => [] },
+      projects: { list: async () => [] },
+    },
+  });
+  cleanup.push(() => harness.lifecycle.dispose());
+  await plugin(bb);
+
+  createLegacyDb(join(pluginDir, "data.db"));
+  const mig = await harness.behavior.runCli(["migrate", "--apply", "--force"]);
+  expect(mig.exitCode).toBe(0);
+  expect(await readFile(join(dataDir, "AGENTS.md"), "utf8")).toContain("Doc 1 body.");
+
+  // Wait for any swap-induced debounce timer to settle before making a fresh on-disk edit.
+  await new Promise((r) => setTimeout(r, 350));
+
+  // Now edit source/instructions/doc_1.md directly on disk -> live watcher MUST republish AGENTS.md!
+  await writeText(join(pluginDir, "source/instructions/doc_1.md"), "Updated after swap.\n");
+  const deadline = Date.now() + 3_000;
+  while (Date.now() < deadline) {
+    const current = await readFile(join(dataDir, "AGENTS.md"), "utf8").catch(() => "");
+    if (current.includes("Updated after swap.")) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  expect(await readFile(join(dataDir, "AGENTS.md"), "utf8")).toContain("Updated after swap.");
+});
+
+// R2 #3: Unreadable/corrupt legacy data.db with EMPTY source/ must block publishing and never unlink live user-tier entries.
+test("R2 #3: unreadable legacy data.db with empty source/ blocks publishing and preserves user-tier links", async () => {
+  const dataDir = await makeTemp("r2-3-corrupt-db-");
+  const pluginDir = join(dataDir, "plugins/agent-instructions");
+  await mkdir(pluginDir, { recursive: true });
+  // Corrupt SQLite file (invalid header), empty source/, no migration.json.
+  await writeFile(join(pluginDir, "data.db"), "not a valid sqlite database header", "utf8");
+
+  const fakeTree = join(pluginDir, "skill-trees/alpha/existing");
+  await writeText(join(fakeTree, "SKILL.md"), "---\nname: alpha\ndescription: Alpha\n---\n");
+  await mkdir(join(dataDir, "skills"), { recursive: true });
+  await symlink(
+    "../plugins/agent-instructions/skill-trees/alpha/existing",
+    join(dataDir, "skills/alpha"),
+  );
+  const fakeAgents = join(pluginDir, "agents-md/existing.md");
+  await writeText(fakeAgents, "Existing global doc.\n");
+  await symlink("plugins/agent-instructions/agents-md/existing.md", join(dataDir, "AGENTS.md"));
+
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "agent-instructions",
+    dataDir,
+    sdk: {
+      hosts: { list: async () => [] },
+      providers: { list: async () => [] },
+      projects: { list: async () => [] },
+    },
+  });
+  cleanup.push(() => harness.lifecycle.dispose());
+  await plugin(bb);
+  await new Promise((r) => setTimeout(r, 150));
+
+  expect(existsSync(join(dataDir, "skills/alpha"))).toBe(true);
+  expect(existsSync(join(dataDir, "AGENTS.md"))).toBe(true);
+
+  // Explicit CLI publish must also be refused while migration is blocked.
+  const pub = await harness.behavior.runCli(["publish"]);
+  expect(pub.exitCode).not.toBe(0);
+  expect(existsSync(join(dataDir, "skills/alpha"))).toBe(true);
+});
+
+// R2 #7: While migration is blocked, NO trigger (onChange disk edit, CLI publish, CLI sync, or mirror-sync service) may publish or mirror-sync.
+test("R2 #7: blocked migration prevents publish and mirror sync across all triggers (onChange, CLI, mirror-sync)", async () => {
+  const dataDir = await makeTemp("r2-7-blocked-");
+  const hostDataDir = await makeTemp("r2-7-host-");
+  const pluginDir = join(dataDir, "plugins/agent-instructions");
+  await mkdir(pluginDir, { recursive: true });
+  createLegacyDb(join(pluginDir, "data.db"));
+
+  // Partial source/ with no migration.json + existing published skill link.
+  await writeText(join(pluginDir, "source/instructions/doc_1.md"), "Partial doc.\n");
+  const fakeTree = join(pluginDir, "skill-trees/alpha/existing");
+  await writeText(join(fakeTree, "SKILL.md"), "---\nname: alpha\ndescription: Alpha\n---\n");
+  await mkdir(join(dataDir, "skills"), { recursive: true });
+  await symlink(
+    "../plugins/agent-instructions/skill-trees/alpha/existing",
+    join(dataDir, "skills/alpha"),
+  );
+
+  const machine = experimental_createHostEntryHarness(hostEntry, {
+    experimental_paths: { dataDir: hostDataDir, tempDir: join(hostDataDir, "tmp") },
+  });
+  cleanup.push(() => machine.experimental_dispose());
+
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "agent-instructions",
+    dataDir,
+    experimental_callHostRpc: (call) =>
+      machine.experimental_call(call.method as never, call.input as never),
+    sdk: {
+      subscribe: () => () => undefined,
+      system: { config: async () => ({ primaryHostId: "host_server" }) as never },
+      hosts: {
+        list: async () => [
+          makeHostResponse({ id: "host_server", name: "Server", status: "connected" }),
+          makeHostResponse({ id: "host_mac", name: "Mac", status: "connected" }),
+        ],
+      },
+      providers: { list: async () => [] },
+      projects: { list: async () => [] },
+    },
+  });
+  cleanup.push(() => harness.lifecycle.dispose());
+  await plugin(bb);
+
+  // Trigger A: onChange via direct disk edit under source/ must NOT publish and unlink alpha.
+  await writeText(join(pluginDir, "source/instructions/touched.md"), "Touched.\n");
+  await new Promise((r) => setTimeout(r, 350));
+  expect(existsSync(join(dataDir, "skills/alpha"))).toBe(true);
+
+  // Trigger B: CLI sync must refuse and NOT push partial source/ to Mac mirror.
+  const syncRes = await harness.behavior.runCli(["sync"]);
+  expect(syncRes.exitCode).not.toBe(0);
+  expect(existsSync(join(hostDataDir, "mirror/instructions/doc_1.md"))).toBe(false);
+
+  // Trigger C: CLI publish must refuse.
+  const pubRes = await harness.behavior.runCli(["publish"]);
+  expect(pubRes.exitCode).not.toBe(0);
+  expect(existsSync(join(dataDir, "skills/alpha"))).toBe(true);
+});
+
+// R2 #4: fetchHostFiles rejects mismatched sha256 and reconcileOnce aborts before exceeding MAX_SYNC_TOTAL_BYTES.
+test("R2 #4: reconcileOnce aborts before mutating sourceDir when merged tree would exceed MAX_SYNC_TOTAL_BYTES", async () => {
+  const serverDataDir = await makeTemp("r2-4-server-");
+  const hostDataDir = await makeTemp("r2-4-host-");
+  const machine = experimental_createHostEntryHarness(hostEntry, {
+    experimental_paths: { dataDir: hostDataDir, tempDir: join(hostDataDir, "tmp") },
+  });
+  cleanup.push(() => machine.experimental_dispose());
+
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "agent-instructions",
+    dataDir: serverDataDir,
+    experimental_callHostRpc: (call) =>
+      machine.experimental_call(call.method as never, call.input as never),
+    sdk: {
+      system: { config: async () => ({ primaryHostId: "host_server" }) as never },
+      hosts: {
+        list: async () => [
+          makeHostResponse({ id: "host_server", name: "Server", status: "connected" }),
+          makeHostResponse({ id: "host_mac", name: "Mac", status: "connected" }),
+        ],
+      },
+      providers: { list: async () => [] },
+      projects: { list: async () => [] },
+    },
+  });
+  cleanup.push(() => harness.lifecycle.dispose());
+  await plugin(bb);
+
+  const sourceDir = join(serverDataDir, "plugins/agent-instructions/source");
+  const mirrorDir = join(hostDataDir, "mirror");
+  await mkdir(join(sourceDir, "skills/s1"), { recursive: true });
+  await mkdir(join(mirrorDir, "skills/s2"), { recursive: true });
+
+  // Seed ~27 MiB on server and ~27 MiB of distinct files on mirror (each < 50 MiB, merged = 54 MiB > 50 MiB).
+  const chunk = Buffer.alloc(4.5 * 1024 * 1024, 0x61);
+  for (let i = 0; i < 6; i++) {
+    await writeFile(join(sourceDir, `skills/s1/a-${i}.bin`), chunk);
+    await writeFile(join(mirrorDir, `skills/s2/b-${i}.bin`), chunk);
+  }
+
+  const res = await harness.behavior.runCli(["sync"]);
+  expect(res.exitCode).not.toBe(0);
+  // Server sourceDir must NOT have been mutated into a truncated 54 MiB state!
+  expect(existsSync(join(sourceDir, "skills/s2/b-0.bin"))).toBe(false);
+});
+
+// R2 #5: edit --file inside a thread confines reads to the thread's workspace or editable instructions root.
+test("R2 #5: edit --file inside a thread rejects paths outside workspace/editable root and passes trusted rootPath", async () => {
+  const serverDataDir = await makeTemp("r2-5-server-");
+  const workspaceDir = await makeTemp("r2-5-workspace-");
+  const outsideDir = await makeTemp("r2-5-outside-");
+  const insideFile = join(workspaceDir, "draft.md");
+  const outsideFile = join(outsideDir, "id_rsa");
+  await writeFile(insideFile, "Inside workspace.\n", "utf8");
+  await writeFile(outsideFile, "SECRET_OUTSIDE\n", "utf8");
+
+  const readCalls: Array<{ hostId?: string; path: string; rootPath?: string }> = [];
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "agent-instructions",
+    dataDir: serverDataDir,
+    sdk: {
+      system: { config: async () => ({ primaryHostId: "host_a" }) as never },
+      threads: {
+        get: async () =>
+          makeThreadResponse({ id: "thr_a", projectId: "proj_1", environmentId: "env_a" }),
+      },
+      environments: {
+        get: async () => ({ id: "env_a", hostId: "host_a", path: workspaceDir }) as never,
+      },
+      files: {
+        read: async (req: { hostId?: string; path: string; rootPath?: string }) => {
+          readCalls.push(req);
+          const content = await readFile(req.path, "utf8");
+          return {
+            content,
+            contentEncoding: "utf8",
+            sizeBytes: Buffer.byteLength(content, "utf8"),
+            sha256: sha256Bytes(content),
+          } as never;
+        },
+      } as never,
+      hosts: { list: async () => [] },
+      providers: { list: async () => [] },
+      projects: { list: async () => [] },
+    },
+  });
+  cleanup.push(() => harness.lifecycle.dispose());
+  await plugin(bb);
+  await harness.behavior.runCli(["skill", "create", "notes", "--description", "Notes."]);
+
+  // Outside workspace must be rejected WITHOUT calling files.read!
+  const blocked = await harness.behavior.runCli(
+    ["skill", "write", "notes", "leak.txt", "--file", outsideFile, "--expect", "new"],
+    { cwd: workspaceDir, threadId: "thr_a" } as never,
+  );
+  expect(blocked.exitCode).not.toBe(0);
+  expect(readCalls).toHaveLength(0);
+
+  // Inside workspace succeeds and passes workspaceDir as trusted rootPath (never dirname(file)).
+  const nestedDir = join(workspaceDir, "sub");
+  const nestedFile = join(nestedDir, "ok.md");
+  await writeText(nestedFile, "Allowed draft.\n");
+  const ok = await harness.behavior.runCli(
+    ["skill", "write", "notes", "ok.md", "--file", nestedFile, "--expect", "new"],
+    { cwd: workspaceDir, threadId: "thr_a" } as never,
+  );
+  expect(ok.exitCode).toBe(0);
+  expect(readCalls).toHaveLength(1);
+  expect(readCalls[0]!.rootPath).toBe(workspaceDir);
+});
+
+// R2 #6 & #8: Doc name with trailing space at 80-char boundary round-trips cleanly, and >5 MiB legacy file fails in planMigration dry-run.
+test("R2 #6 & #8: 80-char boundary doc name trims cleanly and >5 MiB legacy file is caught in planMigration", () => {
+  const plan6 = planMigration({
+    docs: [
+      { id: "d1", name: `${"a".repeat(79)}   extra`, body: "hello", enabled: true, position: 0 },
+    ],
+    rules: [],
+    skills: [],
+    deleted: [],
+  });
+  expect(plan6.errors).toEqual([]);
+  expect(plan6.docs[0]!.name).toBe("a".repeat(79));
+
+  const huge = Buffer.alloc(MAX_SYNC_FILE_BYTES + 1, 0x78);
+  const plan8 = planMigration({
+    docs: [],
+    rules: [],
+    skills: [
+      {
+        name: "huge",
+        description: "Huge",
+        enabled: true,
+        treeSha: "0".repeat(64),
+        files: [{ path: "big.bin", executable: false, sha256: sha256Bytes(huge), bytes: huge }],
+      },
+    ],
+    deleted: [],
+  });
+  expect(plan8.errors.some((e) => e.includes("exceeds") || e.includes("sync limit"))).toBe(true);
 });

@@ -7,6 +7,9 @@ import {
   conflictPathFor,
   conflictTimestamp,
   deleteSyncFileAndPrune,
+  MAX_SYNC_FILE_BYTES,
+  MAX_SYNC_FILES,
+  MAX_SYNC_TOTAL_BYTES,
   readSyncFile,
   sameDigest,
   sameManifest,
@@ -133,13 +136,20 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     for (const h of hosts) hostNames.set(h.id, h.name);
   }
 
-  /** Reads `paths` from `hostId` in bounded batches below the 8 MiB RPC output limit. */
+  /**
+   * Reads `paths` from `hostId` in bounded batches below the 8 MiB RPC output limit.
+   * Enforces per-file `MAX_SYNC_FILE_BYTES`, cumulative `MAX_SYNC_TOTAL_BYTES`, and
+   * verifies each file's sha256 against the snapshot manifest so a racing/malicious host
+   * cannot exhaust server RAM.
+   */
   async function fetchHostFiles(
     hostId: string,
     paths: readonly string[],
+    expectedDigests: SyncManifest,
   ): Promise<Map<string, { bytes: Buffer; executable: boolean; sha256: string }>> {
     const result = new Map<string, { bytes: Buffer; executable: boolean; sha256: string }>();
     let remaining = [...paths];
+    let totalFetchedBytes = 0;
     while (remaining.length > 0) {
       const batch = remaining.slice(0, MAX_WRITE_BATCH);
       const batchSet = new Set(batch);
@@ -156,9 +166,28 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
         if (!batchSet.has(file.path)) continue;
         handled.add(file.path);
         const bytes = Buffer.from(file.base64, "base64");
+        if (bytes.length > MAX_SYNC_FILE_BYTES) {
+          bb.log.warn(`sync(${hostId}): ${file.path} exceeds MAX_SYNC_FILE_BYTES; skipping`);
+          continue;
+        }
         if (sha256Bytes(bytes) !== file.sha256) {
           bb.log.warn(`sync(${hostId}): sha256 mismatch on ${file.path}; skipping`);
           continue;
+        }
+        const expected = Object.hasOwn(expectedDigests, file.path)
+          ? expectedDigests[file.path]
+          : undefined;
+        if (!expected || expected.sha256 !== file.sha256) {
+          bb.log.warn(
+            `sync(${hostId}): ${file.path} changed since snapshot; skipping until next reconcile`,
+          );
+          continue;
+        }
+        totalFetchedBytes += bytes.length;
+        if (totalFetchedBytes > MAX_SYNC_TOTAL_BYTES) {
+          throw new Error(
+            `Mirror pull from ${hostId} exceeded ${MAX_SYNC_TOTAL_BYTES}-byte total sync budget`,
+          );
         }
         result.set(file.path, { bytes, executable: file.executable, sha256: file.sha256 });
       }
@@ -266,6 +295,10 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     attempt: number,
   ): Promise<void> {
     if (disposed) return;
+    const blocked = store.migrationBlocked();
+    if (blocked) {
+      throw new Error(`Mirror sync blocked: ${blocked}`);
+    }
     if ((await resolvePrimaryHostId()) === hostId) return;
 
     const snapshot = await host.call(
@@ -317,7 +350,10 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     });
 
     const pathsToRead = [...plan.pullWrites, ...plan.conflicts.map((c) => c.path)];
-    const fetched = pathsToRead.length > 0 ? await fetchHostFiles(hostId, pathsToRead) : new Map();
+    const fetched =
+      pathsToRead.length > 0
+        ? await fetchHostFiles(hostId, pathsToRead, snapshot.manifest)
+        : new Map();
 
     // Only acquire the server source lock when there are actual pulls or conflicts to write/delete.
     const extraConflictPushes: string[] = [];
@@ -328,6 +364,52 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
       serverAfterPull = await store.withLock(async () => {
         await store.reloadUnlocked("disk");
         const currentServer = store.manifest();
+
+        // Project post-pull file count and total bytes BEFORE mutating sourceDir so merging
+        // server + mirror can never push server source/ past MAX_SYNC_FILES or MAX_SYNC_TOTAL_BYTES.
+        let projectedCount = 0;
+        let projectedBytes = 0;
+        for (const key of Object.keys(currentServer)) {
+          projectedCount++;
+          projectedBytes += currentServer[key]!.size;
+        }
+        const deletedSet = new Set<string>();
+        for (const path of plan.pullDeletes) {
+          if (
+            Object.hasOwn(currentServer, path) &&
+            sameDigest(currentServer[path], serverBefore[path])
+          ) {
+            projectedCount--;
+            projectedBytes -= currentServer[path]!.size;
+            deletedSet.add(path);
+          }
+        }
+        for (const path of plan.pullWrites) {
+          const file = fetched.get(path);
+          if (!file) continue;
+          const existsNow = Object.hasOwn(currentServer, path) && !deletedSet.has(path);
+          if (!sameDigest(currentServer[path], serverBefore[path])) {
+            // Late server race writes a new conflict copy without replacing `path`.
+            projectedCount++;
+            projectedBytes += file.bytes.length;
+          } else if (existsNow) {
+            projectedBytes += file.bytes.length - currentServer[path]!.size;
+          } else {
+            projectedCount++;
+            projectedBytes += file.bytes.length;
+          }
+        }
+        for (const conflict of plan.conflicts) {
+          const file = fetched.get(conflict.path);
+          if (!file) continue;
+          projectedCount++;
+          projectedBytes += file.bytes.length;
+        }
+        if (projectedCount > MAX_SYNC_FILES || projectedBytes > MAX_SYNC_TOTAL_BYTES) {
+          throw new Error(
+            `Pull from ${hostId} would exceed server sync budget (${projectedCount}/${MAX_SYNC_FILES} files, ${projectedBytes}/${MAX_SYNC_TOTAL_BYTES} bytes); aborting without modifying server source/`,
+          );
+        }
 
         // Execute pullDeletes BEFORE pullWrites so file<->directory replacements succeed cleanly.
         for (const path of plan.pullDeletes) {
@@ -511,7 +593,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
       ensureWatch?: boolean;
     } = {},
   ): Promise<void> {
-    if (disposed || !started) return;
+    if (disposed || !started || store.migrationBlocked() !== null) return;
     const primary = await resolvePrimaryHostId();
     const hosts = await bb.sdk.hosts.list().catch(() => []);
     for (const h of hosts) {
@@ -524,6 +606,10 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
 
   /** Awaits sync across connected non-primary hosts (or one specific host when `targetHostId` is set). */
   async function syncNowAll(targetHostId?: string): Promise<HostSyncStatus[]> {
+    const blocked = store.migrationBlocked();
+    if (blocked) {
+      throw new Error(`Mirror sync blocked: ${blocked}`);
+    }
     const primary = await resolvePrimaryHostId();
     const hosts = await bb.sdk.hosts.list().catch(() => []);
     const targets = hosts.filter(

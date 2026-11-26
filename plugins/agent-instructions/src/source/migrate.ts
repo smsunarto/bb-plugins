@@ -1,14 +1,16 @@
 import { randomBytes } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { z } from "zod";
 import { editableText } from "../catalog/edit-rules.ts";
 import { globalText } from "../catalog/publish.ts";
 import { treeSha } from "../catalog/tree.ts";
-import { rulesStateSchema, type Rule } from "../shared/rules.ts";
+import { ruleSchema, type Rule } from "../shared/rules.ts";
 import {
   ensureSourceFolders,
   isIgnoredEntryName,
   isSafeSyncPath,
+  MAX_SYNC_FILE_BYTES,
   MAX_SYNC_FILES,
   MAX_SYNC_TOTAL_BYTES,
   pathExists,
@@ -215,16 +217,32 @@ export function readLegacySqlite(db: ReadOnlySqlite): Omit<LegacyData, "rules"> 
   return { docs, skills, deleted };
 }
 
+/**
+ * Legacy KV payloads used exact-case rule id uniqueness; validate with that schema
+ * here so case-insensitive collisions reach `planMigration`'s `allocateUniqueId`.
+ */
+const legacyRulesSchema = z
+  .array(ruleSchema)
+  .refine(
+    (rules) => new Set(rules.map((r) => r.id)).size === rules.length,
+    "rule ids must be unique",
+  );
+
+const legacyRulesStateSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  rules: legacyRulesSchema,
+});
+
 /** Parses legacy rules from plugin KV `state` (or `{ rules: [...] }` JSON). */
 export function parseLegacyRules(
   raw: unknown,
   options: { lenient?: boolean; onWarning?: (message: string) => void } = {},
 ): Rule[] {
   if (raw === null || raw === undefined) return [];
-  const full = rulesStateSchema.safeParse(raw);
+  const full = legacyRulesStateSchema.safeParse(raw);
   if (full.success) return full.data.rules;
   if (typeof raw === "object" && "rules" in raw) {
-    const withDefaultRev = rulesStateSchema.safeParse({
+    const withDefaultRev = legacyRulesStateSchema.safeParse({
       revision: 0,
       rules: (raw as { rules: unknown }).rules,
     });
@@ -256,6 +274,10 @@ export function planMigration(data: LegacyData): MigrationPlan {
       errors.push(`Refused unsafe target path: ${relPath}`);
       return false;
     }
+    if (bytes.length > MAX_SYNC_FILE_BYTES) {
+      errors.push(`${relPath} exceeds the ${MAX_SYNC_FILE_BYTES}-byte sync limit`);
+      return false;
+    }
     const lower = relPath.toLowerCase();
     if (usedPaths.has(lower)) {
       errors.push(`Target path collision: ${relPath}`);
@@ -273,7 +295,7 @@ export function planMigration(data: LegacyData): MigrationPlan {
       errors.push(`Sanitized doc id ${JSON.stringify(id)} fails ITEM_ID_PATTERN`);
       return;
     }
-    const cleanName = doc.name.trim().slice(0, 80) || id;
+    const cleanName = doc.name.trim().slice(0, 80).trim() || id;
     if (cleanName !== doc.name) {
       warnings.push(
         `Normalized legacy doc ${JSON.stringify(doc.id)} name from ${JSON.stringify(doc.name)} to ${JSON.stringify(cleanName)}`,
