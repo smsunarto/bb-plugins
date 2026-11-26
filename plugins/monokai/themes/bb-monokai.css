@@ -3663,24 +3663,32 @@ diffs-container {
 
 .dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 path,
 .dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 circle,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 ellipse,
 .dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 rect,
 .dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 line,
 .dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 polyline,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 polygon,
 .dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg path,
 .dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg circle,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg ellipse,
 .dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg rect,
 .dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg line,
 .dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg polyline,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg polygon,
 .dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 path,
 .dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 circle,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 ellipse,
 .dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 rect,
 .dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 line,
 .dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 polyline,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 polygon,
 .dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg path,
 .dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg circle,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg ellipse,
 .dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg rect,
 .dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg line,
-.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg polyline {
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg polyline,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg polygon {
   stroke-width: 1.75;
 }
 

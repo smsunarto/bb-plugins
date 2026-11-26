@@ -535,7 +535,13 @@ describe("bb Monokai contract audit", () => {
       ".dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > svg[data-icon-root].size-3\\.5 path,",
     );
     expect(theme).toContain(
-      ".dark .group\\/timeline-row span.inline-flex.gap-1\\.5 > span[data-icon-root].size-3\\.5 > svg polyline {\n  stroke-width: 1.75;",
+      ".dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > svg[data-icon-root].size-3\\.5 ellipse,",
+    );
+    expect(theme).toContain(
+      ".dark .group\\/timeline-row span.inline-flex.gap-1\\.5 > span[data-icon-root].size-3\\.5 > svg ellipse,",
+    );
+    expect(theme).toContain(
+      ".dark .group\\/timeline-row span.inline-flex.gap-1\\.5 > span[data-icon-root].size-3\\.5 > svg polygon {\n  stroke-width: 1.75;",
     );
     expect(theme).not.toContain("--agent-surface-border");
     expect(theme).toContain(
