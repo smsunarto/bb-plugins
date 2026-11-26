@@ -31,4 +31,4 @@ require a newer SDK and are held until live upgrades:
   `clamp()` in `src/server/shared.ts` adapts the surrogate-pair-safe slice locally.
 - [#7875](https://github.com/get-bb/bb/pull/7875) (`bce7015f`): migrating to
   `experimental_BbHttpError` and dropping the CLI error wrapper requires
-  `bbPluginSdk >=0.6.167` and server-side `--json` failure envelopes.
+  `bbPluginSdk >=0.6.173` and server-side `--json` failure envelopes.
