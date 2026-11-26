@@ -17,6 +17,7 @@ import { mountPanelTabGlide } from "./app/panel-tab-glide.ts";
 
 import { mountTerminalAppearance } from "./app/terminal-appearance.ts";
 import { mountThreadHeaderRows } from "./app/thread-header-rows.ts";
+import { mountTimelineTrace } from "./app/timeline-trace.ts";
 import { mountMonacoSyntaxTokens } from "./app/monaco-syntax-tokens.ts";
 import { UiFontBridge } from "./app/ui-font-bridge.ts";
 import { HomeMarker } from "./app/home-marker.ts";
@@ -27,6 +28,7 @@ export default definePluginApp((app) => {
   app.contentScripts.register({ id: "hairline-density", mount: mountHairlineDensity });
   app.contentScripts.register({ id: "bb-dom-styles", mount: mountBbDomStyles });
   app.contentScripts.register({ id: "thread-header-rows", mount: mountThreadHeaderRows });
+  app.contentScripts.register({ id: "timeline-trace", mount: mountTimelineTrace });
   // Marks presses of the right panel's toggle and presses bb's new-tab button
   // when the thread marker's hook asks.
   app.contentScripts.register({ id: "panel-new-tab", mount: mountPanelNewTab });

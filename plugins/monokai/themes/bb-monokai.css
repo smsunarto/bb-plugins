@@ -231,7 +231,6 @@
                                            * on phones. */
 
   --agent-surface-background: #ebebec0f;
-  --agent-surface-border: #39393a;
 
   --state-hover: #ebebec14;
   --state-active: #ebebec33;
@@ -734,13 +733,15 @@
   color: var(--sidebar-accent-foreground);
 }
 
-/* User requests use the shared 6% ink surface with an 8% edge while keeping
- * bb's native bubble geometry. Agent replies stay flat on the #151515
- * conversation ground. */
+/* User requests pair with the composer on the shared 6% ink surface per
+ * CONTRACT.md, shaped as shadcn/ui Base UI Bubble (base-rhea, rounded-3xl
+ * borderless pill). Agent replies stay flat on the conversation ground. */
 .dark .rounded-xl.border.border-border-seam.bg-surface-recessed {
   background-color: var(--agent-surface-background);
   background-clip: padding-box;
-  border-color: var(--agent-surface-border);
+  border-color: transparent;
+  border-radius: 24px;
+  padding: 10px 14px;
 }
 
 /* Some bb captions deliberately reduce the already-faint subtle token to 75%.
@@ -750,29 +751,10 @@
   color: var(--readback-foreground);
 }
 
-/* bb's collapsed timeline toggles ("Ran 2 commands", "Thought 3s",
- * "Worked for 5m") use a subtle or muted button, and bb's 40% past-row dim
- * applies to finished ones. Subtle at 30% would fall to ~12% alpha under that
- * dim, so subtle lifts to readback; muted stays muted, so "Worked for" still
- * sits under its duration. Status decorations ("1 error") fade their subtle
- * span to 75% on top; drop that second fade. Hover and focus climb one step
- * as upstream intends. */
+/* Status decorations ("1 error") inside timeline toggles drop their extra 75%
+ * fade so trace triggers stay on one readable muted ladder step. */
 .dark .group\/timeline-row > button[aria-expanded] .text-subtle-foreground.opacity-75 {
   opacity: 1;
-}
-.dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground,
-.dark .group\/timeline-row > button[aria-expanded] .text-subtle-foreground {
-  color: var(--readback-foreground);
-}
-.dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground:focus-visible,
-.dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground:focus-visible .text-subtle-foreground {
-  color: var(--muted-foreground);
-}
-@media (hover: hover) {
-  .dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground:hover,
-  .dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground:hover .text-subtle-foreground {
-    color: var(--muted-foreground);
-  }
 }
 
 /* --hairline-width per density. 1x takes a whole pixel: a 0.5px box, such as
@@ -3394,88 +3376,144 @@ diffs-container {
   line-height: inherit;
 }
 
-/* Fenced blocks: T3's 8px borderless card, a 6px/12px header with an 11px
- * mono label, 24px actions with 12px glyphs, and 13px code at snug leading.
- * :where() lets the first- and last-child resets above trim the outer
- * margins. */
-.dark [data-message-column].group\/message [data-markdown-preview] :where(.bg-surface-recessed.my-2.rounded-md),
+/* Fenced blocks follow shadcn/ui Base UI CodeBlock (base-rhea): a unified
+ * 16px (rounded-2xl) surface on Monokai content ground (from line 2154) with a
+ * subtle hairline ring, a borderless transparent header (px-4 pt-3), medium
+ * sans title, and 28px rounded-lg ghost actions (44px non-overlapping targets
+ * on phone/coarse). Applies to both assistant and user markdown blocks. */
+.dark [data-message-column] [data-markdown-preview] :where(.bg-surface-recessed.my-2.rounded-md):not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose :where(.bg-surface-recessed.my-2.rounded-md) {
-  margin: calc(var(--agent-md-rem) * 0.65) 0;
-  border-color: transparent;
-  border-radius: 8px;
+  margin: calc(var(--agent-md-rem) * 0.75) 0;
+  border-color: var(--border);
+  border-radius: 16px;
 }
 
 .dark
-  [data-message-column].group\/message
+  [data-message-column]
   [data-markdown-preview]
-  .bg-surface-recessed.my-2.rounded-md
+  .bg-surface-recessed.my-2.rounded-md:not([data-bb-plugin-root] *)
   > .flex.justify-between:first-child,
 .dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child {
+  align-items: center;
   gap: 8px;
-  padding: 6px 6px 0 12px;
+  padding-block: 12px 2px;
+  padding-inline: 16px 12px;
+  background-color: transparent;
+  border-bottom-width: 0;
 }
 
 .dark
-  [data-message-column].group\/message
+  [data-message-column]
   [data-markdown-preview]
-  .bg-surface-recessed.my-2.rounded-md
+  .bg-surface-recessed.my-2.rounded-md:not([data-bb-plugin-root] *)
   > .flex.justify-between:first-child
   > span,
 .dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child > span {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
   letter-spacing: normal;
-  line-height: 16px;
+  line-height: 20px;
   text-transform: none;
+  color: var(--foreground);
 }
 
 .dark
-  [data-message-column].group\/message
+  [data-message-column]
   [data-markdown-preview]
-  .bg-surface-recessed.my-2.rounded-md
+  .bg-surface-recessed.my-2.rounded-md:not([data-bb-plugin-root] *)
   > .flex.justify-between:first-child
   button,
 .dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--muted-foreground);
 }
 
 .dark
-  [data-message-column].group\/message
+  [data-message-column]
   [data-markdown-preview]
-  .bg-surface-recessed.my-2.rounded-md
+  .bg-surface-recessed.my-2.rounded-md:not([data-bb-plugin-root] *)
   > .flex.justify-between:first-child
   button
   svg,
 .dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button svg {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
+}
+
+/* Phone / coarse touch targets: size CodeBlock & Mermaid header buttons to
+ * genuine non-overlapping 44x44 CSS px boxes with a 4px gap between actions. */
+@media (max-width: 767px), (pointer: coarse) {
+  .dark
+    [data-message-column]
+    [data-markdown-preview]
+    .bg-surface-recessed.my-2.rounded-md:not([data-bb-plugin-root] *)
+    > .flex.justify-between:first-child,
+  .dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child {
+    padding-block: 4px 0;
+    padding-inline: 14px 4px;
+  }
+
+  .dark
+    [data-message-column]
+    [data-markdown-preview]
+    .bg-surface-recessed.my-2.rounded-md:not([data-bb-plugin-root] *)
+    > .flex.justify-between:first-child
+    > .flex.items-center,
+  .dark
+    .bb-markdown-prose
+    .bg-surface-recessed.my-2.rounded-md
+    > .flex.justify-between:first-child
+    > .flex.items-center {
+    gap: 4px;
+  }
+
+  .dark
+    [data-message-column]
+    [data-markdown-preview]
+    .bg-surface-recessed.my-2.rounded-md:not([data-bb-plugin-root] *)
+    > .flex.justify-between:first-child
+    button,
+  .dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button {
+    width: 44px;
+    height: 44px;
+  }
 }
 
 @media (hover: hover) {
   .dark
-    [data-message-column].group\/message
+    [data-message-column]
     [data-markdown-preview]
-    .bg-surface-recessed.my-2.rounded-md
+    .bg-surface-recessed.my-2.rounded-md:not([data-bb-plugin-root] *)
     > .flex.justify-between:first-child
     button:hover,
   .dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button:hover {
     background-color: var(--state-hover);
+    color: var(--foreground);
   }
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] pre.bb-code-highlight,
+.dark [data-message-column] [data-markdown-preview] pre.bb-code-highlight:not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose pre.bb-code-highlight {
-  padding: calc(var(--agent-md-rem) * 0.8) calc(var(--agent-md-rem) * 0.9);
+  padding-block: 8px 14px;
+  padding-inline: 16px;
+}
+
+@media (max-width: 767px) {
+  .dark [data-message-column] [data-markdown-preview] pre.bb-code-highlight:not([data-bb-plugin-root] *),
+  .dark .bb-markdown-prose pre.bb-code-highlight {
+    padding-block: 8px 12px;
+    padding-inline: 14px;
+  }
 }
 
 /* A fence without a language has an empty label; name it plain text. */
 .dark
-  [data-message-column].group\/message
+  [data-message-column]
   [data-markdown-preview]
-  .bg-surface-recessed.my-2.rounded-md
+  .bg-surface-recessed.my-2.rounded-md:not([data-bb-plugin-root] *)
   > .flex.justify-between:first-child
   > span:empty::after,
 .dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child > span:empty::after {
@@ -3483,16 +3521,8 @@ diffs-container {
 }
 
 @media (min-width: 768px), (pointer: fine) {
-  .dark [data-message-column].group\/message [data-markdown-preview] pre.bb-code-highlight > code {
+  .dark [data-message-column] [data-markdown-preview] pre.bb-code-highlight:not([data-bb-plugin-root] *) > code {
     font-size: 13px;
-  }
-
-  .dark
-    [data-message-column].group\/message
-    [data-markdown-preview]
-    pre.bb-code-highlight
-    > code:not(.language-diagram, .language-patch) {
-    line-height: 1.375;
   }
 }
 
@@ -3503,26 +3533,26 @@ diffs-container {
   color: inherit;
 }
 
-/* Keep BB's own 8px top-level and 0px bundle gaps. Its virtualizer uses those
- * same values for absolute row positions. Put the additional spacing inside
- * each measured row so both virtual and ordinary layouts have 28px between
- * conversation items and 8px between tool rows. Bottom padding preserves the
- * content's offset from the row anchor when older history is prepended. BB
- * always mounts the final row, so :last-child identifies the logical end even
- * in a virtual slice. The direct-child fallback also covers unread dividers
- * in BB releases without the windowing wrapper. */
+/* ============================================================================
+ * Thread surfaces after shadcn/ui Base UI AI Elements (base-rhea, Monokai)
+ * ============================================================================ */
+
+/* MessageScrollerContent rhythm: keep BB's 8px top-level and 0px bundle gaps
+ * so virtualized row offsets stay exact. Add 24px bottom padding on non-last
+ * top-level items (32px total, matching base-rhea gap-8) and 8px on stacked
+ * trace items (matching Trace gap-2). */
 .dark [data-timeline-row-list="top-level"] {
   gap: 8px;
 }
 
 .dark [data-timeline-row-list="bundle"] {
   gap: 0;
-  padding-top: 4px;
+  padding-top: 6px;
 }
 
 .dark [data-timeline-row-list="top-level"] > [data-timeline-items] > [data-timeline-window-key]:not(:last-child),
 .dark [data-timeline-row-list="top-level"] > :not([data-timeline-items]):not(:last-child) {
-  padding-bottom: 20px;
+  padding-bottom: 24px;
 }
 
 .dark [data-timeline-row-list="bundle"] > [data-timeline-items] > [data-timeline-window-key]:not(:last-child),
@@ -3530,131 +3560,477 @@ diffs-container {
   padding-bottom: 8px;
 }
 
-/* The verb ("Read", "Searched for") stays muted; the icon and the path or
- * query step down to readback. bb's 40% past-row dim applies on top, on both
- * static and expandable rows. */
-.dark [data-timeline-row-list] span.text-sm.leading-5 > span.shrink-0.whitespace-pre + span.min-w-0.truncate {
-  color: var(--readback-foreground);
+/* MessageScrollerButton: circular floating control, 36px desktop / 44px phone.
+ * At 3x DPR, keep the inset hairline ring alongside --shadow-sm so the edge
+ * never vanishes when @layer utilities sets border-width: 0. */
+.dark button[aria-label="Scroll to latest event"] {
+  width: 36px;
+  height: 36px;
+  border-color: var(--border);
+  background-color: var(--background);
+  color: var(--foreground);
+  box-shadow: var(--shadow-sm);
 }
 
-/* bb wraps each row's icon and label in an inline-flex span on a 13px strut,
- * which pads the row to 23px. Making its wrapper a flex box drops the strut. */
-.dark [data-timeline-row-list] .flex.leading-5 > span.min-w-0.max-w-full {
+@media (min-resolution: 2.5dppx) {
+  .dark button[aria-label="Scroll to latest event"] {
+    box-shadow:
+      inset 0 0 0 var(--hairline-ring-width) var(--border),
+      var(--shadow-sm);
+  }
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .dark button[aria-label="Scroll to latest event"] {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (hover: hover) {
+  .dark button[aria-label="Scroll to latest event"]:hover {
+    background-color: var(--surface-raised-solid);
+  }
+}
+
+/* User Bubble max-width (base-rhea max-w-[80%] desktop, 90% phone). Bubble
+ * fill, borderless edge, 24px pill radius, and padding live in the canonical
+ * .rounded-xl.border.border-border-seam.bg-surface-recessed rule above. */
+.dark [data-message-column] > .group\/message.ml-auto {
+  max-width: 80%;
+}
+
+@media (max-width: 767px) {
+  .dark [data-message-column] > .group\/message.ml-auto {
+    max-width: 90%;
+  }
+}
+
+/* Attachments: rounded-xl image thumbs and clean rounded-full muted file chips,
+ * guarded against plugin cards mounted inside messages. */
+.dark [data-message-column] button.cursor-zoom-in.rounded-md:not([data-bb-plugin-root] *) {
+  border-radius: 12px;
+}
+
+.dark [data-message-column] .inline-flex.max-w-full.items-center.rounded-full.border:not([data-bb-plugin-root] *) {
+  min-height: 28px;
+  padding-block: 2px;
+  padding-inline: 10px;
+  border-color: var(--border);
+  background-color: var(--card);
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .dark
+    [data-message-column]
+    :is(button, a).inline-flex.max-w-full.items-center.rounded-full.border:not([data-bb-plugin-root] *) {
+    min-height: 44px;
+    padding-inline: 14px;
+  }
+}
+
+@media (hover: hover) {
+  .dark [data-message-column] button.inline-flex.max-w-full.items-center.rounded-full.border:not([data-bb-plugin-root] *):hover,
+  .dark [data-message-column] a.inline-flex.max-w-full.items-center.rounded-full.border:not([data-bb-plugin-root] *):hover {
+    background-color: var(--state-hover);
+  }
+}
+
+/* Trace (base-rhea): ALL tool, terminal, reasoning, chain-of-thought, plan,
+ * task, and TimelineWorkingIndicator rows are unboxed muted lines with a 16px
+ * leading icon, past-tense label, and an always-visible trailing chevron
+ * directly after the label. Scoped on both [data-timeline-row-list] and
+ * .group/timeline-row so TimelineWorkingIndicator (rendered after the list)
+ * receives the exact same treatment as a finished Thought row. */
+.dark [data-timeline-row-list] .flex.leading-5 > span.min-w-0.max-w-full,
+.dark .group\/timeline-row .flex.leading-5 > span.min-w-0.max-w-full {
   display: flex;
 }
 
-/* Turn row icons copy T3 Code's work log: a 16px glyph at stroke 2 (a 1.33px
- * line) in its muted ink at 70% opacity, 10px from the label. The readback
- * tier is the ladder step at that blend (74% x 70% = 52%, readback 55%).
- * T3 centres the glyph in a 24px slot; only the trailing 4px is added, so
- * glyphs stay on bb's row edge. Plugin icons are mask spans with no stroke;
- * icons bb registers are spans around an svg, so they take the stroke too. */
-.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > [data-icon-root].size-3\.5 {
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 {
+  gap: 8px;
+}
+
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > [data-icon-root].size-3\.5,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > [data-icon-root].size-3\.5 {
   width: 16px;
   height: 16px;
-  margin-inline-end: 4px;
+  color: inherit;
+}
+
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 path,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 circle,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 ellipse,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 rect,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 line,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 polyline,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 polygon,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg path,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg circle,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg ellipse,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg rect,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg line,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg polyline,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg polygon,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 path,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 circle,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 ellipse,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 rect,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 line,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 polyline,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 polygon,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg path,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg circle,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg ellipse,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg rect,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg line,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg polyline,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg polygon {
+  stroke-width: 1.75;
+}
+
+/* TraceCollapsibleTrigger: w-fit unboxed button inheriting color down to
+ * muted/subtle title segments and icons, preserving clickable --timeline-accent
+ * file links and bb's own hover:duration-0 / motion-reduce transitions. */
+.dark .group\/timeline-row > button[aria-expanded] {
+  width: fit-content;
+  max-width: 100%;
+  gap: 6px;
+  padding-block: 2px;
+  border-radius: 8px;
+  color: var(--muted-foreground);
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .dark .group\/timeline-row > button[aria-expanded] {
+    min-height: 44px;
+    padding-block: 10px;
+  }
+}
+
+/* Static past-row dim removal is pure CSS so first paint is final across
+ * single- and multi-intent TimelineStaticRowHeader siblings. */
+.dark .group\/timeline-row > button[aria-expanded] .opacity-40,
+.dark [data-timeline-row-list] [data-timeline-row-id] > .w-full.rounded-md.opacity-40 {
+  opacity: 1;
+}
+
+.dark .group\/timeline-row > button[aria-expanded] .text-muted-foreground,
+.dark .group\/timeline-row > button[aria-expanded] .text-subtle-foreground,
+.dark .group\/timeline-row > button[aria-expanded] .font-medium.text-foreground.opacity-70 {
+  font-weight: 400;
+  color: inherit;
+  opacity: 1;
+}
+
+/* TraceDescription: duration decorations stay muted one step down in tabular-nums. */
+.dark .group\/timeline-row > button[aria-expanded] .tabular-nums {
   color: var(--readback-foreground);
 }
 
-.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 *,
-.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg * {
-  stroke-width: 2;
+/* Trailing chevron uses the readback color role instead of component opacity. */
+.dark .group\/timeline-row > button[aria-expanded] > svg[data-icon-root] {
+  width: 14px;
+  height: 14px;
+  opacity: 1;
+  color: var(--readback-foreground);
 }
 
-/* Message hover actions copy T3 Code's ghost `xs` buttons: a 12px glyph in
- * a 26x24 hit fill with an 8px radius, accent on hover or while the menu is
- * open. bb decides how many actions fit inline from its own 20px boxes and
- * gaps, so those boxes keep their size and the fill is a pseudo-element
- * 3px wider and 2px taller on each side. The row is overflow-hidden; padding
- * offset by equal negative margins (on top of bb's own inset) gives the fill
- * room without moving a glyph or shrinking the space bb measured. Phones keep
- * bb's 28px touch targets and no fill. */
+@media (hover: hover) {
+  .dark .group\/timeline-row > button[aria-expanded]:hover {
+    color: var(--foreground);
+  }
+
+  .dark .group\/timeline-row > button[aria-expanded]:hover > svg[data-icon-root] {
+    color: var(--foreground);
+  }
+}
+
+/* TraceCollapsibleContent thin left rail (base-rhea): 100% pure CSS keyed on
+ * bb's ExpandablePanel structure (.group/timeline-row + div[aria-hidden="false"])
+ * and its px-0 / px-2 content padding class so first paint is final with zero
+ * cold-load layout shift. Collapsed disclosures (aria-hidden="true") do not match. */
+.dark .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 {
+  margin-block: 8px 4px;
+  border-inline-start: var(--hairline-width) solid var(--border);
+  padding-block: 0;
+  padding-inline-start: 16px;
+  padding-inline-end: 4px;
+}
+
+/* Flush bundle children (px-0): align at the 0px text/row start (1px). */
+.dark .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .px-0.pb-1.pt-0\.5 {
+  margin-inline-start: 1px;
+}
+
+/* Top-level, nested, segmented turn (:turn:<n>), and TimelineWorkingIndicator
+ * rows (px-2): align uniformly at the 8px text/row start (9px) so icon rows,
+ * text-only rows, and segmented turns never disagree or cut into text. */
+.dark .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .px-2.pb-1.pt-0\.5 {
+  margin-inline-start: 9px;
+}
+
+/* Reasoning detail (both finished Thought rows and live TimelineWorkingIndicator):
+ * drop bb's inner duplicate border so only Trace's single thin left rail renders. */
+.dark .group\/timeline-row + div[aria-hidden="false"] .border-l.border-border-seam.pl-3.text-sm.leading-relaxed.text-muted-foreground {
+  margin-inline-start: 0;
+  border-inline-start-width: 0;
+  padding-inline-start: 0;
+  font-size: var(--agent-fluid-size);
+  line-height: 1.625;
+  color: var(--muted-foreground);
+}
+
+/* Nested timeline group rail (TurnRowBody & DelegationRowBody): suppress bb's
+ * duplicate inner ::before line and padding only on the body container's direct
+ * child so nested GeneratedConversationMessage previews keep their own rail and
+ * 12px indent. */
+.dark .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 > .relative.my-1.pl-3.pr-2.before\:bg-border-seam {
+  margin-block: 0;
+  padding-inline: 0;
+}
+
+.dark .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 > .relative.my-1.pl-3.pr-2.before\:bg-border-seam::before {
+  display: none;
+}
+
+.dark [data-timeline-row-list] .relative.my-1.pl-3.pr-2.before\:bg-border-seam::before {
+  width: var(--hairline-width);
+  background-color: var(--border);
+}
+
+/* Compact CodeBlock size="sm" inside TraceCollapsibleContent for Terminal,
+ * Tool, System detail, and File diff output: rounded-xl (12px) on Monokai
+ * content ground (#181818) with crisp 12px mono text, guarded against plugins. */
+.dark [data-timeline-row-list] .overflow-hidden.rounded-lg.border.border-border.bg-card:not([data-bb-plugin-root] *) {
+  border-radius: 12px;
+  border-color: var(--border);
+  background-color: #181818;
+}
+
+.dark [data-timeline-row-list] .rounded-lg.border.border-border.bg-background:not([data-bb-plugin-root] *),
+.dark [data-timeline-row-list] .rounded-md.border.border-border.bg-surface-raised:not([data-bb-plugin-root] *) {
+  border-radius: 12px;
+  border-color: var(--border);
+}
+
+.dark [data-timeline-row-list] .font-mono.text-xs.leading-tight.text-foreground.opacity-70:not([data-bb-plugin-root] *) {
+  opacity: 1;
+  padding-block: 12px;
+  padding-inline: 14px;
+  line-height: 1.5;
+  color: #e3e3dd;
+}
+
+.dark [data-timeline-row-list] .font-mono.text-xs.leading-tight.text-subtle-foreground.opacity-70:not([data-bb-plugin-root] *) {
+  opacity: 1;
+  padding-block: 12px;
+  padding-inline: 14px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+/* Plan (in-thread PlanStepsWorkRowBody): unboxed TraceLine steps hanging off
+ * the thin left rail. Reset space-y-1 margin so gap: 6px does not double-stack,
+ * and leave padding alone so ringed active steps keep their px-2 py-1 inset. */
+.dark ul[data-testid="plan-steps-body"] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dark ul[data-testid="plan-steps-body"] > li {
+  margin-block: 0;
+  font-size: var(--agent-fluid-size);
+  line-height: 1.5;
+}
+
+/* Failures & Stack Trace (base-rhea): EVERY error row shape (expandable &
+ * static :error:, failed :command:, failed :tool:, failed :file-edit:) tagged
+ * by app/timeline-trace.ts turns crisp full-opacity Monokai red
+ * (--destructive-text), stays red on hover, and renders its error detail in
+ * red monospace on a subtle destructive surface. Direct-child combinators
+ * ensure error styling never bleeds into nested rows. */
+.dark [data-monokai-trace-status="error"] > .rounded-md > .group\/timeline-row > button[aria-expanded],
+.dark [data-monokai-trace-status="error"] > .rounded-md > .group\/timeline-row > button[aria-expanded] .opacity-40,
+.dark [data-monokai-trace-status="error"] > .rounded-md > .group\/timeline-row > button[aria-expanded] .text-muted-foreground,
+.dark [data-monokai-trace-status="error"] > .rounded-md > .group\/timeline-row > button[aria-expanded] .text-subtle-foreground,
+.dark [data-monokai-trace-status="error"] > .rounded-md > .group\/timeline-row > button[aria-expanded] .font-medium.text-foreground.opacity-70,
+.dark [data-monokai-trace-status="error"] > .rounded-md > .group\/timeline-row > button[aria-expanded] .tabular-nums,
+.dark [data-monokai-trace-status="error"] > .rounded-md > .group\/timeline-row > button[aria-expanded] [data-icon-root],
+.dark [data-monokai-trace-status="error"] > [data-monokai-trace-static],
+.dark [data-monokai-trace-status="error"] > [data-monokai-trace-static] .opacity-40,
+.dark [data-monokai-trace-status="error"] > [data-monokai-trace-static] .text-muted-foreground,
+.dark [data-monokai-trace-status="error"] > [data-monokai-trace-static] .text-subtle-foreground,
+.dark [data-monokai-trace-status="error"] > [data-monokai-trace-static] .font-medium.text-foreground.opacity-70,
+.dark [data-monokai-trace-status="error"] > [data-monokai-trace-static] [data-icon-root],
+.dark [data-monokai-trace-has-error] > .rounded-md > .group\/timeline-row > button[aria-expanded] .font-mono.text-xs.text-subtle-foreground {
+  color: var(--destructive-text);
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .dark [data-monokai-trace-status="error"] > .rounded-md > .group\/timeline-row > button[aria-expanded]:hover,
+  .dark [data-monokai-trace-status="error"] > .rounded-md > .group\/timeline-row > button[aria-expanded]:hover > svg[data-icon-root] {
+    color: var(--destructive-text);
+  }
+}
+
+.dark [data-monokai-trace-status="error"] > .rounded-md > div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 {
+  border-inline-start-color: var(--surface-destructive-border);
+}
+
+.dark [data-monokai-trace-status="error"] > .rounded-md > div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 .overflow-hidden.rounded-lg.border.border-border.bg-card:not([data-bb-plugin-root] *) {
+  border-color: var(--surface-destructive-border);
+  background-color: var(--surface-destructive);
+  color: var(--destructive-text);
+}
+
+.dark [data-monokai-trace-status="error"] > .rounded-md > div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 .overflow-hidden.rounded-lg.border.border-border.bg-card:not([data-bb-plugin-root] *) .border-border {
+  border-color: var(--surface-destructive-border);
+}
+
+.dark [data-monokai-trace-status="error"] > .rounded-md > div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 .font-mono.text-xs.leading-tight.text-subtle-foreground.opacity-70:not([data-bb-plugin-root] *),
+.dark [data-monokai-trace-status="error"] > .rounded-md > div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 .font-mono.text-xs.leading-tight.text-foreground.opacity-70:not([data-bb-plugin-root] *),
+.dark [data-monokai-trace-status="error"] > .rounded-md > div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 [data-detail-scroll-area]:not([data-bb-plugin-root] *),
+.dark [data-monokai-trace-status="error"] > .rounded-md > div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 .overflow-hidden.rounded-lg.border.border-border.bg-card:not([data-bb-plugin-root] *) .text-muted-foreground {
+  color: var(--destructive-text);
+  opacity: 1;
+}
+
+/* In-timeline EventCodeBlock tone="danger" (file-change stderr). */
+.dark [data-timeline-row-list] .whitespace-pre-wrap.break-words.rounded-md.font-mono.text-xs.text-destructive:not([data-bb-plugin-root] *) {
+  border-radius: 12px;
+  padding-block: 10px;
+  padding-inline: 12px;
+  background-color: var(--surface-destructive);
+  color: var(--destructive-text);
+  line-height: 1.5;
+}
+
+.dark .group\/timeline-row > button[aria-expanded] .text-destructive-text {
+  color: var(--destructive-text);
+  opacity: 1;
+}
+
+/* Checkpoint (Marker variant="separator"): centered label flanked by symmetric
+ * hairline rules using the registered accent.match role. */
+.dark [data-testid="thread-unread-divider"] {
+  gap: 10px;
+  padding-block: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.dark [data-testid="thread-unread-divider"]::before {
+  content: "";
+  height: var(--hairline-width);
+  min-width: 0;
+  flex: 1;
+  background-color: #88c0d044;
+}
+
+.dark [data-testid="thread-unread-divider"] > span.h-px {
+  height: var(--hairline-width);
+  background-color: #88c0d044;
+}
+
+/* MessageFooter actions (base-rhea ghost icon-sm): MessageActionBar puts the
+ * flex overflow-hidden row inside .absolute.top-0. Negative margin + matching
+ * padding on that inner row expands its clip box for the 26x26 rounded-lg
+ * ::before hit fill without shifting a single glyph or altering bb's 20px
+ * ResizeObserver fit math. Phones keep bb's touch targets. */
 @media (min-width: 768px), (pointer: fine) {
-  .dark [data-message-column] .absolute.top-0.flex.max-w-full.gap-2.overflow-hidden {
+  .dark [data-message-column] .absolute.top-0 > .flex.max-w-full.items-center.gap-2.overflow-hidden {
     max-width: calc(100% + 6px);
-    padding: 2px 3px;
-    margin-top: -2px;
+    margin: -3px;
+    padding: 3px;
   }
 
-  .dark [data-message-column] .absolute.top-0.left-0.-ml-1 {
-    margin-left: -7px;
-  }
-
-  .dark [data-message-column] .absolute.top-0.right-\[13px\] {
-    margin-right: -3px;
-  }
-
-  .dark [data-message-column] .absolute.top-0 > button.size-5 {
+  .dark [data-message-column] .absolute.top-0 .overflow-hidden > button.size-5 {
     position: relative;
     isolation: isolate;
   }
 
-  .dark [data-message-column] .absolute.top-0 > button.size-5::before {
+  .dark [data-message-column] .absolute.top-0 .overflow-hidden > button.size-5::before {
     content: "";
     position: absolute;
-    inset: -2px -3px;
+    inset: -3px;
     z-index: -1;
     border-radius: 8px;
   }
 
-  .dark [data-message-column] .absolute.top-0 > button.size-5[data-state="open"]::before {
+  .dark [data-message-column] .absolute.top-0 .overflow-hidden > button.size-5[data-state="open"]::before {
     background-color: var(--accent);
   }
 }
 
 /* The fill pseudo-element exists only in the block above, so phones draw none. */
 @media (hover: hover) {
-  .dark [data-message-column] .absolute.top-0 > button.size-5:hover {
+  .dark [data-message-column] .absolute.top-0 .overflow-hidden > button.size-5:hover {
     color: var(--foreground);
   }
 
-  .dark [data-message-column] .absolute.top-0 > button.size-5:hover::before {
+  .dark [data-message-column] .absolute.top-0 .overflow-hidden > button.size-5:hover::before {
     background-color: var(--accent);
   }
 }
 
-/* Hugeicons draw a 1.5 stroke on a 24px grid, a 0.75px line at 12px that
- * blurs across device pixels. Stroke 2 draws T3's crisp 1px line. */
-.dark [data-message-column] .absolute.top-0 > button.size-5 > svg[data-icon-root].size-3 * {
-  stroke-width: 2;
+.dark [data-message-column] .absolute.top-0 .overflow-hidden > button.size-5 > svg[data-icon-root].size-3 {
+  width: 14px;
+  height: 14px;
 }
 
-.dark [data-timeline-row-list] span.text-sm.leading-5 {
+.dark [data-message-column] .absolute.top-0 .overflow-hidden > button.size-5 > svg[data-icon-root].size-3 * {
+  stroke-width: 1.75;
+}
+
+.dark [data-timeline-row-list] span.text-sm.leading-5,
+.dark .group\/timeline-row span.text-sm.leading-5 {
   font-size: var(--agent-fluid-size);
   line-height: 1.5;
 }
 
-/* Editable fenced blocks have their own controls and markup. Match the stream's
- * code body without applying prose rules to CodeMirror's toolbar. */
+/* Editable fenced blocks in Docs/Canvas adapt the stream's CodeBlock geometry
+ * (rounded-2xl, hairline border, borderless header, 1.5 leading) without
+ * applying prose rules to CodeMirror's toolbar. */
 .dark .bb-markdown-prose pre:not(.bb-code-highlight),
 .dark .bb-markdown-prose .canvas-mdx-code {
-  margin: calc(var(--agent-md-rem) * 0.65) 0;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  margin: calc(var(--agent-md-rem) * 0.75) 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
   background-color: #181818;
   font-size: 13px;
   font-weight: 400;
-  line-height: 1.375;
+  line-height: 1.5;
   overflow: hidden;
 }
 .dark .bb-markdown-prose pre:not(.bb-code-highlight) {
-  padding: calc(var(--agent-md-rem) * 0.8) calc(var(--agent-md-rem) * 0.9);
+  padding-block: 12px 14px;
+  padding-inline: 16px;
   overflow-x: auto;
 }
 .dark .bb-markdown-prose .canvas-mdx-code > div {
   background: transparent;
 }
 .dark .bb-markdown-prose .canvas-mdx-code > div > div:first-child {
-  padding: 6px 6px 0 12px;
+  padding-block: 12px 2px;
+  padding-inline: 16px 12px;
   border: 0;
 }
 .dark .bb-markdown-prose .canvas-mdx-code > div > div:nth-child(2) {
-  padding: calc(var(--agent-md-rem) * 0.8) calc(var(--agent-md-rem) * 0.9);
+  padding-block: 8px 14px;
+  padding-inline: 16px;
 }
 .dark .bb-markdown-prose .canvas-mdx-code .cm-editor {
   font-size: 13px;
   font-weight: 400;
-  line-height: 1.375;
+  line-height: 1.5;
 }
 /* TipTap wraps every list item and table cell in a paragraph, even in a
  * compact list, so the adapter drops those margins to keep T3's tight

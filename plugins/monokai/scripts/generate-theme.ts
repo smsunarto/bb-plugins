@@ -506,7 +506,6 @@ const darkExpected = declarationMap({
   "--surface-raised-solid": roleValues["solid.raised"],
   "--surface-scrim": roleValues["shell.panelScrim"],
   "--agent-surface-background": roleValues["layer.control"],
-  "--agent-surface-border": roleValues["solid.hairline"],
   "--state-hover": roleValues["layer.hover"],
   "--state-active": roleValues["layer.active"],
   "--surface-selected": roleValues["layer.selected"],
@@ -652,7 +651,9 @@ const requiredRules: Array<{
     selector: ".dark .rounded-xl.border.border-border-seam.bg-surface-recessed",
     declarations: {
       "background-color": "var(--agent-surface-background)",
-      "border-color": "var(--agent-surface-border)",
+      "border-color": "transparent",
+      "border-radius": "24px",
+      padding: "10px 14px",
     },
   },
   {
