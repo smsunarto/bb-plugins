@@ -1210,6 +1210,12 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
           .run(to.text, to.fingerprint, to.servedAt, threadId, fromFingerprint).changes === 1
       );
     },
+    /** Drop a thread's served record, for a thread bb no longer has: true when there was one. */
+    forgetServed(threadId: string): boolean {
+      return (
+        db.prepare("DELETE FROM served_instructions WHERE thread_id = ?").run(threadId).changes > 0
+      );
+    },
     fallback(failedThreadId: string): Fallback | null {
       const row = db
         .prepare<[string], FallbackRecord>("SELECT * FROM fallbacks WHERE failed_thread_id = ?")

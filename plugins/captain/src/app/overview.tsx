@@ -75,7 +75,7 @@ export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
   });
   const [collapsed, toggle] = useCollapsed(threadId);
   const scheduled = routines.data;
-  const now = useNow(asks.data?.items);
+  const now = useNow([asks.data?.items], visible);
   // The banner's queue: its order, Later's hidden items left out, so both count alike.
   const asked = useMemo(
     () => (asks.data === undefined ? undefined : orderQueue(asks.data.items, now)),

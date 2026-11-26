@@ -685,7 +685,7 @@ export const tasksRpcContract = defineRpcContract({
     output: z.object({ presets: z.array(presetSchema) }).strict(),
   },
   listMachines: {
-    input: z.object({}).strict(),
+    input: z.union([z.object({}).strict(), z.null()]),
     output: z
       .object({
         machines: z.array(z.object({ id: z.string(), name: z.string() }).strict()),

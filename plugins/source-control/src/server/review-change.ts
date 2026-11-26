@@ -54,10 +54,11 @@ type LocalMatch = {
 
 /** The checkout that has the Change, if the placement table knows one. */
 export function localMatch(store: Store, key: ChangeKey): LocalMatch | null {
-  for (const placement of store.checkouts()) {
+  // Only the checkouts whose read holds the key, from the store's index: no scan of every checkout.
+  for (const placement of store.checkoutsWith(key)) {
     const facet = store.local(placement.hostId, placement.path);
     if (!facet.read) continue;
-    const rows = rowsOf(store, placement);
+    const rows = rowsOf(store, placement, { workspace: facet.read.value });
     const row = rows.find((each) => each.key === key);
     if (!row) continue;
     const stack = rows.filter((each) => each.stack?.id === row.stack?.id);

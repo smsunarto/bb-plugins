@@ -477,6 +477,56 @@ describe("task detail pull request pills", () => {
     });
   });
 
+  it("enforces the focus refresh cooldown and requires a connected realtime state", async () => {
+    let clock = 1_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const slot = renderSlot(
+        app.navPanels[0]!,
+        { subPath: "task/TSK-5" },
+        {
+          realtimeConnectionState: "reconnecting",
+          rpc: detailRpc({
+            statusForThread: (input: unknown) =>
+              statusRows(input, () =>
+                changeRow({ number: 12, title: "Ship the PR pill", state: "open" }),
+              ),
+            refreshThread: () => ({ ok: true }),
+          }),
+        },
+      );
+
+      await slot.findByRole("link", { name: "Pull request #12: Ship the PR pill (Open)" });
+
+      // While disconnected/reconnecting, window focus must not fire refreshThread.
+      window.dispatchEvent(new Event("focus"));
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(slot.rpcCalls.filter((call) => call.method === "refreshThread")).toEqual([]);
+
+      // Once connected, the first focus refreshes.
+      await slot.setRealtimeConnectionState("connected");
+      window.dispatchEvent(new Event("focus"));
+      await waitFor(() => {
+        expect(slot.rpcCalls.filter((call) => call.method === "refreshThread")).toHaveLength(1);
+      });
+
+      // Another focus within 30s is suppressed by the cooldown.
+      clock += 29_999;
+      window.dispatchEvent(new Event("focus"));
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(slot.rpcCalls.filter((call) => call.method === "refreshThread")).toHaveLength(1);
+
+      // Once >=30s elapses, focus refreshes again.
+      clock += 1;
+      window.dispatchEvent(new Event("focus"));
+      await waitFor(() => {
+        expect(slot.rpcCalls.filter((call) => call.method === "refreshThread")).toHaveLength(2);
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it("shows the pull request's checks as Source Control words them", async () => {
     const slot = renderSlot(
       app.navPanels[0]!,

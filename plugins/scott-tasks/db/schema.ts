@@ -380,6 +380,10 @@ const MIGRATIONS = [
       UPDATE task_list_revision SET revision = revision + 1 WHERE id = 1;
     END;
   `,
+  // The status reconcile reads non-terminal rows across every task.
+  `
+    CREATE INDEX IF NOT EXISTS idx_task_threads_live_status ON task_threads(live_status);
+  `,
 ] as const;
 
 export function initializeTasksSchema(db: PluginDatabase): void {

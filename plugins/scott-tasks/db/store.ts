@@ -1688,6 +1688,38 @@ export function createTasksStore(db: PluginDatabase) {
       .map(taskThreadFromRow);
   }
 
+  /**
+   * Task threads the status reconcile re-reads: those bb may still move without
+   * our hearing it. Archived, failed, and completed rows change only through
+   * thread events, so the sweep skips them.
+   */
+  function listReconcilableTaskThreads(): TaskThread[] {
+    return db
+      .prepare<[], TaskThreadRow>(
+        `
+        SELECT * FROM task_threads
+        WHERE live_status IN ('starting', 'working', 'idle')
+        ORDER BY attached_at DESC, id DESC
+      `,
+      )
+      .all()
+      .map(taskThreadFromRow);
+  }
+
+  function hasReconcilableTaskThreads(): boolean {
+    return (
+      db
+        .prepare<[], { found: number }>(
+          `
+          SELECT 1 AS found FROM task_threads
+          WHERE live_status IN ('starting', 'working', 'idle')
+          LIMIT 1
+        `,
+        )
+        .get() !== undefined
+    );
+  }
+
   function listTaskThreads(taskId: string): TaskThread[] {
     return db
       .prepare<[string], TaskThreadRow>(
@@ -1907,6 +1939,8 @@ export function createTasksStore(db: PluginDatabase) {
     getTaskThreadByThreadId,
     listTaskThreadsByThreadId,
     listTaskThreads,
+    listReconcilableTaskThreads,
+    hasReconcilableTaskThreads,
     listActiveTaskThreads,
     updateTaskThreadStatus,
     deleteTaskThread,

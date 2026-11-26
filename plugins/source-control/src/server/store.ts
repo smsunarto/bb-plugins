@@ -9,6 +9,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   EMPTY_FACET,
+  changeKeyForBranch,
   checksValueSchema,
   facetSchema,
   forgeValueSchema,
@@ -150,6 +151,26 @@ function parsed<T>(schema: z.ZodType<T>, json: string): T | null {
   } catch {
     return null;
   }
+}
+
+/** Checkout reads kept parsed in memory; a read can run to tens of kilobytes. */
+export const LOCAL_CACHE_MAX = 500;
+/** Pull request, checks and placement rows kept parsed in memory. */
+export const FACET_CACHE_MAX = 4_000;
+
+/** A map that forgets its oldest entry past `max`, so a long-lived server stays bounded. */
+function boundedCache<K, V>(max: number) {
+  const entries = new Map<K, V>();
+  return {
+    get: (key: K): V | undefined => entries.get(key),
+    set(key: K, value: V): void {
+      entries.delete(key);
+      entries.set(key, value);
+      if (entries.size > max) entries.delete(entries.keys().next().value as K);
+    },
+    delete: (key: K): void => void entries.delete(key),
+    keys: () => entries.keys(),
+  };
 }
 
 /** Dismissed findings, batches with what they carry, and the send tray. */
@@ -648,28 +669,95 @@ export function openStore(bb: BbPluginApi) {
      ON CONFLICT (thread_id) DO UPDATE SET branch = excluded.branch`,
   );
 
+  const getThreadCheckout = db.prepare<[string], { host_id: string; path: string }>(
+    `SELECT host_id, path FROM thread_checkout WHERE thread_id = ?`,
+  );
+
+  // Hot reads are parsed once and kept: every write below goes through this
+  // store and drops what it changed, so a cached value is always the row's.
+  // Cached values are shared between readers and must not be mutated.
+  const localCache = boundedCache<string, Facet<WorkspaceValue>>(LOCAL_CACHE_MAX);
+  const forgeCache = boundedCache<ChangeKey, Facet<ForgeValue>>(FACET_CACHE_MAX);
+  const checksCache = boundedCache<ChangeKey, Facet<ChecksValue>>(FACET_CACHE_MAX);
+  const placementCache = boundedCache<string, ThreadPlacement | null>(FACET_CACHE_MAX);
+  let checkoutsCache: Placement[] | null = null;
+  /** Which checkouts hold each ChangeKey, in `checkouts()` order; rebuilt when a checkout or its read moves. */
+  let changeIndex: Map<ChangeKey, Placement[]> | null = null;
+  const localKey = (hostId: string, path: string) => JSON.stringify([hostId, path]);
+  const checkoutsMoved = () => {
+    checkoutsCache = null;
+    changeIndex = null;
+  };
+
   const local = (hostId: string, path: string): Facet<WorkspaceValue> => {
+    const cacheKey = localKey(hostId, path);
+    const cached = localCache.get(cacheKey);
+    if (cached) return cached;
     const row = getLocal.get(hostId, path);
-    return (row && parsed(localFacetSchema, row.json)) ?? EMPTY_FACET;
+    const facet = (row && parsed(localFacetSchema, row.json)) ?? EMPTY_FACET;
+    localCache.set(cacheKey, facet);
+    return facet;
+  };
+  const storedForge = (key: ChangeKey): Facet<ForgeValue> => {
+    const cached = forgeCache.get(key);
+    if (cached) return cached;
+    const row = getForge.get(key);
+    const facet = (row && parsed(forgeFacetSchema, row.json)) ?? EMPTY_FACET;
+    forgeCache.set(key, facet);
+    return facet;
+  };
+  const storedChecks = (key: ChangeKey): Facet<ChecksValue> => {
+    const cached = checksCache.get(key);
+    if (cached) return cached;
+    const row = getChecks.get(key);
+    const facet = (row && parsed(checksFacetSchema, row.json)) ?? EMPTY_FACET;
+    checksCache.set(key, facet);
+    return facet;
   };
   // A failed read describes one reader's connection. Only successful data is shared and persisted.
   const forgeProblems = new Map<string | undefined, Map<ChangeKey, Problem>>();
   const problem = (key: ChangeKey, hostId?: string) => forgeProblems.get(hostId)?.get(key) ?? null;
-  const forge = (key: ChangeKey, hostId?: string): Facet<ForgeValue> => {
-    const row = getForge.get(key);
-    const facet = (row && parsed(forgeFacetSchema, row.json)) ?? EMPTY_FACET;
-    return { read: facet.read, problem: problem(key, hostId) };
-  };
-  const checks = (key: ChangeKey): Facet<ChecksValue> => {
-    const row = getChecks.get(key);
-    const facet = (row && parsed(checksFacetSchema, row.json)) ?? EMPTY_FACET;
-    return { read: facet.read, problem: problem(key) };
-  };
+  const forge = (key: ChangeKey, hostId?: string): Facet<ForgeValue> => ({
+    read: storedForge(key).read,
+    problem: problem(key, hostId),
+  });
+  const checks = (key: ChangeKey): Facet<ChecksValue> => ({
+    read: storedChecks(key).read,
+    problem: problem(key),
+  });
   const placementRows = db.prepare<[], { host_id: string; path: string; json: string }>(
     `SELECT tc.host_id, tc.path, tp.json FROM thread_checkout tc
      JOIN thread_placement tp ON tp.thread_id = tc.thread_id
      GROUP BY tc.host_id, tc.path ORDER BY tc.host_id, tc.path`,
   );
+  const checkouts = (): readonly Placement[] => {
+    checkoutsCache ??= placementRows.all().flatMap((row) => {
+      const value = parsed(threadPlacementSchema, row.json);
+      return value?.state === "checkout" ? [value.placement] : [];
+    });
+    return checkoutsCache;
+  };
+  const indexCheckout = (index: Map<ChangeKey, Placement[]>, placement: Placement) => {
+    const workspace = local(placement.hostId, placement.path).read?.value;
+    if (!workspace) return;
+    const keys = new Set<ChangeKey>();
+    for (const stack of workspace.stacks)
+      for (const branch of stack.branches)
+        keys.add(changeKeyForBranch(placement.hostId, workspace, branch));
+    for (const each of keys) {
+      const list = index.get(each);
+      if (list) list.push(placement);
+      else index.set(each, [placement]);
+    }
+  };
+  const checkoutsWith = (key: ChangeKey): readonly Placement[] => {
+    if (!changeIndex) {
+      const index = new Map<ChangeKey, Placement[]>();
+      for (const placement of checkouts()) indexCheckout(index, placement);
+      changeIndex = index;
+    }
+    return changeIndex.get(key) ?? [];
+  };
   const getInbox = db.prepare<[string], { json: string }>(
     `SELECT json FROM inbox_facet WHERE login = ?`,
   );
@@ -704,11 +792,10 @@ export function openStore(bb: BbPluginApi) {
     ...threadChanges,
     /** One placement per checkout the placement table knows, by host: what the review page lists. */
     checkouts(): Placement[] {
-      return placementRows.all().flatMap((row) => {
-        const value = parsed(threadPlacementSchema, row.json);
-        return value?.state === "checkout" ? [value.placement] : [];
-      });
+      return [...checkouts()];
     },
+    /** The checkouts whose last read holds the Change, in `checkouts()` order. */
+    checkoutsWith,
     inbox,
     setInbox(login: string, rows: SourceRows): boolean {
       const changed = !sameRows(inbox(login), rows);
@@ -716,16 +803,32 @@ export function openStore(bb: BbPluginApi) {
       return changed;
     },
     placement(threadId: string): ThreadPlacement | null {
+      const cached = placementCache.get(threadId);
+      if (cached !== undefined) return cached;
       const row = getPlacement.get(threadId);
-      return row ? parsed(threadPlacementSchema, row.json) : null;
+      const value = row ? parsed(threadPlacementSchema, row.json) : null;
+      placementCache.set(threadId, value);
+      return value;
     },
     setPlacement(threadId: string, value: ThreadPlacement, now: number): boolean {
       const json = JSON.stringify(value);
       const changed = getPlacement.get(threadId)?.json !== json;
+      const checkoutBefore = getThreadCheckout.get(threadId);
       putPlacement.run(threadId, json, now);
       if (value.state === "checkout")
         putCheckout.run(threadId, value.placement.hostId, value.placement.path);
       else dropCheckout.run(threadId);
+      if (changed) placementCache.delete(threadId);
+      const checkoutAfter =
+        value.state === "checkout"
+          ? { host_id: value.placement.hostId, path: value.placement.path }
+          : undefined;
+      if (
+        changed ||
+        checkoutBefore?.host_id !== checkoutAfter?.host_id ||
+        checkoutBefore?.path !== checkoutAfter?.path
+      )
+        checkoutsMoved();
       return changed;
     },
     /** Every host a checkout, a read or a setting is stored for. */
@@ -743,9 +846,13 @@ export function openStore(bb: BbPluginApi) {
       for (const threadId of threads) {
         putPlacement.run(threadId, none, now);
         dropCheckout.run(threadId);
+        placementCache.delete(threadId);
       }
       const reads = dropLocalOn.run(hostId).changes;
       const settings = dropReadAsOn.run(hostId).changes;
+      for (const cacheKey of localCache.keys())
+        if ((JSON.parse(cacheKey) as [string, string])[0] === hostId) localCache.delete(cacheKey);
+      checkoutsMoved();
       return { threads, rows: threads.length * 2 + reads + settings };
     }),
     /** Every thread last seen on this checkout. */
@@ -756,6 +863,10 @@ export function openStore(bb: BbPluginApi) {
     setLocal(hostId: string, path: string, facet: Facet<WorkspaceValue>): boolean {
       const changed = !sameFacet(local(hostId, path), facet);
       putLocal.run(hostId, path, JSON.stringify(facet));
+      // Dropped, not kept: the next read parses the row as written, in its schema.
+      localCache.delete(localKey(hostId, path));
+      // The same branches keep the same keys, so an unchanged read leaves the index.
+      if (changed) changeIndex = null;
       return changed;
     },
     forge,
@@ -784,6 +895,7 @@ export function openStore(bb: BbPluginApi) {
     setForge(key: ChangeKey, facet: Facet<ForgeValue>): boolean {
       const changed = !sameFacet(forge(key), facet);
       putForge.run(key, JSON.stringify(facet));
+      forgeCache.delete(key);
       return changed;
     },
     checks,
@@ -816,6 +928,8 @@ export function openStore(bb: BbPluginApi) {
         };
         putForge.run(key, JSON.stringify(facets.forge));
         putChecks.run(key, JSON.stringify(facets.checks));
+        forgeCache.delete(key);
+        checksCache.delete(key);
         return {
           forge: !sameFacet(before.forge, facets.forge),
           checks: !sameFacet(before.checks, facets.checks),

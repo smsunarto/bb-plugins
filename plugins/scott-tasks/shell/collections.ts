@@ -390,18 +390,22 @@ export const ACTIVE_THREAD_STATUSES = [
   "working",
 ] as const satisfies readonly TaskThread["liveStatus"][];
 
-async function loadTaskThreads(where: Expression | undefined): Promise<TaskThread[]> {
-  const [term, ...rest] = conjuncts(where);
-  if (term?.type !== "func" || rest.length > 0)
-    throw new UnsupportedSubsetError("task threads", where!);
+export type TaskThreadsSubset =
+  | { kind: "task"; taskId: string }
+  | { kind: "thread"; threadId: string }
+  | { kind: "active" };
+
+/** Classify a `taskThreadsCollection` subset predicate for targeted invalidation. */
+export function describeTaskThreadsSubset(where: unknown): TaskThreadsSubset | null {
+  const [term, ...rest] = conjuncts(where as Expression | undefined);
+  if (term?.type !== "func" || rest.length > 0) return null;
   const field = refName(term.args[0]);
   const target = value(term.args[1]);
-  const rpc = tasksRpc();
   if (term.name === "eq" && field === "taskId" && typeof target === "string") {
-    return (await rpc.call("listTaskThreads", { taskId: target })).taskThreads;
+    return { kind: "task", taskId: target };
   }
   if (term.name === "eq" && field === "threadId" && typeof target === "string") {
-    return (await rpc.call("listTaskThreadsByThread", { threadId: target })).taskThreads;
+    return { kind: "thread", threadId: target };
   }
   const statuses = strings(target);
   if (
@@ -410,9 +414,24 @@ async function loadTaskThreads(where: Expression | undefined): Promise<TaskThrea
     statuses?.length === ACTIVE_THREAD_STATUSES.length &&
     ACTIVE_THREAD_STATUSES.every((status) => statuses.includes(status))
   ) {
+    return { kind: "active" };
+  }
+  return null;
+}
+
+async function loadTaskThreads(where: Expression | undefined): Promise<TaskThread[]> {
+  const subset = describeTaskThreadsSubset(where);
+  const rpc = tasksRpc();
+  if (subset?.kind === "task") {
+    return (await rpc.call("listTaskThreads", { taskId: subset.taskId })).taskThreads;
+  }
+  if (subset?.kind === "thread") {
+    return (await rpc.call("listTaskThreadsByThread", { threadId: subset.threadId })).taskThreads;
+  }
+  if (subset?.kind === "active") {
     return (await rpc.call("listActiveTaskThreads")).taskThreads;
   }
-  throw new UnsupportedSubsetError("task threads", term);
+  throw new UnsupportedSubsetError("task threads", where!);
 }
 
 /** Task ↔ agent thread links: every task's live ones, one task's all, or one thread's. */

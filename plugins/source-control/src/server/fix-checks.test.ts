@@ -46,6 +46,7 @@ function setup(
   const spawned: Record<string, unknown>[] = [];
   const store = {
     checkouts: () => [],
+    checkoutsWith: () => [],
     forge: (): Facet<ForgeValue> => ({ read: { value: pr, at: 1 }, problem: null }),
     checks: (): Facet<ChecksValue> => ({
       read: { value: { head, rows, more: false }, at: 1 },

@@ -557,7 +557,13 @@ describe("Tasks RPC domain API", () => {
         { id: "host_remote", name: "Build box" },
       ],
     });
-    expect(harness.sdk.callsTo("hosts.list")).toEqual([[]]);
+    await expect(harness.callRpc("listMachines", null)).resolves.toEqual({
+      machines: [
+        { id: "host_primary", name: "Sawyer Air" },
+        { id: "host_remote", name: "Build box" },
+      ],
+    });
+    expect(harness.sdk.callsTo("hosts.list")).toEqual([[], []]);
 
     await harness.dispose();
   });
@@ -1670,6 +1676,106 @@ describe("Tasks RPC domain API", () => {
     expect(statusReads(harness).map((keys) => keys.length)).toEqual([200, 1]);
     expect(statusReads(harness).flat().sort()).toEqual(threadIds);
 
+    await harness.dispose();
+  });
+
+  it("skips refreshThread for archived and completed task threads while keeping stored PRs", async () => {
+    const refreshed: string[] = [];
+    const staleForge = { state: "read", at: Date.now() - 120_000 };
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        plugins: sourceControlRpc({
+          status: (threadId) => {
+            if (threadId === "thr_active000") return changeRow(prRow({ number: 11 }), staleForge);
+            if (threadId === "thr_archived0") return changeRow(prRow({ number: 12 }), staleForge);
+            return changeRow(prRow({ number: 13 }), staleForge);
+          },
+          refresh: (threadId) => {
+            refreshed.push(threadId);
+          },
+        }),
+      },
+    });
+    const store = createStore(bb);
+    registerTasksApi(bb, store);
+    const project = store.tasks.createProject({ name: "PR", prefix: "PR", color: "blue" });
+    const task = store.tasks.createTask({ projectId: project.id, title: "Skip old threads" });
+    store.tasks.upsertTaskThread({
+      taskId: task.id,
+      threadId: "thr_active000",
+      presetName: "Default",
+      title: "Active",
+      liveStatus: "working",
+    });
+    store.tasks.upsertTaskThread({
+      taskId: task.id,
+      threadId: "thr_archived0",
+      presetName: "Default",
+      title: "Archived",
+      liveStatus: "archived",
+    });
+    store.tasks.upsertTaskThread({
+      taskId: task.id,
+      threadId: "thr_complete0",
+      presetName: "Default",
+      title: "Completed",
+      liveStatus: "completed",
+    });
+
+    const result = tasksRpcContract.listTaskPullRequests.output.parse(
+      await harness.callRpc("listTaskPullRequests", { taskId: task.id }),
+    );
+
+    expect(refreshed).toEqual(["thr_active000"]);
+    expect(result.pullRequests.map((pr) => pr.number).sort((a, b) => a - b)).toEqual([11, 12, 13]);
+    await harness.dispose();
+  });
+
+  it("coalesces concurrent in-flight refreshThread calls for the same threadId", async () => {
+    let resolveRefresh!: () => void;
+    const refreshGate = new Promise<void>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    let refreshCalls = 0;
+    const staleForge = { state: "read", at: Date.now() - 120_000 };
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        plugins: {
+          async callRpc<TOutput>(args: {
+            pluginId: string;
+            method: string;
+            input?: unknown;
+            outputSchema: { parse(value: unknown): TOutput };
+          }): Promise<TOutput> {
+            if (args.method === "refreshThread") {
+              refreshCalls += 1;
+              await refreshGate;
+              return args.outputSchema.parse({ ok: true });
+            }
+            const { keys } = args.input as { keys: string[] };
+            return args.outputSchema.parse(
+              Object.fromEntries(
+                keys.map((key) => [key, changeRow(prRow({ number: 99 }), staleForge)]),
+              ),
+            );
+          },
+        },
+      },
+    });
+    const store = createStore(bb);
+    registerTasksApi(bb, store);
+    const task = taskWithThreads(store, ["thr_shared000"]);
+
+    const first = harness.callRpc("listTaskPullRequests", { taskId: task.id });
+    const second = harness.callRpc("listTaskPullRequests", { taskId: task.id });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(refreshCalls).toBe(1);
+
+    resolveRefresh();
+    await Promise.all([first, second]);
+    expect(refreshCalls).toBe(1);
     await harness.dispose();
   });
 

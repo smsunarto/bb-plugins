@@ -9,6 +9,7 @@ import {
   attachmentCountsCollection,
   countAttachments,
   deleteServerTask,
+  describeTaskThreadsSubset,
   showsAttachmentCount,
   writeServerTask,
 } from "./collections.js";
@@ -145,6 +146,33 @@ function projectTaskReads(projectIds: readonly string[]): QueryKey[] {
     .map((query) => query.queryKey);
 }
 
+/**
+ * Task-thread subset reads a `threads:changed` signal for `taskIds` may have
+ * made stale: the affected task's own thread list, any thread-link lookup that
+ * holds one of those tasks (or is still in flight), and the global active-threads
+ * subset. Unrelated task detail panels and unrelated thread header rows stay
+ * cached.
+ */
+function taskThreadReads(taskIds: readonly string[]): QueryKey[] {
+  return tasksQueryClient
+    .getQueryCache()
+    .findAll({ queryKey: ["taskThreads"] })
+    .filter((query) => {
+      const meta = query.meta as { loadSubsetOptions?: { where?: unknown } } | undefined;
+      const subset = describeTaskThreadsSubset(meta?.loadSubsetOptions?.where);
+      if (subset === null || subset.kind === "active") return true;
+      if (subset.kind === "task") return taskIds.includes(subset.taskId);
+      const rows: unknown = query.state.data;
+      return (
+        query.state.fetchStatus === "fetching" ||
+        !Array.isArray(rows) ||
+        rows.length === 0 ||
+        rows.some((row: { taskId?: unknown }) => taskIds.includes(String(row.taskId)))
+      );
+    })
+    .map((query) => query.queryKey);
+}
+
 async function patchAttachmentCounts(taskIds: readonly string[]): Promise<void> {
   const loaded = taskIds.filter(showsAttachmentCount);
   if (loaded.length === 0) return;
@@ -206,7 +234,8 @@ async function applySignals(signals: readonly Signal[]): Promise<void> {
     for (const taskId of ids("comments:changed")) invalidate(tasksKeys.comments(taskId));
   }
   if (any("threads:changed")) {
-    invalidate(["taskThreads"]);
+    if (everything("threads:changed")) invalidate(["taskThreads"]);
+    else for (const queryKey of taskThreadReads(ids("threads:changed"))) invalidate(queryKey);
     invalidate(tasksKeys.sidebarSummary);
   }
   await Promise.allSettled([...patches, ...[...stale.values()].map(refresh)]);

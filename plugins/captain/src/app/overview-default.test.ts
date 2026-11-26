@@ -124,7 +124,7 @@ describe("classifyOpen", () => {
 describe("the registered New Tab click listener", () => {
   const app = loadPluginApp(() => import("./app.tsx"));
 
-  test("scopes to the matching hosted panel, ignores an automatic late +, and disposes", async () => {
+  test("uses a single delegated capture click listener with 0 MutationObserver scans, scopes to the matching panel, and disposes", async () => {
     const root = document.createElement("div");
     root.innerHTML = `
       <div data-split-pane-id="pane-a"><span id="anchor-a" hidden></span></div>
@@ -133,8 +133,18 @@ describe("the registered New Tab click listener", () => {
       <section id="thread-detail-secondary-panel-pane-b"></section>
     `;
     document.body.append(root);
+    const observeSpy = vi.spyOn(MutationObserver.prototype, "observe");
+    const docQueryAll = vi.spyOn(document, "querySelectorAll");
+    const docAdd = vi.spyOn(document, "addEventListener");
+    const docRemove = vi.spyOn(document, "removeEventListener");
     const scripts = await mountPluginContentScripts(await app, { pluginId: "captain" });
     try {
+      expect(observeSpy).not.toHaveBeenCalled();
+      expect(docQueryAll).not.toHaveBeenCalled();
+      const clickAdd = docAdd.mock.calls.find(([type]) => type === "click");
+      expect(clickAdd).toBeDefined();
+      expect(clickAdd?.[2]).toEqual({ capture: true, passive: true });
+
       const anchorA = root.querySelector("#anchor-a")!;
       const anchorB = root.querySelector("#anchor-b")!;
       const panelA = root.querySelector("#thread-detail-secondary-panel-pane-a")!;
@@ -144,14 +154,12 @@ describe("the registered New Tab click listener", () => {
 
       const button = document.createElement("button");
       button.setAttribute("data-panel-new-tab", "");
-      const add = vi.spyOn(button, "addEventListener");
-      const remove = vi.spyOn(button, "removeEventListener");
+      const icon = document.createElement("span");
+      button.append(icon);
       panelA.append(button);
-      await vi.waitFor(() =>
-        expect(add).toHaveBeenCalledWith("click", expect.any(Function), expect.anything()),
-      );
-      button.click();
 
+      // Untrusted synthetic click is ignored.
+      button.click();
       const opening = steps(seen(info.key), [{ tabs: panel(true, info.key), isCaptain: null }]);
       const resolved = observe(
         "captain",
@@ -165,11 +173,33 @@ describe("the registered New Tab click listener", () => {
       expect(resolved.action).toEqual(selectOverview);
       expect(newTabPressFor(anchorB)).toBeNull();
 
+      // Trusted click on a nested element inside the + button is matched via target.closest(PLUS).
+      const listener = clickAdd?.[1] as ((event: Event) => void) | undefined;
+      listener?.({ isTrusted: true, target: icon } as unknown as Event);
+      const pressA = newTabPressFor(anchorA);
+      expect(pressA).not.toBeNull();
+      expect(newTabPressFor(anchorB)).toBeNull();
+      const cancelled = observe(
+        "captain",
+        opening[0]!.watch,
+        "t1",
+        panel(true, newTab.key),
+        true,
+        80,
+        pressA,
+      );
+      expect(cancelled.action).toEqual(none);
+
       await scripts.lifecycle.dispose();
-      expect(remove).toHaveBeenCalledWith("click", add.mock.calls[0]?.[1], true);
+      expect(docRemove).toHaveBeenCalledWith("click", clickAdd?.[1], true);
       expect(document.querySelector("[data-captain-overview-style]")).toBeNull();
+      expect(observeSpy).not.toHaveBeenCalled();
     } finally {
       await scripts.lifecycle.dispose();
+      observeSpy.mockRestore();
+      docQueryAll.mockRestore();
+      docAdd.mockRestore();
+      docRemove.mockRestore();
       root.remove();
     }
   });

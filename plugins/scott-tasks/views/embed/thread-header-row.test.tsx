@@ -362,4 +362,63 @@ describe("Tasks thread header bar publisher", () => {
       expect(getResolvedHeaderBar("thr_done").slots.meta?.tone).toBe("muted");
     });
   });
+
+  it("reuses cached listTaskThreadsByThread on A -> B -> A revisit within staleTime", async () => {
+    const slot = app.threadHeaderRows.find((entry) => entry.id === "linked-task")!;
+    const listTaskThreadsByThread = vi.fn(() => ({ taskThreads: [] }));
+    const rpc = {
+      listTaskThreadsByThread,
+      listTasks: () => ({ tasks: [] }),
+      listTaskThreads: () => ({ taskThreads: [] }),
+    };
+
+    const firstA = renderSlot(
+      slot,
+      { threadId: "thr_a", projectId: "proj_1", environment: null },
+      { rpc },
+    );
+    await waitFor(() => expect(listTaskThreadsByThread).toHaveBeenCalledTimes(1));
+    firstA.unmount();
+
+    const visitB = renderSlot(
+      slot,
+      { threadId: "thr_b", projectId: "proj_1", environment: null },
+      { rpc },
+    );
+    await waitFor(() => expect(listTaskThreadsByThread).toHaveBeenCalledTimes(2));
+    visitB.unmount();
+
+    const secondA = renderSlot(
+      slot,
+      { threadId: "thr_a", projectId: "proj_1", environment: null },
+      { rpc },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(listTaskThreadsByThread).toHaveBeenCalledTimes(2);
+    secondA.unmount();
+  });
+
+  it("does not re-render unlinked or single-thread tasks when sidebar threads update", async () => {
+    const slot = app.threadHeaderRows.find((entry) => entry.id === "linked-task")!;
+    const listTaskThreadsByThread = vi.fn(() => ({ taskThreads: [] }));
+    const rendered = renderSlot(
+      slot,
+      { threadId: "thr_plain", projectId: "proj_1", environment: null },
+      {
+        rpc: {
+          listTaskThreadsByThread,
+          listTasks: () => ({ tasks: [] }),
+          listTaskThreads: () => ({ taskThreads: [] }),
+        },
+        sidebarThreads: {
+          status: "ready",
+          threads: [makeSidebarThread({ id: "thr_plain", displayTitle: "Plain" })],
+        },
+      },
+    );
+
+    await waitFor(() => expect(listTaskThreadsByThread).toHaveBeenCalledTimes(1));
+    expect(getResolvedHeaderBar("thr_plain").isEmpty).toBe(true);
+    expect(rendered.container.innerHTML).toBe("");
+  });
 });

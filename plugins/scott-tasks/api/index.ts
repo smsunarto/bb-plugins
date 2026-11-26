@@ -10,6 +10,8 @@ import {
   type Attachment as StoredAttachment,
   type Comment as StoredComment,
   type Task as StoredTask,
+  type TaskThread as StoredTaskThread,
+  type TaskThreadLiveStatus,
   type TasksStore,
 } from "../db";
 import {
@@ -511,6 +513,41 @@ const PULL_REQUEST_REFRESH_CONCURRENCY = 8;
 const PULL_REQUEST_REFRESH_DEADLINE_MS = 8_000;
 /** No refresh starts after this; threads still queued keep their stored row. */
 const PULL_REQUEST_REFRESH_BUDGET_MS = 20_000;
+/** Terminal or archived threads keep their stored PR row without waking hosts. */
+const SKIP_PR_REFRESH_STATUSES = new Set<TaskThreadLiveStatus>(["archived", "completed"]);
+
+const inFlightPullRequestRefreshes = new WeakMap<BbPluginApi, Map<string, Promise<void>>>();
+
+function refreshThreadCoalesced(bb: BbPluginApi, threadId: string): Promise<void> {
+  let inFlight = inFlightPullRequestRefreshes.get(bb);
+  if (inFlight === undefined) {
+    inFlight = new Map();
+    inFlightPullRequestRefreshes.set(bb, inFlight);
+  }
+  const existing = inFlight.get(threadId);
+  if (existing !== undefined) return existing;
+
+  const activeMap = inFlight;
+  const run = bb.sdk.plugins
+    .callRpc({
+      pluginId: SOURCE_CONTROL_PLUGIN_ID,
+      method: "refreshThread",
+      input: { threadId },
+      outputSchema: sourceControlContract.refreshThread.output,
+      signal: AbortSignal.timeout(PULL_REQUEST_REFRESH_DEADLINE_MS),
+    })
+    .then(
+      () => undefined,
+      (error: unknown) => {
+        bb.log.debug(`pull request refresh failed for ${threadId}: ${errorMessage(error)}`);
+      },
+    )
+    .finally(() => {
+      activeMap.delete(threadId);
+    });
+  activeMap.set(threadId, run);
+  return run;
+}
 
 /** Each thread's stored `statusForThread` row; a failed read leaves its threads out. */
 async function readThreadRows(
@@ -537,36 +574,32 @@ async function readThreadRows(
 
 // Source Control (source-control) owns pull request data, keyed by thread.
 // It serves stored rows and keeps one current only while something watches
-// it, so a thread whose GitHub read is missing or over a minute old is read
-// again with `refreshThread` first. Each refresh has its own deadline, so a
-// sleeping host costs one slot, not the whole read. A failed, disabled, or
-// still-unread lookup leaves the thread out, which the caller reports as
-// unavailable.
+// it, so an active thread whose GitHub read is missing or over a minute old is
+// read again with `refreshThread` first. Archived and completed threads keep
+// their stored row without waking hosts. Concurrent refreshes for the same
+// thread coalesce onto one in-flight call, and each refresh has its own
+// deadline, so a sleeping host costs one slot, not the whole read.
 async function readThreadPullRequests(
   bb: BbPluginApi,
-  threadIds: readonly string[],
+  taskThreads: readonly Pick<StoredTaskThread, "threadId" | "liveStatus">[],
 ): Promise<Map<string, ThreadPullRequest>> {
+  const threadIds = taskThreads.map((taskThread) => taskThread.threadId);
   const rows = await readThreadRows(bb, threadIds);
   const startedAt = Date.now();
-  const stale = threadIds.filter(
-    (threadId) => rows.has(threadId) && refreshDue(rows.get(threadId), startedAt),
-  );
+  const stale = taskThreads
+    .filter(
+      (taskThread) =>
+        !SKIP_PR_REFRESH_STATUSES.has(taskThread.liveStatus) &&
+        rows.has(taskThread.threadId) &&
+        refreshDue(rows.get(taskThread.threadId), startedAt),
+    )
+    .map((taskThread) => taskThread.threadId);
   const queue = [...stale];
   const refreshNext = async (): Promise<void> => {
     const threadId = queue.shift();
     if (threadId === undefined) return;
     if (Date.now() - startedAt >= PULL_REQUEST_REFRESH_BUDGET_MS) return;
-    try {
-      await bb.sdk.plugins.callRpc({
-        pluginId: SOURCE_CONTROL_PLUGIN_ID,
-        method: "refreshThread",
-        input: { threadId },
-        outputSchema: sourceControlContract.refreshThread.output,
-        signal: AbortSignal.timeout(PULL_REQUEST_REFRESH_DEADLINE_MS),
-      });
-    } catch (error) {
-      bb.log.debug(`pull request refresh failed for ${threadId}: ${errorMessage(error)}`);
-    }
+    await refreshThreadCoalesced(bb, threadId);
     return refreshNext();
   };
   if (stale.length > 0) {
@@ -581,8 +614,9 @@ async function listTaskPullRequests(
   store: TasksApiStore,
   taskId: string,
 ): Promise<TaskPullRequestsResult> {
-  const threadIds = store.tasks.listTaskThreads(taskId).map((taskThread) => taskThread.threadId);
-  const statuses = await readThreadPullRequests(bb, threadIds);
+  const taskThreads = store.tasks.listTaskThreads(taskId);
+  const threadIds = taskThreads.map((taskThread) => taskThread.threadId);
+  const statuses = await readThreadPullRequests(bb, taskThreads);
 
   // Task threads come in attach order, so each pull request lists its threads
   // in that order and the pull requests follow their first thread.

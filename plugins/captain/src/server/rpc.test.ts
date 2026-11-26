@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
+import { makeThreadResponse, PluginContextStaleError } from "@get-bb/plugin-sdk/testing";
 import {
   asksTag,
   CAPTAINS_TAG,
@@ -874,5 +874,51 @@ describe("crewRoster", () => {
     await Promise.all([first, second]);
 
     expect(host.threadLists.slice(before)).toEqual([captainId]);
+  });
+});
+
+describe("zero-arg RPC inputs", () => {
+  test("ladders, captains, homeProjects and captainIcons accept both {} and null, and reject unknown keys", async () => {
+    const { captainId, rpc } = await bannerHost();
+    for (const method of ["ladders", "captains", "homeProjects", "captainIcons"] as const) {
+      const withEmpty = await rpc(method, {});
+      const withNull = await rpc(method, null);
+      expect(withNull).toEqual(withEmpty);
+      await expect(rpc(method, { unexpected: true })).rejects.toThrow(
+        /rpc input validation failed/u,
+      );
+    }
+    expect(await rpc("captains", null)).toEqual({ ids: [captainId] });
+  });
+});
+
+describe("crewWatch disposal and stale context", () => {
+  test("stops polling cleanly on plugin dispose without logging stale warnings", async () => {
+    const { host, captainId } = await bannerHost();
+    const stop = host.harness.behavior.experimental_watchRpc("crew", { input: { captainId } });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const logsBefore = host.logs().length;
+
+    await host.harness.lifecycle.dispose();
+    const readsAtDispose = host.threadLists.length;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(host.threadLists.length).toBe(readsAtDispose);
+    expect(host.logs().slice(logsBefore)).toEqual([]);
+    stop();
+  });
+
+  test("breaks out of poll immediately on PluginContextStaleError instead of looping every tick", async () => {
+    const { host, captainId } = await bannerHost();
+    host.threadFaults.list = new PluginContextStaleError("captain");
+    const readsBefore = host.threadLists.length;
+    const logsBefore = host.logs().length;
+
+    const stop = host.harness.behavior.experimental_watchRpc("crew", { input: { captainId } });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(host.threadLists.length - readsBefore).toBe(1);
+    expect(host.logs().slice(logsBefore)).toEqual([]);
+    stop();
   });
 });

@@ -67,10 +67,10 @@ export function newTabPressFor(anchor: Element): symbol | null {
 export function watchNewTabClicks(document: Document, signal: AbortSignal): () => void {
   if (signal.aborted) return () => {};
   const presses = new WeakMap<Element, { panelId: string; press: symbol }>();
-  const controls = new Set<Element>();
   let shelf: Element | null = null;
   const read = (anchor: Element) => {
-    const panel = overviewPanel(anchor, shelf?.isConnected ? shelf : null);
+    if (shelf !== null && !shelf.isConnected) shelf = null;
+    const panel = overviewPanel(anchor, shelf);
     if (panel === null) return null;
     const last = presses.get(panel);
     // BB can reuse the hosted element when a different workspace pane takes focus.
@@ -79,47 +79,26 @@ export function watchNewTabClicks(document: Document, signal: AbortSignal): () =
   readPress = read;
 
   function capture(event: Event) {
-    if (event.isTrusted && event.currentTarget instanceof Element) {
-      const panel = event.currentTarget.closest(PANELS);
-      if (panel !== null) presses.set(panel, { panelId: panel.id, press: Symbol() });
-    }
-  }
-  function bind(button: Element) {
+    if (!event.isTrusted || !(event.target instanceof Element)) return;
+    const button = event.target.closest(PLUS);
+    if (button === null) return;
     const panel = button.closest(PANELS);
-    if (controls.has(button) || panel === null) return;
+    if (panel === null) return;
     if (panel.matches(SHELF)) shelf = panel;
-    controls.add(button);
-    button.addEventListener("click", capture, { capture: true, passive: true });
+    presses.set(panel, { panelId: panel.id, press: Symbol() });
   }
-  function unbind(button: Element) {
-    if (!controls.delete(button)) return;
-    button.removeEventListener("click", capture, true);
-    if (shelf !== null && !shelf.isConnected) shelf = null;
-  }
-  function visit(node: Node, handle: (button: Element) => void) {
-    if (!(node instanceof Element)) return;
-    if (node.matches(PLUS)) handle(node);
-    if (node.childElementCount > 0) node.querySelectorAll(PLUS).forEach(handle);
-  }
-  const observer = new MutationObserver((records) => {
-    for (const record of records) {
-      for (const node of record.removedNodes) if (!node.isConnected) visit(node, unbind);
-      for (const node of record.addedNodes) if (node.isConnected) visit(node, bind);
-    }
-  });
   // The host hides an empty banner with :empty. Keep the hidden anchor and
   // any empty focus-retaining Captain frame layout-free too.
   const style = document.createElement("style");
   style.setAttribute("data-captain-overview-style", "");
   style.textContent = CAPTAIN_EMPTY_HIDE_CSS;
   document.head.append(style);
-  observer.observe(document.body, { childList: true, subtree: true });
-  document.querySelectorAll(PLUS).forEach(bind);
+  document.addEventListener("click", capture, { capture: true, passive: true });
 
   function dispose() {
     if (readPress === read) readPress = null;
-    observer.disconnect();
-    controls.forEach(unbind);
+    document.removeEventListener("click", capture, true);
+    shelf = null;
     style.remove();
     signal.removeEventListener("abort", dispose);
   }

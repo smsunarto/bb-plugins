@@ -6,10 +6,23 @@
  * list is kept here.
  */
 import { access } from "node:fs/promises";
-import { experimental_execHostFileCallback as execFile } from "@get-bb/plugin-sdk/process";
+import { experimental_spawnHostProcess as spawnHostProcess } from "@get-bb/plugin-sdk/process";
 import { ownProcess } from "./repository-state.ts";
 
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
+/** How long a command may run before it is stopped, unless the call says otherwise. */
+const DEFAULT_TIMEOUT_MS = 60_000;
+/** Commands that talk to a remote, which may be slow without being stuck. */
+const NETWORK_TIMEOUT_MS = 5 * 60_000;
+/** How long a stopped command's processes get to exit on SIGTERM before SIGKILL. */
+const KILL_GRACE_MS = 2_000;
+/**
+ * Each command runs in its own process group, so stopping it also stops the
+ * helpers it started (ssh, hooks, aliases, credential helpers). Windows has
+ * no process groups, and `detached` there means a new console instead.
+ */
+const PROCESS_GROUPS = process.platform !== "win32";
+const NETWORK_COMMANDS = new Set(["fetch", "push", "pull", "clone", "ls-remote", "lfs"]);
 
 /** A program the read or write needs is not installed on this host. */
 export class ToolMissingError extends Error {
@@ -42,10 +55,28 @@ type RunOptions = {
    * someone else's change.
    */
   own?: boolean;
+  /**
+   * Milliseconds before the command and its process group are stopped and
+   * the call fails with a {@link CommandFailedError}. Defaults to 60 seconds,
+   * or five minutes for commands that talk to a remote.
+   */
+  timeoutMs?: number;
 };
 
 function aborted(signal: AbortSignal): Error {
   return signal.reason instanceof Error ? signal.reason : new Error("aborted");
+}
+
+/** Where the subcommand sits after git's leading `-c key=value` and `-C dir` options. */
+function subcommandIndex(args: readonly string[]): number {
+  let index = 0;
+  while (args[index] === "-c" || args[index] === "-C") index += 2;
+  return index;
+}
+
+function seconds(ms: number): string {
+  const value = ms / 1000;
+  return `${Number.isInteger(value) ? value : value.toFixed(1)} second${value === 1 ? "" : "s"}`;
 }
 
 function run(
@@ -53,48 +84,189 @@ function run(
   args: readonly string[],
   cwd: string,
   signal: AbortSignal,
-  { input, env = process.env, own = true }: RunOptions = {},
+  { input, env = process.env, own = true, timeoutMs = DEFAULT_TIMEOUT_MS }: RunOptions = {},
 ): Promise<RunResult> {
   // What it writes in a watched repository is ours, not a change to report.
   const exited = own ? ownProcess(cwd) : async () => undefined;
-  return new Promise<RunResult>((settle) => {
-    const child = execFile(
-      command,
-      args,
-      {
-        cwd,
-        encoding: "utf8",
-        maxBuffer: MAX_OUTPUT_BYTES,
-        signal,
-        windowsHide: true,
-        env: {
-          ...env,
-          ...(command === "git"
-            ? // No prompts, English messages to read, and no index refresh by reads.
-              { GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" }
-            : {}),
-        },
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    void exited();
+  };
+  return new Promise<RunResult>((settle, fail) => {
+    // Callers check the signal themselves, so an aborted run needs no output.
+    const abortedResult: RunResult = {
+      stdout: "",
+      stderr: "",
+      code: null,
+      spawnFailed: false,
+      overflowed: false,
+    };
+    if (signal.aborted) {
+      release();
+      settle(abortedResult);
+      return;
+    }
+    let finished = false;
+    let stopped = false;
+    let overflowed = false;
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+
+    const child = spawnHostProcess(command, args, {
+      cwd,
+      detached: PROCESS_GROUPS,
+      windowsHide: true,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...env,
+        ...(command === "git"
+          ? // No prompts, English messages to read, and no index refresh by reads.
+            { GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" }
+          : {}),
       },
-      (error, stdout, stderr) => {
-        void exited();
-        const code = error && typeof error.code === "number" ? error.code : error ? null : 0;
-        settle({
-          stdout,
-          stderr,
-          code,
-          spawnFailed: Boolean(error) && (error as NodeJS.ErrnoException).code === "ENOENT",
-          overflowed: error?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+    });
+
+    const signalGroup = (name: NodeJS.Signals) => {
+      const pid = child.pid;
+      if (pid === undefined) return;
+      try {
+        if (PROCESS_GROUPS) process.kill(-pid, name);
+        else child.kill(name);
+      } catch {
+        // Already gone.
+      }
+    };
+
+    const groupAlive = (): boolean => {
+      const pid = child.pid;
+      if (pid === undefined || !PROCESS_GROUPS) return false;
+      try {
+        process.kill(-pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const scheduleKill = () => {
+      if (killTimer) return;
+      killTimer = setTimeout(() => {
+        killTimer = null;
+        signalGroup("SIGKILL");
+      }, KILL_GRACE_MS);
+      killTimer.unref?.();
+    };
+
+    const finish = (result: RunResult) => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      if (killTimer && (!stopped || !groupAlive())) {
+        clearTimeout(killTimer);
+        killTimer = null;
+      }
+      release();
+      settle(result);
+    };
+
+    /** Stops the command now; the exit callback still releases it once it is gone. */
+    const stop = (failure: Error | null) => {
+      if (finished || stopped) return;
+      stopped = true;
+      cleanup();
+      signalGroup("SIGTERM");
+      // A process that ignores SIGTERM, or is stuck, is killed after a grace period.
+      scheduleKill();
+      if (failure) fail(failure);
+      else settle(abortedResult);
+    };
+
+    const onData = (chunks: Buffer[], isStdout: boolean) => (chunk: Buffer) => {
+      if (finished || stopped || overflowed) return;
+      if (isStdout) stdoutBytes += chunk.length;
+      else stderrBytes += chunk.length;
+      if (stdoutBytes > MAX_OUTPUT_BYTES || stderrBytes > MAX_OUTPUT_BYTES) {
+        overflowed = true;
+        stopped = true;
+        cleanup();
+        signalGroup("SIGTERM");
+        scheduleKill();
+        finish({
+          stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+          stderr: Buffer.concat(stderrChunks).toString("utf8"),
+          code: null,
+          spawnFailed: false,
+          overflowed: true,
         });
-      },
-    );
+        return;
+      }
+      chunks.push(chunk);
+    };
+
+    child.stdout.on("data", onData(stdoutChunks, true));
+    child.stderr.on("data", onData(stderrChunks, false));
+
+    child.once("error", (error: NodeJS.ErrnoException) => {
+      if (killTimer) {
+        clearTimeout(killTimer);
+        killTimer = null;
+      }
+      finish({
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
+        code: null,
+        spawnFailed: error.code === "ENOENT",
+        overflowed,
+      });
+    });
+
+    child.once("close", (code) => {
+      if (stopped) {
+        if (killTimer && !groupAlive()) {
+          clearTimeout(killTimer);
+          killTimer = null;
+        }
+        release();
+        return;
+      }
+      finish({
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
+        code,
+        spawnFailed: false,
+        overflowed,
+      });
+    });
+
+    const onAbort = () => stop(null);
+    const timer = setTimeout(() => {
+      const name = command === "git" ? args[subcommandIndex(args)] : args[0];
+      stop(
+        new CommandFailedError(
+          `${command}${name ? ` ${name}` : ""} did not finish within ${seconds(timeoutMs)} and was stopped.`,
+        ),
+      );
+    }, timeoutMs);
+    timer.unref?.();
+    function cleanup() {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
     // A short-lived command can close its pipe before Node closes our end.
     // Its exit callback owns the result, including any refusal on stderr.
-    child.stdin?.on("error", () => undefined);
-    if (input === undefined) child.stdin?.end();
-    else child.stdin?.end(input);
+    child.stdin.on("error", () => undefined);
+    if (input === undefined) child.stdin.end();
+    else child.stdin.end(input);
   }).catch((error: unknown) => {
-    // It never started, so it wrote nothing.
-    void exited();
+    // It never started, so it wrote nothing; or it was stopped, and
+    // `release` waits for its exit.
+    if (!(error instanceof CommandFailedError)) release();
     throw error;
   });
 }
@@ -150,8 +322,9 @@ export async function runBut(
   cwd: string,
   args: readonly string[],
   signal: AbortSignal,
+  { timeoutMs }: Pick<RunOptions, "timeoutMs"> = {},
 ): Promise<unknown> {
-  const result = await run("but", [...args, "--json"], cwd, signal);
+  const result = await run("but", [...args, "--json"], cwd, signal, { timeoutMs });
   if (signal.aborted) throw aborted(signal);
   if (result.spawnFailed) throw await spawnFailure("but", cwd);
 
@@ -210,9 +383,11 @@ export async function runButAction(
   signal: AbortSignal,
   /** Operands after `--`, so a file named like an option stays a file. */
   operands: readonly string[] = [],
+  // Writes such as push, pull, and land may wait on the remote.
+  { timeoutMs = NETWORK_TIMEOUT_MS }: Pick<RunOptions, "timeoutMs"> = {},
 ): Promise<{ payload: unknown; stderr: string }> {
   const tail = operands.length > 0 ? ["--", ...operands] : [];
-  const result = await run("but", [...args, "--json", ...tail], cwd, signal);
+  const result = await run("but", [...args, "--json", ...tail], cwd, signal, { timeoutMs });
   if (signal.aborted) throw aborted(signal);
   if (result.spawnFailed) throw await spawnFailure("but", cwd);
   const payload = parseJson(result.stdout);
@@ -235,10 +410,9 @@ async function networkEnvironment(
   signal: AbortSignal,
   environment: NodeJS.ProcessEnv,
 ): Promise<NodeJS.ProcessEnv> {
-  let commandIndex = 0;
-  while (args[commandIndex] === "-c" || args[commandIndex] === "-C") commandIndex += 2;
+  const commandIndex = subcommandIndex(args);
   if (
-    ["fetch", "push", "pull", "clone", "ls-remote", "lfs"].includes(args[commandIndex] ?? "") &&
+    NETWORK_COMMANDS.has(args[commandIndex] ?? "") &&
     environment["GIT_SSH_COMMAND"] === undefined &&
     environment["GIT_SSH"] === undefined
   ) {
@@ -262,7 +436,10 @@ export async function runGitCommand(
   options: RunOptions = {},
 ): Promise<{ stdout: string; stderr: string; code: number | null }> {
   const env = await networkEnvironment(cwd, args, signal, { ...process.env, ...options.env });
-  const result = await run("git", args, cwd, signal, { ...options, env });
+  const timeoutMs =
+    options.timeoutMs ??
+    (NETWORK_COMMANDS.has(args[subcommandIndex(args)] ?? "") ? NETWORK_TIMEOUT_MS : undefined);
+  const result = await run("git", args, cwd, signal, { ...options, env, timeoutMs });
   if (signal.aborted) throw aborted(signal);
   if (result.spawnFailed) throw await spawnFailure("git", cwd);
   // History is read a page at a time, so only a diff grows this large.

@@ -6,13 +6,26 @@ import { readQuerySnapshot, writeQuerySnapshot } from "./query-snapshot.js";
 export type TasksRpc = PluginRpcClient<TasksRpcContract>;
 
 /**
+ * Realtime signals (`useTasksSync`) and reconnect `refetchAll()` own freshness,
+ * so cached reads stay valid across thread/panel switches instead of refetching
+ * on every revisit.
+ */
+export const TASKS_QUERY_STALE_TIME_MS = 5 * 60_000;
+
+/**
  * The plugin's one cache. It lives as long as the app bundle, so remounted
  * panels paint what an earlier mount read. Realtime signals, reconnects, and
  * the refresh control keep it fresh; failures surface at once instead of
  * retrying behind a spinner.
  */
 export const tasksQueryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: {
+      retry: false,
+      refetchOnWindowFocus: false,
+      staleTime: TASKS_QUERY_STALE_TIME_MS,
+    },
+  },
 });
 
 // Persist the accepted result of snapshot reads, so the next mount paints it first.

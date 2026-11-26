@@ -3,6 +3,7 @@
 import { act, cleanup, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { TASKS_PAGE_FRAME_STYLE_ATTR, TASKS_PAGE_UNFRAMED_ATTR } from "./shell/page-frame.js";
 
 const app = await loadPluginApp(() => import("./app"));
 const registeredBadge = app.navPanels[0]?.experimental_useBadge;
@@ -25,6 +26,7 @@ afterEach(cleanup);
 describe("Tasks registrations", () => {
   it("puts navigation in the left sidebar and keeps the thread tab identity", () => {
     expect(app.navPanels).toHaveLength(1);
+    expect(app.contentScripts).toEqual([]);
     expect(app.navPanels[0]).not.toHaveProperty("fixedTabs");
     expect(app.navPanels[0]?.experimental_sidebar).toBeTypeOf("function");
     expect(app.tabs).toEqual([
@@ -147,5 +149,59 @@ describe("Tasks nav panel badge", () => {
 
     await waitFor(() => expect(calls).toBe(2));
     expect(await slot.findByText("13|13 open tasks")).toBeDefined();
+  });
+
+  it("toggles data-scott-tasks-unframed on app-layout-root only while Tasks navPanel is mounted", async () => {
+    const layoutRoot = document.createElement("div");
+    layoutRoot.setAttribute("data-testid", "app-layout-root");
+    document.body.append(layoutRoot);
+
+    try {
+      const slot = renderSlot(
+        app.navPanels[0]!,
+        { subPath: "" },
+        {
+          rpc: {
+            listFolders: () => ({ folders: [] }),
+            listProjects: () => ({ projects: [] }),
+            listTasks: () => ({ tasks: [] }),
+            listLabels: () => ({ labels: [] }),
+            listPresets: () => ({ presets: [] }),
+            listActiveTaskThreads: () => ({ taskThreads: [] }),
+            sidebarSummary: () => ({ projects: [] }),
+            listBbProjects: () => ({ bbProjects: [] }),
+          },
+        },
+      );
+
+      await waitFor(() => {
+        expect(layoutRoot.hasAttribute(TASKS_PAGE_UNFRAMED_ATTR)).toBe(true);
+      });
+      const styleEl = document.head.querySelector(`style[${TASKS_PAGE_FRAME_STYLE_ATTR}]`);
+      expect(styleEl).not.toBeNull();
+      expect(styleEl?.textContent).not.toContain(":has(");
+
+      // Adding a focused split pane restores the shared frame.
+      const splitPane = document.createElement("div");
+      splitPane.setAttribute("data-split-pane-id", "pane-1");
+      splitPane.setAttribute("data-focused", "true");
+      layoutRoot.append(splitPane);
+      await waitFor(() => {
+        expect(layoutRoot.hasAttribute(TASKS_PAGE_UNFRAMED_ATTR)).toBe(false);
+      });
+
+      // Removing the focused split pane unframes again.
+      splitPane.remove();
+      await waitFor(() => {
+        expect(layoutRoot.hasAttribute(TASKS_PAGE_UNFRAMED_ATTR)).toBe(true);
+      });
+
+      // Unmounting Tasks removes both the attribute and the style element.
+      slot.unmount();
+      expect(layoutRoot.hasAttribute(TASKS_PAGE_UNFRAMED_ATTR)).toBe(false);
+      expect(document.head.querySelector(`style[${TASKS_PAGE_FRAME_STYLE_ATTR}]`)).toBeNull();
+    } finally {
+      layoutRoot.remove();
+    }
   });
 });

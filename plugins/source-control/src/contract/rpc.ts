@@ -106,8 +106,8 @@ export const sourceControlContract = defineRpcContract({
   },
   refreshThread: {
     experimental_description:
-      "Read the thread's checkout and pull request again now, and resolve once its row is current.",
-    input: z.object({ threadId: threadIdSchema }).strict(),
+      "Read the thread's checkout and pull request again now, and resolve once its row is current. `reprobe` (an explicit user retry) first forgets which GitHub accounts each site has; background refreshes leave it off.",
+    input: z.object({ threadId: threadIdSchema, reprobe: z.boolean().optional() }).strict(),
     output: z.object({ ok: z.literal(true) }).strict(),
   },
   /** File patches from the thread's checkout. A commit's never change; uncommitted ones refresh with the thread. */

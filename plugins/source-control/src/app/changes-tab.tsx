@@ -11,7 +11,7 @@ import {
   experimental_useTabVisible as useTabVisible,
   useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   describeProblem,
   forgeIsBehind,
@@ -62,6 +62,7 @@ import { OtherMachinesCard } from "./other-machines.tsx";
 import { CARD, StackLane, UncommittedCard } from "./workspace-lane.tsx";
 import { attentionChips, summarize } from "../core/status.ts";
 import { Chips, usePullRequestActions } from "./status.tsx";
+import { SurfaceActive, useActive, useSurfaceActive } from "./surface-active.ts";
 
 export function ChangesTab({ threadId }: { threadId: string }) {
   const visible = useTabVisible();
@@ -81,16 +82,35 @@ export function ChangesTab({ threadId }: { threadId: string }) {
   // Keyed by thread: writes, questions, and open commits belong to one
   // thread, so a late answer for A never lands in B's cards.
   const fromRead = live !== undefined && live.state !== "pending";
-  return <ChangesView key={threadId} threadId={threadId} row={row} live={fromRead} />;
+  // A hidden tab stays mounted on its snapshot; only an active one ticks and polls.
+  const active = useSurfaceActive(visible);
+  return (
+    <SurfaceActive.Provider value={active}>
+      <ChangesView key={threadId} threadId={threadId} row={row} live={fromRead} />
+    </SurfaceActive.Provider>
+  );
 }
 
-/** The current time, ticking so "Read N min ago" and commit ages stay true. */
-function useNow(): number {
+/**
+ * The current time, ticking so "Read N min ago" and commit ages stay true.
+ * Ticks only while `active`; becoming active again reads the time at once.
+ */
+function useNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
+  const mounting = useRef(true);
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(timer);
-  }, []);
+    const fresh = mounting.current;
+    mounting.current = false;
+    if (!active) return undefined;
+    const tick = () => setNow(Date.now());
+    // Resuming reads the clock at once; a fresh mount's time is already true.
+    const resume = fresh ? undefined : setTimeout(tick, 0);
+    const timer = setInterval(tick, 30_000);
+    return () => {
+      clearTimeout(resume);
+      clearInterval(timer);
+    };
+  }, [active]);
   return now;
 }
 
@@ -130,14 +150,14 @@ const ChangesView = memo(function ChangesView({
 }) {
   const refresh = useRpcMutation({ contract: sourceControlContract, method: "refreshThread" });
   const readAs = useRpcMutation({ contract: sourceControlContract, method: "setReadAs" });
-  const onRetry = () => void refresh.mutate({ threadId }).catch(() => undefined);
+  const onRetry = () => void refresh.mutate({ threadId, reprobe: true }).catch(() => undefined);
   const onReadAs = (mode: "auto" | "git") =>
     void readAs.mutate({ threadId, readAs: mode }).catch(() => undefined);
   const view = tabView(row);
   const checkout = row?.state === "checkout" ? row : null;
   const gate = hostGateOf(checkout, view);
   const vcs = useVcsActions(threadId, gate);
-  const now = useNow();
+  const now = useNow(useActive());
   const workspace = view.kind === "ready" ? view.workspace : null;
   const readState = readStateText(view, refresh.isPending, live, now);
 

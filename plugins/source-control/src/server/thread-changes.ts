@@ -336,7 +336,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     review,
     /** Probe forge sites again before the next read. */
     reprobe: deps.sites.reprobe,
-    /** Explicit retry: probe forge sites again, then read. */
+    /** Explicit retry: probe forge sites again, then read. Background refreshes use `refresh`. */
     retry: (threadId: string) =>
       Effect.sync(() => deps.sites.reprobe()).pipe(Effect.andThen(refresh(threadId))),
     ...watch,

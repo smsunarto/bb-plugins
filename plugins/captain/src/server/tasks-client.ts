@@ -136,8 +136,14 @@ export function createTasksClient(
   bb: Pick<BbPluginApi, "sdk">,
   deadlineMs: number = TASKS_DEADLINE_MS,
 ) {
-  async function call<T>(method: string, input: unknown, outputSchema: z.ZodType<T>): Promise<T> {
-    const signal = AbortSignal.timeout(deadlineMs);
+  async function call<T>(
+    method: string,
+    input: unknown,
+    outputSchema: z.ZodType<T>,
+    outer?: AbortSignal,
+  ): Promise<T> {
+    const deadline = AbortSignal.timeout(deadlineMs);
+    const signal = outer === undefined ? deadline : AbortSignal.any([deadline, outer]);
     try {
       return await bb.sdk.plugins.callRpc({
         pluginId: TASKS_PLUGIN_ID,
@@ -148,7 +154,7 @@ export function createTasksClient(
       });
     } catch (error) {
       // What callRpc rejects with on abort is unverified, so the signal decides.
-      const timedOut = signal.aborted;
+      const timedOut = deadline.aborted;
       const reason = timedOut
         ? `no answer in ${deadlineMs / 1000}s`
         : error instanceof Error
@@ -338,10 +344,15 @@ export function createTasksClient(
     }): Promise<void> {
       await call("taskThreadsAttach", input, z.object({ threadId: z.string() }));
     },
-    /** Each thread's task rows, in calls of at most Tasks' cap; no call for no threads. */
-    async crewSnapshot(threadIds: readonly string[], changedSince?: string): Promise<CrewRow[]> {
+    /** Each thread's task rows, in calls of at most Tasks' cap; no call for no threads. `signal` cancels it. */
+    async crewSnapshot(
+      threadIds: readonly string[],
+      changedSince?: string,
+      signal?: AbortSignal,
+    ): Promise<CrewRow[]> {
       const rows: CrewRow[] = [];
       for (let start = 0; start < threadIds.length; start += SNAPSHOT_MAX_THREADS) {
+        signal?.throwIfAborted();
         const page = await call(
           "crewSnapshot",
           {
@@ -349,6 +360,7 @@ export function createTasksClient(
             ...(changedSince === undefined ? {} : { changedSince }),
           },
           z.object({ rows: z.array(crewRowSchema) }),
+          signal,
         );
         rows.push(...page.rows);
       }

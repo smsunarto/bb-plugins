@@ -4,7 +4,7 @@
  * a host listing. Hosts are read three at a time.
  */
 import { Effect, Semaphore } from "effect";
-import type { Placement } from "../core/change.ts";
+import type { Placement, WorkspaceValue } from "../core/change.ts";
 import { accountTag, hostTag, PAGE_SOURCES_TAG, threadTag } from "../core/ids.ts";
 import {
   inboxRow,
@@ -32,15 +32,20 @@ export const HOST_CONCURRENCY = 3;
 /**
  * Every branch of a checkout as rows, from its last read and the stored pull
  * requests; `listed` keeps only branches with work, as the nav shows them.
+ * A caller that already holds the checkout's read passes it as `workspace`.
  */
-export function rowsOf(store: Store, placement: Placement, listed = false): ChangeRow[] {
-  const workspace = store.local(placement.hostId, placement.path).read?.value;
+export function rowsOf(
+  store: Store,
+  placement: Placement,
+  options: { listed?: boolean; workspace?: WorkspaceValue } = {},
+): ChangeRow[] {
+  const workspace = options.workspace ?? store.local(placement.hostId, placement.path).read?.value;
   if (!workspace) return [];
   return workspaceRows({
     hostId: placement.hostId,
     workspace,
     forgeOf: (key) => store.forge(key).read?.value ?? undefined,
-    listed,
+    listed: options.listed ?? false,
   });
 }
 
@@ -56,7 +61,10 @@ function hostRows(store: Store, hostId: string): SourceRows {
   if (read.length === 0) return { read: null, problem };
   return {
     read: {
-      rows: checkouts.flatMap((placement) => rowsOf(store, placement, true)),
+      rows: checkouts.flatMap((placement, index) => {
+        const workspace = facets[index]?.read?.value;
+        return workspace ? rowsOf(store, placement, { listed: true, workspace }) : [];
+      }),
       at: Math.min(...read),
     },
     problem,

@@ -12,6 +12,7 @@ import {
 import { useEffect, useState } from "react";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { useHostGate } from "./host-gate.ts";
+import { useActive } from "./surface-active.ts";
 import { CompactButton } from "./components/ui/button.tsx";
 import { Pending, ReasonHint } from "./ui.tsx";
 
@@ -23,10 +24,13 @@ const PUBLISH_POLL_MS = 5_000;
  * and `start`, which asks the server for one at the head the reader sees.
  */
 export function useCreatePullRequest(threadId: string, branch: string, head: string) {
+  // A hidden tab, a background page, or a dropped connection neither reads nor polls.
+  const active = useActive();
   const requests = useRpcQuery({
     contract: sourceControlContract,
     method: "publishRequests",
     input: { threadId },
+    enabled: active,
   });
   const mutation = useRpcMutation({ contract: sourceControlContract, method: "createPullRequest" });
   const [error, setError] = useState<string | null>(null);
@@ -35,10 +39,10 @@ export function useCreatePullRequest(threadId: string, branch: string, head: str
   const running = current?.running ?? false;
   const { refetch } = requests;
   useEffect(() => {
-    if (!running) return undefined;
+    if (!running || !active) return undefined;
     const timer = setInterval(() => void refetch(), PUBLISH_POLL_MS);
     return () => clearInterval(timer);
-  }, [running, refetch]);
+  }, [running, active, refetch]);
   const start = async () => {
     setError(null);
     try {

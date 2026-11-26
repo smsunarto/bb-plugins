@@ -33,6 +33,8 @@ export type StartOptions = {
   crewPollMs?: number;
   /** How often a watched Drive is scanned; tests shorten it. */
   driveScanMs?: number;
+  /** How long the background check gathers pokes before one pass; tests shorten it. */
+  pokeDebounceMs?: number;
   /** How often a watched Overview rechecks Tasks; tests shorten it. */
   tasksPollMs?: number;
 };
@@ -74,9 +76,14 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     taskGuard: createTaskGuard(),
     routines,
   };
-  const check = createCheck(deps);
+  const check = createCheck(
+    deps,
+    options.pokeDebounceMs === undefined ? {} : { pokeDebounceMs: options.pokeDebounceMs },
+  );
 
   bb.agents.configure((context) => {
+    // A thread bb is building a session for can take an instruction notice it refused before.
+    check.rearm(context.thread.id);
     try {
       return configure(context, {
         registry,

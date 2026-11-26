@@ -35,7 +35,7 @@ export default async function plugin(bb: BbPluginApi) {
   registerDelegation(bb, store);
   registerMentions(bb, store);
   registerParentNotifyRedelivery(bb, store.tasks);
-  await registerLifecycle(bb, store);
+  registerLifecycle(bb, store);
 
   bb.rpc.register(tasksRpcContract, {
     ping(): { ok: true; version: string } {

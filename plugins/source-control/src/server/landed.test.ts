@@ -52,7 +52,6 @@ function setup(reply: string | null, state: "merged" | "open" = "merged") {
     watcher,
     now: () => 2_000,
     standingDown: () => standingDown,
-    lastReply: async () => reply,
     read: async (login) => {
       reads.push(login);
       return { ok: true, login: "scott", value: landedAs(state) };
@@ -60,6 +59,7 @@ function setup(reply: string | null, state: "merged" | "open" = "merged") {
   });
   return {
     landed,
+    reply,
     titles,
     reads,
     store,
@@ -71,22 +71,22 @@ function setup(reply: string | null, state: "merged" | "open" = "merged") {
 
 test("a landed directive written by hand launches the title once GitHub says it merged", async () => {
   const world = setup(`Merged.\n\n${LINE}\n`);
-  await world.landed.replied("thr_a");
+  await world.landed.replied("thr_a", world.reply);
   expect(world.titles).toEqual(["🚀 Route gh"]);
   // Read as the thread's host can, since the reply names no account.
   expect(world.reads).toEqual([null]);
   // The same reply at the next idle reads GitHub no more.
-  await world.landed.replied("thr_a");
+  await world.landed.replied("thr_a", world.reply);
   expect(world.reads).toHaveLength(1);
 });
 
 test("a reply's claim alone launches nothing: GitHub must report the work landed", async () => {
   const world = setup(LINE, "open");
-  await world.landed.replied("thr_a");
+  await world.landed.replied("thr_a", world.reply);
   expect(world.titles).toEqual([]);
   expect(world.store.landedThreads()).toEqual([]);
   // Not registered, so the next idle asks again.
-  await world.landed.replied("thr_a");
+  await world.landed.replied("thr_a", world.reply);
   expect(world.reads).toHaveLength(2);
 });
 
@@ -100,12 +100,12 @@ test("a directive in a code fence, in a sentence, or from the tool registers not
     null,
   ]) {
     const world = setup(reply);
-    await world.landed.replied("thr_a");
+    await world.landed.replied("thr_a", world.reply);
     expect(world.reads, String(reply)).toEqual([]);
   }
   const standing = setup(LINE);
   standing.standDown();
-  await standing.landed.replied("thr_a");
+  await standing.landed.replied("thr_a", standing.reply);
   expect(standing.reads).toEqual([]);
 });
 

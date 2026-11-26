@@ -265,8 +265,12 @@ function registerRpc(
     {
       changeForThread: ({ keys }) => changes.read(keys),
       statusForThread: ({ keys }) => changes.status(keys),
-      refreshThread: async ({ threadId }) => {
-        await runtime.run(changes.retry(threadId));
+      // A caller that stops waiting stops only its wait; the shared read still lands in the store.
+      refreshThread: async ({ threadId, reprobe }, context) => {
+        await runtime.run(
+          reprobe ? changes.retry(threadId) : changes.refresh(threadId),
+          context.experimental_signal,
+        );
         return { ok: true as const };
       },
       patches: ({ threadId, source }, context) =>
@@ -400,18 +404,23 @@ function listen(
     ),
   );
   // A GitButler thread names its branch in the `but` commands of its turns.
-  for (const event of ["thread.idle", "thread.failed"] as const)
-    bb.events.on(event, ({ thread }) => {
-      runtime.fork(changes.turnEnded(thread.id));
-      runtime.fork(changes.checkoutWork.turnEnded(thread.id));
-      // A review that stops without reporting ends with no findings, or failed.
-      changes.review.items.runEnded(thread.id, event === "thread.failed");
-      changes.review.batches.threadStatus(thread.id, event === "thread.idle" ? "idle" : "failed");
-      // A guide run that stops without writing failed; either way its slot is free.
-      guides.threadEnded(thread.id);
-      // A thread that stops working hears what its watched pull requests did meanwhile.
-      moved.threadSettled(thread.id);
-    });
+  const turnEnded = (threadId: string, failed: boolean, reply: string | null) => {
+    runtime.fork(changes.turnEnded(threadId));
+    runtime.fork(changes.checkoutWork.turnEnded(threadId));
+    // A review that stops without reporting ends with no findings, or failed.
+    changes.review.items.runEnded(threadId, failed);
+    changes.review.batches.threadStatus(threadId, failed ? "failed" : "idle");
+    // A guide run that stops without writing failed; either way its slot is free.
+    guides.threadEnded(threadId);
+    // A thread that stops working hears what its watched pull requests did meanwhile.
+    moved.threadSettled(threadId, reply);
+  };
+  // The idle event carries the closing reply, so no thread's events are listed to find it.
+  bb.events.on("thread.idle", ({ thread, lastAssistantText }) =>
+    turnEnded(thread.id, false, lastAssistantText ?? null),
+  );
+  // A failed turn wrote no closing reply: there is no landed directive to look for.
+  bb.events.on("thread.failed", ({ thread }) => turnEnded(thread.id, true, null));
   // An agent a batch went to: "fixing" while it runs, gone once archived.
   bb.events.on("thread.active", ({ thread }) =>
     changes.review.batches.threadStatus(thread.id, "running"),

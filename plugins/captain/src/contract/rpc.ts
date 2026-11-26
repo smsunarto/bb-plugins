@@ -307,10 +307,16 @@ const saveRoutineResultSchema = z.discriminatedUnion("ok", [
  */
 const routineRowSchema = routineViewSchema.extend({ scheduleLoading: z.boolean() }).strict();
 
+/**
+ * A method that takes no input. The app sends `{}`; bb's CLI, `callRpc` and a
+ * bare `call(method)` send JSON `null`. Both are accepted.
+ */
+const noInput = z.union([z.object({}).strict(), z.null()]);
+
 export const captainContract = defineRpcContract({
   /** Each dispatched role's model ladder, as Captain settings edit it. */
   ladders: {
-    input: z.object({}).strict(),
+    input: noInput,
     output: z.object({ roles: z.array(roleLadderSchema) }).strict(),
     tags: () => [LADDERS_TAG],
   },
@@ -323,7 +329,7 @@ export const captainContract = defineRpcContract({
   },
   /** Every live Captain's thread id: one shared read that tells the banner where to render. */
   captains: {
-    input: z.object({}).strict(),
+    input: noInput,
     output: z.object({ ids: z.array(threadId) }).strict(),
     tags: () => [CAPTAINS_TAG],
   },
@@ -332,7 +338,7 @@ export const captainContract = defineRpcContract({
    * new-thread project choices; change its copy of this method when this one changes.
    */
   homeProjects: {
-    input: z.object({}).strict(),
+    input: noInput,
     output: z.object({ projectIds: z.array(z.string()) }).strict(),
     tags: () => [CAPTAINS_TAG],
   },
@@ -525,7 +531,7 @@ export const captainContract = defineRpcContract({
   },
   /** Every live Captain with its name and icon, for the icon setter in settings. */
   captainIcons: {
-    input: z.object({}).strict(),
+    input: noInput,
     output: z
       .object({
         captains: z.array(

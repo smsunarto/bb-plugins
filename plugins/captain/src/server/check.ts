@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { sinceTag } from "../contract/rpc.ts";
 import { ANSWER_MAX_ATTEMPTS, deliverAnswer } from "./asks.ts";
+import { isNotFound } from "./audience.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { joinCrew, listChildren, steer, type ListedThread } from "./crew.ts";
 import { runFallbacks } from "./fallback.ts";
@@ -25,6 +26,10 @@ import { recordCrewTasks } from "./owners.ts";
  * `crewSnapshot` over only the idle children and those with no role row; no
  * interactions, archived children or PR reads. A failed crew thread adds the
  * reads `fallback.ts` needs to judge and restart it, once per failure.
+ *
+ * The service's signal reaches every read and deadline, so a reload ends a
+ * pass at once instead of after its slowest read, and nothing is written
+ * after the plugin's database has closed.
  */
 
 export const CHECK_INTERVAL_MS = 60_000;
@@ -32,6 +37,16 @@ export const CHECK_INTERVAL_MS = 60_000;
 export const IDLE_INTERVAL_MS = 15 * 60_000;
 /** How long a stall lasts, from the pass that first saw it, before the Captain is woken. */
 export const STALL_WAKE_AFTER_MS = 15 * 60_000;
+/** Pokes within this window share one pass, so a burst of thread events runs one pass, not one each. */
+export const POKE_DEBOUNCE_MS = 2_000;
+/**
+ * An instruction notice bb refuses with HTTP 409 (provider disabled, environment
+ * unavailable) is retried after 1, 2, 4, ... minutes, at most this many times,
+ * until the thread next turns active or `configure` runs for it.
+ */
+export const REFUSED_MAX_ATTEMPTS = 6;
+const REFUSED_BASE_MS = CHECK_INTERVAL_MS;
+const REFUSED_MAX_DELAY_MS = 60 * 60_000;
 /** One Captain's reads and sends; a slower Captain is skipped this pass, not waited for. */
 const CAPTAIN_DEADLINE_MS = 20_000;
 const CAPTAIN_CONCURRENCY = 4;
@@ -50,17 +65,33 @@ export type PassResult = {
   skipped: string[];
 };
 
+/** Per thread: refused instruction sends so far, and when the next may go. In memory: a reload re-arms. */
+type Refusals = Map<string, { attempts: number; nextAt: number }>;
+
 export type Check = ReturnType<typeof createCheck>;
 
-export function createCheck(deps: CheckDeps) {
+export function createCheck(deps: CheckDeps, options: { pokeDebounceMs?: number } = {}) {
+  const pokeDebounceMs = options.pokeDebounceMs ?? POKE_DEBOUNCE_MS;
   let poked = false;
   let wakeSleep: (() => void) | null = null;
   let running: Promise<PassResult> | null = null;
+  let pokeTimer: ReturnType<typeof setTimeout> | null = null;
+  let disposed = false;
+  const refusals: Refusals = new Map();
 
-  /** Run the next pass soon. Never waits for it. */
+  /** Run a pass soon, sharing it with every other poke in the debounce window. Never waits for it. */
   function poke(): void {
-    poked = true;
-    wakeSleep?.();
+    if (disposed || pokeTimer !== null) return;
+    pokeTimer = setTimeout(() => {
+      pokeTimer = null;
+      poked = true;
+      wakeSleep?.();
+    }, pokeDebounceMs);
+  }
+
+  /** Let a thread's refused instruction notice be tried again on the next pass. */
+  function rearm(threadId: string): void {
+    refusals.delete(threadId);
   }
 
   /** One pass; a call while one runs shares it, so passes never overlap within this instance. */
@@ -72,20 +103,29 @@ export function createCheck(deps: CheckDeps) {
   }
 
   async function runPass(signal: AbortSignal | undefined): Promise<PassResult> {
+    signal?.throwIfAborted();
     const captains = deps.store
       .liveCaptains()
       .map(({ archivedAt: _archived, ...captain }) => captain);
     const skipped: string[] = [];
     const outcomes = await mapLimit(captains, CAPTAIN_CONCURRENCY, async (captain) => {
+      if (signal?.aborted) return { crew: 0 };
       try {
-        return await withDeadline(checkCaptain(deps, captain, signal), CAPTAIN_DEADLINE_MS);
+        return await withDeadline(
+          (scoped) => checkCaptain(deps, captain, refusals, scoped),
+          CAPTAIN_DEADLINE_MS,
+          signal,
+        );
       } catch (error) {
+        if (signal?.aborted) return { crew: 0 };
         deps.bb.log.warn(`check skipped ${captain.threadId}: ${(error as Error).message}`);
         skipped.push(captain.threadId);
         return { crew: 0 };
       }
     });
-    await retryAnswers(deps);
+    signal?.throwIfAborted();
+    await retryAnswers(deps, signal);
+    signal?.throwIfAborted();
     const busy =
       skipped.length > 0 ||
       outcomes.some((outcome) => outcome.crew > 0) ||
@@ -96,8 +136,15 @@ export function createCheck(deps: CheckDeps) {
   return {
     pass,
     poke,
+    rearm,
     /** Register the service loop and the events that end an idle wait. */
-    register(bb: Pick<BbPluginApi, "background" | "events" | "log">): void {
+    register(bb: Pick<BbPluginApi, "background" | "events" | "log" | "onDispose">): void {
+      bb.onDispose(() => {
+        disposed = true;
+        if (pokeTimer !== null) clearTimeout(pokeTimer);
+        pokeTimer = null;
+        wakeSleep?.();
+      });
       const nudge = ({ thread }: { thread: { parentThreadId: string | null } }) => {
         if (deps.registry.get(thread.parentThreadId) !== null) poke();
       };
@@ -105,14 +152,17 @@ export function createCheck(deps: CheckDeps) {
       // A crew thread that fails on a rate limit is restarted on the next rung.
       bb.events.on("thread.failed", nudge);
       bb.events.on("experimental_thread.parentChanged", nudge);
+      // A thread that runs again can take the notice bb refused it.
+      bb.events.on("thread.active", ({ thread }) => rearm(thread.id));
       bb.background.service("check", {
         async start(signal) {
-          while (!signal.aborted) {
+          while (!signal.aborted && !disposed) {
             poked = false;
             let busy = true;
             try {
               busy = (await pass(signal)).busy;
             } catch (error) {
+              if (signal.aborted || disposed) return;
               bb.log.warn(`check pass failed: ${(error as Error).message}`);
             }
             if (poked) continue;
@@ -138,12 +188,15 @@ export function createCheck(deps: CheckDeps) {
 async function checkCaptain(
   deps: CheckDeps,
   captain: Captain,
-  signal: AbortSignal | undefined,
+  refusals: Refusals,
+  signal: AbortSignal,
 ): Promise<{ crew: number }> {
   const now = deps.now();
   const threads = await listChildren(deps.bb, captain.threadId, false, signal);
+  signal.throwIfAborted();
   // Before any Tasks read, so a Tasks outage does not hold back the notice.
-  await sendInstructionChanges(deps, captain, threads, now);
+  await sendInstructionChanges(deps, captain, threads, now, refusals, signal);
+  signal.throwIfAborted();
   for (const thread of threads) {
     if (thread.status !== "error") continue;
     // A failure first seen now is a Since you left transition.
@@ -154,9 +207,11 @@ async function checkCaptain(
   try {
     await runFallbacks(deps, captain, threads, now);
   } catch (error) {
+    signal.throwIfAborted();
     // A failed fallback read must not cost this pass its stall wakes; the next pass retries it.
     deps.bb.log.warn(`fallback for ${captain.threadId} skipped: ${(error as Error).message}`);
   }
+  signal.throwIfAborted();
   // Only an idle thread can stall, and only a thread with no role row needs one backfilled.
   const needRows = threads.filter(
     (thread) =>
@@ -164,7 +219,14 @@ async function checkCaptain(
       !deps.store.hasCrewRow(thread.id),
   );
   const rows =
-    needRows.length === 0 ? [] : await deps.tasks.crewSnapshot(needRows.map((t) => t.id));
+    needRows.length === 0
+      ? []
+      : await deps.tasks.crewSnapshot(
+          needRows.map((t) => t.id),
+          undefined,
+          signal,
+        );
+  signal.throwIfAborted();
   backfillRoles(deps, captain, needRows, rows);
   recordCommandWaits(deps, threads, now);
 
@@ -185,7 +247,8 @@ async function checkCaptain(
     stalls.push({ key, line: `${task} ${member.thread.id} ${label} ${age(now, first)}` });
   }
   await wakeForStalls(deps, captain, stalls, now);
-  await pushUndeliverable(deps, captain, rows, now);
+  signal.throwIfAborted();
+  await pushUndeliverable(deps, captain, rows, now, signal);
   return { crew: threads.length };
 }
 
@@ -193,29 +256,39 @@ async function checkCaptain(
  * One message per live thread whose instruction files changed since it was
  * served: queued behind a running turn, or starting one on an idle thread.
  * The new text is claimed as served before the send and given back if the
- * send fails, so each change is sent once and a failed send is retried.
+ * send fails, so each change is sent once and a failed send is retried. A
+ * thread bb no longer has loses its served record, so it is not retried.
  */
 async function sendInstructionChanges(
   deps: CheckDeps,
   captain: Captain,
   threads: readonly ListedThread[],
   now: number,
+  refusals: Refusals,
+  signal: AbortSignal,
 ): Promise<void> {
   try {
     const served = deps.store.servedOf([captain.threadId, ...threads.map((thread) => thread.id)]);
     const changes = pendingChanges(deps.files, served);
     // Plain bb archival leaves the Captain row live, so ask bb, and only when there is news for it.
-    if (changes.some((change) => change.threadId === captain.threadId)) {
-      const thread = await deps.bb.sdk.threads.get({ threadId: captain.threadId });
-      if (thread.archivedAt !== null) {
-        changes.splice(
-          changes.findIndex((change) => change.threadId === captain.threadId),
-          1,
-        );
-      }
+    const own = changes.findIndex((change) => change.threadId === captain.threadId);
+    if (own !== -1) {
+      const gone = await deps.bb.sdk.threads
+        .get({ threadId: captain.threadId, signal })
+        .then((thread) => thread.archivedAt !== null)
+        .catch((error: unknown) => {
+          if (!isNotFound(error)) throw error;
+          forgetMissing(deps, captain.threadId);
+          return true;
+        });
+      if (gone) changes.splice(own, 1);
     }
-    for (const change of changes) await sendChange(deps, change, now);
+    for (const change of changes) {
+      signal.throwIfAborted();
+      await sendChange(deps, change, now, refusals, signal);
+    }
   } catch (error) {
+    if (signal.aborted) throw error;
     // A bad file or row must not cost this pass its stall wakes.
     deps.bb.log.warn(
       `instruction notices for ${captain.threadId} skipped: ${(error as Error).message}`,
@@ -223,7 +296,17 @@ async function sendInstructionChanges(
   }
 }
 
-async function sendChange(deps: CheckDeps, change: InstructionChange, now: number): Promise<void> {
+async function sendChange(
+  deps: CheckDeps,
+  change: InstructionChange,
+  now: number,
+  refusals: Refusals,
+  signal: AbortSignal,
+): Promise<void> {
+  const refusal = refusals.get(change.threadId);
+  if (refusal !== undefined && (refusal.attempts >= REFUSED_MAX_ATTEMPTS || now < refusal.nextAt)) {
+    return;
+  }
   // Rendered before the claim, so a broken template leaves the change unclaimed for the next pass.
   const text = deps.files.read("instructions-changed", {
     form: change.form === "diff" ? "diff from your original text to the new" : "full new text",
@@ -233,23 +316,60 @@ async function sendChange(deps: CheckDeps, change: InstructionChange, now: numbe
   if (!deps.store.swapServed(change.threadId, change.from.fingerprint, claim)) return;
   try {
     await withDeadline(
-      deps.bb.sdk.threads.send({
-        threadId: change.threadId,
-        input: [{ type: "text", text, mentions: [] }],
-        mode: "queue-if-active",
-      }),
+      () =>
+        deps.bb.sdk.threads.send({
+          threadId: change.threadId,
+          input: [{ type: "text", text, mentions: [] }],
+          mode: "queue-if-active",
+        }),
       SEND_DEADLINE_MS,
+      signal,
     );
+    refusals.delete(change.threadId);
   } catch (error) {
+    if (isNotFound(error)) {
+      // The thread is gone: nothing will ever take this notice.
+      forgetMissing(deps, change.threadId);
+      refusals.delete(change.threadId);
+      return;
+    }
     // A send past its deadline may still land; then the next pass repeats it, which is harmless.
     deps.store.swapServed(change.threadId, change.to.fingerprint, {
       ...change.from,
       servedAt: now,
     });
+    if (signal.aborted) throw error;
+    if (!isRefused(error)) {
+      deps.bb.log.warn(
+        `instruction change for ${change.threadId} not sent: ${(error as Error).message}`,
+      );
+      return;
+    }
+    const attempts = (refusals.get(change.threadId)?.attempts ?? 0) + 1;
+    const delay = Math.min(REFUSED_BASE_MS * 2 ** (attempts - 1), REFUSED_MAX_DELAY_MS);
+    refusals.set(change.threadId, { attempts, nextAt: now + delay });
+    const next =
+      attempts >= REFUSED_MAX_ATTEMPTS
+        ? "held until the thread runs again"
+        : `retried in ${Math.round(delay / 60_000)}m`;
     deps.bb.log.warn(
-      `instruction change for ${change.threadId} not sent: ${(error as Error).message}`,
+      `instruction change for ${change.threadId} refused (${attempts}/${REFUSED_MAX_ATTEMPTS}), ${next}: ${(error as Error).message}`,
     );
   }
+}
+
+/** A thread bb answered 404 for: drop its served record, so no pass tells it about changes again. */
+function forgetMissing(deps: CheckDeps, threadId: string): void {
+  if (deps.store.forgetServed(threadId)) {
+    deps.bb.log.info(`instruction notices for ${threadId} stopped: bb no longer has the thread`);
+  }
+}
+
+/** bb's HTTP 409: the thread cannot take a message now for a reason a quick retry does not fix. */
+export function isRefused(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  if ("status" in error && error.status === 409) return true;
+  return error instanceof Error && /^HTTP 409\b/u.test(error.message);
 }
 
 /** A child with no role row gets one from its Tasks preset, owing a report since it was created. */
@@ -328,8 +448,10 @@ async function pushUndeliverable(
   captain: Captain,
   rows: readonly CrewRow[],
   now: number,
+  signal: AbortSignal,
 ): Promise<void> {
   for (const row of rows) {
+    signal.throwIfAborted();
     const comment = row.lastNotifyingComment;
     if (comment?.delivery.state !== "undeliverable") continue;
     if (!deps.store.claimNotice(NOTICE.undeliverablePush(comment.id), now)) continue;
@@ -343,17 +465,23 @@ async function pushUndeliverable(
 }
 
 /** Retry each due answer once; the send that reaches the cap pushes once. */
-async function retryAnswers(deps: CheckDeps): Promise<void> {
+async function retryAnswers(deps: CheckDeps, signal: AbortSignal | undefined): Promise<void> {
   // The check owns retries, so a failed send here does not wake it again.
   const sendDeps = { ...deps, wakeCheck: () => {} };
   for (const ask of deps.store.undeliveredAnswers(ANSWER_MAX_ATTEMPTS)) {
-    if (ask.answer === null) continue;
+    signal?.throwIfAborted();
+    const answer = ask.answer;
+    if (answer === null) continue;
     if (ask.nextDeliveryAt !== null && ask.nextDeliveryAt > deps.now()) continue;
     // A send past its deadline counts as failed here; it may still land, and then marks delivery.
     const warning = await withDeadline(
-      deliverAnswer(sendDeps, { ...ask, answer: ask.answer }),
+      () => deliverAnswer(sendDeps, { ...ask, answer }),
       SEND_DEADLINE_MS,
-    ).catch((error: unknown) => `answer send timed out: ${(error as Error).message}`);
+      signal,
+    ).catch((error: unknown) => {
+      if (signal?.aborted) throw error;
+      return `answer send timed out: ${(error as Error).message}`;
+    });
     if (warning === null) continue;
     const after = deps.store.ask(ask.id);
     if (after === null || after.deliveryAttempts < ANSWER_MAX_ATTEMPTS) continue;
@@ -368,15 +496,29 @@ async function retryAnswers(deps: CheckDeps): Promise<void> {
   }
 }
 
-async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`no answer in ${ms / 1000}s`)), ms);
-  });
+/**
+ * Run `work` with a signal that aborts after `ms` or when `outer` does, and
+ * settle as soon as either happens, whether or not `work` honours the signal.
+ */
+export async function withDeadline<T>(
+  work: (signal: AbortSignal) => Promise<T>,
+  ms: number,
+  outer?: AbortSignal,
+): Promise<T> {
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(new Error(`no answer in ${ms / 1000}s`)), ms);
+  const signal = outer === undefined ? deadline.signal : AbortSignal.any([outer, deadline.signal]);
+  let onAbort = () => {};
   try {
-    return await Promise.race([promise, deadline]);
+    signal.throwIfAborted();
+    const aborted = new Promise<never>((_, reject) => {
+      onAbort = () => reject(signal.reason as Error);
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    return await Promise.race([work(signal), aborted]);
   } finally {
     clearTimeout(timer);
+    signal.removeEventListener("abort", onAbort);
   }
 }
 

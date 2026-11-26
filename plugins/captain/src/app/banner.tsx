@@ -97,7 +97,7 @@ function Banner({ captainId }: { captainId: string }) {
   const input = useMemo(() => ({ captainId }), [captainId]);
   const asks = useRpcQuery({ contract: captainContract, method: "asks", input });
   const crew = useRpcQuery({ contract: captainContract, method: "crew", input });
-  const now = useNow(asks.data?.items, crew.data?.items);
+  const now = useNow([asks.data?.items, crew.data?.items]);
   const allItems = useMemo(
     () => [...(asks.data?.items ?? NO_ITEMS), ...(crew.data?.items ?? NO_ITEMS)],
     [asks.data, crew.data],
@@ -1190,8 +1190,11 @@ function focusOnMount(node: HTMLInputElement | null): void {
   node?.focus();
 }
 
-/** The clock for ages and Later: a coarse tick, plus a wake when the next Later ends. */
-export function useNow(...lists: (readonly QueueItem[] | undefined)[]): number {
+/** The clock for ages and Later: a coarse tick while visible, plus a wake when the next Later ends. */
+export function useNow(
+  lists: readonly (readonly QueueItem[] | undefined)[],
+  active = true,
+): number {
   const [now, setNow] = useState(Date.now);
   const wake = nextWake(
     lists.flatMap((list) => list ?? []),
@@ -1199,13 +1202,36 @@ export function useNow(...lists: (readonly QueueItem[] | undefined)[]): number {
   );
   const tick = useCallback(() => setNow(Date.now()), []);
   useEffect(() => {
-    const timer = setInterval(tick, TICK_MS);
-    return () => clearInterval(timer);
-  }, [tick]);
+    if (!active) return;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const stop = () => {
+      if (timer === null) return;
+      clearInterval(timer);
+      timer = null;
+    };
+    const start = () => {
+      if (timer !== null) return;
+      timer = setInterval(tick, TICK_MS);
+    };
+    const sync = () => {
+      if (document.visibilityState === "hidden") {
+        stop();
+        return;
+      }
+      tick();
+      start();
+    };
+    if (document.visibilityState !== "hidden") start();
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, [active, tick]);
   useEffect(() => {
-    if (wake === null) return;
+    if (!active || wake === null) return;
     const timer = setTimeout(tick, Math.max(0, wake - Date.now()) + 50);
     return () => clearTimeout(timer);
-  }, [wake, tick]);
+  }, [active, wake, tick]);
   return now;
 }

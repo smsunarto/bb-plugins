@@ -107,7 +107,7 @@ describe("lifecycle SQL scope", () => {
     async (tasks, mappings) => {
       const f = fixture(tasks, mappings);
       try {
-        await registerLifecycle(f.bb, f.store);
+        registerLifecycle(f.bb, f.store);
         f.queries.length = 0;
         await emitAllEvents(f, "thr_unrelated");
         console.log(
@@ -142,7 +142,7 @@ describe("lifecycle SQL scope", () => {
             liveStatus: "working",
           });
         }
-        await registerLifecycle(f.bb, f.store);
+        registerLifecycle(f.bb, f.store);
         const transition = async (
           status: "active" | "idle" | "error" | "deleted",
           expected: string,
@@ -233,7 +233,7 @@ describe("lifecycle SQL scope", () => {
     async (status, deletedAt, expected, statements) => {
       const f = fixture(1, 1);
       try {
-        await registerLifecycle(f.bb, f.store);
+        registerLifecycle(f.bb, f.store);
         f.queries.length = 0;
         await f.harness.emitThreadEvent("thread.created", {
           thread: makeThreadResponse({ id: "thr_worker_0", status, deletedAt }),
@@ -249,7 +249,7 @@ describe("lifecycle SQL scope", () => {
   it("tracks workers across task status changes without changing task status", async () => {
     const f = fixture(1, 1);
     try {
-      await registerLifecycle(f.bb, f.store);
+      registerLifecycle(f.bb, f.store);
       for (const status of ["todo", "in_progress", "in_review", "done", "canceled"] as const) {
         f.store.tasks.updateTask(f.tasks[0]!.id, { status });
         f.queries.length = 0;
@@ -288,11 +288,41 @@ describe("lifecycle SQL scope", () => {
       ).toBe(true);
       f.store.tasks.deleteTask(f.tasks[0]!.id);
       expect(f.store.tasks.getTaskThread(f.mappings[0]!.id)).toBeUndefined();
-      await registerLifecycle(f.bb, f.store);
+      registerLifecycle(f.bb, f.store);
       f.queries.length = 0;
       await emitAllEvents(f, "thr_worker_0");
       expect(f.queries).toHaveLength(5);
       expect(f.harness.realtimeSignals).toEqual([]);
+    } finally {
+      await f.dispose();
+    }
+  });
+
+  it("names the reconcile's rows with one indexed query, however many tasks exist", async () => {
+    const f = fixture(300, 300);
+    try {
+      registerLifecycle(f.bb, f.store);
+      f.queries.length = 0;
+      const service = f.harness.runService("thread-status-reconcile");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      service.controller.abort();
+      await service.done;
+
+      const reads = f.queries.filter((q) => q.sql.startsWith("SELECT"));
+      const sweep = reads.filter((q) => q.sql.includes("live_status IN"));
+      // One SELECT for listReconcilableTaskThreads(), plus one SELECT 1 for hasReconcilableTaskThreads().
+      expect(sweep.length).toBeLessThanOrEqual(2);
+      expect(sweep.length).toBeGreaterThanOrEqual(1);
+      expect(reads.some((q) => q.sql.includes("FROM tasks"))).toBe(false);
+      expect(reads.some((q) => q.sql.includes("WHERE task_id = ?"))).toBe(false);
+      expect(f.harness.sdk.callsTo("threads.get")).toHaveLength(300);
+
+      const plan = f.db
+        .prepare<[], { detail: string }>(
+          "EXPLAIN QUERY PLAN SELECT * FROM task_threads WHERE live_status IN ('starting', 'working', 'idle')",
+        )
+        .all();
+      expect(plan.some((row) => row.detail.includes("idx_task_threads_live_status"))).toBe(true);
     } finally {
       await f.dispose();
     }

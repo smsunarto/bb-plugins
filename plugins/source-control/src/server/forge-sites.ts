@@ -113,6 +113,9 @@ const unavailable = (problem: Problem) => new ForgeUnavailable({ problem });
 const refusedProblem = (refused: SiteRefused) =>
   forgeProblem(refused.site, refused.code as HostFailure["code"], refused.message);
 const invisible = (code: string) => code === "not-found" || code === "forbidden";
+/** The access can no longer read the repository; a timeout or rate limit says nothing about that. */
+const accessLost = (code: string) =>
+  invisible(code) || code === "unauthenticated" || code === "gh-missing";
 
 /** Why no account signed the image: gone, refused, unreached, or unseen by all. */
 function noImage(
@@ -451,7 +454,9 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
           seen.set(repo, access);
           return { value: answer.success };
         }
-        if (sameAccess(access, seen.get(repo) ?? access)) seen.delete(repo);
+        // Kept through transient refusals, so the next read tries the same account first.
+        if (accessLost(answer.failure.code) && sameAccess(access, seen.get(repo) ?? access))
+          seen.delete(repo);
         if (!invisible(answer.failure.code))
           return yield* unavailable(refusedProblem(answer.failure));
         return null;
