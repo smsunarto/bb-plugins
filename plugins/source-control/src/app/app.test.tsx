@@ -486,6 +486,61 @@ function stacked(): ThreadChange {
   return row;
 }
 
+test("the tab omits the Workspace header and This thread heading, moves Pull beside the branch, and omits redundant local/unpushed clutter", async () => {
+  const row = checkout("scott/local-only", null);
+  if (row.state !== "checkout" || !row.local.read) throw new Error("fixture");
+  row.local.read.value = local("scott/local-only", {
+    stacks: [
+      {
+        key: "scott/local-only",
+        branches: [
+          branchOf("scott/local-only", {
+            remote: null,
+            status: "unpushed",
+            push: "push",
+            ahead: 1,
+          }),
+        ],
+        assigned: [],
+      },
+    ],
+  });
+  const { slot, of } = renderRow(row);
+  const ready = await slot.findByTestId("sc-ready");
+  // No top Workspace header bar or "This thread" heading.
+  expect(slot.getByTestId("sc-changes").querySelector(":scope > header")).toBeNull();
+  expect(ready.querySelector(":scope > h2")).toBeNull();
+  expect(slot.queryByText("Workspace")).toBeNull();
+  expect(slot.queryByText("This thread")).toBeNull();
+  // Redundant forge line and "Local" chip (and its empty sc-chips row) are absent.
+  expect(slot.queryByTestId("sc-forge-line")).toBeNull();
+  expect(slot.queryByTestId("sc-chips")).toBeNull();
+  // Unpushed badge uses kit Badge padding without px-1/py-0/leading-none override.
+  const unpushedBadge = slot.getByText("Unpushed");
+  expect(unpushedBadge.className).not.toMatch(/\bpx-1\b|\bpy-0\b|\bleading-none\b/);
+  // Pull button lives inside sc-ready beside the branch and dispatches pull with target head.
+  const pull = slot.getByRole("button", { name: "Pull 2 new commits" });
+  expect(ready.contains(pull)).toBe(true);
+  await act(async () => pull.click());
+  await waitFor(() => expect(of("vcsAction")).toHaveLength(1));
+  expect(of("vcsAction")[0]!.input).toEqual({
+    threadId: "thread-a",
+    action: { kind: "pull", accepted: null },
+    expected: { head: null, target: "a41c9e2ffff" },
+  });
+});
+
+test("non-redundant forge diagnostics still render on sc-forge-line", async () => {
+  const row = checkout("scott/local-only", null);
+  if (row.state !== "checkout") throw new Error("fixture");
+  row.forge = {
+    read: null,
+    problem: { kind: "rate-limited", site: "GitHub", detail: "API rate limit exceeded" },
+  };
+  const { slot } = renderRow(row);
+  expect((await slot.findByTestId("sc-forge-line")).textContent).toContain("rate-limiting");
+});
+
 test("the tab is registered as Source Control", () => {
   expect((tab as unknown as { title: string }).title).toBe("Source Control");
 });
