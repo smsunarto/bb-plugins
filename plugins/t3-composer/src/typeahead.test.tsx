@@ -335,8 +335,11 @@ describe("/ command menu", () => {
 
   it.each([
     { origin: "builtin" as const, name: "compact", sends: true },
+    { origin: "builtin" as const, name: "clear", sends: true },
+    { origin: "builtin" as const, name: "goal", sends: false },
+    { origin: "builtin" as const, name: "loop", sends: false },
     { origin: "user" as const, name: "review", sends: false },
-  ])("a click on a $origin command sends it: $sends", async ({ origin, name, sends }) => {
+  ])("a click on a $origin /$name command sends it: $sends", async ({ origin, name, sends }) => {
     search.mention = searchState([]);
     search.command = searchState([
       { key: "commands", label: "Commands", suggestions: [command(name, origin)] },
@@ -352,6 +355,77 @@ describe("/ command menu", () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
         expect(run).not.toHaveBeenCalled();
       }
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("picking builtin /goal from the menu via click inserts /goal and keeps focus without sending", async () => {
+    search.mention = searchState([]);
+    search.command = searchState([
+      { key: "commands", label: "Commands", suggestions: [command("goal", "builtin")] },
+    ]);
+    const { slot, run, type, element } = await mountComposer("thread");
+    try {
+      element.focus();
+      type("/goal");
+      const row = await waitFor(() => slot.getByTitle("goal"));
+      fireEvent.mouseDown(row);
+      fireEvent.mouseUp(row);
+      fireEvent.click(row);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(run).not.toHaveBeenCalled();
+      expect(slot.composer.draft).toMatchObject({
+        text: "/goal ",
+        mentions: [
+          expect.objectContaining({
+            kind: "command",
+            trigger: "/",
+            name: "goal",
+            source: "command",
+            origin: "builtin",
+            from: 0,
+            to: 5,
+          }),
+        ],
+      });
+      expect(document.activeElement).toBe(element);
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("pressing Enter on builtin /goal inserts /goal without sending", async () => {
+    search.mention = searchState([]);
+    search.command = searchState([
+      { key: "commands", label: "Commands", suggestions: [command("goal", "builtin")] },
+    ]);
+    const { slot, run, type, element } = await mountComposer("thread");
+    try {
+      type("/goal");
+      await waitFor(() => slot.getByTitle("goal"));
+      fireEvent.keyDown(element, { key: "Enter" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(run).not.toHaveBeenCalled();
+      expect(slot.composer.draft.text).toBe("/goal ");
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("pressing Tab on builtin /goal still inserts /goal without sending", async () => {
+    search.mention = searchState([]);
+    search.command = searchState([
+      { key: "commands", label: "Commands", suggestions: [command("goal", "builtin")] },
+    ]);
+    const { slot, run, type, element } = await mountComposer("thread");
+    try {
+      type("/goal");
+      await waitFor(() => slot.getByTitle("goal"));
+      fireEvent.keyDown(element, { key: "Tab" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(run).not.toHaveBeenCalled();
+      expect(slot.composer.draft.text).toBe("/goal ");
     } finally {
       slot.lifecycle.unmount();
     }
