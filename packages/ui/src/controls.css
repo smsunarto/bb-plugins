@@ -3,7 +3,7 @@
  * Shapes, sizes, and focus follow shadcn's Vega style (preset b5JNZnXf8);
  * every color is a bb theme token, so the active theme owns the palette. */
 @layer components {
-  .bbui-1654a13e7a1d-button {
+  .bbui-9c540bfb3562-button {
     display: inline-flex;
     flex-shrink: 0;
     cursor: pointer;
@@ -19,23 +19,22 @@
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
     font-weight: 500;
   }
-  .bbui-1654a13e7a1d-motion {
-    transition-property:
-      color, background-color, border-color, outline-color, fill, stroke, translate;
+  .bbui-9c540bfb3562-motion {
+    transition-property: color, background-color, border-color, outline-color, fill, stroke;
     transition-duration: 150ms;
   }
-  .bbui-1654a13e7a1d-motion:hover {
+  .bbui-9c540bfb3562-motion:hover {
     transition-duration: 0ms;
   }
-  .bbui-1654a13e7a1d-row-motion {
+  .bbui-9c540bfb3562-row-motion {
     transition: none;
   }
-  .bbui-1654a13e7a1d-button:disabled {
+  .bbui-9c540bfb3562-button:disabled {
     pointer-events: none;
     opacity: 0.5;
   }
   /* Vega's focus: the edge takes --ring and a 3px halo of it sits outside. */
-  .bbui-1654a13e7a1d-button:where(:not(.bbui-1654a13e7a1d-native)):focus-visible {
+  .bbui-9c540bfb3562-button:where(:not(.bbui-9c540bfb3562-native)):focus-visible {
     outline: none;
     border-color: var(--ring);
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(3px + var(--tw-ring-offset-width, 0px))
@@ -44,103 +43,100 @@
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
   }
-  .bbui-1654a13e7a1d-button:where(:not(.bbui-1654a13e7a1d-native)):active:not([aria-haspopup]) {
-    translate: 0 1px;
-  }
-  .bbui-1654a13e7a1d-button :where(svg, [data-icon-root]) {
+  .bbui-9c540bfb3562-button :where(svg, [data-icon-root]) {
     pointer-events: none;
     flex-shrink: 0;
   }
   /* Filled actions read the theme's control layer. A theme without one keeps
    * bb's ink-on-canvas fill, so --primary stays the link and accent color. */
-  .bbui-1654a13e7a1d-default {
+  .bbui-9c540bfb3562-default {
     background: var(--control-primary, var(--foreground));
     color: var(--control-primary-foreground, var(--background));
   }
-  .bbui-1654a13e7a1d-default:hover {
+  .bbui-9c540bfb3562-default:hover {
     background: var(
       --control-primary-hover,
       color-mix(in oklab, var(--foreground) 90%, transparent)
     );
   }
-  .bbui-1654a13e7a1d-destructive {
+  .bbui-9c540bfb3562-destructive {
     background: var(
       --surface-destructive,
       color-mix(in oklab, var(--destructive) 10%, transparent)
     );
     color: var(--destructive-text, var(--destructive));
   }
-  .bbui-1654a13e7a1d-destructive:hover {
+  .bbui-9c540bfb3562-destructive:hover {
     background: color-mix(in oklab, var(--destructive) 20%, transparent);
   }
-  .bbui-1654a13e7a1d-destructive:where(:not(.bbui-1654a13e7a1d-native)):focus-visible {
+  .bbui-9c540bfb3562-destructive:where(:not(.bbui-9c540bfb3562-native)):focus-visible {
     border-color: color-mix(in oklab, var(--destructive) 40%, transparent);
     --tw-ring-color: color-mix(in oklab, var(--destructive) 20%, transparent);
   }
-  .bbui-1654a13e7a1d-outline {
+  .bbui-9c540bfb3562-outline {
     border-color: var(--input);
     background: var(--control-background, transparent);
   }
   /* Vega lifts outline controls and fields with the theme's xs shadow. */
-  .bbui-1654a13e7a1d-outline,
-  .bbui-1654a13e7a1d-input,
-  .bbui-1654a13e7a1d-textarea {
+  .bbui-9c540bfb3562-outline,
+  .bbui-9c540bfb3562-input,
+  .bbui-9c540bfb3562-textarea {
     --tw-shadow: var(--shadow-xs, 0 0 #0000);
     box-shadow:
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
   }
-  .bbui-1654a13e7a1d-outline.bbui-1654a13e7a1d-bordered {
+  .bbui-9c540bfb3562-outline.bbui-9c540bfb3562-bordered {
     border-color: var(--border);
   }
   /* A quiet ghost: muted ink at rest, foreground on hover or when open. */
-  .bbui-1654a13e7a1d-ghost.bbui-1654a13e7a1d-muted:where(
+  .bbui-9c540bfb3562-ghost.bbui-9c540bfb3562-muted:where(
       :not([aria-pressed="true"], [aria-expanded="true"], [data-state="open"])
     ) {
     color: var(--muted-foreground);
   }
   /* A quiet action that warns on hover: muted ink at rest, destructive ink on hover. */
-  .bbui-1654a13e7a1d-danger {
+  .bbui-9c540bfb3562-danger {
     color: var(--muted-foreground);
   }
-  .bbui-1654a13e7a1d-danger:hover {
+  .bbui-9c540bfb3562-danger:hover {
     color: var(--destructive-text, var(--destructive));
   }
-  .bbui-1654a13e7a1d-ghost.bbui-1654a13e7a1d-danger:hover {
+  .bbui-9c540bfb3562-ghost.bbui-9c540bfb3562-danger:hover {
     background: color-mix(in oklab, var(--destructive) 10%, transparent);
     color: var(--destructive-text, var(--destructive));
   }
   /* Plain: ink only. Muted at rest, foreground on hover or when open; never filled. */
-  .bbui-1654a13e7a1d-plain {
+  .bbui-9c540bfb3562-plain {
     color: var(--muted-foreground);
   }
-  .bbui-1654a13e7a1d-plain:hover,
-  .bbui-1654a13e7a1d-plain:where(
+  .bbui-9c540bfb3562-plain:hover,
+  .bbui-9c540bfb3562-plain:where(
     [aria-pressed="true"],
     [aria-expanded="true"],
     [data-state="open"]
   ) {
     color: var(--foreground);
   }
-  .bbui-1654a13e7a1d-outline:hover,
-  .bbui-1654a13e7a1d-outline:where([aria-expanded="true"]),
-  .bbui-1654a13e7a1d-ghost:hover {
+  .bbui-9c540bfb3562-outline:hover,
+  .bbui-9c540bfb3562-outline:where([aria-expanded="true"]),
+  .bbui-9c540bfb3562-ghost:hover {
     background: var(--state-hover);
     color: var(--foreground);
   }
-  .bbui-1654a13e7a1d-secondary {
+  .bbui-9c540bfb3562-secondary {
     background: var(--secondary);
     color: var(--secondary-foreground);
   }
-  .bbui-1654a13e7a1d-secondary:hover {
+  .bbui-9c540bfb3562-secondary:hover {
     background: color-mix(in oklch, var(--secondary), var(--foreground) 5%);
   }
-  .bbui-1654a13e7a1d-ghost:where(
+  .bbui-9c540bfb3562-ghost:where(
     [aria-pressed="true"],
     [aria-expanded="true"],
     [data-state="open"]
   ),
-  .bbui-1654a13e7a1d-ghost:where(
+  .bbui-9c540bfb3562-ghost:where(
       [aria-pressed="true"],
       [aria-expanded="true"],
       [data-state="open"]
@@ -148,95 +144,95 @@
     background: var(--state-active);
     color: var(--foreground);
   }
-  .bbui-1654a13e7a1d-link {
+  .bbui-9c540bfb3562-link {
     color: var(--primary);
     text-underline-offset: 4px;
   }
-  .bbui-1654a13e7a1d-link:hover {
+  .bbui-9c540bfb3562-link:hover {
     text-decoration-line: underline;
   }
-  .bbui-1654a13e7a1d-size-default {
+  .bbui-9c540bfb3562-size-default {
     height: 2.25rem;
     padding: 0 0.625rem;
   }
-  .bbui-1654a13e7a1d-size-xs {
+  .bbui-9c540bfb3562-size-xs {
     height: 1.5rem;
     gap: 0.25rem;
     padding: 0 0.5rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-1654a13e7a1d-size-sm {
+  .bbui-9c540bfb3562-size-sm {
     height: 2rem;
     gap: 0.25rem;
     padding: 0 0.625rem;
   }
-  .bbui-1654a13e7a1d-size-lg {
+  .bbui-9c540bfb3562-size-lg {
     height: 2.5rem;
     padding: 0 0.625rem;
   }
-  .bbui-1654a13e7a1d-size-icon {
+  .bbui-9c540bfb3562-size-icon {
     height: 2.25rem;
     width: 2.25rem;
   }
-  .bbui-1654a13e7a1d-size-icon-xs {
+  .bbui-9c540bfb3562-size-icon-xs {
     height: 1.5rem;
     width: 1.5rem;
   }
-  .bbui-1654a13e7a1d-size-icon-sm {
+  .bbui-9c540bfb3562-size-icon-sm {
     height: 2rem;
     width: 2rem;
   }
-  .bbui-1654a13e7a1d-size-icon-lg {
+  .bbui-9c540bfb3562-size-icon-lg {
     height: 2.5rem;
     width: 2.5rem;
   }
   /* CompactButton keeps bb's own denser control sizes. */
-  .bbui-1654a13e7a1d-compact {
+  .bbui-9c540bfb3562-compact {
     gap: 0.375rem;
   }
-  .bbui-1654a13e7a1d-compact.bbui-1654a13e7a1d-outline {
+  .bbui-9c540bfb3562-compact.bbui-9c540bfb3562-outline {
     border-color: var(--border);
   }
-  .bbui-1654a13e7a1d-compact.bbui-1654a13e7a1d-size-default {
+  .bbui-9c540bfb3562-compact.bbui-9c540bfb3562-size-default {
     height: 2rem;
     padding: 0 0.75rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-1654a13e7a1d-compact.bbui-1654a13e7a1d-size-sm {
+  .bbui-9c540bfb3562-compact.bbui-9c540bfb3562-size-sm {
     height: 1.75rem;
     padding: 0 0.625rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-1654a13e7a1d-compact.bbui-1654a13e7a1d-size-xs {
+  .bbui-9c540bfb3562-compact.bbui-9c540bfb3562-size-xs {
     height: 1.5rem;
     padding: 0 0.5rem;
     font-size: var(--text-2xs, 0.625rem);
   }
-  .bbui-1654a13e7a1d-compact.bbui-1654a13e7a1d-size-icon {
+  .bbui-9c540bfb3562-compact.bbui-9c540bfb3562-size-icon {
     height: 2rem;
     width: 2rem;
   }
-  .bbui-1654a13e7a1d-compact.bbui-1654a13e7a1d-size-icon-sm {
+  .bbui-9c540bfb3562-compact.bbui-9c540bfb3562-size-icon-sm {
     height: 1.75rem;
     width: 1.75rem;
   }
-  .bbui-1654a13e7a1d-compact.bbui-1654a13e7a1d-size-icon-xs {
+  .bbui-9c540bfb3562-compact.bbui-9c540bfb3562-size-icon-xs {
     height: 1.5rem;
     width: 1.5rem;
   }
-  .bbui-1654a13e7a1d-compact.bbui-1654a13e7a1d-size-icon-xxs {
+  .bbui-9c540bfb3562-compact.bbui-9c540bfb3562-size-icon-xxs {
     height: 1.25rem;
     width: 1.25rem;
     border-radius: var(--radius-sm, 0.25rem);
   }
-  .bbui-1654a13e7a1d-round {
+  .bbui-9c540bfb3562-round {
     border-radius: 9999px;
   }
-  .bbui-1654a13e7a1d-input,
-  .bbui-1654a13e7a1d-textarea {
+  .bbui-9c540bfb3562-input,
+  .bbui-9c540bfb3562-textarea {
     display: flex;
     width: 100%;
     min-width: 0;
@@ -247,10 +243,10 @@
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
   }
-  .bbui-1654a13e7a1d-input {
+  .bbui-9c540bfb3562-input {
     height: 2.25rem;
   }
-  .bbui-1654a13e7a1d-input::file-selector-button {
+  .bbui-9c540bfb3562-input::file-selector-button {
     border: 0;
     background: transparent;
     font-size: var(--text-sm, 0.8125rem);
@@ -258,20 +254,20 @@
     font-weight: 500;
     color: var(--foreground);
   }
-  .bbui-1654a13e7a1d-input.bbui-1654a13e7a1d-bordered {
+  .bbui-9c540bfb3562-input.bbui-9c540bfb3562-bordered {
     border-color: var(--border);
     background: var(--background);
   }
-  .bbui-1654a13e7a1d-textarea {
+  .bbui-9c540bfb3562-textarea {
     min-height: 4rem;
     padding-block: 0.5rem;
   }
-  .bbui-1654a13e7a1d-input::placeholder,
-  .bbui-1654a13e7a1d-textarea::placeholder {
+  .bbui-9c540bfb3562-input::placeholder,
+  .bbui-9c540bfb3562-textarea::placeholder {
     color: var(--muted-foreground);
   }
-  .bbui-1654a13e7a1d-input:focus-visible,
-  .bbui-1654a13e7a1d-textarea:focus-visible {
+  .bbui-9c540bfb3562-input:focus-visible,
+  .bbui-9c540bfb3562-textarea:focus-visible {
     outline: none;
     border-color: var(--ring);
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(3px + var(--tw-ring-offset-width, 0px))
@@ -280,20 +276,20 @@
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
   }
-  .bbui-1654a13e7a1d-input[aria-invalid="true"],
-  .bbui-1654a13e7a1d-textarea[aria-invalid="true"] {
+  .bbui-9c540bfb3562-input[aria-invalid="true"],
+  .bbui-9c540bfb3562-textarea[aria-invalid="true"] {
     border-color: var(--destructive);
     --tw-ring-color: color-mix(in oklab, var(--destructive) 20%, transparent);
   }
-  .bbui-1654a13e7a1d-input:disabled,
-  .bbui-1654a13e7a1d-textarea:disabled {
+  .bbui-9c540bfb3562-input:disabled,
+  .bbui-9c540bfb3562-textarea:disabled {
     cursor: not-allowed;
     opacity: 0.5;
   }
   /* Surfaces: one card, edge, divider, and hairline for every plugin. Edges
    * take the theme's --hairline-width when it sets one. A card spaces its
    * parts with --card-spacing, as Vega's does; set it to make a card denser. */
-  .bbui-1654a13e7a1d-card {
+  .bbui-9c540bfb3562-card {
     --card-spacing: 1.5rem;
     display: flex;
     flex-direction: column;
@@ -307,77 +303,77 @@
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
   }
-  .bbui-1654a13e7a1d-card-header {
+  .bbui-9c540bfb3562-card-header {
     display: grid;
     grid-auto-rows: min-content;
     align-items: start;
     gap: 0.25rem;
     padding-inline: var(--card-spacing);
   }
-  .bbui-1654a13e7a1d-card-title {
+  .bbui-9c540bfb3562-card-title {
     font-size: var(--text-base, 1rem);
     line-height: 1.5;
     font-weight: 500;
   }
-  .bbui-1654a13e7a1d-card-description {
+  .bbui-9c540bfb3562-card-description {
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
     color: var(--muted-foreground);
   }
-  .bbui-1654a13e7a1d-card-content {
+  .bbui-9c540bfb3562-card-content {
     padding-inline: var(--card-spacing);
   }
-  .bbui-1654a13e7a1d-card-footer {
+  .bbui-9c540bfb3562-card-footer {
     display: flex;
     align-items: center;
     padding-inline: var(--card-spacing);
   }
   /* Vega's small card, and bb's xs for dense tiles in panels. */
-  .bbui-1654a13e7a1d-card[data-size="sm"] {
+  .bbui-9c540bfb3562-card[data-size="sm"] {
     --card-spacing: 1rem;
   }
-  .bbui-1654a13e7a1d-card[data-size="xs"] {
+  .bbui-9c540bfb3562-card[data-size="xs"] {
     --card-spacing: 0.75rem;
     gap: 0.5rem;
   }
   /* Flush: rows run edge to edge; the card keeps only its edge, radius and fill. */
-  .bbui-1654a13e7a1d-card[data-size="flush"] {
+  .bbui-9c540bfb3562-card[data-size="flush"] {
     --card-spacing: 0px;
   }
-  .bbui-1654a13e7a1d-card:where([data-size="sm"], [data-size="xs"]) .bbui-1654a13e7a1d-card-title {
+  .bbui-9c540bfb3562-card:where([data-size="sm"], [data-size="xs"]) .bbui-9c540bfb3562-card-title {
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
   }
-  .bbui-1654a13e7a1d-edge {
+  .bbui-9c540bfb3562-edge {
     border: var(--hairline-width, 1px) solid var(--border);
   }
-  .bbui-1654a13e7a1d-divider {
+  .bbui-9c540bfb3562-divider {
     border-top: var(--hairline-width, 1px) solid var(--border);
   }
   /* The composer's edge: 0.5px and opaque, so stacked surfaces meet without a
    * bright stub where two translucent edges overlap at a rounded corner. */
-  .bbui-1654a13e7a1d-hairline {
+  .bbui-9c540bfb3562-hairline {
     box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));
   }
-  .dark .bbui-1654a13e7a1d-hairline {
+  .dark .bbui-9c540bfb3562-hairline {
     box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));
   }
   /* Drawn as a border: a box thinner than 1px can round to no pixels. */
-  .bbui-1654a13e7a1d-separator {
+  .bbui-9c540bfb3562-separator {
     flex-shrink: 0;
     border-color: var(--border);
     border-style: solid;
     border-width: 0;
   }
-  .bbui-1654a13e7a1d-separator[data-orientation="horizontal"] {
+  .bbui-9c540bfb3562-separator[data-orientation="horizontal"] {
     border-top-width: var(--hairline-width, 1px);
     width: 100%;
   }
-  .bbui-1654a13e7a1d-separator[data-orientation="vertical"] {
+  .bbui-9c540bfb3562-separator[data-orientation="vertical"] {
     border-left-width: var(--hairline-width, 1px);
     align-self: stretch;
   }
-  .bbui-1654a13e7a1d-badge {
+  .bbui-9c540bfb3562-badge {
     display: inline-flex;
     width: fit-content;
     height: 1.25rem;
@@ -394,31 +390,31 @@
     font-weight: 500;
     white-space: nowrap;
   }
-  .bbui-1654a13e7a1d-badge > :where(svg, [data-icon-root]) {
+  .bbui-9c540bfb3562-badge > :where(svg, [data-icon-root]) {
     pointer-events: none;
     width: 0.75rem;
     height: 0.75rem;
   }
-  .bbui-1654a13e7a1d-badge-default {
+  .bbui-9c540bfb3562-badge-default {
     background: var(--control-primary, var(--foreground));
     color: var(--control-primary-foreground, var(--background));
   }
-  .bbui-1654a13e7a1d-badge-secondary {
+  .bbui-9c540bfb3562-badge-secondary {
     background: var(--secondary);
     color: var(--secondary-foreground);
   }
-  .bbui-1654a13e7a1d-badge-destructive {
+  .bbui-9c540bfb3562-badge-destructive {
     background: var(
       --surface-destructive,
       color-mix(in oklab, var(--destructive) 10%, transparent)
     );
     color: var(--destructive-text, var(--destructive));
   }
-  .bbui-1654a13e7a1d-badge-outline {
+  .bbui-9c540bfb3562-badge-outline {
     border-color: var(--border);
     color: var(--foreground);
   }
-  .bbui-1654a13e7a1d-badge-count {
+  .bbui-9c540bfb3562-badge-count {
     height: 1rem;
     background: var(--surface-raised, var(--secondary));
     padding: 0 0.375rem;
@@ -427,76 +423,76 @@
     font-variant-numeric: tabular-nums;
   }
   /* Status tones: a tinted pill whose hue carries the meaning, for labels such as live/shadow or pass/fail. */
-  .bbui-1654a13e7a1d-badge-success {
+  .bbui-9c540bfb3562-badge-success {
     border-color: color-mix(in srgb, var(--success) 30%, transparent);
     background: color-mix(in srgb, var(--success) 10%, transparent);
     color: var(--success-foreground, var(--success));
   }
-  .bbui-1654a13e7a1d-badge-warning {
+  .bbui-9c540bfb3562-badge-warning {
     border-color: color-mix(in srgb, var(--attention, var(--warning)) 40%, transparent);
     background: var(--surface-attention, transparent);
     color: var(--warning-text, var(--warning));
   }
-  .bbui-1654a13e7a1d-badge-info {
+  .bbui-9c540bfb3562-badge-info {
     border-color: color-mix(in srgb, var(--timeline-accent, var(--primary)) 30%, transparent);
     color: var(--timeline-accent, var(--primary));
   }
-  .bbui-1654a13e7a1d-badge-danger {
+  .bbui-9c540bfb3562-badge-danger {
     border-color: color-mix(in srgb, var(--destructive) 35%, transparent);
     background: color-mix(in srgb, var(--destructive) 10%, transparent);
     color: var(--destructive-text, var(--destructive));
   }
   /* Small: a 16px chip for dense rows and compact counts. After the variants, so it sets the
    * height a count's own rule would. */
-  .bbui-1654a13e7a1d-badge-sm {
+  .bbui-9c540bfb3562-badge-sm {
     height: 1rem;
     gap: 0.125rem;
     padding: 0 0.375rem;
     font-size: var(--text-2xs, 0.625rem);
     line-height: 1;
   }
-  .bbui-1654a13e7a1d-badge-sm > :where(svg, [data-icon-root]) {
+  .bbui-9c540bfb3562-badge-sm > :where(svg, [data-icon-root]) {
     width: 0.625rem;
     height: 0.625rem;
   }
   /* Table: shadcn's Vega table, as plain CSS. */
-  .bbui-1654a13e7a1d-table-wrap {
+  .bbui-9c540bfb3562-table-wrap {
     position: relative;
     width: 100%;
     overflow: auto;
   }
-  .bbui-1654a13e7a1d-table {
+  .bbui-9c540bfb3562-table {
     width: 100%;
     caption-side: bottom;
     font-size: var(--text-sm, 0.8125rem);
   }
-  .bbui-1654a13e7a1d-table-row {
+  .bbui-9c540bfb3562-table-row {
     border-bottom: 1px solid var(--border);
     transition: background-color 150ms;
   }
-  .bbui-1654a13e7a1d-table-body > tr:last-child {
+  .bbui-9c540bfb3562-table-body > tr:last-child {
     border-bottom-width: 0;
   }
-  .bbui-1654a13e7a1d-table-body > .bbui-1654a13e7a1d-table-row:hover {
+  .bbui-9c540bfb3562-table-body > .bbui-9c540bfb3562-table-row:hover {
     background: color-mix(in srgb, var(--muted) 50%, transparent);
   }
-  .bbui-1654a13e7a1d-table-row[data-state="selected"] {
+  .bbui-9c540bfb3562-table-row[data-state="selected"] {
     background: var(--muted);
   }
-  .bbui-1654a13e7a1d-table-footer {
+  .bbui-9c540bfb3562-table-footer {
     border-top: 1px solid var(--border);
     background: color-mix(in srgb, var(--muted) 50%, transparent);
     font-weight: 500;
   }
-  .bbui-1654a13e7a1d-table-footer > tr:last-child {
+  .bbui-9c540bfb3562-table-footer > tr:last-child {
     border-bottom-width: 0;
   }
-  .bbui-1654a13e7a1d-table-caption {
+  .bbui-9c540bfb3562-table-caption {
     margin-top: 1rem;
     font-size: var(--text-sm, 0.8125rem);
     color: var(--muted-foreground);
   }
-  .bbui-1654a13e7a1d-table-head {
+  .bbui-9c540bfb3562-table-head {
     height: 2.5rem;
     padding: 0 0.5rem;
     text-align: left;
@@ -505,7 +501,7 @@
     white-space: nowrap;
     color: var(--foreground);
   }
-  .bbui-1654a13e7a1d-table-cell {
+  .bbui-9c540bfb3562-table-cell {
     padding: 0.5rem;
     vertical-align: middle;
   }
@@ -513,14 +509,14 @@
 /* Desktop utility overrides must not shrink touch targets. Explicit coarse-
  * pointer utilities remain the caller's escape hatch, as with the old defaults. */
 @layer utilities {
-  :where(.bbui-1654a13e7a1d-button:not(.bbui-1654a13e7a1d-native)) :is(svg, [data-icon-root]),
-  .bbui-1654a13e7a1d-native svg:not([class*="size-"]) {
+  :where(.bbui-9c540bfb3562-button:not(.bbui-9c540bfb3562-native)) :is(svg, [data-icon-root]),
+  .bbui-9c540bfb3562-native svg:not([class*="size-"]) {
     width: 1rem;
     height: 1rem;
   }
-  :where(.bbui-1654a13e7a1d-button:not(.bbui-1654a13e7a1d-native)):where(
-      .bbui-1654a13e7a1d-size-xs,
-      .bbui-1654a13e7a1d-size-icon-xs
+  :where(.bbui-9c540bfb3562-button:not(.bbui-9c540bfb3562-native)):where(
+      .bbui-9c540bfb3562-size-xs,
+      .bbui-9c540bfb3562-size-icon-xs
     )
     :is(svg, [data-icon-root]) {
     width: 0.75rem;
@@ -528,11 +524,11 @@
   }
 
   @media (width < 48rem) and (pointer: coarse) {
-    .bbui-1654a13e7a1d-input.bbui-1654a13e7a1d-input:not([class*="pointer-coarse:h-"]) {
+    .bbui-9c540bfb3562-input.bbui-9c540bfb3562-input:not([class*="pointer-coarse:h-"]) {
       height: 2.5rem;
     }
-    .bbui-1654a13e7a1d-input.bbui-1654a13e7a1d-input:not([class*="pointer-coarse:text-"]),
-    .bbui-1654a13e7a1d-textarea.bbui-1654a13e7a1d-textarea:not([class*="pointer-coarse:text-"]) {
+    .bbui-9c540bfb3562-input.bbui-9c540bfb3562-input:not([class*="pointer-coarse:text-"]),
+    .bbui-9c540bfb3562-textarea.bbui-9c540bfb3562-textarea:not([class*="pointer-coarse:text-"]) {
       font-size: var(--text-base, 1rem);
     }
   }
@@ -544,16 +540,16 @@
    * shadow, ring, and focus styles still draw beside it; other themes keep the
    * border. Cards and edges stay borders: a flush child would cover a ring. */
   @media (min-resolution: 2.5dppx) {
-    .bbui-1654a13e7a1d-outline,
-    .bbui-1654a13e7a1d-input,
-    .bbui-1654a13e7a1d-textarea {
-      --bbui-1654a13e7a1d-edge: var(--input);
+    .bbui-9c540bfb3562-outline,
+    .bbui-9c540bfb3562-input,
+    .bbui-9c540bfb3562-textarea {
+      --bbui-9c540bfb3562-edge: var(--input);
     }
-    .bbui-1654a13e7a1d-outline.bbui-1654a13e7a1d-bordered,
-    .bbui-1654a13e7a1d-input.bbui-1654a13e7a1d-bordered {
-      --bbui-1654a13e7a1d-edge: var(--border);
+    .bbui-9c540bfb3562-outline.bbui-9c540bfb3562-bordered,
+    .bbui-9c540bfb3562-input.bbui-9c540bfb3562-bordered {
+      --bbui-9c540bfb3562-edge: var(--border);
     }
-    .bbui-1654a13e7a1d-outline:not(
+    .bbui-9c540bfb3562-outline:not(
       .border-0,
       .border-t-0,
       .border-r-0,
@@ -568,7 +564,7 @@
       .border-transparent,
       [class*=":border-"]
     ),
-    .bbui-1654a13e7a1d-input:not(
+    .bbui-9c540bfb3562-input:not(
       .border-0,
       .border-t-0,
       .border-r-0,
@@ -583,7 +579,7 @@
       .border-transparent,
       [class*=":border-"]
     ),
-    .bbui-1654a13e7a1d-textarea:not(
+    .bbui-9c540bfb3562-textarea:not(
       .border-0,
       .border-t-0,
       .border-r-0,
@@ -603,7 +599,7 @@
         var(--tw-inset-shadow, 0 0 transparent),
         var(--tw-inset-ring-shadow, 0 0 transparent),
         inset 0 0 0 calc(var(--hairline-ring-width, 0px) * var(--hairline-rings, 0))
-          var(--bbui-1654a13e7a1d-edge),
+          var(--bbui-9c540bfb3562-edge),
         var(--tw-ring-offset-shadow, 0 0 transparent),
         var(--tw-ring-shadow, 0 0 transparent),
         var(--tw-shadow, 0 0 transparent);
