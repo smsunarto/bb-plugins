@@ -28,7 +28,7 @@ import {
 import { Icon } from "../hugeicon";
 import { MenuSurface } from "../inbox/menu-surface";
 import { useCaptainAvailable } from "../../hooks/use-captain";
-import { openNewCaptain } from "../../lib/sidebar-actions-bridge";
+import { openNewCaptain, useCanOpenNewCaptain } from "../../lib/sidebar-actions-bridge";
 import { markScrolled, revealFocusedRow, useNavScroll } from "./nav-scroll";
 
 const ROW_CLASS = cn(
@@ -52,12 +52,14 @@ export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigat
   const navigation = useSidebarNavigation();
   const { items, activeItemId, isShortcutModifierHeld, actions } = navigation;
   const captainAvailable = useCaptainAvailable();
+  const canOpenNewCaptain = useCanOpenNewCaptain();
+  const showNewCaptain = captainAvailable && canOpenNewCaptain;
   const isCoarsePointer = usePointerCoarse();
   const isPhone = isCompactViewport && isCoarsePointer;
   const hidden = items.filter((item) => !item.isVisible);
   const visible = items.filter((item) => item.isVisible);
   const newThreadIndex = visible.findIndex((item) => item.action.kind === "new-thread");
-  const scroller = useNavScroll(activeItemId, isPhone, visible.length + (captainAvailable ? 1 : 0));
+  const scroller = useNavScroll(activeItemId, isPhone, visible.length + (showNewCaptain ? 1 : 0));
 
   return (
     <ContextMenu>
@@ -74,7 +76,6 @@ export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigat
             onScroll={markScrolled}
             onFocus={revealFocusedRow}
           >
-            {captainAvailable && newThreadIndex === -1 ? <NewCaptainRow /> : null}
             {visible.map((item, index) => (
               <Fragment key={item.id}>
                 <NavigationRow
@@ -83,7 +84,7 @@ export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigat
                   showShortcut={isShortcutModifierHeld}
                   actions={actions}
                 />
-                {captainAvailable && index === newThreadIndex ? <NewCaptainRow /> : null}
+                {showNewCaptain && index === newThreadIndex ? <NewCaptainRow /> : null}
               </Fragment>
             ))}
           </div>

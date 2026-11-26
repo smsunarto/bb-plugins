@@ -64,7 +64,7 @@ import { useStableThreads } from "../../hooks/use-stable-threads";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
 import { NewThreadFab } from "./new-thread-fab";
 import { NewCaptainDialog, type NewCaptainRequest } from "./new-captain-dialog";
-import { useCaptainAvailable, useCaptainRoster } from "../../hooks/use-captain";
+import { useCaptainRoster } from "../../hooks/use-captain";
 import { repoChoices } from "../../lib/new-captain";
 import { MachineAppearanceProvider } from "./machine-appearance";
 import { RenameProvider } from "./inline-rename";
@@ -88,6 +88,7 @@ import {
 // The Settled shelf is a view of bb's archive, so the host list is asked for
 // archived threads too; `isShelvedThread` cuts it to the shelf's window.
 const SIDEBAR_LIFECYCLES = ["active", "archived"] as const;
+const NO_PROJECTS: ReadonlySet<string> = new Set();
 
 export function ThreadInbox(props: PluginThreadListProps) {
   const sdk = useSdk();
@@ -195,10 +196,25 @@ function InboxList({
     () => projects.filter((project) => !project.isPersonal).map((project) => project.id),
     [projects],
   );
-  // Captain's shelf, Needs you counts, and New Captain dialog stay inactive
-  // until bb reports the Captain plugin running.
-  const captainAvailable = useCaptainAvailable();
-  const { captainIds, needsYou } = useCaptainRoster(captainAvailable, threads);
+  // Captain's shelf identifies Captain threads synchronously on first paint
+  // and refines from Captain's `captains` RPC once bb reports Captain running;
+  // everything clears if bb confirms Captain is absent or disabled.
+  const {
+    available: captainAvailable,
+    shelfActive: captainShelfActive,
+    captainIds,
+    needsYou,
+  } = useCaptainRoster(threads);
+  // Projects holding Captains never form a "Captains" folder on any shelf and
+  // are excluded from New Captain repo choices.
+  const captainProjectIds = useMemo(() => {
+    if (!captainShelfActive) return NO_PROJECTS;
+    const ids = new Set<string>();
+    for (const thread of threads) {
+      if (captainIds.has(thread.id) || isLongLivedThread(thread)) ids.add(thread.projectId);
+    }
+    return ids;
+  }, [captainShelfActive, threads, captainIds]);
   const { tree, shelves, foldingThreads, toggleThread, revealFamily } = useInboxTree(
     threads,
     lifecycle,
@@ -207,7 +223,7 @@ function InboxList({
   );
   const shelvedTotal = Object.values(shelves).reduce((total, rows) => total + rows.length, 0);
   const searching = searchQuery.trim().length > 0;
-  const grouped = repositoryGroupsEnabled && shouldGroupByProject(shelves);
+  const grouped = repositoryGroupsEnabled && shouldGroupByProject(shelves, captainProjectIds);
   const { isGroupCollapsed, toggleGroup } = useCollapsedGroups();
   // A dropped group draws in its new slot before bb's write lands: the order
   // the drop predicts stands in for bb's until project-order-changed
@@ -218,32 +234,22 @@ function InboxList({
   const orderedProjectIds = overriddenProjectOrder(projectOrderOverride, projectOrder);
   const groupedShelves = useMemo(() => {
     const groupsFor = (shelf: InboxShelf): ProjectGroupRows[] =>
-      groupRowsByProject(shelves[shelf], orderedProjectIds, (projectId) =>
-        personalProjectIds.has(projectId),
+      groupRowsByProject(
+        shelves[shelf],
+        orderedProjectIds,
+        (projectId) => personalProjectIds.has(projectId),
+        (projectId) => shelf === "captains" || captainProjectIds.has(projectId),
       );
-    // Captains draw flat on their own shelf in shelf order, never split by
-    // project folder.
-    const captainRows = shelves.captains;
     return {
       pinned: groupsFor("pinned"),
-      captains:
-        captainRows.length > 0
-          ? [
-              {
-                projectId: "",
-                rows: captainRows,
-                families: captainRows.filter((row) => row.depth === 0).length,
-                attention: 0,
-              },
-            ]
-          : [],
+      captains: groupsFor("captains"),
       nextAction: groupsFor("nextAction"),
       waiting: groupsFor("waiting"),
       slopcop: groupsFor("slopcop"),
       snoozed: groupsFor("snoozed"),
       settled: groupsFor("settled"),
     };
-  }, [shelves, orderedProjectIds, personalProjectIds]);
+  }, [shelves, orderedProjectIds, personalProjectIds, captainProjectIds]);
   const { pinned, captains, nextAction, waiting, slopcop } = groupedShelves;
   const { shelfViews, windowLayout, captainsOpen, waitingOpen, slopcopOpen } = useShelfWindow(
     groupedShelves,
@@ -267,7 +273,7 @@ function InboxList({
       ).flatMap(([shelf, groups]) =>
         groups.flatMap((group) =>
           grouped &&
-          shelf !== "captains" &&
+          !group.ungrouped &&
           !searching &&
           isGroupCollapsed(groupCollapseKey(shelf, group.projectId))
             ? []
@@ -300,13 +306,9 @@ function InboxList({
   const onNewThreadFab = useCommittedEvent(() => onNewThread(activeProjectId));
   const [newCaptain, setNewCaptain] = useState<NewCaptainRequest | null>(null);
   const newCaptainSeq = useRef(0);
-  const onNewCaptain = useCommittedEvent((projectId?: string | null) => {
-    if (!captainAvailable) return;
+  const onNewCaptain = useCommittedEvent(() => {
     newCaptainSeq.current += 1;
-    setNewCaptain({
-      seq: newCaptainSeq.current,
-      projectId: projectId === undefined ? activeProjectId : projectId,
-    });
+    setNewCaptain({ seq: newCaptainSeq.current, projectId: activeProjectId });
   });
   const closeNewCaptain = useCommittedEvent(() => setNewCaptain(null));
   const onCaptainStarted = useCommittedEvent((threadId: string) => {
@@ -314,14 +316,10 @@ function InboxList({
     navigate.toThread(threadId);
     onNavigate();
   });
-  const captainRepos = useMemo(() => {
-    if (newCaptain === null) return [];
-    // A Captain's own project holds Captains, not code.
-    const captainProjects = new Set(
-      threads.filter((thread) => captainIds.has(thread.id)).map((thread) => thread.projectId),
-    );
-    return repoChoices(projects, captainProjects);
-  }, [newCaptain, threads, captainIds, projects]);
+  const captainRepos = useMemo(
+    () => (newCaptain === null ? [] : repoChoices(projects, captainProjectIds)),
+    [newCaptain, projects, captainProjectIds],
+  );
   const sdk = useSdk();
   // One drag context for both payloads (lib/sidebar-drag): a row onto a row
   // nests, a row onto a project header lifts it back out, and a group header
@@ -446,20 +444,19 @@ function InboxList({
         );
   };
   const renderGroups = (shelf: InboxShelf, groups: readonly ProjectGroupRows[]) => {
-    const shelfGrouped = grouped && shelf !== "captains";
-    if (!shelfGrouped) {
+    if (!grouped) {
       return (
         <ul className="flex flex-col">
           {renderRows(
             shelf,
             shelfKey(shelf),
             groups.flatMap((group) => group.rows),
-            shelf === "captains",
+            false,
           )}
         </ul>
       );
     }
-    const groupIds = groups.map((group) => group.projectId);
+    const groupIds = groups.filter((group) => !group.ungrouped).map((group) => group.projectId);
     // The shelf's sortable list is its groups that bb can reorder, in
     // rendered order: the personal project and any stale id are out — never
     // draggable, never a landing spot — while staying put where they render.
@@ -467,6 +464,15 @@ function InboxList({
       ? []
       : groupIds.filter((projectId) => orderedProjectIds.includes(projectId));
     const renderGroup = (group: ProjectGroupRows) => {
+      if (group.ungrouped) {
+        // Carry `.gtd-project-group-rows` so phone leaf rows share the exact
+        // left column with neighbouring grouped shelves.
+        return (
+          <ul key={shelfKey(shelf)} className="gtd-project-group-rows flex flex-col">
+            {renderRows(shelf, shelfKey(shelf), group.rows, grouped)}
+          </ul>
+        );
+      }
       const key = groupCollapseKey(shelf, group.projectId);
       const Group = sortableIds.includes(group.projectId) ? SortableProjectGroup : ProjectGroup;
       return (
@@ -706,12 +712,7 @@ function useShelfWindow(
       buildInboxWindow(
         [
           { shelf: "pinned", expanded: true, groups: groupedShelves.pinned },
-          {
-            shelf: "captains",
-            expanded: captainsOpen,
-            grouped: false,
-            groups: groupedShelves.captains,
-          },
+          { shelf: "captains", expanded: captainsOpen, groups: groupedShelves.captains },
           { shelf: "nextAction", expanded: true, groups: groupedShelves.nextAction },
           { shelf: "waiting", expanded: waitingOpen, groups: groupedShelves.waiting },
           { shelf: "slopcop", expanded: slopcopOpen, groups: groupedShelves.slopcop },
@@ -912,7 +913,7 @@ function useRowCommands({
   threads: readonly PluginSidebarThread[];
   /** bb's own Archive for one thread, confirmation included. */
   archive: (thread: PluginThreadActionTarget) => void;
-  openNewCaptain: (projectId?: string | null) => void;
+  openNewCaptain: () => void;
 }) {
   const navigate = useBbNavigate();
   // bb's split placement rules, or a plain open; either one expands the

@@ -131,7 +131,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     await import("@testing-library/react");
   const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
   installTestPluginRuntime();
-  const { createContext, createElement, startTransition, Suspense, useContext, useMemo, useRef } =
+  const { createContext, createElement, startTransition, Suspense, useContext } =
     await import("react");
   const sdk = { ...(await import("@get-bb/plugin-sdk/app")) };
 
@@ -160,6 +160,10 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     /** Hold the shelves until the saved machine choice loads, as bb does. */
     /** bb's plugin list; unset lists none, as a bb without Captain does. */
     plugins?: readonly { id: string; enabled: boolean; status: string }[];
+    /** Override `sdk.plugins.list` for pending/counting availability tests. */
+    listPlugins?: () => Promise<{
+      plugins: readonly { id: string; enabled: boolean; status: string }[];
+    }>;
   }
 
   const HostContext = createContext<HostState | null>(null);
@@ -168,21 +172,25 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     assert.ok(host);
     return host;
   }
+  // Share one fake SDK per mounted host (keyed by host.actions, which stays
+  // stable across `view.update({ host: { ...host, sidebar } })`), matching bb's
+  // single client across CapyNavigation and ThreadInbox.
+  const fakeSdkByActions = new WeakMap<HostActions, Record<string, unknown>>();
   mock.module("@get-bb/plugin-sdk/app", () => ({
     ...sdk,
     experimental_useSidebarThreads: () => useHost().sidebar,
     // bb's client is stable for the plugin's lifetime; effects keyed on it
     // must not refire on every render here either.
     useSdk: () => {
-      const { unarchive, primaryHostId, actions, listHosts, plugins } = useHost();
-      const rename = useRef(actions.rename);
-      rename.current = actions.rename;
-      return useMemo(
-        () => ({
+      const host = useHost();
+      let client = fakeSdkByActions.get(host.actions);
+      if (client === undefined) {
+        const { unarchive, primaryHostId, actions, listHosts, plugins, listPlugins } = host;
+        client = {
           threads: {
             unarchive,
             update: ({ threadId, title }: { threadId: string; title: string }) =>
-              rename.current(threadId, title),
+              actions.rename(threadId, title),
             list: async () => [],
           },
           hosts: {
@@ -190,16 +198,19 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
               listHosts ?? (async () => [{ id: "host-boat", machineProviderId: "boat-sandbox" }]),
           },
           subscribe: () => () => {},
-          plugins: { list: async () => ({ plugins: plugins ?? [] }) },
+          plugins: {
+            list: listPlugins ?? (async () => ({ plugins: plugins ?? [] })),
+          },
           system: {
             config: () =>
               primaryHostId === undefined
                 ? new Promise<never>(() => {})
                 : Promise.resolve({ primaryHostId }),
           },
-        }),
-        [unarchive, primaryHostId, listHosts, plugins],
-      );
+        };
+        fakeSdkByActions.set(host.actions, client);
+      }
+      return client;
     },
     useBbNavigate: () => {
       const host = useHost();
@@ -1985,8 +1996,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         lifecycle: lifecycle(["snoozed"]),
       };
       const view = mount(host);
-      // Two projects are in view, so project groups render and Settled groups start folded.
-      assert.ok(view.slot.getByRole("button", { name: /^Two project/ }));
+      // Two projects are in view once Captain's absence resolves, so project
+      // groups render and Settled groups start folded.
+      assert.ok(await view.slot.findByRole("button", { name: /^Two project/ }));
       expandParked(view.slot);
       fireEvent.click(
         within(view.slot.getByRole("region", { name: "Settled" })).getByRole("button", {
@@ -3236,12 +3248,11 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
     it("with Captain absent, renders no Captains shelf, no New Captain header button, and asks Captain nothing", async () => {
       const view = mount(captainHostState());
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      });
-      assert.equal(view.slot.queryByRole("region", { name: "Captains" }), null);
+      await waitFor(() =>
+        assert.ok(view.slot.queryByRole("region", { name: "Captains" }) === null),
+      );
       assert.ok(view.slot.getByRole("region", { name: "Pinned" }));
-      assert.equal(view.slot.container.querySelectorAll(".gtd-project-group-captain").length, 0);
+      assert.equal(view.slot.queryByRole("button", { name: /^New Captain directing/ }), null);
       assert.equal(view.slot.queryAllByRole("button", { name: /^New Captain/ }).length, 0);
       assert.ok(view.slot.getAllByRole("button", { name: /^New thread in / }).length > 0);
       assert.equal(view.slot.container.querySelectorAll("[data-gtd-needs-you]").length, 0);
@@ -3254,25 +3265,95 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         plugins: [{ ...CAPTAIN_RUNNING[0]!, enabled: false, status: "disabled" }],
       };
       const view = mount(host);
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      });
-      assert.equal(view.slot.queryByRole("region", { name: "Captains" }), null);
+      await waitFor(() =>
+        assert.ok(view.slot.queryByRole("region", { name: "Captains" }) === null),
+      );
       assert.ok(view.slot.getByRole("region", { name: "Pinned" }));
-      assert.equal(view.slot.container.querySelectorAll(".gtd-project-group-captain").length, 0);
+      assert.equal(view.slot.queryByRole("button", { name: /^New Captain directing/ }), null);
       assert.equal(view.slot.queryAllByRole("button", { name: /^New Captain/ }).length, 0);
       assert.deepEqual(captainCalls(view.slot), []);
     });
 
+    it("shelves Captains synchronously on first paint and keeps them flat when captains RPC fails", async () => {
+      // First paint: plugins.list has not resolved yet — Captains must already
+      // sit on the Captains shelf with no "Captains" folder flash.
+      const pendingHost: HostState = {
+        ...captainHostState(),
+        listPlugins: () => new Promise<never>(() => {}),
+      };
+      const pending = mount(pendingHost);
+      const firstPaintCaptains = pending.slot.getByRole("region", { name: "Captains" });
+      assert.deepEqual(
+        [...firstPaintCaptains.querySelectorAll("[data-sidebar-thread-id]")].map((el) =>
+          el.getAttribute("data-sidebar-thread-id"),
+        ),
+        ["thr_c1", "thr_c2"],
+      );
+      assert.equal(pending.slot.queryByRole("button", { name: /^Captains project/ }), null);
+      cleanup();
+
+      // Failed captains RPC while Captain runs: never falls back to a Captains folder.
+      const failingHost: HostState = { ...captainHostState(), plugins: CAPTAIN_RUNNING };
+      const failing = mount(failingHost, {}, "", {
+        rpc: {
+          captains: async () => {
+            throw new Error("captain unavailable");
+          },
+        } as never,
+      });
+      await waitFor(() =>
+        assert.ok(failing.slot.inspection.rpcCalls.some((call) => call.method === "captains")),
+      );
+      const stillCaptains = failing.slot.getByRole("region", { name: "Captains" });
+      assert.deepEqual(
+        [...stillCaptains.querySelectorAll("[data-sidebar-thread-id]")].map((el) =>
+          el.getAttribute("data-sidebar-thread-id"),
+        ),
+        ["thr_c1", "thr_c2"],
+      );
+      assert.equal(failing.slot.queryByRole("button", { name: /^Captains project/ }), null);
+    });
+
     it("places listed Captains on a dedicated flat Captains shelf with no Captains folder and keeps crew in place", async () => {
       const threads = [
-        ...captainThreads(),
+        thread("thr_c1", {
+          title: "Plugins Captain",
+          projectId: "proj_captains",
+          originPluginId: "captain",
+          isPinned: true,
+          pinnedAt: 1,
+        }),
+        thread("thr_c2", {
+          title: "Rampage Captain",
+          projectId: "proj_captains",
+          originPluginId: "captain",
+          isPinned: true,
+          pinnedAt: 2,
+        }),
+        thread("thr_crew_child", {
+          title: "Nested crew task",
+          projectId: "one",
+          parentThreadId: "thr_c1",
+          indicator: "runtime",
+        }),
+        thread("thr_plain_one", { title: "Plain one", projectId: "one" }),
+        thread("thr_plain_two", { title: "Plain two", projectId: "two" }),
         thread("thr_pinned_mine", { title: "Urgent pin", projectId: "one", isPinned: true }),
         thread("thr_crew_other", {
           title: "Crew in repo",
           projectId: "one",
           indicator: "runtime",
         }),
+        {
+          ...settledThread("thr_settled_in_captains"),
+          title: "Archived note in Captains",
+          projectId: "proj_captains",
+        },
+        {
+          ...settledThread("thr_settled_in_one"),
+          title: "Archived in One",
+          projectId: "one",
+        },
       ];
       const host = { ...captainHostState(threads), plugins: CAPTAIN_RUNNING };
       const view = mount(host, {}, "", {
@@ -3282,19 +3363,24 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         } as never,
       });
       const captainsRegion = await view.slot.findByRole("region", { name: "Captains" });
-      // Every listed Captain appears in Captains (whichever project it is in),
-      // flat with no project-group folder header.
+      // Every listed Captain appears in Captains (with its nested crew child),
+      // flat with no project-group folder header, wrapped in .gtd-project-group-rows
+      // so phone leaf rows align with neighbouring grouped shelves.
       assert.deepEqual(
         [...captainsRegion.querySelectorAll("[data-sidebar-thread-id]")].map((el) =>
           el.getAttribute("data-sidebar-thread-id"),
         ),
-        ["thr_c1", "thr_c2"],
+        ["thr_c1", "thr_crew_child", "thr_c2"],
       );
       assert.equal(captainsRegion.querySelectorAll(".gtd-project-group").length, 0);
-      // No "Captains" project group anywhere in the sidebar, and no per-project
-      // New Captain button on any project header.
+      assert.ok(captainsRegion.querySelector("ul.gtd-project-group-rows"));
+      // No "Captains" project group anywhere in the sidebar (even after opening Settled),
+      // and no per-project New Captain button on any project header.
+      fireEvent.click(view.slot.getByRole("button", { name: "Settled (2)" }));
+      const settledRegion = view.slot.getByRole("region", { name: "Settled" });
+      assert.ok(settledRegion.querySelector('[data-sidebar-thread-id="thr_settled_in_captains"]'));
       assert.equal(view.slot.queryByRole("button", { name: /^Captains project/ }), null);
-      assert.equal(view.slot.container.querySelectorAll(".gtd-project-group-captain").length, 0);
+      assert.equal(view.slot.queryByRole("button", { name: /^New Captain directing/ }), null);
       // Non-Captain threads keep their shelves and project groups.
       const pinnedRegion = view.slot.getByRole("region", { name: "Pinned" });
       assert.deepEqual(
@@ -3310,22 +3396,76 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ),
         ["thr_crew_other"],
       );
-      // Shelf order: Pinned -> Captains -> Next Action -> Waiting.
+      // Shelf order: Pinned -> Captains -> Next Action -> Waiting -> Settled.
       assert.deepEqual(
         [...view.slot.container.querySelectorAll("section[aria-label]")].map((el) =>
           el.getAttribute("aria-label"),
         ),
-        ["Pinned", "Captains", "Next Action", "Waiting"],
+        ["Pinned", "Captains", "Next Action", "Waiting", "Settled"],
       );
       // Folding the Captains shelf shows its count and hides its rows.
       const toggle = within(captainsRegion).getByRole("button", { name: "Captains" });
       assert.equal(toggle.getAttribute("aria-expanded"), "true");
       fireEvent.click(toggle);
       assert.equal(toggle.getAttribute("aria-expanded"), "false");
-      assert.equal(toggle.textContent, "Captains (2)");
+      assert.equal(toggle.textContent, "Captains (3)");
       fireEvent.click(toggle);
       assert.equal(toggle.getAttribute("aria-expanded"), "true");
       assert.equal(toggle.textContent, "Captains");
+    });
+
+    it("keeps parked Captains on Snoozed/Settled with restore actions and lifts raised-hand Captains to Next Action ungrouped", async () => {
+      const threads = [
+        thread("thr_c_asking", {
+          title: "Asking Captain",
+          projectId: "proj_captains",
+          originPluginId: "captain",
+          hasPendingInteraction: true,
+        }),
+        thread("thr_c_snoozed", {
+          title: "Snoozed Captain",
+          projectId: "proj_captains",
+          originPluginId: "captain",
+        }),
+        {
+          ...settledThread("thr_c_archived"),
+          title: "Archived Captain",
+          projectId: "proj_captains",
+          originPluginId: "captain",
+        },
+        thread("thr_one", { title: "One task", projectId: "one" }),
+        thread("thr_two", { title: "Two task", projectId: "two" }),
+      ];
+      const host: HostState = {
+        ...captainHostState(threads),
+        lifecycle: lifecycle(["thr_c_snoozed"]),
+        plugins: CAPTAIN_RUNNING,
+      };
+      const view = mount(host, {}, "", {
+        rpc: {
+          captains: async () => ({ ids: ["thr_c_asking", "thr_c_snoozed", "thr_c_archived"] }),
+          needsYou: async () => ({ thr_c_asking: 0, thr_c_snoozed: 0 }),
+        } as never,
+      });
+      await waitFor(() =>
+        assert.ok(view.slot.inspection.rpcCalls.some((call) => call.method === "captains")),
+      );
+      // No live quiet Captains left -> Captains shelf does not render.
+      assert.equal(view.slot.queryByRole("region", { name: "Captains" }), null);
+      // Raised-hand Captain sits ungrouped in Next Action with no Captains folder.
+      const nextRegion = view.slot.getByRole("region", { name: "Next Action" });
+      assert.ok(nextRegion.querySelector('[data-sidebar-thread-id="thr_c_asking"]'));
+      assert.equal(view.slot.queryByRole("button", { name: /^Captains project/ }), null);
+      // Parked Captains sit on Snoozed and Settled with Wake now / Un-settle.
+      fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
+      const snoozedRegion = view.slot.getByRole("region", { name: "Snoozed" });
+      assert.ok(snoozedRegion.querySelector('[data-sidebar-thread-id="thr_c_snoozed"]'));
+      assert.ok(within(snoozedRegion).getByRole("button", { name: "Wake now" }));
+      fireEvent.click(view.slot.getByRole("button", { name: "Settled (1)" }));
+      const settledRegion = view.slot.getByRole("region", { name: "Settled" });
+      assert.ok(settledRegion.querySelector('[data-sidebar-thread-id="thr_c_archived"]'));
+      assert.ok(within(settledRegion).getByRole("button", { name: "Un-settle" }));
+      assert.equal(view.slot.queryByRole("button", { name: /^Captains project/ }), null);
     });
 
     it("reads every Captain row's count in one batch, shows it, and hides it at 0", async () => {
@@ -3375,7 +3515,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       await waitFor(() =>
         assert.ok(view.slot.inspection.rpcCalls.some((call) => call.method === "captains")),
       );
-      assert.equal(view.slot.container.querySelectorAll(".gtd-project-group-captain").length, 0);
+      assert.equal(view.slot.queryByRole("button", { name: /^New Captain directing/ }), null);
       act(() => triggerNewCaptain());
       const dialog = await screen.findByRole("dialog", { name: "New Captain" });
       return { view, host, dialog: within(dialog) };
@@ -3443,11 +3583,12 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.ok(screen.getByRole("dialog", { name: "New Captain" }));
     });
 
-    it("clicking New Captain in sidebar navigation opens the dialog and starts a Captain", async () => {
+    it("clicking New Captain in sidebar navigation shares one plugins.list read, opens the dialog, and starts a Captain", async () => {
       const sent: unknown[] = [];
-      const host = {
+      const listPlugins = mock(async () => ({ plugins: CAPTAIN_RUNNING }));
+      const host: HostState = {
         ...hostState([thread("t1"), thread("t2", { projectId: "two" })]),
-        plugins: CAPTAIN_RUNNING,
+        listPlugins,
       };
       const slot = renderSlot(
         {
@@ -3499,6 +3640,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         },
       );
       const navButton = await slot.findByRole("button", { name: "New Captain" });
+      assert.equal(listPlugins.mock.calls.length, 1);
       fireEvent.click(navButton);
       const dialog = within(await screen.findByRole("dialog", { name: "New Captain" }));
       assert.equal(
@@ -3517,6 +3659,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       await waitFor(() => assert.equal(host.actions.open.mock.calls.length, 1));
       assert.deepEqual(sent, [{ name: "Nav Captain", repos: ["one"] }]);
       assert.equal(host.actions.open.mock.calls[0]![0], "thr_from_nav");
+      assert.equal(listPlugins.mock.calls.length, 1);
     });
   });
 }

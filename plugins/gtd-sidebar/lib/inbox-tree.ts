@@ -63,8 +63,8 @@ function ownShelf(
   lifecycle: InboxLifecycle,
   captainIds: ReadonlySet<string>,
 ): InboxShelf {
-  if (captainIds.has(thread.id)) return "captains";
   if (lifecycle !== "active") return lifecycle;
+  if (captainIds.has(thread.id)) return "captains";
   if (thread.isPinned) return "pinned";
   return activeSectionFor(thread) === "next-action" ? "nextAction" : "waiting";
 }
@@ -191,7 +191,7 @@ function linkedParentIds(
 ): Map<string, string> {
   const parents = new Map<string, string>();
   for (const node of nodes.values()) {
-    if (captainIds.has(node.thread.id)) continue;
+    if (node.lifecycle === "active" && captainIds.has(node.thread.id)) continue;
     const parentId = effectiveParentThreadId(node.thread);
     if (
       parentId &&
@@ -281,7 +281,11 @@ function minPinOrderKey(left: string | null, right: string | null): string | nul
  * user, and a pinned descendant pins the family.
  */
 function familyShelf(node: InboxThreadNode): InboxShelf {
-  if (node.shelf === "captains") return "captains";
+  // The Captains shelf folds, so a raised hand anywhere in a Captain's family
+  // rises to Next Action rather than hiding behind a folded shelf.
+  if (node.shelf === "captains") {
+    return statusPriority(node.statusThread) >= 5 ? "nextAction" : "captains";
+  }
   if (node.shelf !== "nextAction" && node.shelf !== "waiting") {
     return node.children.some((child) => child.shelf === "pinned") ? "pinned" : node.shelf;
   }

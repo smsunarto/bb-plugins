@@ -17,8 +17,6 @@ export interface InboxShelfLayout {
   shelf: InboxShelf;
   /** False folds the shelf to its header. */
   expanded: boolean;
-  /** False draws rows flat under the shelf header even when the list is grouped. */
-  grouped?: boolean;
   groups: readonly ProjectGroup[];
 }
 
@@ -53,12 +51,12 @@ export function buildInboxWindow(
       items.push({ kind: "row", key: `row:${row.node.thread.id}`, row, shelf });
     }
   };
-  for (const { shelf, expanded, grouped: shelfGrouped = grouped, groups } of shelves) {
+  for (const { shelf, expanded, groups } of shelves) {
     if (groups.length === 0) continue;
     headerIndex.set(shelfKey(shelf), items.length);
     items.push({ kind: "shelf", key: shelfKey(shelf) });
     if (!expanded) continue;
-    if (!shelfGrouped) {
+    if (!grouped) {
       pushRows(
         shelf,
         shelfKey(shelf),
@@ -67,6 +65,10 @@ export function buildInboxWindow(
       continue;
     }
     for (const group of groups) {
+      if (group.ungrouped) {
+        pushRows(shelf, shelfKey(shelf), group.rows);
+        continue;
+      }
       const key = groupCollapseKey(shelf, group.projectId);
       headerIndex.set(key, items.length);
       items.push({ kind: "group", key });

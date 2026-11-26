@@ -196,6 +196,14 @@ describe("CapyNavigation", () => {
       assert.equal(disabled.queryByRole("button", { name: "New Captain" }), null);
     });
 
+    it("does not render when Captain runs without a mounted inbox handler", async () => {
+      const slot = mount(items(), { plugins: CAPTAIN_RUNNING });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      assert.equal(slot.queryByRole("button", { name: "New Captain" }), null);
+    });
+
     it.each([false, true])(
       "renders beside New thread and Search on compact=%s when Captain runs and opens New Captain",
       async (compact) => {

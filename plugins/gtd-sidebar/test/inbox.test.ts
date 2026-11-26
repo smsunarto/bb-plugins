@@ -553,6 +553,89 @@ describe("inbox families", () => {
     );
   });
 
+  it("keeps parked Captains on Snoozed or Settled even while listed by captainIds", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "cap-live", projectId: "proj_captains", originPluginId: "captain" }),
+        thread({ id: "cap-snoozed", projectId: "proj_captains", originPluginId: "captain" }),
+        thread({
+          id: "cap-archived",
+          projectId: "proj_captains",
+          originPluginId: "captain",
+          isArchived: true,
+          archivedAt: 500,
+        }),
+      ],
+      (item) => (item.id === "cap-snoozed" ? "snoozed" : "active"),
+      "",
+      { captainIds: new Set(["cap-live", "cap-snoozed", "cap-archived"]) },
+    );
+    assert.deepEqual(
+      tree.map((node) => [node.thread.id, node.shelf]),
+      [
+        ["cap-live", "captains"],
+        ["cap-snoozed", "snoozed"],
+        ["cap-archived", "settled"],
+      ],
+    );
+  });
+
+  it("lifts a Captain family with a raised hand to Next Action so a folded shelf cannot hide it", () => {
+    const tree = buildInboxTree(
+      [
+        thread({
+          id: "cap-asking",
+          projectId: "proj_captains",
+          originPluginId: "captain",
+          hasPendingInteraction: true,
+        }),
+        thread({
+          id: "cap-blocked-crew",
+          projectId: "proj_captains",
+          originPluginId: "captain",
+        }),
+        thread({
+          id: "crew-waiting-input",
+          projectId: "proj_repo",
+          parentThreadId: "cap-blocked-crew",
+          indicator: "waiting-for-input",
+        }),
+        thread({
+          id: "cap-quiet",
+          projectId: "proj_captains",
+          originPluginId: "captain",
+        }),
+        thread({
+          id: "crew-working",
+          projectId: "proj_repo",
+          parentThreadId: "cap-quiet",
+          indicator: "runtime",
+        }),
+      ],
+      active,
+      "",
+      { captainIds: new Set(["cap-asking", "cap-blocked-crew", "cap-quiet"]) },
+    );
+    assert.deepEqual(
+      tree.map((node) => [node.thread.id, node.shelf]),
+      [
+        ["cap-quiet", "captains"],
+        ["cap-asking", "nextAction"],
+        ["cap-blocked-crew", "nextAction"],
+      ],
+    );
+    assert.deepEqual(
+      tree.find((node) => node.thread.id === "cap-quiet")?.children.map((node) => node.thread.id),
+      ["crew-working"],
+    );
+    assert.deepEqual(
+      tree
+        .find((node) => node.thread.id === "cap-blocked-crew")
+        ?.children.map((node) => node.thread.id),
+      ["crew-waiting-input"],
+    );
+  });
+
   it("leaves Captain threads on their ordinary shelves when captainIds is empty", () => {
     const tree = buildInboxTree(
       [

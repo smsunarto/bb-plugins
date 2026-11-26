@@ -82,17 +82,18 @@ describe("sidebar actions bridge", () => {
   });
 
   it("forwards openNewCaptain to the mounted list when published", () => {
-    const opened: (string | null | undefined)[] = [];
+    let calls = 0;
     const actions: PublishedSidebarActions = {
       ...fakeEntry(settled),
-      openNewCaptain: (projectId) => opened.push(projectId),
+      openNewCaptain: () => {
+        calls += 1;
+      },
     };
-    openNewCaptain("proj_1");
-    assert.deepEqual(opened, []);
+    openNewCaptain();
+    assert.equal(calls, 0);
     publishSidebarActions(actions);
     openNewCaptain();
-    openNewCaptain("proj_1");
-    assert.deepEqual(opened, [undefined, "proj_1"]);
+    assert.equal(calls, 1);
     forgetSidebarActions(actions);
   });
 });
