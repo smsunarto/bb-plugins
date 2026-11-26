@@ -882,10 +882,10 @@ describe("bb captain verdict", () => {
     expect(host.server.store.asksOf(captainId, { open: true })).toEqual([]);
   });
 
-  test("ship ask head is stored on the row, printed in status, --json and the answer line, and legacy null-head rows are superseded", async () => {
+  test("ship ask head is stored on the row, printed in status, --json and the answer line, and null-head rows are superseded", async () => {
     const { host, captainId, as } = await crewHost();
     const head = "d".repeat(40);
-    // Legacy row opened before the head column existed: prose names `head`, row does not.
+    // A null-head row (such as a short-SHA legacy row left null by migration): prose names `head`, row does not.
     host.server.store.openAsk({
       captainId,
       taskKey: "BBPLUGINS-1",
@@ -908,13 +908,28 @@ describe("bb captain verdict", () => {
     ]);
     const statusText = await as(["status"]);
     const statusJson = await as(["status", "--json"]);
+    // Also exercise undelivered and past-cap health status rows for a ship ask.
+    host.sendFails.add(captainId);
+    await run(host, ["ask", "resolve", "a2", "--answer", "Merge"]);
+    const undeliveredStatus = await as(["status"]);
+    for (let attempt = 1; attempt < 6; attempt += 1) {
+      await run(host, ["ask", "resolve", "a2", "--answer", "Merge"]);
+    }
+    const healthStatus = await as(["status"]);
+    host.sendFails.delete(captainId);
     const resolved = await run(host, ["ask", "resolve", "a2", "--answer", "Merge", "--json"]);
 
-    // Legacy a1 was superseded even though its prose detail named `head`.
+    // Null-head a1 was superseded even though its prose detail named `head`.
     expect(host.server.store.ask("a1")).toMatchObject({ head: null, answer: "Superseded" });
     expect(json(opened.stdout).results[1]).toMatchObject({ id: "a2", head, verdict: "passed" });
     expect(statusText.stdout).toContain(
       `a2  ask  BBPLUGINS-1  Merge BBPLUGINS-1: Render PR images @${head}`,
+    );
+    expect(undeliveredStatus.stdout).toContain(
+      `a2  undelivered  BBPLUGINS-1  answer "Merge" not delivered · Merge BBPLUGINS-1: Render PR images @${head}`,
+    );
+    expect(healthStatus.stdout).toContain(
+      `a2  health  answer "Merge" not delivered after 6 sends; retry: bb captain ask resolve a2 --answer "Merge" @${head}`,
     );
     const askStatusRow = (
       JSON.parse(statusJson.stdout) as { rows: { id: string; head: string | null }[] }
@@ -932,7 +947,7 @@ describe("bb captain verdict", () => {
     const first = "a".repeat(40);
     const second = "b".repeat(40);
     await as(["verdict", "BBPLUGINS-1", "review", "passed", "--head", first, "--ship"]);
-    // A second stale ship ask on the same task (e.g. a legacy row opened before head was stored).
+    // A second open ship ask for the same head, such as one left by a retitle.
     host.server.store.openAsk({
       captainId,
       taskKey: "BBPLUGINS-1",

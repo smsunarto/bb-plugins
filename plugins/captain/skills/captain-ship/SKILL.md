@@ -20,16 +20,16 @@ This list is the only one. To add a repo, add a bullet to it.
 
 ## Choose the path
 
-Classify at ship time, in the checkout you push from:
+Classify at ship time, in the repo:
 
 1. Run `gh repo view --json nameWithOwner,isFork,parent`. **If `gh` fails:** ask the user.
 2. **If `isFork` is true:** the change ships by PR. Its PR opens against the parent, `<parent.owner.login>/<parent.name>`.
 3. Otherwise match `nameWithOwner` against the list above, without regard to case.
-4. Run `git remote get-url --push --all origin` and `git remote get-url --all origin`. Each must print exactly one URL, and both must name host `github.com` and that same repo, in SSH or HTTPS form.
+4. Build the verified URL directly from the matched `nameWithOwner`, as `https://github.com/<owner>/<repo>.git` or `git@github.com:<owner>/<repo>.git`. Do not read the URL from the crew checkout's git config.
 
 A task ships direct only when all of these hold. Otherwise it ships by PR, and a task with no PR goes to the user as an ask.
 
-- Steps 1-4 name a listed repo.
+- Steps 1-3 name a listed repo, and step 4 builds `<url>` from its `nameWithOwner`.
 - The brief's `Remote:` line says `direct ship`. Direct ship named only in the brief's prose does not count.
 - The task has no open PR. `bb tasks show <key> --json` lists the task's `pullRequests`.
 
@@ -64,20 +64,32 @@ The old Merge answer never covers a new head. Open ship asks only through `verdi
 
 ### Shipping direct
 
-The subagent runs these in a clean checkout of the reviewed head (such as a detached worktree), never in a shared workspace with other branches applied, and reports each result to you.
+The subagent verifies and pushes from a fresh bare blobless clone `<tmp>` of the verified `<url>`, and runs the brief's checks in a clean checkout `<checkout>` (such as a detached worktree, never a shared workspace with other branches applied), reporting each result to you.
 
 - **Before any command:** refuse a `<target>` or `<crew-branch>` that does not match `^[A-Za-z0-9._/-]+$`, and a `<sha>` that is not 40 hex characters. Pass each value as one quoted argument.
-- **Guard against repo-level rewrites:** stop before fetching if `git for-each-ref refs/replace` prints anything or `test -e "$(git rev-parse --git-path info/grafts)"` succeeds. Run every git check below with `git --no-replace-objects`.
-- Write remote-tracking refs by their full names, `refs/remotes/origin/<target>` and `refs/remotes/origin/<crew-branch>`, never `origin/<name>`. A local tag or branch named `origin/<name>` would otherwise stand in for them.
-- **Stop rule:** any `ambiguous` warning, any exit 128, any other unexpected exit, or an output that differs from what a step requires means stop: report it and ship nothing. Only steps 2 and 4 give exit 1 a meaning.
+- **Clone fresh with hooks off:** create a new empty temp directory `<tmp>` (under `$BB_THREAD_STORAGE` or `$TMPDIR`) and run:
+  `git --no-replace-objects -c core.hooksPath=/dev/null clone --bare --filter=blob:none "<url>" "<tmp>"`
+  Never use `--mirror`: it fetches `+refs/*:refs/*`, importing any `refs/replace/*` pushed to origin.
+- **Run every git call in `<tmp>` with `--no-replace-objects -c core.hooksPath=/dev/null`:** clone, ls-remote, fetch, rev-parse, merge-base, log, tree-proof commands, and push. That reads objects as stored and runs no client-side hook at all (including `pre-push`, `post-checkout`, and `reference-transaction`).
+- **One push URL:** confirm `git --no-replace-objects -c core.hooksPath=/dev/null -C "<tmp>" remote get-url --push --all origin` prints exactly one URL, equal to `<url>`. This catches global `insteadOf` or `pushInsteadOf` rewrites and confirms the push hits only the verified repo.
+- **Exact `ls-remote` matching:** `git ls-remote origin "refs/heads/<name>"` matches any ref ending in `/refs/heads/<name>`. Always filter for an exact second field — `git --no-replace-objects -c core.hooksPath=/dev/null -C "<tmp>" ls-remote origin "refs/heads/<name>" | awk -v r="refs/heads/<name>" '$2 == r'` — and require exactly one output line.
+- **Stop rule:** any `ambiguous` warning, any exit 128, any other unexpected exit, or an output that differs from what a step requires means stop: report it and ship nothing. Only checks 2 and 4 give exit 1 a meaning.
+- **Trust boundary:** a fresh clone removes repo-local state: replace refs, grafts, shallow, refspecs, local hooks, and `includeIf` config scoped to the worktree. It does not remove `~/.gitconfig` or credentials, which crew running as the same OS user can also reach.
 
-1. `git --no-replace-objects fetch --prune origin`, then confirm `git --no-replace-objects rev-parse --verify "refs/remotes/origin/<target>"` prints the same SHA as `git ls-remote origin "refs/heads/<target>"`. A missing target or mismatch (such as from a rewritten `remote.origin.fetch` refspec) means stop, since the push would create the branch or check the wrong base.
-2. **Already landed:** `git --no-replace-objects merge-base --is-ancestor "<sha>" "refs/remotes/origin/<target>"`. Exit 0 means the head is on the target: report that, then run Go live if the repo reloads or deploys after landing (unless post-landing CI failed) and Finish. Exit 1 means continue.
-3. `git --no-replace-objects rev-parse --verify "refs/remotes/origin/<crew-branch>"` and `git ls-remote origin "refs/heads/<crew-branch>"` both print `<sha>`. A missing crew branch means the implementer pushes it again at the same head; then rerun these checks.
-4. `git --no-replace-objects merge-base --is-ancestor "refs/remotes/origin/<target>" "<sha>"` exits 0, so the push is a fast-forward. Exit 1 means the target moved: follow New heads.
-5. `git --no-replace-objects log --oneline "refs/remotes/origin/<target>..<sha>"` lists only this task's commits. They land as they are, with no squash.
-6. Checks are green at that head. Only checks you or your subagent ran at that exact head in that clean checkout count; a crew report, Review's included, is a claim.
-   - The brief's checks, run by you or your subagent at that head, pass. They are required whether or not CI ran.
+A bare clone copies origin's branches to `refs/heads/<target>` and `refs/heads/<crew-branch>` (no `refs/remotes/origin/*`).
+
+1. Confirm `git --no-replace-objects -c core.hooksPath=/dev/null -C "<tmp>" rev-parse --verify "refs/heads/<target>"` prints the same SHA as the one-line exact `ls-remote` match for `refs/heads/<target>`. A missing target or mismatch means stop, since the push would create the branch or check the wrong base.
+2. **Already landed:** `git --no-replace-objects -c core.hooksPath=/dev/null -C "<tmp>" merge-base --is-ancestor "<sha>" "refs/heads/<target>"`. Exit 0 means the head is on the target: report that, remove `<tmp>`, then run Go live if the repo reloads or deploys after landing (unless post-landing CI failed) and Finish. Exit 1 means continue.
+3. Confirm `git --no-replace-objects -c core.hooksPath=/dev/null -C "<tmp>" rev-parse --verify "refs/heads/<crew-branch>"` and the one-line exact `ls-remote` match for `refs/heads/<crew-branch>` both print `<sha>`. A missing crew branch means the implementer pushes it again at the same head; then rerun these checks.
+4. `git --no-replace-objects -c core.hooksPath=/dev/null -C "<tmp>" merge-base --is-ancestor "refs/heads/<target>" "<sha>"` exits 0, so the push is a fast-forward. Exit 1 means the target moved: follow New heads.
+5. `git --no-replace-objects -c core.hooksPath=/dev/null -C "<tmp>" log --oneline "refs/heads/<target>..<sha>"` lists only this task's commits. They land as they are, with no squash.
+6. Checks are green at that head. Only checks you or your subagent ran at that exact head in `<checkout>` count; a crew report, Review's included, is a claim.
+   - Run the brief's checks in `<checkout>`. They are required whether or not CI ran.
+   - **Prove `<checkout>` holds `<sha>`'s exact tree** against `<tmp>`, after the brief's checks finish (so edits made during checks are caught too). Using a new temp index file `<idx>`, run all three with `GIT_INDEX_FILE="<idx>"` and `--no-replace-objects -c core.hooksPath=/dev/null`:
+     1. `git --no-replace-objects -c core.hooksPath=/dev/null --git-dir="<tmp>" read-tree "<sha>"`
+     2. `git --no-replace-objects -c core.hooksPath=/dev/null --git-dir="<tmp>" --work-tree="<checkout>" add -A -- :/`
+     3. `git --no-replace-objects -c core.hooksPath=/dev/null --git-dir="<tmp>" write-tree` — its output must equal `git --no-replace-objects -c core.hooksPath=/dev/null --git-dir="<tmp>" rev-parse "<sha>^{tree}"`.
+        Seeding the index with `read-tree` first hashes tracked-but-ignored files while leaving untracked files ignored by the reviewed `.gitignore` (such as dependencies and build output) outside the proof. Clean filters, Git LFS smudge/clean filters, and submodules are outside this proof; do not rely on it alone for repos that depend on them.
    - `gh run list --commit "<sha>" --limit 100 --json status,conclusion,name` shows every run `completed`. A `success`, `skipped` or `neutral` conclusion passes. Any other conclusion, such as `failure` or `cancelled`, a pending run, or a failed `gh` call means no ship.
 
 ## Ship a PR
@@ -88,11 +100,11 @@ The subagent runs these in a clean checkout of the reviewed head (such as a deta
 
 ## Ship direct
 
-1. Give a subagent a clean checkout of the reviewed head (not a multi-branch workspace), the target branch, the crew branch and the full reviewed head.
-2. The subagent runs the Shipping direct checks, then pushes that commit: `git push --no-verify origin "<sha>^{commit}:refs/heads/<target>"`. It uses no `--force`, `--force-with-lease` or leading `+`. `--no-verify` skips `pre-push` hooks: step 6 already ran the brief's checks in the clean checkout of `<sha>`, and shared repo hooks can run unreviewed code or check the wrong worktree.
+1. Give a subagent the verified `<url>` from Choose the path, the target branch, the crew branch, the full reviewed head, and a clean checkout `<checkout>` for running the brief's checks (not a multi-branch workspace).
+2. The subagent runs the Shipping direct checks in the fresh bare clone `<tmp>` (and the brief's checks in `<checkout>`), then pushes that commit from `<tmp>`: `git --no-replace-objects -c core.hooksPath=/dev/null -C "<tmp>" push origin "<sha>^{commit}:refs/heads/<target>"`. It uses no `--force`, `--force-with-lease` or leading `+`. `^{commit}` with `--no-replace-objects` ensures even a remote branch named `<sha>` on origin cannot redirect the push. No client-side hooks (including `pre-push`) run from any tree because every git call sets `core.hooksPath=/dev/null`; Shipping direct check 6 already ran the brief's checks against the proven `<sha>` tree.
 3. **If the push is rejected as not a fast-forward:** the target moved. Follow New heads.
 4. **If the push is refused for another reason,** such as a branch rule: stop and ask the user. Open no PR in its place.
-5. The subagent runs `git --no-replace-objects fetch --prune origin`, confirms `git ls-remote origin "refs/heads/<target>"` prints the same SHA as `git --no-replace-objects rev-parse "refs/remotes/origin/<target>"`, and confirms `git --no-replace-objects merge-base --is-ancestor "<sha>" "refs/remotes/origin/<target>"` exits 0. The target may already have moved past the head, so the tip need not equal it.
+5. The subagent re-fetches the target into `<tmp>` with an explicit refspec (`git --no-replace-objects -c core.hooksPath=/dev/null -C "<tmp>" fetch origin "+refs/heads/<target>:refs/heads/<target>"`), confirms `git --no-replace-objects -c core.hooksPath=/dev/null -C "<tmp>" rev-parse --verify "refs/heads/<target>"` prints the same SHA as the one-line exact `ls-remote` match for `refs/heads/<target>`, and confirms `git --no-replace-objects -c core.hooksPath=/dev/null -C "<tmp>" merge-base --is-ancestor "<sha>" "refs/heads/<target>"` exits 0. The target may already have moved past the head, so the tip need not equal it. Remove `<tmp>` and `<idx>`.
 6. The subagent polls `gh run list --commit "<sha>" --branch "<target>" --limit 100 --json status,conclusion,name` once a minute for up to 30 minutes, until every run is `completed`. It reports "no runs" only after 5 minutes with none, since GitHub registers runs a little after the push. When the 30 minutes pass, it reports the runs still pending.
 7. The subagent reports the push, the landing check and the CI result to you. **If a run fails:** tell the user in your ship report, skip Go live, run Finish, and fix or revert only through a new task. Otherwise, **if the repo reloads or deploys after landing:** run Go live, then Finish; else run Finish.
 
@@ -110,7 +122,7 @@ When a repo reloads or deploys after landing, run Go live only after the change 
 
 The ship is done when all of these hold:
 
-- The change is on the target: its PR shows merged, or for a direct ship the head is an ancestor of `refs/remotes/origin/<target>`.
+- The change is on the target: its PR shows merged, or for a direct ship the head is an ancestor of `origin`'s `refs/heads/<target>` in the fresh clone.
 - When the repo reloads or deploys after landing (and post-landing CI did not fail), Go live succeeded from its target-only checkout.
 - The task is `done`.
 - Its crew threads are archived.

@@ -206,9 +206,33 @@ export const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (captain_id, task_id)
   )`,
   // A ship ask's pinned 40-hex head and review verdict (`passed` or `skipped`).
-  // Non-ship asks and rows opened before these columns stay null.
+  // Non-ship asks and rows opened before these columns without a full 40-hex
+  // `Review passed|skipped at <sha>.` prefix stay null.
   "ALTER TABLE asks ADD COLUMN head TEXT",
   "ALTER TABLE asks ADD COLUMN verdict TEXT CHECK (verdict IN ('passed', 'skipped'))",
+  `UPDATE asks
+   SET
+     head = lower(
+       CASE
+         WHEN substr(detail, 1, 17) = 'Review passed at ' THEN substr(detail, 18, 40)
+         ELSE substr(detail, 19, 40)
+       END
+     ),
+     verdict = CASE
+       WHEN substr(detail, 1, 17) = 'Review passed at ' THEN 'passed'
+       ELSE 'skipped'
+     END
+   WHERE kind = 'ship' AND head IS NULL AND verdict IS NULL AND (
+     (substr(detail, 1, 17) = 'Review passed at '
+       AND length(substr(detail, 18, 40)) = 40
+       AND substr(detail, 58, 1) = '.'
+       AND ltrim(substr(detail, 18, 40), '0123456789abcdefABCDEF') = '')
+     OR
+     (substr(detail, 1, 18) = 'Review skipped at '
+       AND length(substr(detail, 19, 40)) = 40
+       AND substr(detail, 59, 1) = '.'
+       AND ltrim(substr(detail, 19, 40), '0123456789abcdefABCDEF') = '')
+   )`,
 ];
 
 const ASK_ANSWERER_SLOT = MIGRATIONS.indexOf(ASK_ANSWERER_MIGRATION);

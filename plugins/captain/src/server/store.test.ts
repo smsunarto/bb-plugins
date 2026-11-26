@@ -66,13 +66,31 @@ describe("Captain storage migration histories", () => {
   const askHead = "ALTER TABLE asks ADD COLUMN head TEXT";
   const askVerdict =
     "ALTER TABLE asks ADD COLUMN verdict TEXT CHECK (verdict IN ('passed', 'skipped'))";
-  const mainOrder = [answerer, routineRunId, routineRunIndex, taskOwners, askHead, askVerdict];
+  const askBackfill = MIGRATIONS.at(-1) ?? "";
+  const mainOrder = [
+    answerer,
+    routineRunId,
+    routineRunIndex,
+    taskOwners,
+    askHead,
+    askVerdict,
+    askBackfill,
+  ];
   // Live: the routines branch ran at 21-22 before answered_by merged, which took 23.
-  const liveOrder = [routineRunId, routineRunIndex, answerer, taskOwners, askHead, askVerdict];
+  const liveOrder = [
+    routineRunId,
+    routineRunIndex,
+    answerer,
+    taskOwners,
+    askHead,
+    askVerdict,
+    askBackfill,
+  ];
 
-  test("ask head and verdict are the last migrations, after task_owners", () => {
+  test("ask head, verdict and backfill are the last migrations, after task_owners", () => {
     expect(taskOwners).toMatch(/^CREATE TABLE task_owners \(/u);
-    expect(MIGRATIONS.slice(-2)).toEqual([askHead, askVerdict]);
+    expect(askBackfill).toMatch(/^UPDATE asks\b/u);
+    expect(MIGRATIONS.slice(-3)).toEqual([askHead, askVerdict, askBackfill]);
     expect(MIGRATIONS.length).toBe(firstDivergentSlot + mainOrder.length);
   });
 
@@ -199,6 +217,41 @@ describe("Captain storage migration histories", () => {
       expect(reopened.ownedTaskIds("thr_captain")).toEqual(new Set(["task_3"]));
     },
   );
+
+  test("backfills head and verdict only for legacy ship asks with a full 40-hex Review passed/skipped prefix", () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "captain" });
+    onTestFinished(() => harness.lifecycle.dispose());
+    const db = bb.storage.database();
+    // Migrate up to `task_owners`, right before the head/verdict/backfill migrations.
+    bb.storage.migrate(db, MIGRATIONS.slice(0, -3));
+
+    const lower = "a".repeat(40);
+    const skippedSha = "b".repeat(40);
+    const upper = "AB".repeat(20);
+    const insert = db.prepare(
+      `INSERT INTO asks (id, captain_id, task_key, kind, text, detail, asked_at, answer, answered_by)
+       VALUES (?, 'thr_captain', 'BBP-1', ?, 'Merge BBP-1', ?, 1, NULL, NULL)`,
+    );
+    insert.run("a1", "ship", `Review passed at ${lower}. Merge lets the Captain ship it.`);
+    insert.run("a2", "ship", `Review skipped at ${skippedSha}. Docs only.`);
+    insert.run("a3", "ship", `Review passed at ${upper}. Direct ship to main.`);
+    insert.run("a4", "ship", "Review passed at 97408a317. Short sha.");
+    insert.run("a5", "ship", `Review findings at ${lower}. Other verdict word.`);
+    insert.run("a6", "decision", `Review passed at ${lower}. Non-ship ask with matching prose.`);
+    insert.run("a7", "ship", `Review passed at ${lower}a. 41-char sha.`);
+    insert.run("a8", "ship", `Review passed at ${lower} missing dot`);
+
+    const store = openStore(bb);
+
+    expect(store.ask("a1")).toMatchObject({ head: lower, verdict: "passed" });
+    expect(store.ask("a2")).toMatchObject({ head: skippedSha, verdict: "skipped" });
+    expect(store.ask("a3")).toMatchObject({ head: upper.toLowerCase(), verdict: "passed" });
+    expect(store.ask("a4")).toMatchObject({ head: null, verdict: null });
+    expect(store.ask("a5")).toMatchObject({ head: null, verdict: null });
+    expect(store.ask("a6")).toMatchObject({ head: null, verdict: null });
+    expect(store.ask("a7")).toMatchObject({ head: null, verdict: null });
+    expect(store.ask("a8")).toMatchObject({ head: null, verdict: null });
+  });
 });
 
 test("answerAsk records answer and optional delivery atomically only while unanswered", async () => {

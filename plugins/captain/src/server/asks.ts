@@ -461,14 +461,7 @@ function answerer(ask: Ask, fromThread: string | null): Answerer {
 
 export type Resolved = { ask: Ask; state: "answered" | "undelivered"; notes: string[] };
 
-/**
- * Answer an ask: record the answer and who gave it once, post it on the task,
- * and send it to the Captain. `bb captain ask resolve` and the banner both run
- * this; a rerun with the same answer only retries an undelivered send.
- * `fromThread` is the calling thread, or null for the user (the banner or a
- * terminal). Only the ask's own Captain thread may answer from a thread, and
- * never a ship ask's first answer: Merge is the user's alone. Throws a `Refusal`.
- */
+/** The refusal blocker when an ask already holds a different answer. */
 function alreadyAnsweredBlocker(ask: Ask & { answer: string }): Blocker {
   return {
     reason: `${ask.id} was already answered ${JSON.stringify(ask.answer)}`,
@@ -479,6 +472,14 @@ function alreadyAnsweredBlocker(ask: Ask & { answer: string }): Blocker {
   };
 }
 
+/**
+ * Answer an ask: record the answer and who gave it once, post it on the task,
+ * and send it to the Captain. `bb captain ask resolve` and the banner both run
+ * this; a rerun with the same answer only retries an undelivered send.
+ * `fromThread` is the calling thread, or null for the user (the banner or a
+ * terminal). Only the ask's own Captain thread may answer from a thread, and
+ * never a ship ask's first answer: Merge is the user's alone. Throws a `Refusal`.
+ */
 export async function resolveAsk(
   deps: CommandDeps,
   address: string,
@@ -517,9 +518,6 @@ export async function resolveAsk(
   }
   const answered = deps.store.ask(id);
   if (answered === null || answered.answer === null) throw new Error(`${id} lost its answer`);
-  if (answered.answer !== answer) {
-    throw new Refusal([alreadyAnsweredBlocker({ ...answered, answer: answered.answer })]);
-  }
   let state: Resolved["state"] = "answered";
   if (answered.answerDeliveredAt === null) {
     const warning = await deliverAnswer(deps, { ...answered, answer: answered.answer });
