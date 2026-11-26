@@ -4,6 +4,7 @@ import { useTasksBadge } from "./shell/badge.js";
 import { TasksNavigationPanel } from "./shell/navigation-panel.js";
 import { mountTasksPageFrame } from "./shell/page-frame.js";
 import { TaskDirectiveCard, TaskEmbedPanel } from "./views/embed/index.js";
+import { TasksThreadHeaderRow } from "./views/embed/thread-header-row.js";
 import { TasksThreadInfoSection } from "./views/embed/thread-info.js";
 
 export default definePluginApp((app) => {
@@ -24,6 +25,12 @@ export default definePluginApp((app) => {
     title: "Task",
     icon: "ListTodo",
     component: TaskEmbedPanel,
+  });
+  app.slots.experimental_threadHeaderRow({
+    id: "linked-task",
+    // Shared thread-header-row stack order: kitchen-sink (10), captain (20), scott-tasks (30).
+    order: 30,
+    component: TasksThreadHeaderRow,
   });
   app.slots.experimental_threadInfoSection({
     id: "tasks",
