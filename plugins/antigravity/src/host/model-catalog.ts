@@ -81,15 +81,25 @@ export function parseAgyModelsOutput(stdout: string): ParsedAgyModels {
   return { effortsByFamily, exactModelIds };
 }
 
+/**
+ * Models BB offers from Antigravity: Gemini 4 Neon and Carbon plus their
+ * orchestrators (`gemini-pro-orchestrator` is "Orchestrator (Carbon)").
+ * Every other model `agy` reports is dropped from the catalog.
+ */
+const VISIBLE_MODEL_IDS: ReadonlySet<string> = new Set([
+  "gemini-4-neon",
+  "gemini-4-carbon",
+  "gemini-pro-orchestrator-neon",
+  "gemini-pro-orchestrator",
+]);
+
+export function isVisibleAntigravityModel(id: string): boolean {
+  return VISIBLE_MODEL_IDS.has(splitEffortSuffix(id)?.family ?? id);
+}
+
+/** Lists Gemini 4 models before the orchestrators. */
 function modelGroupRank(id: string): number {
-  if (id.startsWith("gemini-4-")) return 0;
-  if (id.startsWith("gemini-pro-orchestrator")) return 2;
-  if (id.startsWith("gemini-")) return 1;
-  if (id.startsWith("claude-opus")) return 3;
-  if (id.startsWith("claude-sonnet")) return 4;
-  if (id.startsWith("claude-")) return 5;
-  if (id.startsWith("gpt-")) return 6;
-  return 7;
+  return id.startsWith("gemini-pro-orchestrator") ? 1 : 0;
 }
 
 function stripRedundantModeOption(model: AvailableModel): AvailableModel {
@@ -138,11 +148,13 @@ export function transformAntigravityModelCatalog(
   catalog: ModelCatalog,
   parsed: ParsedAgyModels | null,
 ): ModelCatalog {
-  const indexed = catalog.models.map((model, index) => ({
-    model: enrichModelReasoning(model, parsed),
-    rank: modelGroupRank(model.id),
-    index,
-  }));
+  const indexed = catalog.models
+    .filter((model) => isVisibleAntigravityModel(model.id))
+    .map((model, index) => ({
+      model: enrichModelReasoning(model, parsed),
+      rank: modelGroupRank(model.id),
+      index,
+    }));
   indexed.sort((left, right) => left.rank - right.rank || left.index - right.index);
 
   const models = indexed.map((entry) => entry.model);
@@ -153,10 +165,11 @@ export function transformAntigravityModelCatalog(
       ? models
       : [{ ...first, isDefault: true }, ...models.slice(1)];
 
-  const selectedOnlyModels = catalog.selectedOnlyModels.map((model) => ({
-    ...enrichModelReasoning(model, parsed),
-    isDefault: false,
-  }));
+  const selectedOnlyModels: AvailableModel[] = [];
+  for (const model of catalog.selectedOnlyModels) {
+    if (!isVisibleAntigravityModel(model.id)) continue;
+    selectedOnlyModels.push({ ...enrichModelReasoning(model, parsed), isDefault: false });
+  }
 
   return { models: normalizedModels, selectedOnlyModels };
 }

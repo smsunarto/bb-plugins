@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AvailableModel } from "@get-bb/plugin-sdk/provider-bridge";
 import {
+  isVisibleAntigravityModel,
   createModelListEnricher,
   parseAgyModelsOutput,
   transformAntigravityModelCatalog,
@@ -69,7 +70,7 @@ test("parseAgyModelsOutput parses tab-separated piped output from agy models", (
   assert.equal(parsed.exactModelIds.has("gemini-pro-orchestrator-neon"), true);
 });
 
-test("transformAntigravityModelCatalog enriches reasoning, orders families, and strips mode", () => {
+test("transformAntigravityModelCatalog keeps Neon, Carbon, and orchestrators, enriches reasoning, and strips mode", () => {
   const parsed = parseAgyModelsOutput(SAMPLE_AGY_MODELS);
   const modeOption = {
     id: "mode",
@@ -106,14 +107,7 @@ test("transformAntigravityModelCatalog enriches reasoning, orders families, and 
 
   assert.deepEqual(
     catalog.models.map((m) => m.id),
-    [
-      "gemini-4-carbon",
-      "gemini-4-neon",
-      "gemini-3.8-flash",
-      "gemini-pro-orchestrator-neon",
-      "claude-opus-5-5",
-      "gpt-oss-120b-medium",
-    ],
+    ["gemini-4-carbon", "gemini-4-neon", "gemini-pro-orchestrator-neon"],
   );
 
   const carbon = catalog.models.find((m) => m.id === "gemini-4-carbon")!;
@@ -125,14 +119,52 @@ test("transformAntigravityModelCatalog enriches reasoning, orders families, and 
   );
   assert.deepEqual(carbon.sessionOptions, []);
 
-  // Orchestrator and GPT-OSS resolve as known with no selectable efforts.
+  // The orchestrator resolves as known with no selectable efforts.
   const orchestrator = catalog.models.find((m) => m.id === "gemini-pro-orchestrator-neon")!;
   assert.equal(orchestrator.reasoningDiscovery, "known");
   assert.deepEqual(orchestrator.supportedReasoningEfforts, []);
+});
 
-  const gpt = catalog.models.find((m) => m.id === "gpt-oss-120b-medium")!;
-  assert.equal(gpt.reasoningDiscovery, "known");
-  assert.deepEqual(gpt.supportedReasoningEfforts, []);
+test("transformAntigravityModelCatalog hides every model except Neon, Carbon, and their orchestrators", () => {
+  const ids = [
+    "gemini-4-neon",
+    "gemini-4-carbon",
+    "gemini-4-argon",
+    "gemini-4-hydrogen",
+    "gemini-3.8-flash",
+    "gemini-pro-orchestrator-neon",
+    "gemini-pro-orchestrator",
+    "gemini-pro-orchestrator-argon",
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "gpt-oss-120b-medium",
+  ];
+  const catalog = transformAntigravityModelCatalog(
+    {
+      models: ids.map((id) => makeModel({ id, isDefault: id === "gemini-4-argon" })),
+      selectedOnlyModels: [
+        makeModel({ id: "claude-opus-5-5" }),
+        makeModel({ id: "gemini-4-neon-high" }),
+      ],
+    },
+    null,
+  );
+
+  assert.deepEqual(
+    catalog.models.map((m) => m.id),
+    ["gemini-4-neon", "gemini-4-carbon", "gemini-pro-orchestrator-neon", "gemini-pro-orchestrator"],
+  );
+  // A hidden default hands the default to the first visible model.
+  assert.deepEqual(
+    catalog.models.filter((m) => m.isDefault).map((m) => m.id),
+    ["gemini-4-neon"],
+  );
+  assert.deepEqual(
+    catalog.selectedOnlyModels.map((m) => m.id),
+    ["gemini-4-neon-high"],
+  );
+  assert.equal(isVisibleAntigravityModel("gemini-4-carbon-high"), true);
+  assert.equal(isVisibleAntigravityModel("gemini-4-argon"), false);
 });
 
 test("createModelListEnricher intercepts and enriches matching model/list responses", async () => {
