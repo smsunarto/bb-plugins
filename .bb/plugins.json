@@ -16,6 +16,10 @@
       "source": "./plugins/agent-instructions"
     },
     {
+      "name": "antigravity",
+      "source": "./plugins/antigravity"
+    },
+    {
       "name": "devin",
       "source": "./plugins/devin"
     },

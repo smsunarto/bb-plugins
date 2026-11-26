@@ -297,6 +297,20 @@
         "vaul": "^1.1.2",
       },
     },
+    "plugins/antigravity": {
+      "name": "@smsunarto/bb-plugin-antigravity",
+      "version": "0.1.0",
+      "dependencies": {
+        "@get-bb/plugin-sdk": "0.6.157",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@types/node": "^22.0.0",
+        "bun-types": "^1.4.0",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/at-plugin": {
       "name": "@smsunarto/bb-plugin-at-plugin",
       "version": "0.1.0",
@@ -1609,6 +1623,8 @@
     "@smsunarto/bb-plugin-agent-instructions": ["@smsunarto/bb-plugin-agent-instructions@workspace:plugins/agent-instructions"],
 
     "@smsunarto/bb-plugin-agentation": ["@smsunarto/bb-plugin-agentation@workspace:plugins/agentation"],
+
+    "@smsunarto/bb-plugin-antigravity": ["@smsunarto/bb-plugin-antigravity@workspace:plugins/antigravity"],
 
     "@smsunarto/bb-plugin-at-plugin": ["@smsunarto/bb-plugin-at-plugin@workspace:plugins/at-plugin"],
 
