@@ -100,18 +100,6 @@ licences travel with bb, not with this plugin.
 
 ---
 
-## Trademarks and brand marks
-
-The provider icons depict third-party brands. bb draws them through
-`experimental_ProviderIcon`; this package ships none of their artwork. Each mark
-belongs to its owner.
-
-**No licence above grants trademark rights**, and none is claimed here. The marks
-identify the agent a user has chosen to run, which is nominative use. They are drawn
-in one muted tint rather than in brand color.
-
----
-
 ## MIT License
 
 The following text applies to every entry above, together with that entry's own

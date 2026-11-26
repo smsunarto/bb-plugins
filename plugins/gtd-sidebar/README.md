@@ -122,8 +122,7 @@ lead with a globe in their machine's colour instead.
 
 One line: the title in bold when unread, activity counts, and a status slot. The status slot shows what the thread needs — failed, waiting on you,
 working, or finished while you were away — and its age (`now`, `7m`, `3d`) when it
-needs nothing. Hovering swaps that slot for the park buttons. Resting on a row
-shows its project, branch, machine, and agent.
+needs nothing. Hovering swaps that slot for the park buttons.
 
 Other plugins' row badges, such as GitHub PR Status's pull request number, sit
 under the title as chips. They show while bb's Thread row metadata experiment is
@@ -286,7 +285,7 @@ services. The explicit naming command below is a separate user-requested inferen
   for automatic naming. We retain the original keys and use SDK effective
   values. We do not infer consent from a token or existing data.
 - Previously implicit defaults for automatic naming become **off**.
-  GitButler branch lookups and haptics now require an explicit opt-in.
+  Mobile haptics also require an explicit opt-in.
   No migration writes `true` on an existing or new installation.
 - Thread rows are always one line with no hover tooltip card. The former
   `compactThreads`, `showProviderIcon`, and `gitButlerBranches` settings are
@@ -333,9 +332,6 @@ from bb's forkable built-in Thread list (`plugins/thread-list`) and its componen
 registry at `desktop-v0.44.0` (`0baa605b32a00619c1d7e3f32be6553ebcf8244a`). GTD
 Sidebar is not a fork of that plugin: its t3sidebar lineage has no upstream to merge
 from, so features are ported one at a time.
-
-Provider icons are bb's own artwork, drawn through `experimental_ProviderIcon`
-in one muted tint rather than in brand color — by design.
 
 ## Develop from source
 

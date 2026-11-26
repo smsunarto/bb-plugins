@@ -536,8 +536,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   }
 
   /**
-   * Focus as a key press moves it. A row's details open on keyboard focus
-   * only, judged by the last input, so the press comes first.
+   * Focus as a key press moves it. Tooltips open on keyboard focus only,
+   * judged by the last input, so the press comes first.
    */
   function keyboardFocus(element: HTMLElement) {
     fireEvent.keyDown(document.body, { key: "Tab" });
@@ -1952,7 +1952,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       ["", [], ["remote"]],
       ["remote-host", ["primary"], ["primary"]],
     ])(
-      "names only machines other than bb's primary host or localMachineId=%p",
+      "draws a globe only on machines other than bb's primary host or localMachineId=%p",
       async (localMachineId, firstPaint, globed) => {
         const host = hostState([
           thread("primary", { host: { id: "primary-host", name: "Primary computer" } }),
@@ -1968,26 +1968,56 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       },
     );
 
-    it("shows no hover or focus tooltip on any thread row while keeping action-button tooltips", async () => {
+    it("shows no hover, focus, or native title tooltip on any thread row while keeping action-button tooltips", async () => {
       const host = {
         ...hostState([
           thread("pinned", { isPinned: true }),
           thread("root"),
           thread("child", { parentThreadId: "root" }),
+          thread("grouped", { projectId: "two" }),
           thread("captain", { originPluginId: "captain" }),
+          thread("crew", { parentThreadId: "captain" }),
           thread("snoozed"),
           settledThread("settled"),
         ]),
         lifecycle: lifecycle(["snoozed"]),
       };
       const view = mount(host);
+      // Two projects are in view, so project groups render and Settled groups start folded.
+      assert.ok(view.slot.getByRole("button", { name: /^Two project/ }));
       expandParked(view.slot);
-      for (const id of ["pinned", "root", "child", "captain", "snoozed", "settled"]) {
+      fireEvent.click(
+        within(view.slot.getByRole("region", { name: "Settled" })).getByRole("button", {
+          name: /^One project/,
+        }),
+      );
+      for (const id of [
+        "pinned",
+        "root",
+        "child",
+        "grouped",
+        "captain",
+        "crew",
+        "snoozed",
+        "settled",
+      ]) {
         const anchor = row(view.slot, id);
+        assert.equal(anchor.getAttribute("title"), null, `unexpected title attribute on row ${id}`);
+        assert.equal(
+          anchor.closest("[data-gtd-row]")?.querySelector("[title]") ?? null,
+          null,
+          `unexpected descendant title attribute on row ${id}`,
+        );
+        // Wait past Radix TooltipProvider's 700ms default open delay.
+        fireEvent.pointerEnter(anchor);
         fireEvent.pointerMove(anchor);
+        await act(async () => new Promise((resolve) => setTimeout(resolve, 750)));
+        assert.equal(screen.queryByRole("tooltip"), null, `unexpected hover tooltip on row ${id}`);
+        fireEvent.pointerLeave(anchor);
+
         keyboardFocus(anchor);
         await act(async () => {});
-        assert.equal(screen.queryByRole("tooltip"), null, `unexpected tooltip on row ${id}`);
+        assert.equal(screen.queryByRole("tooltip"), null, `unexpected focus tooltip on row ${id}`);
         act(() => anchor.blur());
       }
       // Action buttons keep their own tooltips.
