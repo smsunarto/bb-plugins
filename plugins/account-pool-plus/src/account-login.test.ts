@@ -193,6 +193,8 @@ async function startPool(providers: FakeProviders) {
     codexUpstreamBaseUrl: UPSTREAM,
   });
   await createAccountPoolPlugin({
+    // A thread routed through Account Pooler exports parent-pool variables; ignore them.
+    env: {},
     fetch: providers.fetch,
     refreshUrl: `${AUTH}/token`,
     usageUrl: `${AUTH}/usage`,
