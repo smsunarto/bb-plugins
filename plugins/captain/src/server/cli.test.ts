@@ -7,6 +7,7 @@ import type { CommandDeps } from "./commands/deps.ts";
 import { parseDuration } from "./commands/routine.ts";
 import {
   captainHost,
+  clearRoutines,
   MAC_HOST,
   newCaptain,
   queuedRow,
@@ -213,6 +214,58 @@ describe("bb captain new", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toMatch(/warning: push level of thr_\w+ not set to input-only/u);
+  });
+
+  test("seeds Backlog grooming (09:00) and Drive sweep (09:30) daily routines on a new Captain", async () => {
+    const host = await captainHost({ defaultTimezone: "America/Los_Angeles" });
+
+    const captainId = await newCaptain(host);
+    const listed = await run(host, ["routine", "list", "--json"], captainId);
+    expect(listed.exitCode).toBe(0);
+    expect(json(listed.stdout).results).toMatchObject([
+      {
+        name: "Backlog grooming",
+        state: "active",
+        when: "Every day at 9:00 AM",
+        schedule: { cron: "0 9 * * *", timezone: "America/Los_Angeles" },
+        enabled: true,
+      },
+      {
+        name: "Drive sweep",
+        state: "active",
+        when: "Every day at 9:30 AM",
+        schedule: { cron: "30 9 * * *", timezone: "America/Los_Angeles" },
+        enabled: true,
+      },
+    ]);
+
+    // Removing a default and rerunning `new` keeps the removed default absent.
+    const removed = await run(host, ["routine", "remove", "Drive sweep"], captainId);
+    expect(removed.exitCode).toBe(0);
+    const rerun = await run(host, ["new", "--name", "Plugins", "--repo", "bb-plugins"]);
+    expect(rerun.exitCode).toBe(0);
+    const afterRerun = json((await run(host, ["routine", "list", "--json"], captainId)).stdout);
+    expect(afterRerun.results.map((r) => r["name"])).toEqual(["Backlog grooming"]);
+  });
+
+  test("Automations being down during new warns instead of failing and leaves seeding pending", async () => {
+    const host = await captainHost({ defaultTimezone: "UTC" });
+    host.automations.down = true;
+
+    const result = await run(host, ["new", "--name", "Plugins", "--repo", "bb-plugins"]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("warning: default routine");
+    const captainId = result.stdout.trim().split(/\s{2,}/u)[0] ?? "";
+    expect(host.server.store.defaultRoutinesSeeded(captainId)).toBe(false);
+    expect(host.server.store.routinesOf(captainId)).toEqual([]);
+
+    host.automations.down = false;
+    await host.server.routines.maintain();
+    expect(host.server.store.defaultRoutinesSeeded(captainId)).toBe(true);
+    expect(host.server.store.routinesOf(captainId).map((r) => r.name)).toEqual([
+      "Backlog grooming",
+      "Drive sweep",
+    ]);
   });
 });
 
@@ -544,6 +597,7 @@ describe("bb captain routine", () => {
   async function routineCli() {
     const host = await captainHost();
     const captainId = await newCaptain(host);
+    clearRoutines(host, captainId);
     const prompt = join(host.root, "sweep.md");
     writeFileSync(prompt, "Run bb captain status --all and nudge stalled crew.");
     return { host, captainId, prompt };

@@ -7,6 +7,10 @@ description: Set, change, test, pause or remove a Captain routine, a message tha
 
 A routine is a scheduled message to you. bb Automations holds the schedule; each run wakes this thread with the instruction, and you handle it as any wake. Set one only when the user asks in this thread.
 
+## Built-in defaults
+
+Every Captain starts with two daily routines in the bb server's time zone: **Backlog grooming** (`0 9 * * *`, 09:00) and **Drive sweep** (`30 9 * * *`, 09:30). They are ordinary routines — pause, change, or remove them like any other, and a removed default never comes back.
+
 ## Set one up
 
 1. Write the instruction to a file, such as `briefs/routine-<name>.md` in your Drive. Write it as a standalone request: what to do on each run and what to reply. Keep it under 4000 characters.

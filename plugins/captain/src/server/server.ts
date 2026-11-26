@@ -21,6 +21,8 @@ import { createTasksClient } from "./tasks-client.ts";
 export type StartOptions = {
   captainsDir?: string;
   now?: () => number;
+  /** The server machine's time zone for default routines and one-shots; tests override it. */
+  defaultTimezone?: string;
   /** How long a Tasks call may take; tests shorten it. */
   tasksDeadlineMs?: number;
   /** How long one routine maintenance item runs before Captain warns; tests shorten it. */
@@ -56,7 +58,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     ...(options.threadDeadlineMs === undefined
       ? {}
       : { threadDeadlineMs: options.threadDeadlineMs }),
-    defaultTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    defaultTimezone: options.defaultTimezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
   const deps: CommandDeps = {
     bb,
@@ -122,6 +124,11 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     (warnings) => void warnings.forEach((warning) => bb.log.warn(warning)),
     (error: unknown) => bb.log.warn(`Captain titles not checked: ${(error as Error).message}`),
   );
+  // Existing Captains without built-in daily routines get them once; maintenance retries if Automations is not up yet.
+  const defaultsReady = routines.backfillDefaults().then(
+    ({ warnings }) => void warnings.forEach((warning) => bb.log.warn(warning)),
+    (error: unknown) => bb.log.warn(`default routines not seeded yet: ${(error as Error).message}`),
+  );
   return {
     store,
     registry,
@@ -133,6 +140,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     fieldsReady,
     audienceReady,
     titlesReady,
+    defaultsReady,
     /** The one-time task-owner backfill; it logs its own failure and never rejects. */
     ownersReady,
   };

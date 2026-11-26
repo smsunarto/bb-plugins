@@ -264,6 +264,8 @@ export const NOTICE = {
   answerHealth: (askId: string) => `health:answer:${askId}`,
   /** The one-time backfill of `task_owners`, marked sent once it ran to the end. */
   ownerBackfill: "owner-backfill",
+  /** A Captain's built-in daily routines seeded once; a removed default never comes back. */
+  defaultRoutines: (threadId: string) => `default-routines:${threadId}`,
 } as const;
 
 /** Later and Skip on a banner row. */
@@ -725,6 +727,13 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     },
     setTaskOwnerBackfilled(at: number): void {
       this.markNoticeSent(NOTICE.ownerBackfill, at);
+    },
+    /** Whether a Captain's built-in default routines were seeded once: a `notices` marker. */
+    defaultRoutinesSeeded(captainId: string): boolean {
+      return this.noticeSentAt(NOTICE.defaultRoutines(captainId)) !== null;
+    },
+    markDefaultRoutinesSeeded(captainId: string, at: number): void {
+      this.markNoticeSent(NOTICE.defaultRoutines(captainId), at);
     },
     /** Drop a Captain's ownership of a task; false when it had none. */
     releaseTaskOwner(captainId: string, taskId: string): boolean {

@@ -12,7 +12,7 @@ import { routinesTag } from "../contract/routines.ts";
 import { ROUTINE_ENV } from "./automations-client.ts";
 import { ANSWER_MAX_ATTEMPTS } from "./asks.ts";
 import { NOTICE } from "./store.ts";
-import { deferred, captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
+import { captainHost, clearRoutines, deferred, newCaptain, type CaptainHost } from "./test-host.ts";
 
 type Items = { items: Record<string, unknown>[] };
 
@@ -388,6 +388,7 @@ describe("the Overview's routines", () => {
   async function routinesHost() {
     const host = await captainHost();
     const captainId = await newCaptain(host);
+    clearRoutines(host, captainId);
     const rpc = (method: string, input: unknown) => host.harness.behavior.callRpc(method, input);
     const list = async () =>
       (

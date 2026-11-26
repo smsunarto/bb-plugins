@@ -16,6 +16,7 @@ import {
   type Schedule,
 } from "../contract/routines.ts";
 import { isMissing, type AutomationsClient, type AutomationTarget } from "./automations-client.ts";
+import { seedCaptainDefaults, type SeedResult } from "./default-routines.ts";
 import { Refusal } from "./output.ts";
 import type { Cleanup, Store } from "./store.ts";
 
@@ -64,6 +65,7 @@ export function wakeToken(routineId: string): string {
 }
 
 export type FireResult = { state: "sent" | "queued" | "skipped"; run: RoutineRun };
+export type { SeedResult };
 
 export type Routines = ReturnType<typeof createRoutines>;
 
@@ -103,6 +105,7 @@ export function createRoutines(deps: RoutinesDeps) {
   const { bb, store, automations } = deps;
   let reconciled = false;
   let reconcileWarned = false;
+  let backfillWarned = false;
 
   const locks = new Map<string, Promise<unknown>>();
   /** One operation at a time per key; a failed one does not block the next. */
@@ -891,10 +894,78 @@ export function createRoutines(deps: RoutinesDeps) {
     );
   }
 
+  const seedDeps = {
+    store,
+    files: deps.files,
+    now: deps.now,
+    timezone: deps.defaultTimezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+    isDisposed: () => disposed,
+    isLiveInStore: (captainId: string) => {
+      const live = store.captain(captainId);
+      return (
+        !removing.has(captainId) &&
+        !archived.has(captainId) &&
+        live !== null &&
+        live.archivedAt === null
+      );
+    },
+    getThread: (threadId: string) =>
+      bounded(bb.sdk.threads.get({ threadId }), "reading the Captain"),
+    createRoutine: (captain: RoutineOwner, fields: RoutineFields) => create(captain, fields),
+  };
+
   /**
-   * One maintenance pass, off the crew check: reconcile until it has run,
-   * then retry queued cleanup. Each part runs with bounded concurrency, and
-   * its failure skips only itself. Returns whether work is left.
+   * Seed the built-in daily routines for one Captain once. Already-seeded
+   * Captains are left alone, so a default the user removed never returns.
+   */
+  async function seedDefaults(captain: RoutineOwner): Promise<SeedResult> {
+    if (disposed) return { complete: false, created: [], warnings: [] };
+    if (store.defaultRoutinesSeeded(captain.threadId)) {
+      return { complete: true, created: [], warnings: [] };
+    }
+    return serial(`seed:${captain.threadId}`, () => seedCaptainDefaults(seedDeps, captain));
+  }
+
+  /**
+   * Seed built-in daily routines for every live Captain that has not been
+   * seeded yet. Idempotent: seeded Captains are skipped with no remote calls.
+   */
+  async function backfillDefaults(
+    signal?: AbortSignal,
+  ): Promise<{ complete: boolean; warnings: string[] }> {
+    const stopped = () => signal?.aborted === true || disposed;
+    if (stopped()) return { complete: false, warnings: [] };
+    const unseeded = store
+      .liveCaptains()
+      .filter((captain) => !store.defaultRoutinesSeeded(captain.threadId));
+    if (unseeded.length === 0) {
+      backfillWarned = false;
+      return { complete: true, warnings: [] };
+    }
+    let complete = true;
+    const warnings: string[] = [];
+    for (const captain of unseeded) {
+      if (stopped()) {
+        complete = false;
+        break;
+      }
+      const result = await seedDefaults({
+        threadId: captain.threadId,
+        name: captain.name,
+        homeProjectId: captain.homeProjectId,
+      });
+      if (!result.complete) complete = false;
+      warnings.push(...result.warnings);
+    }
+    if (complete) backfillWarned = false;
+    return { complete, warnings };
+  }
+
+  /**
+   * One maintenance pass, off the crew check: seed any unseeded Captains'
+   * defaults, reconcile until it has run, then retry queued cleanup. Each part
+   * runs with bounded concurrency, and its failure skips only itself. Returns
+   * whether work is left.
    */
   async function maintain(signal?: AbortSignal): Promise<{ pending: boolean }> {
     const step = async (name: string, work: () => Promise<unknown>) => {
@@ -905,9 +976,18 @@ export function createRoutines(deps: RoutinesDeps) {
         bb.log.warn(`routine maintenance: ${name} skipped: ${message(error)}`);
       }
     };
+    let defaultsComplete = true;
+    await step("defaults", async () => {
+      const result = await backfillDefaults(signal);
+      defaultsComplete = result.complete;
+      if (result.warnings.length > 0 && !backfillWarned) {
+        for (const warning of result.warnings) bb.log.warn(warning);
+        if (!result.complete) backfillWarned = true;
+      }
+    });
     await step("reconcile", () => reconcile(signal));
     await step("cleanup", () => drainCleanup(signal));
-    return { pending: !reconciled || store.cleanups().length > 0 };
+    return { pending: !defaultsComplete || !reconciled || store.cleanups().length > 0 };
   }
 
   /**
@@ -980,6 +1060,8 @@ export function createRoutines(deps: RoutinesDeps) {
     fire,
     pauseCaptain,
     removeCaptain,
+    seedDefaults,
+    backfillDefaults,
     reconcile,
     maintain,
     /** Register the maintenance service and the bb events that pause or remove a Captain's routines. */

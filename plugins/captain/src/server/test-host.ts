@@ -121,6 +121,8 @@ export type FakeOptions = {
   driveScanMs?: number;
   /** How often a watched Overview rechecks Tasks. */
   tasksPollMs?: number;
+  /** Override the bb server's time zone for default routines. */
+  defaultTimezone?: string;
 };
 
 /** One provider as bb's `providers.list` reports it, in the fields Captain reads. */
@@ -959,6 +961,7 @@ export async function captainHost(options: FakeOptions = {}) {
   const startOptions = {
     captainsDir,
     now: () => clock,
+    ...(options.defaultTimezone === undefined ? {} : { defaultTimezone: options.defaultTimezone }),
     tasksDeadlineMs: options.tasksDeadlineMs ?? 500,
     ...(options.maintenanceDeadlineMs === undefined
       ? {}
@@ -974,6 +977,7 @@ export async function captainHost(options: FakeOptions = {}) {
   await server.ready;
   await server.fieldsReady;
   await server.audienceReady;
+  await server.defaultsReady;
   await server.ownersReady;
 
   /**
@@ -991,6 +995,7 @@ export async function captainHost(options: FakeOptions = {}) {
       server = await start(bb, startOptions);
       await server.ready;
       await server.audienceReady;
+      await server.defaultsReady;
     });
   }
   /** Every `bb.log` line of the current plugin instance. */
@@ -1129,4 +1134,20 @@ export async function newCaptain(
   const id = parsed.results[0]?.id;
   if (id === undefined) throw new Error("captain new printed no id");
   return id;
+}
+
+/**
+ * Remove seeded routines for a test Captain so unit tests of routine CRUD,
+ * limits, and reconciliation start from an empty routine table (keeping the
+ * Captain marked seeded so reloads do not recreate them).
+ */
+export function clearRoutines(host: CaptainHost, captainId: string): void {
+  for (const routine of host.server.store.routinesOf(captainId)) {
+    if (routine.automationId !== null) host.automations.rows.delete(routine.automationId);
+    host.server.store.deleteRoutine(routine.id);
+  }
+  if (host.server.store.allRoutines().length === 0) {
+    host.bb.storage.database().prepare("DELETE FROM sqlite_sequence WHERE name = 'routines'").run();
+  }
+  host.automations.calls.length = 0;
 }

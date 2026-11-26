@@ -1,10 +1,16 @@
-import { routinesTag } from "../contract/routines.ts";
+import {
+  ROUTINE_INSTRUCTION_MAX,
+  ROUTINES_PER_CAPTAIN,
+  routineFieldsSchema,
+  routinesTag,
+} from "../contract/routines.ts";
 import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, test } from "vitest";
 import { ROUTINE_ENV, ROUTINE_SCRIPT } from "./automations-client.ts";
+import { DEFAULT_ROUTINES } from "./default-routines.ts";
 import { Refusal } from "./output.ts";
 import type { RoutineOwner } from "./routines.ts";
-import { deferred, captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
+import { captainHost, clearRoutines, deferred, newCaptain, type CaptainHost } from "./test-host.ts";
 
 const SWEEP = {
   name: "Stalled crew sweep",
@@ -18,6 +24,7 @@ async function routineHost() {
 
 async function ownerOf(host: CaptainHost) {
   const captainId = await newCaptain(host);
+  clearRoutines(host, captainId);
   const row = host.server.store.captain(captainId);
   if (row === null) throw new Error("no Captain row");
   const owner: RoutineOwner = {
@@ -838,6 +845,198 @@ describe("deletes, names and maintenance limits", () => {
     open();
     expect((await pass).pending).toBe(true);
     expect(host.automations.rows.size).toBe(4);
+  });
+});
+
+describe("default daily routines", () => {
+  function seedPreexistingCaptain(host: CaptainHost, threadId: string, name: string) {
+    host.addThread({ id: threadId, projectId: "proj_captains", title: name });
+    host.server.store.putCaptain({
+      threadId,
+      name,
+      homeProjectId: "proj_captains",
+      createdAt: host.now(),
+      repos: [{ bbProjectId: "proj_plugins", tasksProjectKey: "BBPLUGINS" }],
+    });
+  }
+
+  test("backfill seeds both daily defaults on an existing Captain with no routines", async () => {
+    const host = await captainHost({ defaultTimezone: "America/Los_Angeles" });
+    seedPreexistingCaptain(host, "thr_existing", "Existing");
+
+    expect(host.server.store.defaultRoutinesSeeded("thr_existing")).toBe(false);
+    const result = await host.server.routines.backfillDefaults();
+    expect(result).toEqual({ complete: true, warnings: [] });
+    expect(host.server.store.defaultRoutinesSeeded("thr_existing")).toBe(true);
+
+    const routines = host.server.store.routinesOf("thr_existing");
+    expect(routines.map((r) => ({ name: r.name, schedule: r.schedule }))).toEqual([
+      {
+        name: "Backlog grooming",
+        schedule: { cron: "0 9 * * *", timezone: "America/Los_Angeles" },
+      },
+      { name: "Drive sweep", schedule: { cron: "30 9 * * *", timezone: "America/Los_Angeles" } },
+    ]);
+    expect(host.automations.rows.size).toBe(2);
+    for (const routine of routines) {
+      expect(routine.automationId).not.toBeNull();
+      expect(host.automations.rows.get(routine.automationId as string)?.enabled).toBe(true);
+    }
+  });
+
+  test("backfill runs on plugin start/reload for existing Captains", async () => {
+    const host = await captainHost({ defaultTimezone: "Europe/Berlin" });
+    seedPreexistingCaptain(host, "thr_legacy", "Legacy");
+
+    await host.reload();
+
+    const routines = host.server.store.routinesOf("thr_legacy");
+    expect(routines.map((r) => [r.name, r.schedule])).toEqual([
+      ["Backlog grooming", { cron: "0 9 * * *", timezone: "Europe/Berlin" }],
+      ["Drive sweep", { cron: "30 9 * * *", timezone: "Europe/Berlin" }],
+    ]);
+    expect(host.server.store.defaultRoutinesSeeded("thr_legacy")).toBe(true);
+  });
+
+  test("backfill skips a default whose name already exists and running twice adds nothing", async () => {
+    const host = await captainHost({ defaultTimezone: "UTC" });
+    seedPreexistingCaptain(host, "thr_existing", "Existing");
+    const owner: RoutineOwner = {
+      threadId: "thr_existing",
+      name: "Existing",
+      homeProjectId: "proj_captains",
+    };
+    const custom = await host.server.routines.create(owner, {
+      name: "backlog grooming",
+      instruction: "My custom grooming routine.",
+      schedule: { cron: "0 11 * * 1", timezone: "Europe/London" },
+    });
+
+    const first = await host.server.routines.backfillDefaults();
+    expect(first).toEqual({ complete: true, warnings: [] });
+
+    const afterFirst = host.server.store.routinesOf("thr_existing");
+    expect(afterFirst).toHaveLength(2);
+    expect(afterFirst.find((r) => r.id === custom.id)).toMatchObject({
+      name: "backlog grooming",
+      instruction: "My custom grooming routine.",
+      schedule: { cron: "0 11 * * 1", timezone: "Europe/London" },
+    });
+    expect(afterFirst.find((r) => r.name === "Drive sweep")).toMatchObject({
+      schedule: { cron: "30 9 * * *", timezone: "UTC" },
+    });
+
+    const callsBeforeSecond = host.automations.calls.length;
+    const second = await host.server.routines.backfillDefaults();
+    expect(second).toEqual({ complete: true, warnings: [] });
+    expect(host.server.store.routinesOf("thr_existing")).toHaveLength(2);
+    expect(host.automations.calls.length).toBe(callsBeforeSecond);
+  });
+
+  test("a removed default is not recreated by a later backfill or plugin reload", async () => {
+    const host = await captainHost({ defaultTimezone: "UTC" });
+    const captainId = await newCaptain(host);
+    const grooming = host.server.store.findRoutine(captainId, "Backlog grooming");
+    expect(grooming).not.toBeNull();
+
+    await host.server.routines.act(grooming!, "delete");
+    expect(host.server.store.routinesOf(captainId).map((r) => r.name)).toEqual(["Drive sweep"]);
+
+    expect(await host.server.routines.backfillDefaults()).toEqual({ complete: true, warnings: [] });
+    await host.reload();
+    await host.server.routines.maintain();
+
+    expect(host.server.store.routinesOf(captainId).map((r) => r.name)).toEqual(["Drive sweep"]);
+    expect(host.server.store.findRoutine(captainId, "Backlog grooming")).toBeNull();
+  });
+
+  test("if Automations is down during seeding, maintenance retries without duplicating", async () => {
+    const host = await captainHost({ defaultTimezone: "UTC" });
+    seedPreexistingCaptain(host, "thr_existing", "Existing");
+    // Fail the second create to verify partial-failure recovery without duplicating the first.
+    let creates = 0;
+    const origCall = host.automations.call;
+    host.automations.call = async (method, input) => {
+      if (method === "automations_create" && ++creates === 2) {
+        throw new Error("plugin automations is not running");
+      }
+      return origCall(method, input);
+    };
+
+    const first = await host.server.routines.backfillDefaults();
+    expect(first.complete).toBe(false);
+    expect(first.warnings).toHaveLength(1);
+    expect(host.server.store.defaultRoutinesSeeded("thr_existing")).toBe(false);
+    expect(host.server.store.routinesOf("thr_existing").map((r) => r.name)).toEqual([
+      "Backlog grooming",
+    ]);
+
+    host.automations.call = origCall;
+    const maintenance = await host.server.routines.maintain();
+    expect(maintenance.pending).toBe(false);
+    expect(host.server.store.defaultRoutinesSeeded("thr_existing")).toBe(true);
+    expect(host.server.store.routinesOf("thr_existing").map((r) => r.name)).toEqual([
+      "Backlog grooming",
+      "Drive sweep",
+    ]);
+    expect(host.automations.rows.size).toBe(2);
+  });
+
+  test("backfill skips a deleted Captain quietly and stops cleanly at the 20-routine cap", async () => {
+    const host = await captainHost({ defaultTimezone: "UTC" });
+    // Deleted thread: exists in store, absent in bb.
+    host.server.store.putCaptain({
+      threadId: "thr_gone",
+      name: "Gone",
+      homeProjectId: "proj_captains",
+      createdAt: host.now(),
+      repos: [],
+    });
+    // Full Captain: already has 20 custom routines.
+    seedPreexistingCaptain(host, "thr_full", "Full");
+    const fullOwner: RoutineOwner = {
+      threadId: "thr_full",
+      name: "Full",
+      homeProjectId: "proj_captains",
+    };
+    for (let i = 0; i < ROUTINES_PER_CAPTAIN; i += 1) {
+      await host.server.routines.create(fullOwner, { ...SWEEP, name: `Custom ${i}` });
+    }
+
+    const result = await host.server.routines.backfillDefaults();
+    expect(result.complete).toBe(true);
+    expect(result.warnings).toHaveLength(DEFAULT_ROUTINES.length);
+    expect(host.server.store.defaultRoutinesSeeded("thr_gone")).toBe(true);
+    expect(host.server.store.defaultRoutinesSeeded("thr_full")).toBe(true);
+    expect(host.server.store.routinesOf("thr_gone")).toEqual([]);
+    expect(host.server.store.routinesOf("thr_full")).toHaveLength(ROUTINES_PER_CAPTAIN);
+  });
+
+  test("default routine prompts are valid, standalone, under 4000 chars, and cover required rules", async () => {
+    const host = await captainHost();
+    for (const spec of DEFAULT_ROUTINES) {
+      const instruction = host.server.files.read(spec.instructionFile);
+      expect(instruction.length).toBeGreaterThan(0);
+      expect(instruction.length).toBeLessThanOrEqual(ROUTINE_INSTRUCTION_MAX);
+      expect(
+        routineFieldsSchema.safeParse({
+          name: spec.name,
+          instruction,
+          schedule: { cron: spec.cron, timezone: "UTC" },
+        }).success,
+      ).toBe(true);
+    }
+    const grooming = host.server.files.read("routines/backlog-grooming");
+    expect(grooming).toContain("Backlog clean");
+    expect(grooming).toMatch(/never dispatch crew/iu);
+    expect(grooming).toContain("bb captain ask");
+
+    const sweep = host.server.files.read("routines/drive-sweep");
+    expect(sweep).toContain("Drive clean");
+    expect(sweep).toContain("NOTES.md");
+    expect(sweep).toContain("archive/");
+    expect(sweep).toContain("crew/");
+    expect(sweep).toMatch(/never edit `CAPTAIN\.md`/iu);
   });
 });
 
