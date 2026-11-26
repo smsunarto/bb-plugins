@@ -773,3 +773,30 @@ test("Fix says so when the checks moved, and starts nothing", async () => {
   expect(fireEvent.keyDown(document.body, { key: "Escape" })).toBe(false);
   expect(slot.queryByTestId("sc-fix-dialog")).toBeNull();
 });
+
+test("the sidebar omits the Changes heading, keeps the account picker, and stretches filters evenly", async () => {
+  const slot = render({
+    pageSources: () => ({
+      ...SOURCES,
+      accounts: [
+        { login: "smsunarto", active: true },
+        { login: "sms-yui", active: false },
+      ],
+    }),
+    inbox: () => ({
+      smsunarto: read([row("scott/one")]),
+      "sms-yui": read([]),
+    }),
+  });
+  await waitFor(() => expect(navRows(slot)).toHaveLength(1));
+  const nav = slot.getByTestId("sc-changes-nav");
+  expect(nav.querySelector("h2")).toBeNull();
+  expect(slot.getByTestId("sc-account-picker").textContent).toContain("All accounts");
+  const group = nav.querySelector("[data-slot=toggle-group]");
+  expect(group?.className).toContain("w-full");
+  for (const id of ["all", "mine", "asked"]) {
+    const item = slot.getByTestId(`sc-filter-${id}`);
+    expect(item.className).toContain("flex-1");
+    expect(item.className).toContain("basis-0");
+  }
+});

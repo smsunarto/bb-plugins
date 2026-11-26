@@ -379,7 +379,7 @@ function Filters({ counts, variant }: { counts: Record<Filter, number>; variant:
         if (next) chooseFilter(next);
       }}
       className={cx(
-        "flex min-w-0 gap-0 bg-surface-raised p-1",
+        "flex w-full min-w-0 gap-0 bg-surface-raised p-1",
         phone ? "rounded-lg" : "rounded-md",
       )}
     >
@@ -390,7 +390,7 @@ function Filters({ counts, variant }: { counts: Record<Filter, number>; variant:
             value={option.id}
             data-testid={`sc-filter-${option.id}`}
             className={cx(
-              "h-auto min-w-0 flex-1",
+              "h-auto min-w-0 flex-1 shrink basis-0",
               phone
                 ? "rounded-md py-2 text-[14px] leading-5"
                 : "rounded-sm py-1 text-[12px] leading-4",
@@ -716,21 +716,18 @@ export function ChangesList({
           phone ? "px-5 pt-2 pb-3" : "sticky top-0 z-10 bg-sidebar px-4 pt-4 pb-3",
         )}
       >
-        <div
-          className={cx("flex justify-between gap-2", phone ? "items-baseline" : "items-center")}
-        >
-          <h2
-            className={cx(
-              "m-0 text-foreground",
-              phone
-                ? "text-[28px] leading-8.5 font-bold tracking-[-0.02em]"
-                : "text-[13px] leading-5 font-semibold",
-            )}
-          >
-            Changes
-          </h2>
-          <AccountPicker sources={sources.sources} variant={variant} />
-        </div>
+        {phone ? (
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="m-0 text-[28px] leading-8.5 font-bold tracking-[-0.02em] text-foreground">
+              Changes
+            </h2>
+            <AccountPicker sources={sources.sources} variant={variant} />
+          </div>
+        ) : (sources.sources?.accounts.length ?? 0) > 0 ? (
+          <div className="flex items-center">
+            <AccountPicker sources={sources.sources} variant={variant} />
+          </div>
+        ) : null}
         <Filters counts={merged.counts} variant={variant} />
       </div>
       {/* bb's sidebar scrolls this list; on a phone page, and in a phone drawer that the nav
