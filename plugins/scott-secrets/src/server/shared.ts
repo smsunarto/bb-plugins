@@ -17,8 +17,23 @@ export function cliError(message: string, code: string, hint?: string): never {
   throw new PluginCliError(message, { code, ...(hint === undefined ? {} : { hint }) });
 }
 
+function sliceUtf16Head(value: string, maxChars: number): string {
+  let end = Math.min(value.length, Math.max(0, maxChars));
+  if (
+    end > 0 &&
+    end < value.length &&
+    value.charCodeAt(end - 1) >= 0xd800 &&
+    value.charCodeAt(end - 1) <= 0xdbff &&
+    value.charCodeAt(end) >= 0xdc00 &&
+    value.charCodeAt(end) <= 0xdfff
+  ) {
+    end -= 1;
+  }
+  return value.slice(0, end);
+}
+
 export function clamp(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+  return text.length <= max ? text : `${sliceUtf16Head(text, max - 1)}…`;
 }
 
 const threadHostSchema = z.object({

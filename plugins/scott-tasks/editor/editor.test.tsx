@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Editor } from "@tiptap/core";
 import { POINTER_COARSE_QUERY } from "@/components/ui/hooks/use-pointer-coarse";
@@ -7,6 +9,19 @@ import { createEditorExtensions } from "./extensions.js";
 import { TasksEditor } from "./tasks-editor.js";
 
 afterEach(cleanup);
+
+function ElementHost({ element }: { element: ReactElement }) {
+  return element;
+}
+
+function renderEditor(ui: ReactElement) {
+  const slot = renderSlot({ component: ElementHost }, { element: ui });
+  return {
+    ...slot,
+    rerender: (next: ReactElement) => slot.lifecycle.rerender(<ElementHost element={next} />),
+    unmount: () => slot.lifecycle.unmount(),
+  };
+}
 
 function mockPointerCoarse(matches: boolean): () => void {
   const original = window.matchMedia;
@@ -57,6 +72,8 @@ describe("markdown round-trip", () => {
     ["code block", "```ts\nconst answer = 42;\n```"],
     ["blockquote", "> quoted wisdom"],
     ["link", "Read the [bb guide](https://example.com/guide)."],
+    ["folder link", "Follow [setup](docs/setup.md) first."],
+    ["link without a scheme", "See [the repo](github.com/get-bb/bb)."],
     ["image", "![diagram](https://example.com/diagram.png)"],
     ["mention", "Blocked on [TSK-42](bbtask://TSK-42) for review."],
     ["thread mention", "Discussed in [Fix login flow](bbthread://thr_a82u8wp8qq) yesterday."],
@@ -102,7 +119,7 @@ describe("markdown round-trip", () => {
     ].join("\n");
     const onChange = vi.fn();
     let editor: Editor | null = null;
-    render(
+    renderEditor(
       <TasksEditor value={value} onChange={onChange} onEditorReady={(ready) => (editor = ready)} />,
     );
 
@@ -112,7 +129,7 @@ describe("markdown round-trip", () => {
   });
 
   it("renders table headers and cells", () => {
-    const screen = render(
+    const screen = renderEditor(
       <TasksEditor
         value={"| Item | Owner |\n| --- | --- |\n| Parser | Ada |"}
         onChange={() => undefined}
@@ -124,6 +141,101 @@ describe("markdown round-trip", () => {
     expect(screen.getAllByRole("columnheader")).toHaveLength(2);
     expect(screen.getAllByRole("cell")).toHaveLength(2);
   });
+});
+
+describe("links", () => {
+  it.each([
+    "[run](javascript:alert(1))",
+    '<a href="java\nscript:alert(1)">run</a>',
+    '<a href=" javascript:alert(1)">run</a>',
+    "[run](ms-msdt:/id%20PCWDiagnostic)",
+    "[edit](vscode-insiders://file/etc/passwd)",
+    "[custom](custom-scheme:payload)",
+    "[data](data:text/html,<script>alert(1)</script>)",
+    "[phish](//evil.com/phish)",
+    '<a href="/\\evil.com/phish">phish</a>',
+    '<a href="\\\\evil.com/phish">phish</a>',
+  ])("never renders an unsafe link: %s", (markdown) => {
+    const editor = new Editor({
+      extensions: createEditorExtensions(),
+      content: markdown,
+    });
+    try {
+      expect(editor.getHTML()).not.toContain("href");
+    } finally {
+      editor.destroy();
+    }
+  });
+
+  it("locks target and rel on raw HTML anchor tags", () => {
+    const editor = new Editor({
+      extensions: createEditorExtensions(),
+      content: '<a href="https://example.com/guide" target="_self" rel="opener">Guide</a>',
+    });
+    try {
+      const anchor = editor.view.dom.querySelector("a");
+      expect(anchor?.getAttribute("target")).toBe("_blank");
+      expect(anchor?.getAttribute("rel")).toBe("noopener noreferrer nofollow");
+    } finally {
+      editor.destroy();
+    }
+  });
+
+  it.each([false, true])(
+    "opens web links through the bb URL handler (read-only: %s)",
+    async (readOnly) => {
+      const slot = renderSlot(
+        { component: TasksEditor },
+        {
+          value: "Read [the guide](https://example.com/guide).",
+          onChange: () => undefined,
+          readOnly,
+        },
+        { openUrl: () => true },
+      );
+      fireEvent.click(await slot.findByRole("link", { name: "the guide" }));
+      expect(slot.navigateCalls).toEqual([{ method: "openUrl", url: "https://example.com/guide" }]);
+    },
+  );
+
+  it("prevents default navigation when openUrl declines or a relative link has no handler", async () => {
+    const slot = renderSlot(
+      { component: TasksEditor },
+      {
+        value: "See [Guide](https://example.com/guide) and [Setup](docs/setup.md).",
+        onChange: () => undefined,
+        readOnly: true,
+      },
+      { openUrl: () => false },
+    );
+    const guideLink = await slot.findByRole("link", { name: "Guide" });
+    const guideClick = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    guideLink.dispatchEvent(guideClick);
+    expect(guideClick.defaultPrevented).toBe(true);
+    expect(slot.navigateCalls).toEqual([{ method: "openUrl", url: "https://example.com/guide" }]);
+
+    const setupLink = await slot.findByRole("link", { name: "Setup" });
+    const setupClick = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    setupLink.dispatchEvent(setupClick);
+    expect(setupClick.defaultPrevented).toBe(true);
+    expect(slot.navigateCalls).toHaveLength(1);
+  });
+
+  it.each([{ shiftKey: true }, { button: 2 }])(
+    "leaves selection gestures on a link alone (%o)",
+    async (init) => {
+      const slot = renderSlot(
+        { component: TasksEditor },
+        {
+          value: "Read [the guide](https://example.com/guide).",
+          onChange: () => undefined,
+        },
+        { openUrl: () => true },
+      );
+      fireEvent.click(await slot.findByRole("link", { name: "the guide" }), init);
+      expect(slot.navigateCalls).toEqual([]);
+    },
+  );
 });
 
 describe("mention extension", () => {
@@ -155,7 +267,7 @@ describe("mention extension", () => {
   it("suggests and inserts mentions from the mentionItems prop", async () => {
     let instance: Editor | null = null;
     const onChange = vi.fn();
-    const screen = render(
+    const screen = renderEditor(
       <TasksEditor
         value=""
         onChange={onChange}
@@ -192,7 +304,7 @@ describe("mention extension", () => {
 
   it("stays inert without a mentionItems prop", async () => {
     let instance: Editor | null = null;
-    const screen = render(
+    const screen = renderEditor(
       <TasksEditor
         value=""
         onChange={() => undefined}
@@ -209,7 +321,7 @@ describe("mention extension", () => {
   it("offers a Threads section and inserts a thread pill", async () => {
     let instance: Editor | null = null;
     const onChange = vi.fn();
-    const screen = render(
+    const screen = renderEditor(
       <TasksEditor
         value=""
         onChange={onChange}
@@ -265,7 +377,7 @@ describe("thread mention extension", () => {
 
   it("opens the thread when a pill is clicked, including read-only", () => {
     const onOpenThread = vi.fn();
-    const screen = render(
+    const screen = renderEditor(
       <TasksEditor
         value="See [Fix login flow](bbthread://thr_a82u8wp8qq)."
         onChange={() => undefined}
@@ -348,7 +460,7 @@ describe("heading toggle", () => {
 describe("TasksEditor component", () => {
   it("renders checklists and reports checkbox toggles as markdown", async () => {
     const onChange = vi.fn();
-    const screen = render(<TasksEditor value={"- [ ] write tests"} onChange={onChange} />);
+    const screen = renderEditor(<TasksEditor value={"- [ ] write tests"} onChange={onChange} />);
     const checkbox = screen.container.querySelector<HTMLInputElement>(
       'ul[data-type="taskList"] input[type="checkbox"]',
     );
@@ -358,7 +470,7 @@ describe("TasksEditor component", () => {
   });
 
   it("renders read-only without a toolbar or editable surface", () => {
-    const screen = render(
+    const screen = renderEditor(
       <TasksEditor value={"**Done** deal"} onChange={() => undefined} readOnly variant="comment" />,
     );
     expect(screen.queryByRole("toolbar")).toBeNull();
@@ -371,7 +483,7 @@ describe("TasksEditor component", () => {
   it("renders pasted Markdown as rich content", async () => {
     const markdown = "| Task |\n| --- |\n| [TSK-42](bbtask://TSK-42) |";
     const onChange = vi.fn();
-    const screen = render(<TasksEditor value="" onChange={onChange} />);
+    const screen = renderEditor(<TasksEditor value="" onChange={onChange} />);
 
     fireEvent.paste(getEditorSurface(screen.container), {
       clipboardData: {
@@ -389,7 +501,7 @@ describe("TasksEditor component", () => {
     const onAttachFiles = vi.fn();
     const onUploadImage = vi.fn();
     let editor: Editor | null = null;
-    render(
+    renderEditor(
       <TasksEditor
         value=""
         onChange={() => undefined}
@@ -427,7 +539,7 @@ describe("TasksEditor component", () => {
 
   it("replaces the document when the value prop changes externally", async () => {
     const onChange = vi.fn();
-    const screen = render(<TasksEditor value={"original"} onChange={onChange} />);
+    const screen = renderEditor(<TasksEditor value={"original"} onChange={onChange} />);
     screen.rerender(<TasksEditor value={"replaced"} onChange={onChange} />);
     await screen.findByText("replaced");
     expect(onChange).not.toHaveBeenCalled();
@@ -435,7 +547,7 @@ describe("TasksEditor component", () => {
 
   it("stays editable when the description is only a single image", async () => {
     let editor: Editor | null = null;
-    render(
+    renderEditor(
       <TasksEditor
         value={"![shot](https://example.com/a.png)"}
         onChange={() => undefined}
@@ -460,7 +572,7 @@ describe("TasksEditor submit-on-Enter", () => {
   it("submits on bare Enter when onSubmit is provided", () => {
     const onSubmit = vi.fn();
     let editor: Editor | null = null;
-    const screen = render(
+    const screen = renderEditor(
       <TasksEditor
         value="Draft"
         onChange={() => undefined}
@@ -484,7 +596,7 @@ describe("TasksEditor submit-on-Enter", () => {
   it("inserts a newline on Shift+Enter instead of submitting", () => {
     const onSubmit = vi.fn();
     let editor: Editor | null = null;
-    render(
+    renderEditor(
       <TasksEditor
         value="Line"
         onChange={() => undefined}
@@ -512,7 +624,7 @@ describe("TasksEditor submit-on-Enter", () => {
   it("does not submit during IME composition", () => {
     const onSubmit = vi.fn();
     let editor: Editor | null = null;
-    render(
+    renderEditor(
       <TasksEditor
         value="候補"
         onChange={() => undefined}
@@ -547,7 +659,7 @@ describe("TasksEditor submit-on-Enter", () => {
     try {
       const onSubmit = vi.fn();
       let editor: Editor | null = null;
-      const screen = render(
+      const screen = renderEditor(
         <TasksEditor
           value="Touch draft"
           onChange={() => undefined}
@@ -588,7 +700,7 @@ describe("TasksEditor submit-on-Enter", () => {
 
   it("does not claim Enter when onSubmit is omitted", () => {
     let editor: Editor | null = null;
-    render(
+    renderEditor(
       <TasksEditor
         value="Description"
         onChange={() => undefined}
@@ -607,7 +719,7 @@ describe("TasksEditor submit-on-Enter", () => {
   it("lets the mention popover own Enter while open", async () => {
     const onSubmit = vi.fn();
     let editor: Editor | null = null;
-    const screen = render(
+    const screen = renderEditor(
       <TasksEditor
         value=""
         onChange={() => undefined}
@@ -654,7 +766,7 @@ describe("formatting toolbar", () => {
 
   it("presses the actions that apply at the selection as it moves", async () => {
     let editor: Editor | null = null;
-    const screen = render(
+    const screen = renderEditor(
       <TasksEditor
         value={"**bold** plain"}
         variant="doc"
@@ -681,7 +793,7 @@ describe("shared Markdown document boundaries", () => {
   it("switches existing document source and rich modes with the bubble plugin installed", () => {
     let editor: Editor | null = null;
     const onChange = vi.fn();
-    const screen = render(
+    const screen = renderEditor(
       <TasksEditor
         value="A description"
         variant="doc"
@@ -710,7 +822,7 @@ describe("shared Markdown document boundaries", () => {
   });
 
   it("renders frontmatter-like text in read-only activity comments", () => {
-    const screen = render(
+    const screen = renderEditor(
       <TasksEditor
         value={"---\ntitle: comment metadata\n---\n\nBody"}
         variant="comment"
@@ -727,7 +839,7 @@ describe("shared Markdown document boundaries", () => {
   it("retains frontmatter-like comment content when editing its body", () => {
     let editor: Editor | null = null;
     const onChange = vi.fn();
-    render(
+    renderEditor(
       <TasksEditor
         value={"---\ntitle: comment metadata\n---\n\nBody"}
         variant="comment"
@@ -745,7 +857,7 @@ describe("shared Markdown document boundaries", () => {
 
 it("preserves CRLF while editing a description in source mode", () => {
   const onChange = vi.fn();
-  const screen = render(
+  const screen = renderEditor(
     <TasksEditor value={"First\r\nSecond\r\n"} variant="doc" onChange={onChange} />,
   );
   fireEvent.change(screen.getByRole("textbox", { name: "Description Markdown source" }), {
@@ -766,7 +878,7 @@ it("keeps a controlled Tasks description in rich mode when typing generic code",
       }}
     />
   );
-  const screen = render(props("```ts\nArray<T>\n```"));
+  const screen = renderEditor(props("```ts\nArray<T>\n```"));
   const rich = screen.container.querySelector(".tiptap");
   act(() => {
     editor!.view.dispatch(

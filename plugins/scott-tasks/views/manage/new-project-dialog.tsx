@@ -34,6 +34,7 @@ import {
   Field,
 } from "./shared.js";
 import { BbProjectLinkPicker } from "./bb-project-link.js";
+import { isNonImeKey } from "@/lib/ime-keyboard";
 
 const NO_FOLDER = "__none__";
 const NEW_FOLDER = "__new__";
@@ -149,7 +150,7 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
       <DialogContent
         className="max-w-md"
         onKeyDown={(event) => {
-          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          if (isNonImeKey(event, "Enter") && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
             void submit();
           }
@@ -233,7 +234,7 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
                   placeholder="Folder name"
                   onChange={(event) => setNewFolderName(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter") {
+                    if (isNonImeKey(event, "Enter")) {
                       event.preventDefault();
                       void createFolderInline();
                     }

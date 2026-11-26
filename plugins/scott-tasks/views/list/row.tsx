@@ -1,12 +1,20 @@
-import { memo, useId, useState } from "react";
+import { memo, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { Label, Project, Task, TaskThread } from "../../shared/contract.js";
 import { Badge } from "@/components/ui/badge";
+import { CompactButton } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { StatusDot } from "@/components/ui/status-dot";
 import { Checkbox } from "@/components/ui/checkbox";
+import { observeSharedResize } from "@/lib/shared-resize-observer";
 import { cn } from "@/lib/utils";
 import { PriorityIcon } from "./icons.js";
-import { activeWorkLabel, formatDueDate, formatUpdatedAt, partitionLabels } from "./lib.js";
+import {
+  activeWorkLabel,
+  formatDueDate,
+  formatUpdatedAt,
+  partitionLabels,
+  type SubTaskProgress,
+} from "./lib.js";
 import type { EditFn } from "./property-menus.js";
 import {
   isBareKey,
@@ -77,6 +85,12 @@ function LabelChips({ task, labelsById }: { task: Task; labelsById: Map<string, 
 
 interface TaskRowProps {
   task: Task;
+  child?: boolean;
+  muted?: boolean;
+  subTasks?: SubTaskProgress;
+  subTasksOpen?: boolean;
+  subTasksLocked?: boolean;
+  onToggleSubTasks?: (taskId: string) => void;
   /** The task's live agent threads, if any. */
   activeThreads: readonly TaskThread[] | undefined;
   project: Project | undefined;
@@ -93,8 +107,60 @@ interface TaskRowProps {
   pending: boolean;
 }
 
+const KEY_TYPOGRAPHY = "text-xs tabular-nums";
+
+export function KeyColumnScope({
+  keys,
+  className,
+  children,
+}: {
+  keys: readonly string[];
+  className: string;
+  children: ReactNode;
+}) {
+  const scopeRef = useRef<HTMLDivElement>(null);
+  const sizerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const scope = scopeRef.current;
+    const sizer = sizerRef.current;
+    if (scope === null || sizer === null) return;
+    const read = (entry: ResizeObserverEntry | undefined) => {
+      const boxWidth = entry?.borderBoxSize?.[0]?.inlineSize ?? entry?.contentRect?.width;
+      const width = boxWidth ?? sizer.getBoundingClientRect().width;
+      return Math.ceil(width);
+    };
+    const write = (width: number) => {
+      if (width > 0) scope.style.setProperty("--task-key-width", `${width}px`);
+    };
+    return observeSharedResize(sizer, { read, write });
+  }, []);
+  return (
+    <div ref={scopeRef} className={cn("relative", className)}>
+      <div
+        ref={sizerRef}
+        aria-hidden
+        className={cn(
+          "pointer-events-none invisible absolute left-0 top-0 flex h-0 w-max flex-col overflow-hidden",
+          KEY_TYPOGRAPHY,
+        )}
+      >
+        {keys.map((key) => (
+          <span key={key} data-key-sizer={key} className="before:content-[attr(data-key-sizer)]" />
+        ))}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 export const TaskRow = memo(function TaskRow({
   task,
+  child = false,
+  muted = false,
+  subTasks,
+  subTasksOpen = false,
+  subTasksLocked = false,
+  onToggleSubTasks,
   activeThreads,
   project,
   showProject,
@@ -126,6 +192,8 @@ export const TaskRow = memo(function TaskRow({
     >
       <div
         data-task-key={task.key}
+        data-child={child || undefined}
+        data-muted={muted || undefined}
         onKeyDown={(event) => {
           // Menus portal out of the row; their events still bubble through React.
           if (
@@ -146,9 +214,12 @@ export const TaskRow = memo(function TaskRow({
         aria-busy={pending || undefined}
         className={cn(
           "group relative grid min-h-14 w-full grid-cols-[2.75rem_minmax(0,1fr)] grid-rows-[1.75rem_1.75rem] items-center gap-x-2 px-3 text-left hover:bg-state-hover pointer-coarse:grid-rows-[1.5rem_2.75rem]",
-          "pointer-fine:@md:h-9 pointer-fine:@md:min-h-9 pointer-fine:@md:grid-cols-[1.25rem_3.7rem_1.25rem_minmax(0,1fr)_minmax(0,9rem)_2.25rem_4.25rem] pointer-fine:@md:grid-rows-1 pointer-fine:@md:pl-7 pointer-fine:@md:pr-6",
+          subTasks !== undefined && "pointer-coarse:grid-rows-[2.75rem_2.75rem]",
+          "pointer-fine:@md:h-9 pointer-fine:@md:min-h-9 pointer-fine:@md:grid-cols-[1.25rem_var(--task-key-width,3.7rem)_1.25rem_minmax(0,1fr)_minmax(0,9rem)_2.25rem_4.25rem] pointer-fine:@md:grid-rows-1 pointer-fine:@md:pl-7 pointer-fine:@md:pr-6",
+          child && "pl-9 pointer-fine:@md:pl-12",
           selected && "bg-surface-selected",
           pending && "opacity-70",
+          muted && "opacity-50",
         )}
       >
         <button
@@ -190,7 +261,9 @@ export const TaskRow = memo(function TaskRow({
         />
         <span className="pointer-events-none relative col-start-2 row-start-2 flex min-w-0 items-center gap-1 self-center whitespace-nowrap text-2xs tabular-nums text-muted-foreground pointer-coarse:-translate-y-2 pointer-fine:@md:row-start-1 pointer-fine:@md:text-xs">
           <PriorityIcon priority={task.priority} className="size-3 pointer-fine:@md:hidden" />
-          <span className="truncate">{task.key}</span>
+          <span title={task.key} className="truncate">
+            {task.key}
+          </span>
         </span>
         <StatusEditor
           task={task}
@@ -199,8 +272,30 @@ export const TaskRow = memo(function TaskRow({
           onOpenChange={(next) => setOpenMenu(next ? "status" : null)}
           className="col-start-1 row-start-1 justify-self-center pointer-coarse:row-span-2 pointer-coarse:size-11 pointer-coarse:self-start pointer-coarse:pb-4 pointer-fine:@md:col-start-3"
         />
-        <span className="pointer-events-none relative col-start-2 row-start-1 min-w-0 truncate text-sm font-semibold pointer-coarse:self-end pointer-fine:@md:col-start-4 pointer-fine:@md:text-[0.9375rem] pointer-fine:@md:font-medium">
-          {task.title}
+        <span
+          className={cn(
+            "pointer-events-none relative col-start-2 row-start-1 flex min-w-0 items-center gap-1.5 pointer-fine:@md:col-start-4",
+            subTasks === undefined ? "pointer-coarse:self-end" : "pointer-coarse:self-center",
+          )}
+        >
+          <span className="min-w-0 truncate text-sm font-semibold pointer-fine:@md:text-[0.9375rem] pointer-fine:@md:font-medium">
+            {task.title}
+          </span>
+          {subTasks !== undefined ? (
+            <CompactButton
+              type="button"
+              variant="outline"
+              size="xs"
+              aria-expanded={subTasksOpen}
+              aria-label={`${subTasksOpen ? "Collapse" : "Expand"} sub-tasks of ${task.key}`}
+              disabled={subTasksLocked}
+              onClick={() => onToggleSubTasks?.(task.id)}
+              className="pointer-events-auto relative z-10 h-5 shrink-0 gap-0.5 px-1.5 text-2xs tabular-nums text-muted-foreground disabled:opacity-70 pointer-coarse:h-11 pointer-coarse:min-w-11"
+            >
+              <Icon name={subTasksOpen ? "ChevronDown" : "ChevronRight"} className="size-3" />
+              {subTasks.done}/{subTasks.total}
+            </CompactButton>
+          ) : null}
         </span>
         <span className="pointer-events-none relative col-start-2 row-start-2 flex max-w-[calc(100%-4.25rem)] min-w-0 items-center gap-1 self-center justify-self-end text-2xs text-muted-foreground pointer-fine:@md:col-span-3 pointer-fine:@md:col-start-5 pointer-fine:@md:row-start-1 pointer-fine:@md:grid pointer-fine:@md:w-full pointer-fine:@md:max-w-none pointer-fine:@md:grid-cols-[minmax(0,1fr)_2.25rem_4.25rem] pointer-fine:@md:self-center">
           <span className="pointer-events-auto min-w-0 overflow-hidden justify-self-end">

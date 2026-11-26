@@ -102,6 +102,31 @@ describe("tasks collection loads only what a live query names", () => {
     expect(rows).toEqual([]);
   });
 
+  it("loads children for a set of parentTaskIds without scanning the workspace", async () => {
+    const childA = { ...TASK, id: "01HZT_CA", number: 2, key: "TSK-2", parentTaskId: "01HZT_P1" };
+    const childB = { ...TASK, id: "01HZT_CB", number: 3, key: "TSK-3", parentTaskId: "01HZT_P2" };
+    const calls = fakeRpc({
+      listTasks: (input) => {
+        const { parentTaskId } = input as { parentTaskId?: string };
+        return {
+          tasks:
+            parentTaskId === "01HZT_P1" ? [childA] : parentTaskId === "01HZT_P2" ? [childB] : [],
+          nextCursor: null,
+        };
+      },
+    });
+    const rows = await load((q) =>
+      q
+        .from({ task: tasksCollection })
+        .where(({ task }) => inArray(task.parentTaskId, ["01HZT_P1", "01HZT_P2"])),
+    );
+    expect(calls).toEqual([
+      { method: "listTasks", input: { parentTaskId: "01HZT_P1", limit: 500 } },
+      { method: "listTasks", input: { parentTaskId: "01HZT_P2", limit: 500 } },
+    ]);
+    expect(rows.map((row) => row.id)).toEqual([childA.id, childB.id]);
+  });
+
   it("refuses a filter the server cannot apply instead of loading everything", async () => {
     const calls = fakeRpc({ listTasks: () => ({ tasks: [], nextCursor: null }) });
     await expect(

@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Icon } from "@/components/ui/icon";
+import { isImeComposing } from "@/lib/ime-keyboard";
 import { StatusDot } from "@/components/ui/status-dot";
 import { cn } from "@/lib/utils";
 
@@ -532,7 +533,8 @@ export function PropertiesRail({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || event.isComposing || !isBareKey(event)) return;
+      if (event.defaultPrevented || event.repeat || isImeComposing(event) || !isBareKey(event))
+        return;
       const key = event.key.toLowerCase();
       const property = PROPERTY_KEYS[key as keyof typeof PROPERTY_KEYS];
       if (

@@ -15,6 +15,7 @@ import { Fragment, type DOMOutputSpec, type Node as ProseMirrorNode } from "@tip
 import { Suggestion, type SuggestionProps } from "@tiptap/suggestion";
 import type { IconSvgElement } from "@hugeicons/react";
 import BubbleChatIcon from "@hugeicons/core-free-icons/BubbleChatIcon";
+import { isAllowedEditorLink } from "./links.js";
 
 export type MentionItem =
   | { type: "task"; id: string; key: string; title: string }
@@ -323,13 +324,34 @@ const MentionSuggestion = Extension.create<{
   },
 });
 
+const SafeLink = Link.extend({
+  addAttributes() {
+    const parent = this.parent?.();
+    return {
+      ...parent,
+      target: {
+        default: this.options.HTMLAttributes.target,
+        parseHTML: () => this.options.HTMLAttributes.target,
+      },
+      rel: {
+        default: this.options.HTMLAttributes.rel,
+        parseHTML: () => this.options.HTMLAttributes.rel,
+      },
+    };
+  },
+});
+
 export function createEditorExtensions(options?: {
   placeholder?: () => string;
   mentionHandle?: MentionSuggestionHandle;
 }): Extensions {
   return [
     StarterKit,
-    Link.configure({ openOnClick: false, autolink: true }),
+    SafeLink.configure({
+      openOnClick: false,
+      autolink: true,
+      isAllowedUri: (href) => isAllowedEditorLink(href),
+    }),
     Image.configure({ allowBase64: false }),
     TightTaskList,
     TaskItem.configure({ nested: true }),

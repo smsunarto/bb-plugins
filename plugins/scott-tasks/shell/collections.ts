@@ -25,6 +25,7 @@ export interface TaskSubset {
   taskIds?: string[];
   projectId?: string;
   parentTaskId?: string | null;
+  parentTaskIds?: string[];
   statuses?: TaskStatus[];
   priorities?: TaskPriority[];
   labelIds?: string[];
@@ -96,6 +97,7 @@ export function readTaskSubset(where: Expression | undefined): TaskSubset {
     } else if (term.name === "in" && strings(value(right)) !== null) {
       const targets = strings(value(right))!;
       if (field === "id") subset.taskIds = targets;
+      else if (field === "parentTaskId") subset.parentTaskIds = targets;
       else if (field === "status") subset.statuses = targets as TaskStatus[];
       else if (field === "priority") subset.priorities = targets as TaskPriority[];
       else throw new UnsupportedSubsetError("tasks", term);
@@ -114,7 +116,7 @@ function chunks<T>(items: readonly T[]): T[][] {
   return result;
 }
 
-type TaskListInput = Omit<TaskSubset, "taskId" | "taskKey">;
+type TaskListInput = Omit<TaskSubset, "taskId" | "taskKey" | "parentTaskIds">;
 
 /** Every page of one listTasks query. */
 export async function listAllTasks(rpc: TasksRpc, input: TaskListInput = {}): Promise<Task[]> {
@@ -149,6 +151,14 @@ async function loadTasks(subset: TaskSubset): Promise<Task[]> {
     return task === null ? [] : [task];
   }
   if (subset.taskIds?.length === 0) return [];
+  if (subset.parentTaskIds !== undefined) {
+    const { parentTaskIds, ...rest } = subset;
+    if (parentTaskIds.length === 0) return [];
+    const pages = await Promise.all(
+      parentTaskIds.map((parentTaskId) => listAllTasks(rpc, { ...rest, parentTaskId })),
+    );
+    return pages.flat();
+  }
   return listAllTasks(rpc, subset);
 }
 

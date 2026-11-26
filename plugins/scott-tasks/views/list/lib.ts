@@ -6,6 +6,12 @@ import {
   type TaskStatus,
 } from "../../shared/contract.js";
 import type { TaskSort } from "../../shared/pagination.js";
+import { sortTasks } from "../../shared/sort.js";
+
+export interface SubTaskProgress {
+  done: number;
+  total: number;
+}
 
 export const STATUS_LABELS: Record<TaskStatus, string> = {
   backlog: "Backlog",
@@ -137,11 +143,142 @@ export function matchesFilters(
   task: Task,
   statuses: readonly TaskStatus[],
   priorities: readonly TaskPriority[],
-  labelIds: readonly string[],
+  labelIds: readonly string[] | null,
 ): boolean {
   return (
     (statuses.length === 0 || statuses.includes(task.status)) &&
     (priorities.length === 0 || priorities.includes(task.priority)) &&
-    (labelIds.length === 0 || task.labelIds.some((id) => labelIds.includes(id)))
+    (labelIds === null ||
+      (labelIds.length > 0 && task.labelIds.some((id) => labelIds.includes(id))))
   );
+}
+
+export function matchesSearch(task: Task, search: string): boolean {
+  const needle = search.trim().toLowerCase();
+  if (needle === "") return true;
+  return task.key.toLowerCase().includes(needle) || task.title.toLowerCase().includes(needle);
+}
+
+export function widestKeysByPrefix(tasks: readonly Task[]): string[] {
+  const widest = new Map<string, string>();
+  for (const task of tasks) {
+    const prefix = task.key.slice(0, task.key.lastIndexOf("-"));
+    const current = widest.get(prefix);
+    if (current === undefined || task.key.length > current.length) {
+      widest.set(prefix, task.key);
+    }
+  }
+  return [...widest.values()];
+}
+
+export interface TaskMatchCriteria {
+  statuses: readonly TaskStatus[];
+  priorities: readonly TaskPriority[];
+  labelIds: readonly string[] | null;
+  search: string;
+  activeIds: ReadonlySet<string> | null;
+}
+
+function isFiltering(criteria: TaskMatchCriteria): boolean {
+  return (
+    criteria.search.trim() !== "" ||
+    criteria.statuses.length > 0 ||
+    criteria.priorities.length > 0 ||
+    criteria.labelIds !== null ||
+    criteria.activeIds !== null
+  );
+}
+
+export function parentIsForcedOpen(
+  parentId: string,
+  criteria: TaskMatchCriteria,
+  visibleChildren: ReadonlyMap<string, readonly Task[]>,
+): boolean {
+  return isFiltering(criteria) && (visibleChildren.get(parentId)?.length ?? 0) > 0;
+}
+
+export function parentIsOpen(
+  parentId: string,
+  expanded: readonly string[],
+  criteria: TaskMatchCriteria,
+  visibleChildren: ReadonlyMap<string, readonly Task[]>,
+): boolean {
+  return expanded.includes(parentId) || parentIsForcedOpen(parentId, criteria, visibleChildren);
+}
+
+export function taskMatches(task: Task, criteria: TaskMatchCriteria): boolean {
+  return (
+    (criteria.activeIds === null || criteria.activeIds.has(task.id)) &&
+    matchesFilters(task, criteria.statuses, criteria.priorities, criteria.labelIds) &&
+    matchesSearch(task, criteria.search)
+  );
+}
+
+export function childrenByParent(tasks: readonly Task[]): ReadonlyMap<string, Task[]> {
+  const result = new Map<string, Task[]>();
+  for (const task of tasks) {
+    if (task.parentTaskId === null) continue;
+    const children = result.get(task.parentTaskId) ?? [];
+    children.push(task);
+    result.set(task.parentTaskId, children);
+  }
+  return result;
+}
+
+export function visibleChildrenByParent(
+  grouped: ReadonlyMap<string, readonly Task[]>,
+  criteria: TaskMatchCriteria,
+  sort: TaskSort,
+): ReadonlyMap<string, Task[]> {
+  const result = new Map<string, Task[]>();
+  for (const [parentId, children] of grouped) {
+    result.set(
+      parentId,
+      sortTasks(
+        children.filter((child) => taskMatches(child, criteria)),
+        sort,
+      ),
+    );
+  }
+  return result;
+}
+
+export function displayRows(
+  rows: readonly Task[],
+  criteria: TaskMatchCriteria,
+  visibleChildren: ReadonlyMap<string, readonly Task[]>,
+): Task[] {
+  return rows.filter(
+    (task) => taskMatches(task, criteria) || (visibleChildren.get(task.id)?.length ?? 0) > 0,
+  );
+}
+
+export function childrenForList(
+  all: ReadonlyMap<string, readonly Task[]>,
+  criteria: TaskMatchCriteria,
+  sort: TaskSort,
+) {
+  const visible = visibleChildrenByParent(all, criteria, sort);
+  const totals = new Map<string, SubTaskProgress>();
+  for (const [parentId, children] of all) {
+    totals.set(parentId, {
+      done: children.filter((child) => child.status === "done").length,
+      total: children.length,
+    });
+  }
+  return { visible, totals };
+}
+
+export function listTaskCount(
+  rows: readonly Task[],
+  criteria: TaskMatchCriteria,
+  visibleChildren: ReadonlyMap<string, readonly Task[]>,
+): number {
+  if (!isFiltering(criteria)) return rows.length;
+  let count = 0;
+  for (const task of rows) {
+    if (taskMatches(task, criteria)) count += 1;
+    count += visibleChildren.get(task.id)?.length ?? 0;
+  }
+  return count;
 }

@@ -6,6 +6,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createSudoHandlers } from "../src/host/handlers.ts";
 import { createSudoRunner } from "../src/host/sudo.ts";
 import plugin from "../src/server/server.ts";
+import { clamp } from "../src/server/shared.ts";
 
 const STUB = `#!/bin/sh
 dir=$(dirname "$0")
@@ -236,4 +237,16 @@ test("request still writes the dotenv file with mode 0600", async () => {
     unchanged: 0,
   });
   expect(writes[0]).toMatchObject({ content: "API_KEY='s3cret'\n", mode: 0o600 });
+});
+
+test("clamp never cuts a UTF-16 surrogate pair in half", () => {
+  const loneSurrogate = /[\uD800-\uDFFF]/u;
+  const value = `${"a".repeat(8)}😀tail`;
+  const clamped = clamp(value, 10);
+  expect(clamped).toBe(`${"a".repeat(8)}…`);
+  expect(loneSurrogate.test(clamped)).toBe(false);
+
+  const keepsWholeEmoji = clamp(value, 11);
+  expect(keepsWholeEmoji).toBe(`${"a".repeat(8)}😀…`);
+  expect(loneSurrogate.test(keepsWholeEmoji)).toBe(false);
 });

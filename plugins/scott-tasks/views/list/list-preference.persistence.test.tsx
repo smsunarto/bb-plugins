@@ -91,6 +91,9 @@ const tasksB = [task(PROJECT_B, 1, "todo"), task(PROJECT_B, 2, "in_progress")];
 
 function applyListFilters(tasks: Task[], input: Record<string, unknown>): Task[] {
   let next = tasks;
+  if ("parentTaskId" in input) {
+    next = next.filter((item) => item.parentTaskId === input.parentTaskId);
+  }
   if (Array.isArray(input.statuses) && input.statuses.length > 0) {
     const allowed = new Set(input.statuses);
     next = next.filter((item) => allowed.has(item.status));
@@ -635,10 +638,9 @@ describe("list filter/sort preference persistence", () => {
     expect(activeSlot.getByRole("button", { name: /Sort/ }).textContent).not.toContain("Priority");
   });
 
-  it("persists priority and label filters and sends resolved label ids", async () => {
+  it("persists priority and label filters and filters the list with them", async () => {
     const registration = app.navPanels[0]!;
-    const listTasksCalls: Record<string, unknown>[] = [];
-    const rpc = baseRpc({}, listTasksCalls);
+    const rpc = baseRpc();
     const slot = renderSlot(registration, { subPath: PROJECT_A }, { rpc });
     await slot.findByText("ALP-1");
 
@@ -646,6 +648,10 @@ describe("list filter/sort preference persistence", () => {
     fireEvent.click(slot.getByRole("button", { name: /^Priority/ }));
     fireEvent.click(await slot.findByRole("menuitemcheckbox", { name: /Urgent/ }));
     pageKeyboardEscape(slot);
+
+    await waitFor(() => expect(slot.queryByText("ALP-1")).toBeNull());
+    expect(slot.getByText("ALP-2")).toBeTruthy();
+    await waitFor(() => expect(slot.queryByText("ALP-3")).toBeNull());
 
     fireEvent.click(slot.getByRole("button", { name: /^Label/ }));
     fireEvent.click(await slot.findByRole("menuitemcheckbox", { name: /Bug/ }));
@@ -657,17 +663,7 @@ describe("list filter/sort preference persistence", () => {
       expect(stored.scopes[`project:${PROJECT_A}`].filters.labelNames).toEqual(["Bug"]);
     });
 
-    await waitFor(() => {
-      expect(
-        listTasksCalls.some(
-          (call) =>
-            Array.isArray(call.labelIds) &&
-            call.labelIds.includes(LABEL_BUG) &&
-            Array.isArray(call.priorities) &&
-            call.priorities.includes("urgent"),
-        ),
-      ).toBe(true);
-    });
+    await waitFor(() => expect(slot.queryByText("ALP-2")).toBeNull());
 
     slot.lifecycle.unmount();
     const remounted = renderSlot(registration, { subPath: PROJECT_A }, { rpc: baseRpc() });
@@ -693,16 +689,13 @@ describe("list filter/sort preference persistence", () => {
         },
       }),
     );
-    const listTasksCalls: Record<string, unknown>[] = [];
-    const rpc = baseRpc({}, listTasksCalls);
+    const rpc = baseRpc();
     const slot = renderSlot(app.navPanels[0]!, { subPath: PROJECT_A }, { rpc });
     await slot.findByRole("button", { name: /^Label/ });
     expect(slot.getByRole("button", { name: /^Label/ }).textContent).toContain("DeletedLabel");
-    // A label set that resolves to nothing needs no read.
     await slot.findByText("No tasks match these filters");
     expect(slot.queryByText("ALP-1")).toBeNull();
     expect(slot.queryByText("ALP-2")).toBeNull();
-    expect(listTasksCalls.some((call) => Array.isArray(call.labelIds))).toBe(false);
   });
 });
 

@@ -38,6 +38,7 @@ import { Icon } from "@/components/ui/icon";
 import { Item, ItemGroup } from "@/components/ui/item";
 import { Hint } from "../../components/hint.js";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isNonImeKey } from "@/lib/ime-keyboard";
 
 interface DetailViewProps {
   taskKey: string;
@@ -79,7 +80,7 @@ function EditableTitle({ task, onSave }: { task: Task; onSave: (title: string) =
       aria-label="Task title"
       className="text-[1.75rem] font-semibold leading-tight tracking-tight outline-none focus-visible:underline focus-visible:decoration-ring focus-visible:underline-offset-4 @[45rem]:text-[2.125rem]"
       onKeyDown={(event) => {
-        if (event.key === "Enter") {
+        if (isNonImeKey(event, "Enter")) {
           event.preventDefault();
           event.currentTarget.blur();
         }
@@ -149,8 +150,8 @@ function SubTasksSection({
               className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               onChange={(event) => setTitle(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") void submit();
-                if (event.key === "Escape") {
+                if (isNonImeKey(event, "Enter")) void submit();
+                if (isNonImeKey(event, "Escape")) {
                   setAdding(false);
                   setTitle("");
                 }
