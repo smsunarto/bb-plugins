@@ -11,6 +11,7 @@ const { CapyNavigation, NEW_CAPTAIN_NAV_ITEM_ID } =
   await import("../components/nav/capy-navigation.tsx");
 const { forgetSidebarActions, publishSidebarActions } =
   await import("../lib/sidebar-actions-bridge.ts");
+const { disposeCaptainAvailability } = await import("../hooks/use-captain.ts");
 
 const SEARCH = "__bb__/search-threads";
 const originalMatchMedia = window.matchMedia;
@@ -259,7 +260,7 @@ describe("CapyNavigation", () => {
       }
     });
 
-    it("stays hidden when the availability read times out and recovers on plugins-changed and real reconnect", async () => {
+    it("hides the row when a refresh times out and recovers on plugins-changed and real reconnect", async () => {
       const published = { settle() {}, canSettle: () => false, openNewCaptain() {} };
       publishSidebarActions(published);
       const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
@@ -283,7 +284,7 @@ describe("CapyNavigation", () => {
         return () => set.delete(callback);
       };
       let calls = 0;
-      let mode: "hang" | "running" | "disabled" = "hang";
+      let mode: "hang" | "running" | "disabled" = "running";
       const listPlugins = () => {
         calls += 1;
         if (mode === "hang") return new Promise<never>(() => {});
@@ -296,12 +297,7 @@ describe("CapyNavigation", () => {
       };
       try {
         const slot = mount(items(), { listPlugins, subscribe });
-        // Renders nothing while loading, and stays hidden after timeout.
-        assert.equal(slot.queryByRole("button", { name: "New Captain" }), null);
-        await act(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 45));
-        });
-        assert.equal(slot.queryByRole("button", { name: "New Captain" }), null);
+        await slot.findByRole("button", { name: "New Captain" });
         assert.equal(calls, 1);
 
         // First connect is not a reconnect and must not trigger a re-read.
@@ -318,6 +314,20 @@ describe("CapyNavigation", () => {
           });
         });
         assert.equal(calls, 1);
+
+        // Make plugins.list hang on refresh: the 20ms timeout must clear the visible row.
+        mode = "hang";
+        act(() =>
+          emit("system:changed", {
+            entity: "system",
+            type: "changed",
+            changes: ["plugins-changed"],
+          }),
+        );
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+        });
+        assert.equal(slot.queryByRole("button", { name: "New Captain" }), null);
 
         // plugins-changed recovers it.
         mode = "running";
@@ -361,6 +371,79 @@ describe("CapyNavigation", () => {
         await slot.findByRole("button", { name: "New Captain" });
       } finally {
         timeoutSpy.mockRestore();
+        forgetSidebarActions(published);
+      }
+    });
+
+    it("unsubscribes listeners on bundle dispose so reload triggers one read per event and disable triggers none", async () => {
+      const published = { settle() {}, canSettle: () => false, openNewCaptain() {} };
+      publishSidebarActions(published);
+      const handlers = new Map<string, Set<(event: unknown) => void>>();
+      const emit = (eventName: string, payload: unknown) => {
+        for (const cb of handlers.get(eventName) ?? []) cb(payload);
+      };
+      const subscribe = ({
+        event,
+        callback,
+      }: {
+        event: string;
+        callback: (e: unknown) => void;
+      }) => {
+        const set = handlers.get(event) ?? new Set();
+        set.add(callback);
+        handlers.set(event, set);
+        return () => set.delete(callback);
+      };
+      let calls = 0;
+      const listPlugins = async () => {
+        calls += 1;
+        return { plugins: CAPTAIN_RUNNING };
+      };
+      try {
+        // Generation 1 mounts, then disposes on simulated bundle swap.
+        const first = mount(items(), { listPlugins, subscribe });
+        await first.findByRole("button", { name: "New Captain" });
+        assert.equal(calls, 1);
+        disposeCaptainAvailability();
+        cleanup();
+
+        // Generation 2 mounts on the same event bus: one plugins-changed event triggers one read.
+        const second = mount(items(), { listPlugins, subscribe });
+        await second.findByRole("button", { name: "New Captain" });
+        assert.equal(calls, 2);
+        act(() =>
+          emit("system:changed", {
+            entity: "system",
+            type: "changed",
+            changes: ["plugins-changed"],
+          }),
+        );
+        await act(async () => {});
+        assert.equal(calls, 3);
+
+        // After plugin disable / dispose, events trigger zero reads.
+        disposeCaptainAvailability();
+        cleanup();
+        act(() => {
+          emit("system:changed", {
+            entity: "system",
+            type: "changed",
+            changes: ["plugins-changed"],
+          });
+          emit("realtime:connection", {
+            state: "disconnected",
+            reconnected: false,
+            reconnectDelayMs: 500,
+          });
+          emit("realtime:connection", {
+            state: "connected",
+            reconnected: true,
+            reconnectDelayMs: null,
+          });
+        });
+        await act(async () => {});
+        assert.equal(calls, 3);
+      } finally {
         forgetSidebarActions(published);
       }
     });

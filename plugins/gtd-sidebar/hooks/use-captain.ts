@@ -27,12 +27,13 @@ const AVAILABILITY_TIMEOUT_MS = 5_000;
 interface CaptainAvailabilityCache {
   available: boolean;
   pending: Promise<void> | null;
-  subscribed: boolean;
+  unsubscribes: (() => void)[];
   sawReconnect: boolean;
   listeners: Set<() => void>;
 }
 
 const availabilityCaches = new WeakMap<object, CaptainAvailabilityCache>();
+const subscribedCaches = new Set<CaptainAvailabilityCache>();
 
 function getAvailabilityCache(sdk: ReturnType<typeof useSdk>): CaptainAvailabilityCache {
   let cache = availabilityCaches.get(sdk);
@@ -40,7 +41,7 @@ function getAvailabilityCache(sdk: ReturnType<typeof useSdk>): CaptainAvailabili
     cache = {
       available: false,
       pending: null,
-      subscribed: false,
+      unsubscribes: [],
       sawReconnect: false,
       listeners: new Set(),
     };
@@ -96,28 +97,48 @@ function refreshAvailability(
   cache.pending = request;
 }
 
+function detachSubscriptions(cache: CaptainAvailabilityCache): void {
+  for (const unsubscribe of cache.unsubscribes) unsubscribe();
+  cache.unsubscribes.length = 0;
+  cache.sawReconnect = false;
+  subscribedCaches.delete(cache);
+}
+
 function ensureSubscribed(sdk: ReturnType<typeof useSdk>, cache: CaptainAvailabilityCache): void {
-  if (cache.subscribed || typeof sdk.subscribe !== "function") return;
-  cache.subscribed = true;
-  sdk.subscribe({
-    event: "system:changed",
-    callback: (event) => {
-      if (event.changes.includes("plugins-changed")) refreshAvailability(sdk, cache);
-    },
-  });
-  sdk.subscribe({
-    event: "realtime:connection",
-    callback: (event) => {
-      if (event.state === "disconnected" || (event.state === "connecting" && event.reconnected)) {
-        cache.sawReconnect = true;
-        return;
-      }
-      if (event.state === "connected" && (event.reconnected || cache.sawReconnect)) {
-        cache.sawReconnect = false;
-        refreshAvailability(sdk, cache);
-      }
-    },
-  });
+  if (cache.unsubscribes.length > 0 || typeof sdk.subscribe !== "function") return;
+  cache.unsubscribes.push(
+    sdk.subscribe({
+      event: "system:changed",
+      callback: (event) => {
+        if (event.changes.includes("plugins-changed")) refreshAvailability(sdk, cache);
+      },
+    }),
+    sdk.subscribe({
+      event: "realtime:connection",
+      callback: (event) => {
+        if (event.state === "disconnected" || (event.state === "connecting" && event.reconnected)) {
+          cache.sawReconnect = true;
+          return;
+        }
+        if (event.state === "connected" && (event.reconnected || cache.sawReconnect)) {
+          cache.sawReconnect = false;
+          refreshAvailability(sdk, cache);
+        }
+      },
+    }),
+  );
+  subscribedCaches.add(cache);
+}
+
+/**
+ * Unsubscribes every active Captain availability listener on bundle teardown or
+ * plugin disable so reloads never stack duplicate listeners.
+ */
+export function disposeCaptainAvailability(): void {
+  for (const cache of subscribedCaches) {
+    detachSubscriptions(cache);
+    cache.pending = null;
+  }
 }
 
 /**
@@ -136,6 +157,7 @@ export function useCaptainAvailable(): boolean {
       if (cache.pending === null) refreshAvailability(sdk, cache);
       return () => {
         cache.listeners.delete(listener);
+        if (cache.listeners.size === 0) detachSubscriptions(cache);
       };
     },
     [sdk, cache],

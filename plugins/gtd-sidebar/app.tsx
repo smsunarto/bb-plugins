@@ -17,6 +17,7 @@ import { mountHeaderSettleStyle } from "./components/header/header-settle-style"
 import { cancelComposeKeyboardHandoff } from "./lib/compose-keyboard";
 import { mountPhoneDrawer } from "./lib/phone-drawer";
 import { mountPhoneDrawerStyle } from "./lib/phone-drawer-style";
+import { disposeCaptainAvailability } from "./hooks/use-captain";
 
 export default definePluginApp((app) => {
   // Versions up to 0.4.x cached the shelves and provider marks in web storage,
@@ -85,6 +86,15 @@ export default definePluginApp((app) => {
         disposeEffects();
         disposeStyle();
       };
+    },
+  });
+
+  // Unsubscribe Captain availability listeners when this bundle swaps or disables.
+  app.contentScripts.register({
+    id: "captain-availability",
+    mount: ({ signal }) => {
+      signal.addEventListener("abort", disposeCaptainAvailability, { once: true });
+      return disposeCaptainAvailability;
     },
   });
 });
