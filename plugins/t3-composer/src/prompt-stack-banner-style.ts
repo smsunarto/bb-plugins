@@ -34,6 +34,8 @@
  * or inside workflow/peek wrapper `<div>`s, with collapsible disclosure bodies
  * rendered as `section[aria-hidden="true|false"]`.
  */
+import { BANNER_HOVER } from "@bb-plugins/ui/banner-hover";
+
 const STYLE_MARK = "data-t3-prompt-stack-banner-style";
 export const CARD_ATTR = "data-t3-prompt-stack-card";
 export const TOGGLE_ATTR = "data-t3-prompt-stack-toggle";
@@ -59,8 +61,8 @@ export const PROMPT_STACK_BANNER_CSS = `
    so --t3-composer-ring-width and --t3-composer-hairline resolve directly from
    app.css, using theme tokens only. */
 ${CARD} {
-  --t3-prompt-banner-hover-bg: var(--background);
-  --t3-prompt-banner-hover-shadow: inset 0 0 0 var(--t3-composer-ring-width) var(--border);
+  --bb-banner-hover-bg: ${BANNER_HOVER.lightBg};
+  --bb-banner-hover-shadow: ${BANNER_HOVER.lightShadow};
   position: relative;
   overflow: hidden;
   border-width: 0;
@@ -68,8 +70,8 @@ ${CARD} {
 }
 
 .dark ${CARD} {
-  --t3-prompt-banner-hover-bg: var(--state-hover);
-  --t3-prompt-banner-hover-shadow: none;
+  --bb-banner-hover-bg: ${BANNER_HOVER.darkBg};
+  --bb-banner-hover-shadow: ${BANNER_HOVER.darkShadow};
 }
 
 ${CARD}::after,
@@ -150,11 +152,11 @@ ${CARD} ${VALUE} {
    focus ring. */
 @media (hover: hover) {
   ${CARD} ${TOGGLE}:hover {
-    background-color: var(--t3-prompt-banner-hover-bg);
+    background-color: var(--bb-banner-hover-bg);
   }
 
   ${CARD} ${TOGGLE}:hover:not(:focus-visible) {
-    box-shadow: var(--t3-prompt-banner-hover-shadow);
+    box-shadow: var(--bb-banner-hover-shadow);
   }
 }
 

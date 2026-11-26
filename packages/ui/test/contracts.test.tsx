@@ -70,6 +70,7 @@ describe("shared surfaces", () => {
   test("Badge variants map to shared classes", () => {
     expect(renderToStaticMarkup(<Badge variant="count">3</Badge>)).toContain(styles["badge-count"]);
     expect(surface.hairline).toBe(styles.hairline);
+    expect(surface.bannerHover).toBe(styles["banner-hover"]);
   });
 });
 

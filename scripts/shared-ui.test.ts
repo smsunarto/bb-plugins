@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { sharedStyles } from "./shared-ui-styles";
+import { BANNER_HOVER } from "../packages/ui/src/banner-hover";
 
 function checkUtils(root: string) {
   const path = join(root, "utils.ts");
@@ -47,4 +48,11 @@ test("shared selectors match their content fingerprint", () => {
   expect(result.css).toBe(source);
   expect(result.classes).toBe(readFileSync("packages/ui/src/styles.ts", "utf8"));
   expect(sharedStyles(source + "\n/* changed */").classes).not.toBe(result.classes);
+
+  // controls.css banner-hover custom properties stay in lockstep with BANNER_HOVER.
+  const collapsed = source.replace(/\s+/g, " ");
+  expect(collapsed).toContain(`--bb-banner-hover-bg: ${BANNER_HOVER.lightBg};`);
+  expect(collapsed).toContain(`--bb-banner-hover-shadow: ${BANNER_HOVER.lightShadow};`);
+  expect(collapsed).toContain(`--bb-banner-hover-bg: ${BANNER_HOVER.darkBg};`);
+  expect(collapsed).toContain(`--bb-banner-hover-shadow: ${BANNER_HOVER.darkShadow};`);
 });

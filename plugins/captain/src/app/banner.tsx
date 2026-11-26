@@ -123,11 +123,6 @@ function Banner({ captainId }: { captainId: string }) {
   );
 }
 
-/** Shared banner hover surface: lightens via t3-composer's card token (white + hairline
- *  lift in Default Light, --state-hover in dark themes) and never darkens on light cards. */
-const BANNER_CONTROL_HOVER =
-  "hover:bg-(--t3-prompt-banner-hover-bg,var(--background)) hover:border-border dark:hover:bg-(--t3-prompt-banner-hover-bg,var(--state-hover)) dark:hover:border-transparent";
-
 function QueueStatus({ id, label, degraded }: { id: string; label: string; degraded: boolean }) {
   const panel = useAppPanel();
   return (
@@ -147,7 +142,7 @@ function QueueStatus({ id, label, degraded }: { id: string; label: string; degra
         tone="muted"
         className={cn(
           TAP,
-          BANNER_CONTROL_HOVER,
+          surface.bannerHover,
           "-mr-1.5 h-5 px-1.5 font-normal focus-visible:ring-inset",
         )}
         onClick={() => panel.openTab({ tab: CAPTAIN_OVERVIEW_TAB })}
@@ -475,11 +470,7 @@ function AnswerRow({
               type="button"
               size="sm"
               variant="outline"
-              className={cn(
-                TAP,
-                MOBILE_ANSWER,
-                "hover:bg-(--t3-prompt-banner-hover-bg,var(--background)) dark:hover:bg-(--t3-prompt-banner-hover-bg,var(--state-hover)) max-sm:col-span-full",
-              )}
+              className={cn(TAP, MOBILE_ANSWER, surface.bannerHover, "max-sm:col-span-full")}
               aria-expanded={plan.open}
               aria-controls={plan.id}
               onClick={plan.toggle}
@@ -763,7 +754,7 @@ function QueueTabs({
               tabIndex={active ? 0 : -1}
               className={cn(
                 TAP,
-                BANNER_CONTROL_HOVER,
+                !active && surface.bannerHover,
                 "max-w-42 gap-1.5 max-sm:h-auto max-sm:max-w-52 max-sm:py-1.5 max-sm:leading-4",
                 active && "bg-(--surface-selected) text-foreground",
               )}
@@ -968,7 +959,8 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
         <span
           className={cn(
             surface.edge,
-            "flex items-center gap-1 rounded-full bg-popover px-2.5 py-0.5 text-xs transition-colors group-hover:bg-(--t3-prompt-banner-hover-bg,var(--background)) group-hover:text-foreground dark:group-hover:bg-(--t3-prompt-banner-hover-bg,var(--state-hover))",
+            surface.bannerHover,
+            "flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs transition-colors group-hover:text-foreground",
           )}
         >
           {open ? "Less" : "More"}
