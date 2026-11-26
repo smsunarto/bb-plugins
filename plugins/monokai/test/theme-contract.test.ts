@@ -532,7 +532,10 @@ describe("bb Monokai contract audit", () => {
       ".dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > [data-icon-root].size-3\\.5,\n.dark .group\\/timeline-row span.inline-flex.gap-1\\.5 > [data-icon-root].size-3\\.5 {\n  width: 16px;\n  height: 16px;\n  color: inherit;",
     );
     expect(theme).toContain(
-      ".dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > svg[data-icon-root].size-3\\.5 *,\n.dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > span[data-icon-root].size-3\\.5 > svg *,\n.dark .group\\/timeline-row span.inline-flex.gap-1\\.5 > svg[data-icon-root].size-3\\.5 *,\n.dark .group\\/timeline-row span.inline-flex.gap-1\\.5 > span[data-icon-root].size-3\\.5 > svg * {\n  stroke-width: 1.75;",
+      ".dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > svg[data-icon-root].size-3\\.5 path,",
+    );
+    expect(theme).toContain(
+      ".dark .group\\/timeline-row span.inline-flex.gap-1\\.5 > span[data-icon-root].size-3\\.5 > svg polyline {\n  stroke-width: 1.75;",
     );
     expect(theme).not.toContain("--agent-surface-border");
     expect(theme).toContain(
@@ -553,12 +556,14 @@ describe("bb Monokai contract audit", () => {
       ),
     );
     expect(traceRules.length).toBeGreaterThan(20);
-    // Every individual comma-separated selector in every trace rule must be .dark-scoped.
+    // Every individual comma-separated selector in every trace rule must be .dark-scoped,
+    // avoid bare tag-bucketed `> div`/`> span`/` pre`, and add zero universal-bucket `*` selectors.
     for (const rule of traceRules) {
       for (const branch of rule.selector.split(",")) {
-        expect(branch.trim()).toContain(".dark");
+        const trimmed = branch.trim();
+        expect(trimmed).toContain(".dark");
+        expect(trimmed).not.toMatch(/\*\s*$/);
       }
-      // No bare tag-bucketed `> div`, `> span`, or ` pre` rules in trace styling.
       expect(rule.selector).not.toMatch(/>\s*(?:div|span)\s*(?:,|$)/);
       expect(rule.selector).not.toMatch(/\bpre\s*(?:,|$)/);
       // No tool-card inset border rings (normalize multi-line box-shadow).
@@ -573,17 +578,20 @@ describe("bb Monokai contract audit", () => {
       ".dark [data-promptbox]",
       ".dark [data-promptbox] [data-promptbox-editor-scroll]",
       ".dark [data-follow-up-composer]",
+      '#root-compose-main-panel [data-testid="root-compose-compact-composer"], #root-compose-main-panel .\\@container\\/page > div > [data-promptbox-shell]',
+      "#root-compose-main-panel [data-promptbox-typeahead-menu]",
       ".dark [data-follow-up-composer] [data-promptbox]:not([data-promptbox-compact]) [data-promptbox-editor-scroll]",
       ".dark [data-follow-up-composer-expanded]",
-      ":where(.dark) [data-promptbox]",
-      ".dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror",
+      ".dark [data-follow-up-composer]:not([data-follow-up-composer-expanded]) [data-follow-up-composer-footer]",
+      ".dark [data-follow-up-composer]:not([data-follow-up-composer-expanded]) [data-promptbox]:not([data-promptbox-voice-active]) [data-promptbox-editor-scroll]",
       ".dark [data-promptbox] [data-promptbox-editor-content]::before, .dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror p.is-editor-empty:first-child::before",
+      '.dark button[aria-label="Environment"][data-promptbox-shrinkable-control] svg[data-icon="Folder"]',
+      '.dark button[aria-label="Environment"][data-promptbox-shrinkable-control] svg[data-icon="Folder"] > *',
       ".dark [data-promptbox-send-menu].bg-foreground",
       '.dark [data-promptbox-submit-action][aria-label="Stop run"]',
       '.dark [data-promptbox-submit-action][aria-label="Stop run"]:hover',
-      '.dark button[aria-label="Environment"][data-promptbox-shrinkable-control] svg[data-icon="Folder"]',
-      '.dark button[aria-label="Environment"][data-promptbox-shrinkable-control] svg[data-icon="Folder"] > *',
-      "#root-compose-main-panel [data-promptbox-typeahead-menu]",
+      ":where(.dark) [data-promptbox]",
+      ".dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror",
     ]);
     for (const rule of rules) {
       const normalizedSelector = rule.selector.replace(/\s+/g, " ");
@@ -596,16 +604,8 @@ describe("bb Monokai contract audit", () => {
           '.dark [data-queued-message-row] button[aria-label^="Reorder queued message"]:disabled',
         );
       }
-      if (
-        normalizedSelector.includes("[data-promptbox]") ||
-        normalizedSelector.includes("[data-follow-up-composer]")
-      ) {
-        const isContainerCompactRule =
-          rule.atRules.some((at) => at.includes("follow-up-composer-container-compact")) ||
-          normalizedSelector.includes("[data-promptbox-shell]");
-        if (!isContainerCompactRule) {
-          expect(allowedComposerSelectors.has(normalizedSelector)).toBe(true);
-        }
+      if (/\[data-(?:promptbox|follow-up-composer)[\w-]*/.test(normalizedSelector)) {
+        expect(allowedComposerSelectors.has(normalizedSelector)).toBe(true);
       }
     }
     // Keep total `*=` substring selectors at or below the pre-BBP-133 baseline (37).

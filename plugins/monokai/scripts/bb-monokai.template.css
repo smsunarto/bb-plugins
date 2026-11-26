@@ -3659,10 +3659,26 @@ diffs-container {
   color: inherit;
 }
 
-.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 *,
-.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg *,
-.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 *,
-.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg * {
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 path,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 circle,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 rect,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 line,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 polyline,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg path,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg circle,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg rect,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg line,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg polyline,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 path,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 circle,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 rect,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 line,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 polyline,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg path,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg circle,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg rect,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg line,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg polyline {
   stroke-width: 1.75;
 }
 
@@ -3735,20 +3751,15 @@ diffs-container {
   padding-inline-end: 4px;
 }
 
-/* Bundle children (px-0): align under the 16px leading icon center (7px). */
+/* Flush bundle children (px-0): align at the 0px text/row start (1px). */
 .dark .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .px-0.pb-1.pt-0\.5 {
-  margin-inline-start: 7px;
+  margin-inline-start: 1px;
 }
 
-/* Top-level and nested rows (px-2): align under the 16px leading icon center (15px). */
+/* Top-level, nested, segmented turn (:turn:<n>), and TimelineWorkingIndicator
+ * rows (px-2): align uniformly at the 8px text/row start (9px) so icon rows,
+ * text-only rows, and segmented turns never disagree or cut into text. */
 .dark .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .px-2.pb-1.pt-0\.5 {
-  margin-inline-start: 15px;
-}
-
-/* Text-only top-level rows whose structure is pure CSS (Turn rows and
- * TimelineWorkingIndicator): align right under the 8px text start (9px). */
-.dark [data-timeline-row-id$=":turn"] > .rounded-md > .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .px-2.pb-1.pt-0\.5,
-.dark .mt-4 > .rounded-md > .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .px-2.pb-1.pt-0\.5 {
   margin-inline-start: 9px;
 }
 
@@ -3764,16 +3775,15 @@ diffs-container {
 }
 
 /* Nested timeline group rail (TurnRowBody & DelegationRowBody): suppress bb's
- * duplicate inner ::before line and padding inside ExpandablePanel so only the
- * outer pure-CSS Trace rail renders (zero double rails, zero cold-load shift).
- * GeneratedConversationMessage uses AnimatedExpandablePanelContent (no
- * aria-hidden="false" wrapper) and styles its own rail cleanly below. */
-.dark .group\/timeline-row + div[aria-hidden="false"] .relative.my-1.pl-3.pr-2.before\:bg-border-seam {
+ * duplicate inner ::before line and padding only on the body container's direct
+ * child so nested GeneratedConversationMessage previews keep their own rail and
+ * 12px indent. */
+.dark .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 > .relative.my-1.pl-3.pr-2.before\:bg-border-seam {
   margin-block: 0;
   padding-inline: 0;
 }
 
-.dark .group\/timeline-row + div[aria-hidden="false"] .relative.my-1.pl-3.pr-2.before\:bg-border-seam::before {
+.dark .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 > .relative.my-1.pl-3.pr-2.before\:bg-border-seam::before {
   display: none;
 }
 

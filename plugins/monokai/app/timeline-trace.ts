@@ -5,9 +5,7 @@ type RecordValue = Record<string, unknown>;
 export interface TraceRowMeta {
   kind?: string;
   status?: string;
-  workKind?: string;
   systemKind?: string;
-  operationKind?: string;
 }
 
 const ROW_SELECTOR = "[data-timeline-row-id]";
@@ -49,9 +47,7 @@ export function readTimelineRowMeta(element: Element): TraceRowMeta | null {
     return {
       kind,
       status: stringField(row, "status"),
-      workKind: stringField(row, "workKind"),
       systemKind: stringField(row, "systemKind"),
-      operationKind: stringField(row, "operationKind"),
     };
   }
   return null;
@@ -297,8 +293,7 @@ export function mountTimelineTrace({ signal }: PluginContentScriptContext) {
       const active = isMonokaiActive();
       if (!active) {
         setBodyObserved(false);
-        if (wasActive || rowTags.size > 0) clearAll();
-        else dirtyRows.clear();
+        clearAll();
         wasActive = false;
         fullScanPending = false;
         return;

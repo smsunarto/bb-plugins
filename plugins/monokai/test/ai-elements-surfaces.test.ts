@@ -289,12 +289,32 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
     };
     globalThis.getComputedStyle = ((el: Element, pseudo?: string | null) => {
       computedStyleCalls++;
-      return origGetComputedStyle(el, pseudo);
+      const base = origGetComputedStyle(el, pseudo);
+      if (el !== document.documentElement) return base;
+      return new Proxy(base, {
+        get(target, prop, receiver) {
+          if (prop === "getPropertyValue") {
+            return (name: string) => {
+              if (name === "--bb-monokai-active") {
+                const inlineVal = target.getPropertyValue(name).trim();
+                if (inlineVal) return inlineVal;
+                const styleText = document.getElementById("bb-app-theme")?.textContent ?? "";
+                return styleText.includes("--bb-monokai-active: 1") ? "1" : "";
+              }
+              return target.getPropertyValue(name);
+            };
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      });
     }) as typeof getComputedStyle;
 
     try {
       document.documentElement.className = "dark";
-      document.documentElement.style.setProperty("--bb-monokai-active", "1");
+      const themeStyle = document.createElement("style");
+      themeStyle.id = "bb-app-theme";
+      themeStyle.textContent = ":root { --bb-monokai-active: 1; }";
+      document.head.appendChild(themeStyle);
       document.body.innerHTML = `
         <div data-timeline-row-list="top-level" id="tl-root">
           <div data-timeline-row-id="t:user:1">
@@ -389,10 +409,8 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
 
       expect(readTimelineRowMeta(cmdErr)).toEqual({
         kind: "work",
-        workKind: "command",
         status: "error",
         systemKind: undefined,
-        operationKind: undefined,
       });
 
       const ac = new AbortController();
@@ -432,32 +450,33 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
         true,
       );
 
-      // Late-mount via bodyObserver: appending a new failed row & multi-intent row tags them on rAF.
+      // Late-mount via bodyObserver addedNodes loop: appending a brand-new FAILED row
+      // directly into the list (whose target is NOT inside a row) must tag it on rAF.
       const tlRoot = document.getElementById("tl-root")!;
-      const lateRow = document.createElement("div");
-      lateRow.setAttribute("data-timeline-row-id", "t:command:late");
-      lateRow.innerHTML = `
+      const lateErrRow = document.createElement("div");
+      lateErrRow.setAttribute("data-timeline-row-id", "t:command:late-fail");
+      lateErrRow.innerHTML = `
         <div class="rounded-md text-muted-foreground w-full">
-          <div class="group/timeline-row"><button type="button" aria-expanded="false" class="px-2"><span>Late cmd</span></button></div>
+          <div class="group/timeline-row"><button type="button" aria-expanded="false" class="px-2"><span>Late failed cmd</span></button></div>
         </div>
       `;
-      attachFiberRow(lateRow, { kind: "work", workKind: "command", status: "completed" });
-      tlRoot.appendChild(lateRow);
+      attachFiberRow(lateErrRow, { kind: "work", workKind: "command", status: "error" });
+      tlRoot.appendChild(lateErrRow);
       await flushObserverAndFrame(frames);
-      expect(lateRow.hasAttribute("data-monokai-trace-status")).toBe(false);
+      expect(lateErrRow.getAttribute("data-monokai-trace-status")).toBe("error");
 
-      // Re-render: row transitions completed -> error, then error -> completed on DOM update.
-      attachFiberRow(lateRow, { kind: "work", workKind: "command", status: "error" });
-      lateRow.querySelector("button")!.appendChild(document.createElement("span"));
+      // Re-render: row transitions error -> completed, then completed -> error on DOM update.
+      attachFiberRow(lateErrRow, { kind: "work", workKind: "command", status: "completed" });
+      lateErrRow.querySelector("button")!.appendChild(document.createElement("span"));
       await flushObserverAndFrame(frames);
-      expect(lateRow.getAttribute("data-monokai-trace-status")).toBe("error");
+      expect(lateErrRow.hasAttribute("data-monokai-trace-status")).toBe(false);
 
-      attachFiberRow(lateRow, { kind: "work", workKind: "command", status: "completed" });
-      lateRow.querySelector("button")!.lastElementChild!.remove();
+      attachFiberRow(lateErrRow, { kind: "work", workKind: "command", status: "error" });
+      lateErrRow.querySelector("button")!.lastElementChild!.remove();
       await flushObserverAndFrame(frames);
-      expect(lateRow.hasAttribute("data-monokai-trace-status")).toBe(false);
+      expect(lateErrRow.getAttribute("data-monokai-trace-status")).toBe("error");
 
-      // rootObserver ignores irrelevant <head> mutations (e.g. <meta>, <title>) with zero getComputedStyle calls.
+      // rootObserver ignores irrelevant <head> mutations (e.g. <meta>) with zero getComputedStyle calls.
       computedStyleCalls = 0;
       const metaEl = document.createElement("meta");
       metaEl.setAttribute("name", "viewport");
@@ -467,15 +486,11 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
       expect(computedStyleCalls).toBe(0);
       expect(frames.length).toBe(0);
 
-      // rootObserver defers and coalesces a burst of theme mutations into ONE rAF getComputedStyle check
-      // (zero synchronous getComputedStyle inside MutationObserver) and clears all tags when inactive.
+      // Theme toggle OFF through <style id="bb-app-theme"> characterData mutation
+      // (without touching documentElement), coalesced into ONE deferred rAF check.
       computedStyleCalls = 0;
-      document.documentElement.style.removeProperty("--bb-monokai-active");
-      const styleA = document.createElement("style");
-      styleA.textContent = ".x{}";
-      const styleB = document.createElement("style");
-      styleB.textContent = ".y{}";
-      document.head.append(styleA, styleB);
+      themeStyle.firstChild!.textContent = ":root { --other: 1; }";
+      themeStyle.firstChild!.textContent = "";
       await Promise.resolve();
       await Promise.resolve();
       expect(computedStyleCalls).toBe(0);
@@ -501,8 +516,8 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
       expect(frames.length).toBe(0);
       expect(inactiveRow.hasAttribute("data-monokai-trace-status")).toBe(false);
 
-      // Toggling Monokai back on re-scans and tags rows mounted while inactive.
-      document.documentElement.style.setProperty("--bb-monokai-active", "1");
+      // Theme toggle ON through <style id="bb-app-theme"> textContent replacement (STYLE childList).
+      themeStyle.textContent = ":root { --bb-monokai-active: 1; }";
       await flushObserverAndFrame(frames);
       expect(inactiveRow.getAttribute("data-monokai-trace-status")).toBe("error");
       expect(cmdErr.getAttribute("data-monokai-trace-status")).toBe("error");
@@ -617,9 +632,26 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
                         <div aria-hidden="false"><div class="overflow-hidden"><div class="px-0 pb-1 pt-0.5" id="flush-rail-inner"></div></div></div>
                       </div>
                     </div>
+                    <div data-timeline-row-id="t:sent:1">
+                      <div class="rounded-md text-muted-foreground w-full">
+                        <div class="group/timeline-row"><button type="button" aria-expanded="false" class="px-2"><span>Sent to peer</span></button></div>
+                        <div class="relative"><div><div class="px-2 pb-1 pt-0.5">
+                          <div class="relative my-1 pl-3 pr-2 before:bg-border-seam max-w-full min-w-0" id="nested-msg-preview">Preview body</div>
+                        </div></div></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div></div></div>
+            </div>
+          </div>
+
+          <div data-timeline-row-id="t:turn-1:turn:2">
+            <div class="rounded-md text-muted-foreground w-full">
+              <div class="group/timeline-row">
+                <button type="button" aria-expanded="true" class="px-2"><span>Worked for 8ms</span></button>
+              </div>
+              <div aria-hidden="false"><div class="overflow-hidden"><div class="px-2 pb-1 pt-0.5" id="turn-seg-rail-inner"></div></div></div>
             </div>
           </div>
 
@@ -805,19 +837,49 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
       );
 
       // 6. Pure-CSS trace rails & static opacity (zero script tags needed on first paint):
-      // px-2 -> 15px, px-0 -> 7px, :turn & TimelineWorkingIndicator -> 9px, collapsed -> none.
+      // every open px-2 row (icon, text-only, :turn, segmented :turn:<n>, WorkingIndicator) aligns
+      // uniformly at the 8px text-start offset (9px); flush px-0 rows align at 1px; collapsed -> none.
       expect(
         resolvedProp(document.getElementById("ok-rail-inner")!, "margin-inline-start", DESKTOP),
-      ).toBe("15px");
+      ).toBe("9px");
       expect(
-        resolvedProp(document.getElementById("flush-rail-inner")!, "margin-inline-start", DESKTOP),
-      ).toBe("7px");
+        resolvedProp(document.getElementById("err-rail-inner")!, "margin-inline-start", DESKTOP),
+      ).toBe("9px");
       expect(
         resolvedProp(document.getElementById("turn-rail-inner")!, "margin-inline-start", DESKTOP),
       ).toBe("9px");
       expect(
+        resolvedProp(
+          document.getElementById("turn-seg-rail-inner")!,
+          "margin-inline-start",
+          DESKTOP,
+        ),
+      ).toBe("9px");
+      expect(
+        resolvedProp(document.getElementById("flush-rail-inner")!, "margin-inline-start", DESKTOP),
+      ).toBe("1px");
+      // Direct-child duplicate nested group line is suppressed on TurnRowBody, while nested
+      // GeneratedConversationMessage previews inside the turn preserve their own rail and indent.
+      expect(
         resolvedProp(document.getElementById("turn-nested-group")!, "display", DESKTOP, "::before"),
       ).toBe("none");
+      expect(
+        resolvedProp(document.getElementById("turn-nested-group")!, "padding-inline", DESKTOP),
+      ).toBe("0");
+      expect(
+        resolvedProp(
+          document.getElementById("nested-msg-preview")!,
+          "display",
+          DESKTOP,
+          "::before",
+        ),
+      ).toBeUndefined();
+      expect(
+        resolvedProp(document.getElementById("nested-msg-preview")!, "width", DESKTOP, "::before"),
+      ).toBe("var(--hairline-width)");
+      expect(
+        resolvedProp(document.getElementById("nested-msg-preview")!, "padding-inline", DESKTOP),
+      ).toBeUndefined();
       expect(resolvedProp(document.getElementById("pure-static-wrap")!, "opacity", DESKTOP)).toBe(
         "1",
       );
