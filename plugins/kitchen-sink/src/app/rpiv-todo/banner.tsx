@@ -105,7 +105,6 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
   const toggleId = `${id}-toggle`;
   const bodyId = `${id}-body`;
   const items = snapshot?.items ?? [];
-  const truncated = snapshot?.truncated ?? false;
 
   useEffect(() => {
     const changed = () => setVisible(document.visibilityState !== "hidden");
@@ -175,7 +174,10 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
 
   const sorted = [...items].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
 
-  if (sorted.length === 0 && (connection !== "connected" || (!error && !truncated))) return null;
+  // Never pop up a banner while loading, paging task history, or after an error
+  // with no real tasks to show. Background loading continues in useEffect until
+  // real tasks arrive.
+  if (sorted.length === 0) return null;
 
   const completed = sorted.filter((item) => item.status === "completed").length;
   const current = sorted.find((item) => item.status === "in_progress");
@@ -215,21 +217,19 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
           />
         </button>
       </div>
-      {connection === "connected" && (error || truncated) ? (
+      {connection === "connected" && error ? (
         <output className="rpiv-todo-notice">
-          {truncated ? "Loading task history…" : "Could not refresh tasks"}
-          {error && connection === "connected" ? (
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-xs"
-              {...KEEP_COMPOSER_FOCUS}
-              onClick={() => refresh((value) => value + 1)}
-            >
-              Retry
-            </Button>
-          ) : null}
+          Could not refresh tasks
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="h-auto p-0 text-xs"
+            {...KEEP_COMPOSER_FOCUS}
+            onClick={() => refresh((value) => value + 1)}
+          >
+            Retry
+          </Button>
         </output>
       ) : null}
       <section

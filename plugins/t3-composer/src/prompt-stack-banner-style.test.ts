@@ -2,9 +2,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CARD_ATTR,
+  FLAT_ROW_ATTR,
+  LABEL_ATTR,
   mountPromptStackBannerStyle,
   PROMPT_STACK_BANNER_CSS,
   syncPromptStackCards,
+  VALUE_ATTR,
 } from "./prompt-stack-banner-style";
 
 const styles = () => document.head.querySelectorAll("style[data-t3-prompt-stack-banner-style]");
@@ -168,5 +171,55 @@ describe("mountPromptStackBannerStyle", () => {
     syncPromptStackCards(stack);
     expect(outer.hasAttribute(CARD_ATTR)).toBe(true);
     expect(inner.hasAttribute(CARD_ATTR)).toBe(false);
+  });
+
+  it("tags 1-item and 2-item background-agent banners with flat-row, label, and value marks and cleans them on dispose", () => {
+    document.body.innerHTML = `
+      <div data-promptbox-shell="">
+        <div>
+          <section aria-label="Running 1 background agent">
+            <div class="bg-background/70">
+              <div aria-label="Running background agent: Ship BBP-139 PR">
+                <svg class="animate-shine-icon"></svg>
+                <span>
+                  <span class="text-muted-foreground">Running background agent:</span>
+                  <span class="animate-shine font-medium text-foreground">Ship BBP-139 PR</span>
+                </span>
+                <span>25s</span>
+              </div>
+            </div>
+          </section>
+          <section aria-label="Running 2 background agents">
+            <div class="bg-background/70">
+              <button id="thread-background-commands-card-toggle" aria-expanded="false">
+                <svg class="animate-shine-icon"></svg>
+                <span>
+                  <span class="font-medium">Running 2 background agents</span>
+                  <span>·</span>
+                  <span class="animate-shine font-medium">Ship BBP-139 PR</span>
+                </span>
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
+    `;
+    const dispose = mountPromptStackBannerStyle(document, new AbortController().signal);
+    expect(document.querySelectorAll(`[${CARD_ATTR}]`)).toHaveLength(2);
+    expect(document.querySelectorAll(`[${FLAT_ROW_ATTR}]`)).toHaveLength(3);
+    expect([...document.querySelectorAll(`[${LABEL_ATTR}]`)].map((el) => el.textContent)).toEqual([
+      "Running background agent:",
+      "Running 2 background agents",
+    ]);
+    expect([...document.querySelectorAll(`[${VALUE_ATTR}]`)].map((el) => el.textContent)).toEqual([
+      "Ship BBP-139 PR",
+      "·",
+      "Ship BBP-139 PR",
+    ]);
+
+    dispose();
+    expect(document.querySelectorAll(`[${FLAT_ROW_ATTR}]`)).toHaveLength(0);
+    expect(document.querySelectorAll(`[${LABEL_ATTR}]`)).toHaveLength(0);
+    expect(document.querySelectorAll(`[${VALUE_ATTR}]`)).toHaveLength(0);
   });
 });

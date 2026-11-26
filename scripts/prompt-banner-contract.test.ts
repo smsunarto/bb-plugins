@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
-import { chromium } from "playwright";
+import { chromium, type Page } from "playwright";
 import { scanSelectors, stripComments } from "./style-contract";
 import {
   CARD_ATTR,
+  FLAT_ROW_ATTR,
+  LABEL_ATTR,
   PROMPT_STACK_BANNER_CSS,
+  VALUE_ATTR,
 } from "../plugins/t3-composer/src/prompt-stack-banner-style";
 
 /**
@@ -21,8 +24,10 @@ import {
  *    light: mounts stacked core + plugin banners with `PROMPT_STACK_BANNER_CSS`
  *    and asserts computed frame, hairline, disclosure dividers (including
  *    plugin-wrapped regions), nested inline forms, icon/text insets, label/value
- *    styles, zero icon glimmer/shimmer/pulse animation, and lightening hover on
- *    every interactive row (while non-interactive rows stay flat).
+ *    styles (including 1-item and 2-item background-agent cards with zero label/
+ *    value/icon shine), zero icon glimmer/shimmer/pulse animation, lightening
+ *    hover on every interactive row (while non-interactive rows stay flat), and
+ *    zero height for loading/empty plugin banners.
  */
 
 /** Non-card or non-visual composer banners that legitimately use `chrome: "bare"`. */
@@ -76,6 +81,431 @@ function stringLiteralProp(obj: ts.ObjectLiteralExpression, name: string): strin
     }
   }
   return null;
+}
+
+interface ThemeSpec {
+  readonly name: string;
+  readonly htmlClass: string;
+  readonly themeCss: string;
+}
+
+const CAPTAIN_EMPTY_HIDE_CSS = [
+  'section:has(> [data-captain-overview-anchor]:only-child)[aria-label="captain"],',
+  'section:has(> [data-captain-overview-anchor] + [data-bb-plugin="captain"]:empty:last-child)[aria-label="captain"] {',
+  "  display: none;",
+  "}",
+].join("\n");
+
+function buildBannerFixtureHtml(theme: ThemeSpec): string {
+  return `<!doctype html>
+    <html class="${theme.htmlClass}">
+    <head>
+      <style>
+        :root, .dark {
+          --t3-composer-ring-width: 1px;
+          --t3-composer-hairline: var(--border);
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body { margin: 0; padding: 24px; background: var(--background); color: var(--foreground); font-family: system-ui, sans-serif; }
+        .grid { display: grid; }
+        .flex { display: flex; }
+        .flex-col { flex-direction: column; }
+        .flex-1 { flex: 1 1 0%; }
+        .items-center { align-items: center; }
+        .justify-between { justify-content: space-between; }
+        .min-w-0 { min-width: 0; }
+        .shrink-0 { flex-shrink: 0; }
+        .w-full { width: 100%; }
+        .min-h-8 { min-height: 32px; }
+        .min-h-6 { min-height: 24px; }
+        .gap-2 { gap: 8px; }
+        .gap-1\\.5 { gap: 6px; }
+        .gap-1 { gap: 4px; }
+        .p-1 { padding: 4px; }
+        .px-1 { padding-inline: 4px; }
+        .px-2 { padding-inline: 8px; }
+        .px-3 { padding-inline: 12px; }
+        .py-1 { padding-block: 4px; }
+        .py-1\\.5 { padding-block: 6px; }
+        .py-0 { padding-block: 0; }
+        .size-3\\.5 { width: 14px; height: 14px; }
+        .rounded-lg { border-radius: 8px; }
+        .border { border-width: 1px; border-style: solid; }
+        .border-0 { border-width: 0; }
+        .border-t { border-top-width: 1px; border-top-style: solid; }
+        .border-border { border-color: var(--border); }
+        .border-transparent { border-color: transparent; }
+        .bg-surface-raised-solid { background-color: var(--surface-raised-solid, var(--card)); }
+        .bg-background\\/70 { background-color: color-mix(in oklab, var(--background) 70%, transparent); }
+        .hover\\:bg-background\\/80:hover { background-color: color-mix(in oklab, var(--background) 80%, transparent); }
+        .hover\\:bg-state-hover:hover { background-color: var(--state-hover); }
+        .bg-popover { background-color: var(--popover); }
+        .text-xs { font-size: 12px; line-height: 16px; }
+        .font-medium { font-weight: 500; }
+        .font-normal { font-weight: 400; }
+        .text-foreground { color: var(--foreground); }
+        .text-muted-foreground { color: var(--muted-foreground); }
+        .contents { display: contents; }
+        .empty\\:hidden:empty { display: none; }
+        button { font: inherit; color: inherit; background: transparent; border: 0; text-align: left; }
+        @keyframes pulse { 50% { opacity: .5; } }
+        .animate-pulse { animation: pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
+        .animate-shine, .animate-shine-icon {
+          -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,.45), #000, rgba(0,0,0,.45));
+          mask-image: linear-gradient(90deg, rgba(0,0,0,.45), #000, rgba(0,0,0,.45));
+          will-change: transform;
+        }
+        .animate-shine { display: inline-block; -webkit-text-fill-color: var(--foreground); }
+        ${theme.themeCss}
+        ${CAPTAIN_EMPTY_HIDE_CSS}
+        ${PROMPT_STACK_BANNER_CSS}
+      </style>
+    </head>
+    <body>
+      <div data-promptbox-shell="">
+        <div class="grid gap-2">
+          <!-- Non-interactive Plugin: Captain (chrome: card) -->
+          <div data-bb-plugin-root="" data-bb-plugin="captain" class="contents">
+            <section ${CARD_ATTR}="" aria-label="captain" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden">
+              <div data-check-flat data-bb-plugin="captain" class="flex min-h-8 w-full min-w-0 items-center gap-1.5 px-3 py-1.5 text-xs text-foreground">
+                <svg data-check-icon class="size-3.5 shrink-0 text-foreground" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
+                <span data-check-label class="min-w-0 flex-1 font-medium text-foreground">All clear</span>
+              </div>
+            </section>
+          </div>
+
+          <!-- Core: Background agent (1-item non-interactive, BB 0.50.1 DOM with core's inverted shine/colors + bg-background/70) -->
+          <section ${CARD_ATTR}="" aria-label="Background agents" class="rounded-lg border border-border bg-surface-raised-solid">
+            <div ${FLAT_ROW_ATTR}="" class="flex items-center">
+              <div data-check-flat ${FLAT_ROW_ATTR}="" class="bg-background/70 flex min-h-8 w-full min-w-0 items-center gap-1.5 px-3 py-1.5 text-xs text-foreground" aria-label="Background agent: Ship BBP-139 PR">
+                <svg data-check-icon class="animate-shine-icon size-3.5 shrink-0 text-foreground" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
+                <span class="flex min-w-0 flex-1 items-center gap-1">
+                  <span data-check-label data-check-no-shine ${LABEL_ATTR}="" class="shrink-0 text-muted-foreground">Running background agent:</span>
+                  <span data-check-value data-check-no-shine ${VALUE_ATTR}="" class="animate-shine min-w-0 font-medium text-foreground">Ship BBP-139 PR</span>
+                  <span data-check-value data-check-no-shine ${VALUE_ATTR}="" class="shrink-0 text-muted-foreground">25s</span>
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Core: Background agents (2-item interactive toggle) -->
+          <section ${CARD_ATTR}="" aria-label="Background agents (multi)" class="rounded-lg border border-border bg-surface-raised-solid">
+            <div ${FLAT_ROW_ATTR}="" class="bg-background/70 flex items-center">
+              <button id="thread-background-commands-card-toggle" type="button" aria-expanded="false"
+                class="bg-background/70 hover:bg-background/80 flex min-h-8 w-full min-w-0 items-center gap-1.5 px-3 py-1.5 text-xs text-foreground">
+                <svg data-check-icon class="animate-shine-icon size-3.5 shrink-0 text-foreground" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
+                <span class="flex min-w-0 flex-1 items-center gap-1">
+                  <span data-check-label data-check-no-shine ${LABEL_ATTR}="" class="shrink-0 text-muted-foreground">Running 2 background agents</span>
+                  <span data-check-value data-check-no-shine ${VALUE_ATTR}="" class="text-muted-foreground">·</span>
+                  <span data-check-value data-check-no-shine ${VALUE_ATTR}="" class="animate-shine min-w-0 font-medium text-foreground">Ship BBP-139 PR</span>
+                </span>
+              </button>
+            </div>
+          </section>
+
+          <!-- Core + Plugin: Thread context before sending + bb--git wrapped disclosure -->
+          <section ${CARD_ATTR}="" aria-label="Thread context before sending" class="rounded-lg border border-border bg-surface-raised-solid" style="min-height: 35px;">
+            <div class="flex items-center p-1 text-xs">
+              <span data-check-flat data-bb-plugin="source-control" class="flex min-h-6 min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-xs">
+                <span class="flex min-w-0 shrink-0 items-center gap-1.5 font-medium text-foreground">
+                  <svg data-check-icon class="size-3.5 shrink-0 text-foreground" viewBox="0 0 24 24"><path d="M6 3v12"/></svg>
+                  <span data-check-label>Local branch</span>
+                </span>
+                <span data-check-value class="min-w-0 text-muted-foreground">scott/bbp-135</span>
+              </span>
+            </div>
+            <div data-bb-plugin="bb--git" class="contents">
+              <section id="thread-prompt-banner-git-body" role="region" aria-hidden="true" class="border-t border-transparent"></section>
+            </div>
+          </section>
+
+          <!-- Interactive Core: Active child threads (hover:bg-background/80 overridden to lighten) -->
+          <section ${CARD_ATTR}="" aria-label="Child threads" class="rounded-lg border border-border bg-surface-raised-solid">
+            <button id="thread-prompt-banner-child-threads-toggle" type="button" aria-expanded="true"
+              class="bg-background/70 hover:bg-background/80 flex min-h-8 w-full min-w-0 items-center gap-1.5 px-3 py-1.5 text-xs text-foreground">
+              <svg data-check-icon class="animate-shine-icon size-3.5 shrink-0 text-foreground" viewBox="0 0 24 24"><path d="M4 4v7h12"/></svg>
+              <span class="animate-shine min-w-0 flex-1 font-medium text-foreground">Active child threads</span>
+            </button>
+            <section id="thread-prompt-banner-child-threads-body" role="region" aria-hidden="false" class="border-t border-border bg-popover">
+              <section aria-label="Confirm tool call" data-presentation="inline">Inline form</section>
+            </section>
+          </section>
+
+          <!-- Interactive Plugin: Source Control PR watch -->
+          <div data-bb-plugin-root="" data-bb-plugin="source-control" class="contents">
+            <section ${CARD_ATTR}="" aria-label="source-control" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden">
+              <div class="flex flex-col text-xs">
+                <div class="flex min-h-8 min-w-0 items-center px-1 py-1">
+                  <button id="pr-watch-toggle" type="button" aria-expanded="false" class="hover:bg-state-hover flex min-h-6 min-w-0 flex-1 items-center gap-1.5 border-0 px-2 py-0 text-xs">
+                    <svg data-check-icon class="size-3.5 shrink-0" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
+                    <span data-check-label class="font-medium text-foreground">Checks passed</span>
+                    <span data-check-value class="text-muted-foreground">Fix banners #262</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- Interactive Plugin: Kitchen Sink RPIV Todo -->
+          <div data-bb-plugin-root="" data-bb-plugin="kitchen-sink" class="contents">
+            <section ${CARD_ATTR}="" aria-label="kitchen-sink" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden">
+              <div class="rpiv-todo-card min-h-8">
+                <div class="flex items-center">
+                  <button id="rpiv-toggle" type="button" aria-expanded="true" class="hover:bg-state-hover flex min-h-8 w-full min-w-0 items-center gap-1.5 px-3 py-1.5 text-xs text-foreground">
+                    <svg data-check-icon class="size-3.5 shrink-0 text-foreground" viewBox="0 0 24 24"><rect x="3" y="5" width="6" height="6"/></svg>
+                    <span class="flex min-w-0 flex-1 items-center gap-1.5">
+                      <span data-check-label class="shrink-0 font-medium text-foreground">1/3 complete</span>
+                      <span data-check-value class="text-muted-foreground">· Fix banners</span>
+                    </span>
+                  </button>
+                </div>
+                <section id="rpiv-body" aria-hidden="false" class="border-t border-border bg-popover"><div>Body</div></section>
+              </div>
+            </section>
+          </div>
+
+          <!-- Non-interactive Plugin: Devin Cloud -->
+          <div data-bb-plugin-root="" data-bb-plugin="devin" class="contents">
+            <section ${CARD_ATTR}="" aria-label="devin" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden">
+              <div data-check-flat class="flex min-h-8 flex-col px-3 py-1.5 text-xs text-foreground">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                    <svg data-check-icon class="size-3.5 shrink-0 text-foreground" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
+                    <span data-check-label class="shrink-0 font-medium text-foreground">Devin Cloud</span>
+                    <span data-check-value>Starting a cloud session…</span>
+                  </div>
+                  <span data-check-dot class="animate-pulse"></span>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- Loading / empty plugin banners: must render zero height until they have content -->
+          <div data-bb-plugin-root="" data-bb-plugin="captain" class="contents">
+            <section data-check-loading-empty="captain-loading" ${CARD_ATTR}="" aria-label="captain" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden"><span hidden data-captain-overview-anchor=""></span></section>
+          </div>
+          <div data-bb-plugin-root="" data-bb-plugin="captain" class="contents">
+            <section data-check-loading-empty="captain-cleared" ${CARD_ATTR}="" aria-label="captain" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden"><span hidden data-captain-overview-anchor=""></span><div data-bb-plugin="captain"></div></section>
+          </div>
+          <div data-bb-plugin-root="" data-bb-plugin="kitchen-sink" class="contents">
+            <section data-check-loading-empty="kitchen-sink-loading" ${CARD_ATTR}="" aria-label="kitchen-sink" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden"></section>
+          </div>
+          <div data-bb-plugin-root="" data-bb-plugin="source-control" class="contents">
+            <section data-check-loading-empty="source-control-loading" ${CARD_ATTR}="" aria-label="source-control" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden"></section>
+          </div>
+          <div data-bb-plugin-root="" data-bb-plugin="devin" class="contents">
+            <section data-check-loading-empty="devin-loading" ${CARD_ATTR}="" aria-label="devin" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden"></section>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>`;
+}
+
+async function assertHoverContract(page: Page, themeName: string): Promise<void> {
+  const interactiveHoverFills = new Set<string>();
+  for (const selector of [
+    "#thread-background-commands-card-toggle",
+    "#thread-prompt-banner-child-threads-toggle",
+    "#pr-watch-toggle",
+    "#rpiv-toggle",
+  ]) {
+    await page.hover(selector);
+    const hoverCheck = await page.evaluate((sel) => {
+      const parseRgba = (raw: string): [number, number, number, number] => {
+        const nums = raw.match(/[\d.]+/g)?.map(Number) ?? [0, 0, 0, 1];
+        return [nums[0] ?? 0, nums[1] ?? 0, nums[2] ?? 0, nums[3] ?? 1];
+      };
+      const luma = ([r, g, b]: [number, number, number]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const btn = document.querySelector(sel)!;
+      const card = btn.closest("[data-t3-prompt-stack-card]")!;
+      const cardRgb = parseRgba(getComputedStyle(card).backgroundColor);
+      const btnBg = getComputedStyle(btn).backgroundColor;
+      const btnRgba = parseRgba(btnBg);
+      const a = btnRgba[3];
+      const composited: [number, number, number] = [
+        btnRgba[0] * a + cardRgb[0] * (1 - a),
+        btnRgba[1] * a + cardRgb[1] * (1 - a),
+        btnRgba[2] * a + cardRgb[2] * (1 - a),
+      ];
+      return {
+        btnBg,
+        btnShadow: getComputedStyle(btn).boxShadow,
+        restLuma: luma([cardRgb[0], cardRgb[1], cardRgb[2]]),
+        hoverLuma: luma(composited),
+      };
+    }, selector);
+    interactiveHoverFills.add(hoverCheck.btnBg);
+    expect(hoverCheck.hoverLuma, `${themeName}:${selector} must lighten on hover`).toBeGreaterThan(
+      hoverCheck.restLuma,
+    );
+    if (themeName === "default-light") {
+      expect(hoverCheck.btnShadow, `${themeName}:${selector} subtle raise edge`).toContain("inset");
+    }
+  }
+  expect(interactiveHoverFills.size, `${themeName} shared hover fill`).toBe(1);
+
+  const flatLocators = page.locator("[data-check-flat]");
+  const flatCount = await flatLocators.count();
+  expect(flatCount).toBe(4);
+  for (let i = 0; i < flatCount; i++) {
+    const loc = flatLocators.nth(i);
+    const before = await loc.evaluate((el) => getComputedStyle(el).backgroundColor);
+    await loc.hover();
+    const after = await loc.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(after, `${themeName}:flat[${i}]`).toBe(before);
+  }
+}
+
+async function assertThemeBannerContract(page: Page, theme: ThemeSpec): Promise<void> {
+  await page.setContent(buildBannerFixtureHtml(theme));
+
+  const report = await page.evaluate((cardAttr) => {
+    const cards = [...document.querySelectorAll(`[${cardAttr}]:not([data-check-loading-empty])`)];
+    const cardMetrics = cards.map((card) => {
+      const cs = getComputedStyle(card);
+      const after = getComputedStyle(card, "::after");
+      const rect = card.getBoundingClientRect();
+      const icon = card.querySelector("[data-check-icon]");
+      const label = card.querySelector("[data-check-label]");
+      const values = [...card.querySelectorAll("[data-check-value]")];
+      const ics = icon ? getComputedStyle(icon) : null;
+      const lcs = label ? getComputedStyle(label) : null;
+      return {
+        label: card.getAttribute("aria-label"),
+        bg: cs.backgroundColor,
+        borderTopWidth: cs.borderTopWidth,
+        overflow: cs.overflow,
+        radius: cs.borderTopLeftRadius,
+        minHeight: cs.minHeight,
+        height: Math.round(rect.height * 10) / 10,
+        afterShadow: after.boxShadow,
+        iconLeft: icon
+          ? Math.round((icon.getBoundingClientRect().left - rect.left) * 10) / 10
+          : null,
+        iconAnim: ics?.animationName ?? null,
+        iconMask: ics?.maskImage ?? null,
+        textLeft: label
+          ? Math.round((label.getBoundingClientRect().left - rect.left) * 10) / 10
+          : null,
+        labelSize: lcs?.fontSize ?? null,
+        labelWeight: lcs?.fontWeight ?? null,
+        labelColor: lcs?.color ?? null,
+        values: values.map((v) => {
+          const vcs = getComputedStyle(v);
+          return { size: vcs.fontSize, weight: vcs.fontWeight, color: vcs.color };
+        }),
+      };
+    });
+
+    const loadingEmpty = [...document.querySelectorAll("[data-check-loading-empty]")].map((el) => ({
+      name: el.getAttribute("data-check-loading-empty"),
+      height: Math.round(el.getBoundingClientRect().height * 10) / 10,
+    }));
+
+    const noShineEls = [...document.querySelectorAll("[data-check-no-shine]")].map((el) => {
+      const cs = getComputedStyle(el);
+      return {
+        text: el.textContent,
+        mask: cs.maskImage,
+        anim: cs.animationName,
+      };
+    });
+
+    const gitBody = document.querySelector("#thread-prompt-banner-git-body")!;
+    const childBody = document.querySelector("#thread-prompt-banner-child-threads-body")!;
+    const rpivBody = document.querySelector("#rpiv-body")!;
+    const inlineForm = document.querySelector('section[data-presentation="inline"]')!;
+    const childToggle = document.querySelector("#thread-prompt-banner-child-threads-toggle")!;
+    const bgToggle = document.querySelector("#thread-background-commands-card-toggle")!;
+    const bgFlatRow = document.querySelector(
+      'section[aria-label="Background agents"] [data-check-flat]',
+    )!;
+    const shineText = childToggle.querySelector(".animate-shine")!;
+    const pulseDot = document.querySelector("[data-check-dot]")!;
+
+    return {
+      cardMetrics,
+      loadingEmpty,
+      noShineEls,
+      gitBodyBorderTop: getComputedStyle(gitBody).borderTopWidth,
+      childBodyBorderTop: getComputedStyle(childBody).borderTopWidth,
+      childBodyBeforeBg: getComputedStyle(childBody, "::before").backgroundColor,
+      rpivBodyBorderTop: getComputedStyle(rpivBody).borderTopWidth,
+      rpivBodyBeforeBg: getComputedStyle(rpivBody, "::before").backgroundColor,
+      inlineFormAfterContent: getComputedStyle(inlineForm, "::after").content,
+      childToggleBgAtRest: getComputedStyle(childToggle).backgroundColor,
+      bgToggleBgAtRest: getComputedStyle(bgToggle).backgroundColor,
+      bgFlatRowBgAtRest: getComputedStyle(bgFlatRow).backgroundColor,
+      shineTextMask: getComputedStyle(shineText).maskImage,
+      pulseDotAnim: getComputedStyle(pulseDot).animationName,
+    };
+  }, CARD_ATTR);
+
+  // Every visible card shares identical frame, surface fill, and ::after hairline.
+  const shadows = new Set(report.cardMetrics.map((m) => m.afterShadow));
+  expect(shadows.size, theme.name).toBe(1);
+  expect([...shadows][0], theme.name).toContain("inset");
+  const cardBgs = new Set(report.cardMetrics.map((m) => m.bg));
+  expect(cardBgs.size, `${theme.name} card surface fill`).toBe(1);
+
+  const expectedLabelColor = report.cardMetrics.find((m) => m.label === "captain")?.labelColor;
+  const expectedValueColor = report.cardMetrics.find(
+    (m) => m.label === "Thread context before sending",
+  )?.values[0]?.color;
+  if (!expectedLabelColor || !expectedValueColor) {
+    throw new Error(`Missing reference colors for ${theme.name}`);
+  }
+  expect(expectedLabelColor, theme.name).not.toBe(expectedValueColor);
+
+  for (const m of report.cardMetrics) {
+    expect(m.borderTopWidth, `${theme.name}:${m.label}`).toBe("0px");
+    expect(m.overflow, `${theme.name}:${m.label}`).toBe("hidden");
+    expect(m.radius, `${theme.name}:${m.label}`).toBe("8px");
+    expect(m.minHeight, `${theme.name}:${m.label}`).toBe("32px");
+    expect(m.iconAnim, `${theme.name}:${m.label}`).toBe("none");
+    expect(m.iconMask, `${theme.name}:${m.label}`).toBe("none");
+    expect(m.iconLeft, `${theme.name}:${m.label}`).toBe(12);
+    if (m.textLeft !== null) {
+      expect(m.textLeft, `${theme.name}:${m.label}`).toBe(32);
+      expect(m.labelSize, `${theme.name}:${m.label}`).toBe("12px");
+      expect(m.labelWeight, `${theme.name}:${m.label}`).toBe("500");
+      expect(m.labelColor, `${theme.name}:${m.label}`).toBe(expectedLabelColor);
+    }
+    for (const v of m.values) {
+      expect(v.size, `${theme.name}:${m.label}`).toBe("12px");
+      expect(v.weight, `${theme.name}:${m.label}`).toBe("400");
+      expect(v.color, `${theme.name}:${m.label}`).toBe(expectedValueColor);
+    }
+  }
+
+  for (const item of report.noShineEls) {
+    expect(item.mask, `${theme.name}:no-shine:${item.text}`).toBe("none");
+    expect(item.anim, `${theme.name}:no-shine:${item.text}`).toBe("none");
+  }
+  expect(report.noShineEls.length).toBeGreaterThanOrEqual(6);
+
+  // Every loading / empty plugin banner must render zero height (never pop up).
+  expect(report.loadingEmpty.length).toBe(5);
+  for (const item of report.loadingEmpty) {
+    expect(item.height, `${theme.name}:loading-empty:${item.name}`).toBe(0);
+  }
+
+  const ctxCard = report.cardMetrics.find((m) => m.label === "Thread context before sending");
+  expect(ctxCard?.height, theme.name).toBe(32);
+  expect(report.gitBodyBorderTop, theme.name).toBe("0px");
+  expect(report.childBodyBorderTop, theme.name).toBe("0px");
+  expect(report.childBodyBeforeBg, theme.name).not.toBe("rgba(0, 0, 0, 0)");
+  expect(report.rpivBodyBorderTop, theme.name).toBe("0px");
+  expect(report.rpivBodyBeforeBg, theme.name).not.toBe("rgba(0, 0, 0, 0)");
+  expect(report.inlineFormAfterContent, theme.name).toBe("none");
+  expect(report.childToggleBgAtRest, theme.name).toBe("rgba(0, 0, 0, 0)");
+  expect(report.bgToggleBgAtRest, theme.name).toBe("rgba(0, 0, 0, 0)");
+  expect(report.bgFlatRowBgAtRest, theme.name).toBe("rgba(0, 0, 0, 0)");
+  expect(report.shineTextMask, theme.name).not.toBe("none");
+  expect(report.pulseDotAnim, theme.name).toBe("none");
+
+  await assertHoverContract(page, theme.name);
 }
 
 describe("prompt-stack banner contract", () => {
@@ -149,13 +579,12 @@ describe("prompt-stack banner contract", () => {
     expect(appCss).not.toContain("section.rounded-b-none.border-border");
   });
 
-  test("rendered stacked banners share computed frame, hairlines, insets, typography, lightening hover, and zero icon animation across all 3 themes", async () => {
+  test("rendered stacked banners share computed frame, hairlines, insets, typography, lightening hover, zero icon animation, and zero loading height across all 3 themes", async () => {
     const monokaiCss = readFileSync("plugins/monokai/themes/bb-monokai.css", "utf8");
     const browser = await chromium.launch();
     try {
       const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
-
-      const themes = [
+      const themes: readonly ThemeSpec[] = [
         {
           name: "bb-monokai-dark",
           htmlClass: "dark",
@@ -191,319 +620,10 @@ describe("prompt-stack banner contract", () => {
               }
             `,
         },
-      ] as const;
+      ];
 
       for (const theme of themes) {
-        await page.setContent(
-          `<!doctype html>
-            <html class="${theme.htmlClass}">
-            <head>
-              <style>
-                :root, .dark {
-                  --t3-composer-ring-width: 1px;
-                  --t3-composer-hairline: var(--border);
-                }
-                *, *::before, *::after { box-sizing: border-box; }
-                body { margin: 0; padding: 24px; background: var(--background); color: var(--foreground); font-family: system-ui, sans-serif; }
-                .grid { display: grid; }
-                .flex { display: flex; }
-                .flex-col { flex-direction: column; }
-                .flex-1 { flex: 1 1 0%; }
-                .items-center { align-items: center; }
-                .justify-between { justify-content: space-between; }
-                .min-w-0 { min-width: 0; }
-                .shrink-0 { flex-shrink: 0; }
-                .w-full { width: 100%; }
-                .min-h-8 { min-height: 32px; }
-                .min-h-6 { min-height: 24px; }
-                .gap-2 { gap: 8px; }
-                .gap-1\\.5 { gap: 6px; }
-                .p-1 { padding: 4px; }
-                .px-1 { padding-inline: 4px; }
-                .px-2 { padding-inline: 8px; }
-                .px-3 { padding-inline: 12px; }
-                .py-1 { padding-block: 4px; }
-                .py-1\\.5 { padding-block: 6px; }
-                .py-0 { padding-block: 0; }
-                .size-3\\.5 { width: 14px; height: 14px; }
-                .rounded-lg { border-radius: 8px; }
-                .border { border-width: 1px; border-style: solid; }
-                .border-0 { border-width: 0; }
-                .border-t { border-top-width: 1px; border-top-style: solid; }
-                .border-border { border-color: var(--border); }
-                .border-transparent { border-color: transparent; }
-                .bg-surface-raised-solid { background-color: var(--surface-raised-solid, var(--card)); }
-                .bg-background\\/70 { background-color: color-mix(in oklab, var(--background) 70%, transparent); }
-                .hover\\:bg-background\\/80:hover { background-color: color-mix(in oklab, var(--background) 80%, transparent); }
-                .hover\\:bg-state-hover:hover { background-color: var(--state-hover); }
-                .bg-popover { background-color: var(--popover); }
-                .text-xs { font-size: 12px; line-height: 16px; }
-                .font-medium { font-weight: 500; }
-                .font-normal { font-weight: 400; }
-                .text-foreground { color: var(--foreground); }
-                .text-muted-foreground { color: var(--muted-foreground); }
-                .contents { display: contents; }
-                .empty\\:hidden:empty { display: none; }
-                button { font: inherit; color: inherit; background: transparent; border: 0; text-align: left; }
-                @keyframes pulse { 50% { opacity: .5; } }
-                .animate-pulse { animation: pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
-                .animate-shine, .animate-shine-icon {
-                  -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,.45), #000, rgba(0,0,0,.45));
-                  mask-image: linear-gradient(90deg, rgba(0,0,0,.45), #000, rgba(0,0,0,.45));
-                  will-change: transform;
-                }
-                .animate-shine { display: inline-block; -webkit-text-fill-color: var(--foreground); }
-                ${theme.themeCss}
-                ${PROMPT_STACK_BANNER_CSS}
-              </style>
-            </head>
-            <body>
-              <div data-promptbox-shell="">
-                <div class="grid gap-2">
-                  <!-- Non-interactive Plugin: Captain (chrome: card) -->
-                  <div data-bb-plugin-root="" data-bb-plugin="captain" class="contents">
-                    <section ${CARD_ATTR}="" aria-label="captain" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden">
-                      <div data-check-flat data-bb-plugin="captain" class="flex min-h-8 w-full min-w-0 items-center gap-1.5 px-3 py-1.5 text-xs text-foreground">
-                        <svg data-check-icon class="size-3.5 shrink-0 text-foreground" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
-                        <span data-check-label class="min-w-0 flex-1 font-medium text-foreground">All clear</span>
-                      </div>
-                    </section>
-                  </div>
-
-                  <!-- Core + Plugin: Thread context before sending + bb--git wrapped disclosure -->
-                  <section ${CARD_ATTR}="" aria-label="Thread context before sending" class="rounded-lg border border-border bg-surface-raised-solid" style="min-height: 35px;">
-                    <div class="flex items-center p-1 text-xs">
-                      <span data-check-flat data-bb-plugin="source-control" class="flex min-h-6 min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-xs">
-                        <span class="flex min-w-0 shrink-0 items-center gap-1.5 font-medium text-foreground">
-                          <svg data-check-icon class="size-3.5 shrink-0 text-foreground" viewBox="0 0 24 24"><path d="M6 3v12"/></svg>
-                          <span data-check-label>Local branch</span>
-                        </span>
-                        <span data-check-value class="min-w-0 text-muted-foreground">scott/bbp-135</span>
-                      </span>
-                    </div>
-                    <div data-bb-plugin="bb--git" class="contents">
-                      <section id="thread-prompt-banner-git-body" role="region" aria-hidden="true" class="border-t border-transparent"></section>
-                    </div>
-                  </section>
-
-                  <!-- Interactive Core: Active child threads (hover:bg-background/80 overridden to lighten) -->
-                  <section ${CARD_ATTR}="" aria-label="Child threads" class="rounded-lg border border-border bg-surface-raised-solid">
-                    <button id="thread-prompt-banner-child-threads-toggle" type="button" aria-expanded="true"
-                      class="bg-background/70 hover:bg-background/80 flex min-h-8 w-full min-w-0 items-center gap-1.5 px-3 py-1.5 text-xs text-foreground">
-                      <svg data-check-icon class="animate-shine-icon size-3.5 shrink-0 text-foreground" viewBox="0 0 24 24"><path d="M4 4v7h12"/></svg>
-                      <span class="animate-shine min-w-0 flex-1 font-medium text-foreground">Active child threads</span>
-                    </button>
-                    <section id="thread-prompt-banner-child-threads-body" role="region" aria-hidden="false" class="border-t border-border bg-popover">
-                      <section aria-label="Confirm tool call" data-presentation="inline">Inline form</section>
-                    </section>
-                  </section>
-
-                  <!-- Interactive Plugin: Source Control PR watch -->
-                  <div data-bb-plugin-root="" data-bb-plugin="source-control" class="contents">
-                    <section ${CARD_ATTR}="" aria-label="source-control" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden">
-                      <div class="flex flex-col text-xs">
-                        <div class="flex min-h-8 min-w-0 items-center px-1 py-1">
-                          <button id="pr-watch-toggle" type="button" aria-expanded="false" class="hover:bg-state-hover flex min-h-6 min-w-0 flex-1 items-center gap-1.5 border-0 px-2 py-0 text-xs">
-                            <svg data-check-icon class="size-3.5 shrink-0" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
-                            <span data-check-label class="font-medium text-foreground">Checks passed</span>
-                            <span data-check-value class="text-muted-foreground">Fix banners #262</span>
-                          </button>
-                        </div>
-                      </div>
-                    </section>
-                  </div>
-
-                  <!-- Interactive Plugin: Kitchen Sink RPIV Todo -->
-                  <div data-bb-plugin-root="" data-bb-plugin="kitchen-sink" class="contents">
-                    <section ${CARD_ATTR}="" aria-label="kitchen-sink" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden">
-                      <div class="rpiv-todo-card min-h-8">
-                        <div class="flex items-center">
-                          <button id="rpiv-toggle" type="button" aria-expanded="true" class="hover:bg-state-hover flex min-h-8 w-full min-w-0 items-center gap-1.5 px-3 py-1.5 text-xs text-foreground">
-                            <svg data-check-icon class="size-3.5 shrink-0 text-foreground" viewBox="0 0 24 24"><rect x="3" y="5" width="6" height="6"/></svg>
-                            <span class="flex min-w-0 flex-1 items-center gap-1.5">
-                              <span data-check-label class="shrink-0 font-medium text-foreground">1/3 complete</span>
-                              <span data-check-value class="text-muted-foreground">· Fix banners</span>
-                            </span>
-                          </button>
-                        </div>
-                        <section id="rpiv-body" aria-hidden="false" class="border-t border-border bg-popover"><div>Body</div></section>
-                      </div>
-                    </section>
-                  </div>
-
-                  <!-- Non-interactive Plugin: Devin Cloud -->
-                  <div data-bb-plugin-root="" data-bb-plugin="devin" class="contents">
-                    <section ${CARD_ATTR}="" aria-label="devin" class="rounded-lg border border-border bg-surface-raised-solid empty:hidden">
-                      <div data-check-flat class="flex min-h-8 flex-col px-3 py-1.5 text-xs text-foreground">
-                        <div class="flex items-center justify-between gap-2">
-                          <div class="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-                            <svg data-check-icon class="size-3.5 shrink-0 text-foreground" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
-                            <span data-check-label class="shrink-0 font-medium text-foreground">Devin Cloud</span>
-                            <span data-check-value>Starting a cloud session…</span>
-                          </div>
-                          <span data-check-dot class="animate-pulse"></span>
-                        </div>
-                      </div>
-                    </section>
-                  </div>
-                </div>
-              </div>
-            </body>
-            </html>`,
-        );
-
-        const report = await page.evaluate((cardAttr) => {
-          const cards = [...document.querySelectorAll(`[${cardAttr}]`)];
-          const cardMetrics = cards.map((card) => {
-            const cs = getComputedStyle(card);
-            const after = getComputedStyle(card, "::after");
-            const rect = card.getBoundingClientRect();
-            const icon = card.querySelector("[data-check-icon]");
-            const label = card.querySelector("[data-check-label]");
-            const value = card.querySelector("[data-check-value]");
-            const ics = icon ? getComputedStyle(icon) : null;
-            const lcs = label ? getComputedStyle(label) : null;
-            const vcs = value ? getComputedStyle(value) : null;
-            return {
-              label: card.getAttribute("aria-label"),
-              borderTopWidth: cs.borderTopWidth,
-              overflow: cs.overflow,
-              radius: cs.borderTopLeftRadius,
-              minHeight: cs.minHeight,
-              height: Math.round(rect.height * 10) / 10,
-              afterShadow: after.boxShadow,
-              iconLeft: icon
-                ? Math.round((icon.getBoundingClientRect().left - rect.left) * 10) / 10
-                : null,
-              iconAnim: ics?.animationName ?? null,
-              iconMask: ics?.maskImage ?? null,
-              textLeft: label
-                ? Math.round((label.getBoundingClientRect().left - rect.left) * 10) / 10
-                : null,
-              labelSize: lcs?.fontSize ?? null,
-              labelWeight: lcs?.fontWeight ?? null,
-              labelColor: lcs?.color ?? null,
-              valWeight: vcs?.fontWeight ?? null,
-              valColor: vcs?.color ?? null,
-            };
-          });
-
-          const gitBody = document.querySelector("#thread-prompt-banner-git-body")!;
-          const childBody = document.querySelector("#thread-prompt-banner-child-threads-body")!;
-          const rpivBody = document.querySelector("#rpiv-body")!;
-          const inlineForm = document.querySelector('section[data-presentation="inline"]')!;
-          const childToggle = document.querySelector("#thread-prompt-banner-child-threads-toggle")!;
-          const shineText = childToggle.querySelector(".animate-shine")!;
-          const pulseDot = document.querySelector("[data-check-dot]")!;
-
-          return {
-            cardMetrics,
-            gitBodyBorderTop: getComputedStyle(gitBody).borderTopWidth,
-            childBodyBorderTop: getComputedStyle(childBody).borderTopWidth,
-            childBodyBeforeBg: getComputedStyle(childBody, "::before").backgroundColor,
-            rpivBodyBorderTop: getComputedStyle(rpivBody).borderTopWidth,
-            rpivBodyBeforeBg: getComputedStyle(rpivBody, "::before").backgroundColor,
-            inlineFormAfterContent: getComputedStyle(inlineForm, "::after").content,
-            childToggleBgAtRest: getComputedStyle(childToggle).backgroundColor,
-            shineTextMask: getComputedStyle(shineText).maskImage,
-            pulseDotAnim: getComputedStyle(pulseDot).animationName,
-          };
-        }, CARD_ATTR);
-
-        // Every top-level card shares identical frame, radius, overflow, and ::after hairline.
-        const shadows = new Set(report.cardMetrics.map((m) => m.afterShadow));
-        expect(shadows.size, theme.name).toBe(1);
-        expect([...shadows][0], theme.name).toContain("inset");
-
-        for (const m of report.cardMetrics) {
-          expect(m.borderTopWidth, `${theme.name}:${m.label}`).toBe("0px");
-          expect(m.overflow, `${theme.name}:${m.label}`).toBe("hidden");
-          expect(m.radius, `${theme.name}:${m.label}`).toBe("8px");
-          expect(m.minHeight, `${theme.name}:${m.label}`).toBe("32px");
-          expect(m.iconAnim, `${theme.name}:${m.label}`).toBe("none");
-          expect(m.iconMask, `${theme.name}:${m.label}`).toBe("none");
-          expect(m.iconLeft, `${theme.name}:${m.label}`).toBe(12);
-          if (m.textLeft !== null) {
-            expect(m.textLeft, `${theme.name}:${m.label}`).toBe(32);
-            expect(m.labelSize, `${theme.name}:${m.label}`).toBe("12px");
-            expect(m.labelWeight, `${theme.name}:${m.label}`).toBe("500");
-          }
-          if (m.valWeight !== null) {
-            expect(m.valWeight, `${theme.name}:${m.label}`).toBe("400");
-          }
-        }
-
-        const ctxCard = report.cardMetrics.find((m) => m.label === "Thread context before sending");
-        expect(ctxCard?.height, theme.name).toBe(32);
-        expect(report.gitBodyBorderTop, theme.name).toBe("0px");
-        expect(report.childBodyBorderTop, theme.name).toBe("0px");
-        expect(report.childBodyBeforeBg, theme.name).not.toBe("rgba(0, 0, 0, 0)");
-        expect(report.rpivBodyBorderTop, theme.name).toBe("0px");
-        expect(report.rpivBodyBeforeBg, theme.name).not.toBe("rgba(0, 0, 0, 0)");
-        expect(report.inlineFormAfterContent, theme.name).toBe("none");
-        expect(report.childToggleBgAtRest, theme.name).toBe("rgba(0, 0, 0, 0)");
-        expect(report.shineTextMask, theme.name).not.toBe("none");
-        expect(report.pulseDotAnim, theme.name).toBe("none");
-
-        // Verify real hover behavior in Chromium: every interactive row lightens
-        // strictly over its card surface via the same shared hover fill, while
-        // every non-interactive row stays completely flat.
-        const interactiveHoverFills = new Set<string>();
-        for (const selector of [
-          "#thread-prompt-banner-child-threads-toggle",
-          "#pr-watch-toggle",
-          "#rpiv-toggle",
-        ]) {
-          await page.hover(selector);
-          const hoverCheck = await page.evaluate((sel) => {
-            const parseRgba = (raw: string): [number, number, number, number] => {
-              const nums = raw.match(/[\d.]+/g)?.map(Number) ?? [0, 0, 0, 1];
-              return [nums[0] ?? 0, nums[1] ?? 0, nums[2] ?? 0, nums[3] ?? 1];
-            };
-            const luma = ([r, g, b]: [number, number, number]) =>
-              0.2126 * r + 0.7152 * g + 0.0722 * b;
-            const btn = document.querySelector(sel)!;
-            const card = btn.closest("[data-t3-prompt-stack-card]")!;
-            const cardRgb = parseRgba(getComputedStyle(card).backgroundColor);
-            const btnBg = getComputedStyle(btn).backgroundColor;
-            const btnRgba = parseRgba(btnBg);
-            const a = btnRgba[3];
-            const composited: [number, number, number] = [
-              btnRgba[0] * a + cardRgb[0] * (1 - a),
-              btnRgba[1] * a + cardRgb[1] * (1 - a),
-              btnRgba[2] * a + cardRgb[2] * (1 - a),
-            ];
-            return {
-              btnBg,
-              btnShadow: getComputedStyle(btn).boxShadow,
-              restLuma: luma([cardRgb[0], cardRgb[1], cardRgb[2]]),
-              hoverLuma: luma(composited),
-            };
-          }, selector);
-          interactiveHoverFills.add(hoverCheck.btnBg);
-          expect(
-            hoverCheck.hoverLuma,
-            `${theme.name}:${selector} must lighten on hover`,
-          ).toBeGreaterThan(hoverCheck.restLuma);
-          if (theme.name === "default-light") {
-            expect(hoverCheck.btnShadow, `${theme.name}:${selector} subtle raise edge`).toContain(
-              "inset",
-            );
-          }
-        }
-        expect(interactiveHoverFills.size, `${theme.name} shared hover fill`).toBe(1);
-
-        // Non-interactive rows must stay flat on hover.
-        const flatLocators = page.locator("[data-check-flat]");
-        const flatCount = await flatLocators.count();
-        expect(flatCount).toBe(3);
-        for (let i = 0; i < flatCount; i++) {
-          const loc = flatLocators.nth(i);
-          const before = await loc.evaluate((el) => getComputedStyle(el).backgroundColor);
-          await loc.hover();
-          const after = await loc.evaluate((el) => getComputedStyle(el).backgroundColor);
-          expect(after, `${theme.name}:flat[${i}]`).toBe(before);
-        }
+        await assertThemeBannerContract(page, theme);
       }
     } finally {
       await browser.close();

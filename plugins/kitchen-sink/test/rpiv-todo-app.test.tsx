@@ -123,41 +123,56 @@ test("an idle context clear refreshes the banner through the public SDK subscrip
   expect(unsubscribed).toBe(true);
 });
 
-test("failed reads retain connected retry but hide empty banners during reconnect", async () => {
+test("renders nothing on initial load failure with no tasks, and keeps loaded tasks with retry on refresh failure", async () => {
+  let fail = true;
   const slot = renderSlot(
     { component: TodoBanner },
     {},
     {
-      composer: { scope: { kind: "thread", threadId: "empty-reconnect" } },
+      composer: { scope: { kind: "thread", threadId: "empty-error" } },
       sdk: { subscribe: () => () => {} },
       rpc: {
         getRpivTodos: () => {
-          throw new Error("offline");
+          if (fail) throw new Error("offline");
+          return result("Loaded task");
         },
       },
     },
   );
   await waitFor(() => expect(slot.inspection.rpcCalls.length).toBeGreaterThan(0));
   await act(async () => {});
+  // No banner pops up when loading fails before any real tasks exist.
+  expect(slot.container.childNodes).toHaveLength(0);
+
+  // Once real tasks load, a later refresh failure keeps the tasks visible and shows Retry.
+  fail = false;
+  await slot.behavior.emitRealtime(RPIV_TODO_CHANNEL, { threadId: "empty-error" });
+  await slot.findByText("#1 Loaded task");
+
+  fail = true;
+  await slot.behavior.emitRealtime(RPIV_TODO_CHANNEL, { threadId: "empty-error" });
   await slot.findByRole("button", { name: "Retry" });
+  expect(slot.getByText("#1 Loaded task")).toBeDefined();
   await slot.behavior.setRealtimeConnectionState("reconnecting");
-  expect(slot.container.textContent).toBe("");
+  expect(slot.queryByRole("button", { name: "Retry" })).toBeNull();
+  expect(slot.getByText("#1 Loaded task")).toBeDefined();
   slot.unmount();
 });
 
-test("hides an empty truncated snapshot during reconnect", async () => {
+test("renders nothing while paging an empty truncated snapshot and shows no loading notice", async () => {
   const slot = renderSlot(
     { component: TodoBanner },
     {},
     {
-      composer: { scope: { kind: "thread", threadId: "truncated-reconnect" } },
+      composer: { scope: { kind: "thread", threadId: "truncated-loading" } },
       sdk: { subscribe: () => () => {} },
       rpc: { getRpivTodos: () => ({ items: [], truncated: true }) },
     },
   );
-  await slot.findByText("Loading task history…");
-  await slot.behavior.setRealtimeConnectionState("reconnecting");
-  expect(slot.container.textContent).toBe("");
+  await waitFor(() => expect(slot.inspection.rpcCalls.length).toBeGreaterThan(0));
+  await act(async () => {});
+  expect(slot.queryByText(/Loading task history/)).toBeNull();
+  expect(slot.container.childNodes).toHaveLength(0);
   slot.unmount();
 });
 
@@ -168,7 +183,7 @@ function expectPressKeepsFocus(control: HTMLElement) {
 }
 
 test("pressing the to-do toggle or Retry leaves focus in the composer", async () => {
-  let fail = true;
+  let fail = false;
   const slot = renderSlot(
     { component: TodoBanner },
     {},
@@ -184,13 +199,15 @@ test("pressing the to-do toggle or Retry leaves focus in the composer", async ()
     },
   );
   const toggle = await slot.findByRole("button", { name: /To-do list/ });
-  expectPressKeepsFocus(toggle);
-  fireEvent.click(toggle);
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fail = true;
+  await slot.behavior.emitRealtime(RPIV_TODO_CHANNEL, { threadId: "keep-focus" });
   const retry = await slot.findByRole("button", { name: "Retry" });
   expectPressKeepsFocus(retry);
   fail = false;
   fireEvent.click(retry);
   await waitFor(() => expect(slot.queryByRole("button", { name: "Retry" })).toBeNull());
+  expectPressKeepsFocus(toggle);
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
   slot.unmount();
 });
