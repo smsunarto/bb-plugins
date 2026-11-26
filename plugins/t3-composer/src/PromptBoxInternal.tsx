@@ -82,6 +82,7 @@ import {
   commandMentionTarget,
   compareMentions,
   isBuiltinHandoff,
+  isImmediateBuiltinCommand,
   mentionInRange,
   sameMention,
   shiftMention,
@@ -2835,15 +2836,20 @@ export function PromptBoxInternal({
     submitPrompt();
   }, [pendingCommandSubmit, submitPrompt]);
 
-  // BB handles built-in commands when the chosen suggestion is submitted.
+  // BB handles its standalone built-in commands (/clear, /compact, /handoff) on submit;
+  // live provider commands like /goal also arrive with origin "builtin" and must only insert.
   const chooseSuggestion = useCallback(
     (item: TypeaheadSuggestion) => {
       applyTrigger(item);
-      if (item.kind === "command" && item.origin === "builtin") {
+      if (
+        item.kind === "command" &&
+        activeTrigger?.kind === "command" &&
+        isImmediateBuiltinCommand(item, activeTrigger.char)
+      ) {
         setPendingCommandSubmit(true);
       }
     },
-    [applyTrigger],
+    [activeTrigger, applyTrigger],
   );
 
   const submitModifierPrompt = useCallback(() => {

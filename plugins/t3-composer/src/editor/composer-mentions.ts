@@ -71,16 +71,36 @@ export function compareMentions(left: ComposerMention, right: ComposerMention): 
   return left.from - right.from || left.to - right.to;
 }
 
+function isBuiltinSlashCommand(
+  command: Pick<ExperimentalComposerCommandSuggestion, "origin" | "source">,
+  trigger: ExperimentalComposerCommandTrigger,
+): boolean {
+  return trigger === "/" && command.origin === "builtin" && command.source === "command";
+}
+
 export function isBuiltinHandoff(
   command: Pick<ExperimentalComposerCommandSuggestion, "name" | "origin" | "source">,
   trigger: ExperimentalComposerCommandTrigger,
 ): boolean {
-  return (
-    trigger === "/" &&
-    command.name === "handoff" &&
-    command.origin === "builtin" &&
-    command.source === "command"
-  );
+  return isBuiltinSlashCommand(command, trigger) && command.name === "handoff";
+}
+
+/**
+ * BB's standalone built-in commands that execute immediately when picked from the `/` menu.
+ * Mirrors `BUILT_IN_PROVIDER_COMMANDS` in
+ * `apps/server/src/services/threads/provider-command-typeahead.ts` (`clear`, `compact`) and
+ * `THREAD_HANDOFF_COMMAND_SUGGESTION` in
+ * `packages/client-core/src/prompt/thread-handoff-request.ts` (`handoff`).
+ * Live provider slash commands (such as Claude Code's `/goal` and `/loop`) also carry
+ * `origin: "builtin"` so they group under Commands, but expect the user to type after them.
+ */
+const IMMEDIATE_BUILTIN_COMMANDS: ReadonlySet<string> = new Set(["clear", "compact", "handoff"]);
+
+export function isImmediateBuiltinCommand(
+  command: Pick<ExperimentalComposerCommandSuggestion, "name" | "origin" | "source">,
+  trigger: ExperimentalComposerCommandTrigger,
+): boolean {
+  return isBuiltinSlashCommand(command, trigger) && IMMEDIATE_BUILTIN_COMMANDS.has(command.name);
 }
 
 export function commandMentionTarget(
