@@ -66,6 +66,15 @@ export type Statement =
   | ({ readonly kind: "named" } & Decl)
   | { readonly kind: "root"; readonly value: Expr };
 
+/** Top-level `Watch($state, Set(...))` rule that updates dependent state when a watched state changes. */
+export interface WatchRule {
+  /** Watched `$state` names (without `$`), in source order, deduplicated. */
+  readonly targets: readonly string[];
+  /** Expression evaluating to `Set(...)`, a list of `Set(...)`, or `null`/`false`. */
+  readonly action: Expr;
+  readonly pos: Pos;
+}
+
 /** A validated program. Only `compile` creates one. */
 export interface Program {
   /** `$state` declarations in source order. */
@@ -73,6 +82,8 @@ export interface Program {
   readonly named: ReadonlyMap<string, Decl>;
   /** Bare expressions in source order, or the named value `root`. */
   readonly roots: readonly Expr[];
+  /** Top-level `Watch($state, Set(...))` rules in source order. */
+  readonly watches?: readonly WatchRule[];
   /**
    * Local (bb-plugins): the `Card(null, [Form([Radio])])` calls Decision
    * questions became. A Form holding one, at any depth, takes its Radio as

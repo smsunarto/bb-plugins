@@ -1,5 +1,6 @@
 // What a Form answers: a `Label: answer` line per field, which the answer
 // sheet (ui/answerSheet.ts) puts in the user's message as they fill it in.
+import { fieldErrors } from "./checks";
 import type { Binding, ComponentNode, UiNode, Value } from "./types";
 
 /** The inputs a Form collects, in any layout inside it. */
@@ -73,12 +74,14 @@ function picks(picked: readonly Value[], options: readonly Value[]): string {
   return `${shown(chosen)} (not: ${shown(left)})`;
 }
 
-/** A field of a Form: the state it binds and how its line reads. */
+/** A field of a Form: the state it binds, how its line reads, and any active validation errors. */
 export interface FormField {
   readonly name: string;
   /** The user types into it (Input, TextArea, ListEditor, DateInput). */
   readonly typed: boolean;
   readonly line: string;
+  /** Failing declarative validation messages for this field; empty when valid or unchecked. */
+  readonly errors: readonly string[];
 }
 
 /** Every field at any depth, in document order. */
@@ -100,7 +103,7 @@ function collect(value: Value, fields: FormField[]): void {
     const name = label || binding.name;
     // A label that is a question or ends in a colon already reads as a prompt.
     const line = `${name}${/[?:]$/.test(name) ? "" : ":"} ${text || "—"}`;
-    fields.push({ name: binding.name, typed: TYPED[value.type] === true, line });
+    fields.push({ name: binding.name, typed: TYPED[value.type] === true, line, errors: fieldErrors(value) });
     return;
   }
   for (const prop of Object.values(props)) collect(prop, fields);

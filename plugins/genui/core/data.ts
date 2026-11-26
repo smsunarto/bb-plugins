@@ -92,6 +92,7 @@ export function collectLoads(program: Program): DataRequest[] {
   };
   for (const decl of program.states) visit(decl.value);
   for (const decl of program.named.values()) visit(decl.value);
+  for (const watch of program.watches ?? []) visit(watch.action);
   program.roots.forEach(visit);
   found.sort((a, b) => a.pos.line - b.pos.line || a.pos.column - b.pos.column);
   const requests = new Map<string, DataRequest>();

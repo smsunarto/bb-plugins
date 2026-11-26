@@ -5,7 +5,7 @@ import { requestPullRequestReview } from "@bb-plugins/review-request";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
-import { collectLoads, dataKey, evaluate, initialState, type LoadedData, type Program } from "../core";
+import { applyWatchers, collectLoads, dataKey, evaluate, initialState, type LoadedData, type Program } from "../core";
 import { answersText } from "../core/answers";
 import type { Action, Diagnostic, UiNode, Value } from "../core/types";
 import { GALLERY_SHEET, sheetFor, useBlockAnswers, type Selection } from "./answerSheet";
@@ -136,9 +136,22 @@ export function LiveUi({
   const navigate = useBbNavigate();
   const setValue = useCallback(
     (name: string, value: Value) => {
-      if (Object.hasOwn(initial, name)) setChanged((previous) => ({ ...previous, [name]: value }));
+      if (!Object.hasOwn(initial, name)) return;
+      setChanged((previous) => {
+        const prevState: Record<string, Value> = Object.fromEntries(
+          Object.entries(initial).map(([key, initVal]) => [
+            key,
+            Object.hasOwn(previous, key) ? previous[key] : initVal,
+          ]),
+        );
+        const nextState = { ...prevState, [name]: value };
+        const { state: settled, changed: cascaded } = applyWatchers(program, prevState, nextState, data);
+        const updated: Record<string, Value> = { ...previous, [name]: value };
+        for (const key of cascaded) updated[key] = settled[key];
+        return updated;
+      });
     },
-    [initial],
+    [initial, program, data],
   );
 
   // Whether the press that runs an action held a modifier: Buttons run actions on any click, and

@@ -10,8 +10,9 @@ import { validate } from "./validate";
 
 export type { Program } from "./ast";
 export { collectLoads, dataKey, MAX_SNIPPET_LINES, parseDataFile, type DataRequest, type LoadedData } from "./data";
-export { evaluate, initialState } from "./evaluate";
-export { formMessage } from "./form";
+export { CHECK_TYPES, evaluateChecks, fieldErrors, isFieldRequired, SHORTHAND_CHECKS, type CheckType } from "./checks";
+export { applyWatchers, evaluate, initialState, MAX_WATCH_PASSES } from "./evaluate";
+export { formFields, formMessage } from "./form";
 export {
   imageSearches,
   specToMarkdown,

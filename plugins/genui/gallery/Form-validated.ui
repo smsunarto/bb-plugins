@@ -1,0 +1,12 @@
+$account = "Personal"
+$email = ""
+$company = ""
+$password = ""
+$confirm = ""
+Card("Create workspace", [Form([
+  Choice($account, ["Personal", "Team"], label: "Account type"),
+  Input($email, label: "Work email", placeholder: "you@company.com", checks: ["required", "email"]),
+  Input($company, label: "Company name", visible: $account == "Team", checks: ["required", {type: "minLength", min: 2}]),
+  Input($password, label: "Passphrase", placeholder: "At least 8 characters", checks: ["required", {type: "minLength", min: 8, message: "Use at least 8 characters"}]),
+  Input($confirm, label: "Confirm passphrase", checks: ["required", {type: "matches", other: $password, message: "Passphrases must match"}])
+])])

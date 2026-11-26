@@ -24,6 +24,7 @@ import {
   type Props,
 } from "../values";
 import { ACTION_GLYPHS, actionIntent, sendEffect } from "./action-logic";
+import { FieldValidationMessage, useFieldValidation } from "./fieldValidation";
 // fields.tsx imports this module's field styles; Radio is only used at render time, so the cycle is safe.
 import { Radio } from "./fields";
 import { reducedMotion, useEntrance, type Entrance } from "./motion";
@@ -51,6 +52,7 @@ export function Slider({ props }: { props: PropsOf<"Slider"> }) {
   const step = props.step ?? (Number.isInteger(min) && Number.isInteger(max) ? 1 : (max - min) / 100);
   const current = finiteNumber(binding.value) ?? min;
   const label = props.label ?? null;
+  const validation = useFieldValidation(binding.value, props.checks, "Slider");
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex h-5 items-center justify-between gap-3 text-xs">
@@ -70,10 +72,12 @@ export function Slider({ props }: { props: PropsOf<"Slider"> }) {
         thumbLabel={label === null ? binding.name : undefined}
         thumbLabelledBy={label === null ? undefined : `${id}-label`}
         onValueChange={([next]) => {
+          validation.touch();
           if (next !== undefined) setValue(binding.name, next);
         }}
         className="my-1"
       />
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }
@@ -83,12 +87,27 @@ export function Toggle({ props }: { props: PropsOf<"Toggle"> }) {
   const id = useId();
   const binding = props.value;
   const on = Boolean(binding.value);
+  const validation = useFieldValidation(binding.value, props.checks, "Toggle");
   return (
-    <div className="flex w-fit max-w-full items-center gap-2 self-start">
-      <Switch id={id} checked={on} size="default" onCheckedChange={(next) => setValue(binding.name, next)} {...keepTyping} />
-      <Label htmlFor={id} {...keepTyping} className="min-w-0 cursor-pointer truncate text-sm font-normal leading-5 text-foreground">
-        {props.label}
-      </Label>
+    <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex w-fit max-w-full items-center gap-2 self-start">
+        <Switch
+          id={id}
+          checked={on}
+          size="default"
+          aria-invalid={validation.showError || undefined}
+          aria-describedby={validation.showError ? validation.errorId : undefined}
+          onCheckedChange={(next) => {
+            validation.touch();
+            setValue(binding.name, next);
+          }}
+          {...keepTyping}
+        />
+        <Label htmlFor={id} {...keepTyping} className="min-w-0 cursor-pointer truncate text-sm font-normal leading-5 text-foreground">
+          {props.label}
+        </Label>
+      </div>
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }
@@ -103,6 +122,7 @@ export function Choice({ props }: { props: PropsOf<"Choice"> }) {
   const labelId = useId();
   const binding = props.value;
   const options = props.options;
+  const validation = useFieldValidation(binding.value, props.checks, "Choice");
   const labels = options.map((option) => (isScalar(option) ? String(option) : null));
   const fits =
     options.length <= SEGMENT_MAX_OPTIONS &&
@@ -121,13 +141,19 @@ export function Choice({ props }: { props: PropsOf<"Choice"> }) {
       <ToggleGroup
         type="single"
         aria-labelledby={label === null ? undefined : labelId}
+        aria-invalid={validation.showError || undefined}
+        aria-describedby={validation.showError ? validation.errorId : undefined}
         // Options are positional: the same value may repeat, and any scalar round-trips.
         value={String(scalars.findIndex((option) => option === binding.value))}
         onValueChange={(next) => {
+          validation.touch();
           // A press on the chosen option would clear it; a choice keeps one.
           if (next !== "") setValue(binding.name, scalars[Number(next)] ?? null);
         }}
-        className="w-fit max-w-full flex-wrap justify-start gap-1 rounded-lg bg-surface-recessed p-1"
+        className={cn(
+          "w-fit max-w-full flex-wrap justify-start gap-1 rounded-lg bg-surface-recessed p-1",
+          validation.showError && "ring-1 ring-destructive/60",
+        )}
       >
         {scalars.map((option, index) => (
           <ToggleGroupItem key={index} value={String(index)} {...keepTyping} className="h-6 min-w-0 px-3 [@media(pointer:coarse)]:h-7 text-[13px] font-normal data-[state=on]:font-medium">
@@ -135,6 +161,7 @@ export function Choice({ props }: { props: PropsOf<"Choice"> }) {
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }
@@ -145,6 +172,7 @@ export function Input({ props }: { props: PropsOf<"Input"> }) {
   const binding = props.value;
   const label = props.label ?? null;
   const placeholder = props.placeholder ?? null;
+  const validation = useFieldValidation(binding.value, props.checks, "Input");
   // Local (bb-plugins): a state declared as a number stays a number while the
   // text reads as one ("2,300" is 2300), so arithmetic on it keeps working;
   // the field keeps the text as typed until the state changes elsewhere.
@@ -163,14 +191,22 @@ export function Input({ props }: { props: PropsOf<"Input"> }) {
         value={shown}
         placeholder={placeholder ?? undefined}
         aria-label={label === null ? (placeholder ?? binding.name) : undefined}
+        aria-required={validation.required || undefined}
+        aria-invalid={validation.showError || undefined}
+        aria-describedby={validation.showError ? validation.errorId : undefined}
+        onBlur={validation.touch}
         onChange={(event) => {
           const typed = event.currentTarget.value;
           if (binding.number !== true) return setValue(binding.name, typed);
           setDraft(typed);
           setValue(binding.name, toNumber(typed) ?? typed);
         }}
-        className="h-8 px-2 text-[13px] placeholder:text-subtle-foreground"
+        className={cn(
+          "h-8 px-2 text-[13px] placeholder:text-subtle-foreground",
+          validation.showError && "border-destructive/60",
+        )}
       />
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }
@@ -181,6 +217,7 @@ export function Select({ props }: { props: PropsOf<"Select"> }) {
   const id = useId();
   const binding = props.value;
   const label = props.label ?? null;
+  const validation = useFieldValidation(binding.value, props.checks, "Select");
   const options = props.options.filter(isScalar);
   const selected = options.findIndex((option) => option === binding.value);
   return (
@@ -190,8 +227,22 @@ export function Select({ props }: { props: PropsOf<"Select"> }) {
           {label}
         </Label>
       )}
-      <SelectRoot value={selected < 0 ? "" : String(selected)} onValueChange={(next) => setValue(binding.name, options[Number(next)] ?? null)}>
-        <SelectTrigger id={id} aria-label={label === null ? binding.name : undefined} className="h-8 min-w-0 pl-2 pr-2 text-[13px]">
+      <SelectRoot
+        value={selected < 0 ? "" : String(selected)}
+        onValueChange={(next) => {
+          validation.touch();
+          setValue(binding.name, options[Number(next)] ?? null);
+        }}
+      >
+        <SelectTrigger
+          id={id}
+          aria-label={label === null ? binding.name : undefined}
+          aria-required={validation.required || undefined}
+          aria-invalid={validation.showError || undefined}
+          aria-describedby={validation.showError ? validation.errorId : undefined}
+          onBlur={validation.touch}
+          className={cn("h-8 min-w-0 pl-2 pr-2 text-[13px]", validation.showError && "border-destructive/60")}
+        >
           <SelectValue placeholder="Choose…" />
         </SelectTrigger>
         <SelectContent>
@@ -205,6 +256,7 @@ export function Select({ props }: { props: PropsOf<"Select"> }) {
           </SelectGroup>
         </SelectContent>
       </SelectRoot>
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }
@@ -215,9 +267,11 @@ export function Checklist({ props }: { props: PropsOf<"Checklist"> }) {
   const labelId = useId();
   const binding = props.value;
   const label = props.label ?? null;
+  const validation = useFieldValidation(binding.value, props.checks, "Checklist");
   const options = props.options.filter(isScalar);
   const picked = list(binding.value);
-  const toggle = (option: Value) =>
+  const toggle = (option: Value) => {
+    validation.touch();
     setValue(
       binding.name,
       picked.includes(option)
@@ -228,6 +282,7 @@ export function Checklist({ props }: { props: PropsOf<"Checklist"> }) {
             ...picked.filter((value) => !options.some((candidate) => candidate === value)),
           ],
     );
+  };
   return (
     <div className="flex min-w-0 flex-col gap-1">
       {label === null ? null : (
@@ -238,6 +293,8 @@ export function Checklist({ props }: { props: PropsOf<"Checklist"> }) {
       <div
         role="group"
         aria-labelledby={label === null ? undefined : labelId}
+        aria-invalid={validation.showError || undefined}
+        aria-describedby={validation.showError ? validation.errorId : undefined}
         className="-mx-1 flex min-w-0 flex-col"
       >
         {options.map((option, index) => {
@@ -257,6 +314,7 @@ export function Checklist({ props }: { props: PropsOf<"Checklist"> }) {
           );
         })}
       </div>
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }

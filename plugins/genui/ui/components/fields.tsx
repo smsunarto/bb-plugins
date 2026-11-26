@@ -34,6 +34,7 @@ import {
   stepRange,
   stepperValue,
 } from "./fieldLogic";
+import { FieldValidationMessage, useFieldValidation } from "./fieldValidation";
 import { CAPTION, FOCUS_RING } from "./inputs";
 import { RISE, useEntrance } from "./motion";
 import { keepTyping } from "../keepTyping";
@@ -76,6 +77,7 @@ export function Stepper({ props }: { props: PropsOf<"Stepper"> }) {
   const { setValue } = useUiRuntime();
   const labelId = useId();
   const binding = props.value;
+  const validation = useFieldValidation(binding.value, props.checks, "Stepper");
   const range = stepRange(props.min, props.max, props.step);
   const current = stepperValue(binding.value, range);
   // A held button steps faster than renders land, so it steps from here.
@@ -92,6 +94,7 @@ export function Stepper({ props }: { props: PropsOf<"Stepper"> }) {
   );
   const label = props.label ?? null;
   const move = (count: number): boolean => {
+    validation.touch();
     const next = stepBy(latest.current, count, range);
     if (next === latest.current) return false;
     latest.current = next;
@@ -174,6 +177,7 @@ export function Stepper({ props }: { props: PropsOf<"Stepper"> }) {
           <Glyph d={PLUS} />
         </button>
       </div>
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }
@@ -187,6 +191,7 @@ export function Radio({ props }: { props: PropsOf<"Radio"> }) {
   const labelId = useId();
   const binding = props.value;
   const label = props.label ?? null;
+  const validation = useFieldValidation(binding.value, props.checks, "Radio");
   const options = radioOptions(props.options);
   const selected = options.findIndex((option) => option.value === binding.value);
   return (
@@ -200,9 +205,14 @@ export function Radio({ props }: { props: PropsOf<"Radio"> }) {
       <RadioGroup
         aria-labelledby={label === null ? undefined : labelId}
         aria-label={label === null ? binding.name : undefined}
+        aria-invalid={validation.showError || undefined}
+        aria-describedby={validation.showError ? validation.errorId : undefined}
         // Options are positional: the same value may repeat, and any scalar round-trips.
         value={selected < 0 ? "" : String(selected)}
-        onValueChange={(next) => setValue(binding.name, options[Number(next)]?.value ?? null)}
+        onValueChange={(next) => {
+          validation.touch();
+          setValue(binding.name, options[Number(next)]?.value ?? null);
+        }}
         className="-mx-1 flex min-w-0 flex-col gap-0"
       >
         {options.map((option, index) => {
@@ -226,6 +236,7 @@ export function Radio({ props }: { props: PropsOf<"Radio"> }) {
           );
         })}
       </RadioGroup>
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }
@@ -242,15 +253,18 @@ export function ListEditor({ props }: { props: PropsOf<"ListEditor"> }) {
   const binding = props.value;
   const label = props.label ?? null;
   const placeholder = props.placeholder ?? "Add an item";
+  const validation = useFieldValidation(binding.value, props.checks, "ListEditor");
   const items = list(binding.value);
   const problem = itemProblem(items, draft);
   const add = () => {
+    validation.touch();
     const next = addItem(items, draft);
     if (next === null) return;
     setValue(binding.name, next);
     setDraft("");
   };
   const remove = (index: number) => {
+    validation.touch();
     setValue(
       binding.name,
       items.filter((_, position) => position !== index),
@@ -319,6 +333,7 @@ export function ListEditor({ props }: { props: PropsOf<"ListEditor"> }) {
           Already in the list
         </p>
       ) : null}
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }
@@ -435,6 +450,7 @@ export function TextArea({ props }: { props: PropsOf<"TextArea"> }) {
   }, []);
   const label = props.label ?? null;
   const placeholder = props.placeholder ?? null;
+  const validation = useFieldValidation(binding.value, props.checks, "TextArea");
   return (
     <div className="flex min-w-0 flex-col gap-1">
       {label === null ? null : (
@@ -449,9 +465,17 @@ export function TextArea({ props }: { props: PropsOf<"TextArea"> }) {
         value={value}
         placeholder={placeholder ?? undefined}
         aria-label={label === null ? (placeholder ?? binding.name) : undefined}
+        aria-required={validation.required || undefined}
+        aria-invalid={validation.showError || undefined}
+        aria-describedby={validation.showError ? validation.errorId : undefined}
+        onBlur={validation.touch}
         onChange={(event) => setValue(binding.name, event.currentTarget.value)}
-        className="block h-auto min-h-8 resize-none overflow-y-hidden px-2 py-1 text-[13px] leading-5 [scrollbar-width:thin] placeholder:text-subtle-foreground"
+        className={cn(
+          "block h-auto min-h-8 resize-none overflow-y-hidden px-2 py-1 text-[13px] leading-5 [scrollbar-width:thin] placeholder:text-subtle-foreground",
+          validation.showError && "border-destructive/60",
+        )}
       />
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }
@@ -463,6 +487,7 @@ export function DateInput({ props }: { props: PropsOf<"DateInput"> }) {
   const id = useId();
   const binding = props.value;
   const label = props.label ?? null;
+  const validation = useFieldValidation(binding.value, props.checks, "DateInput");
   const date = isoDate(binding.value);
   return (
     <div className="flex min-w-0 flex-col gap-1">
@@ -477,12 +502,21 @@ export function DateInput({ props }: { props: PropsOf<"DateInput"> }) {
         type="date"
         value={date ?? ""}
         aria-label={label === null ? binding.name : undefined}
-        onChange={(event) => setValue(binding.name, isoDate(event.currentTarget.value))}
+        aria-required={validation.required || undefined}
+        aria-invalid={validation.showError || undefined}
+        aria-describedby={validation.showError ? validation.errorId : undefined}
+        onBlur={validation.touch}
+        onChange={(event) => {
+          validation.touch();
+          setValue(binding.name, isoDate(event.currentTarget.value));
+        }}
         className={cn(
           "h-8 max-w-52 px-2 text-[13px] tabular-nums [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-60 [&::-webkit-date-and-time-value]:text-left",
           date === null && "text-muted-foreground",
+          validation.showError && "border-destructive/60",
         )}
       />
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }
@@ -522,6 +556,7 @@ export function Rating({ props }: { props: PropsOf<"Rating"> }) {
   const [preview, setPreview] = useState<number | null>(null);
   const binding = props.value;
   const label = props.label ?? null;
+  const validation = useFieldValidation(binding.value, props.checks, "Rating");
   const max = ratingMax(props.max);
   const value = ratingValue(binding.value, max);
   const shown = preview ?? value;
@@ -532,6 +567,7 @@ export function Rating({ props }: { props: PropsOf<"Rating"> }) {
     const delta = RATING_KEYS[event.key];
     if (delta === undefined) return;
     event.preventDefault();
+    validation.touch();
     const next = Math.min(max, Math.max(0, Math.round(value) + delta));
     setValue(binding.name, next);
     group.current?.querySelectorAll<HTMLElement>('[role="radio"]')[Math.max(1, next) - 1]?.focus();
@@ -548,6 +584,8 @@ export function Rating({ props }: { props: PropsOf<"Rating"> }) {
         role="radiogroup"
         aria-labelledby={label === null ? undefined : labelId}
         aria-label={label === null ? binding.name : undefined}
+        aria-invalid={validation.showError || undefined}
+        aria-describedby={validation.showError ? validation.errorId : undefined}
         onKeyDown={onKeyDown}
         onPointerLeave={() => setPreview(null)}
         className="-mx-1.5 flex w-fit max-w-full flex-wrap"
@@ -566,6 +604,7 @@ export function Rating({ props }: { props: PropsOf<"Rating"> }) {
             }}
             {...keepTyping}
             onClick={() => {
+              validation.touch();
               // Clicking the current rating clears it; drop the preview so the clear shows.
               setValue(binding.name, star === value ? 0 : star);
               setPreview(null);
@@ -579,6 +618,7 @@ export function Rating({ props }: { props: PropsOf<"Rating"> }) {
           </button>
         ))}
       </div>
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }

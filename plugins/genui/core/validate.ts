@@ -1,4 +1,4 @@
-import type { CallExpr, Decl, Expr, NamedArg, Program, Statement } from "./ast";
+import type { CallExpr, Decl, Expr, NamedArg, Program, Statement, WatchRule } from "./ast";
 import {
   ACTIONS,
   COMPONENTS,
@@ -13,6 +13,13 @@ import {
   type ParamSpec,
   type StateKind,
 } from "./catalog";
+import {
+  CHECK_REQUIRED_KEYS,
+  CHECK_TYPES,
+  regexProblem,
+  SHORTHAND_CHECKS,
+  type CheckType,
+} from "./checks";
 import type { DiagnosticList, Pos } from "./diagnostics";
 import { loadPath } from "./data";
 import type { Value } from "./types";
@@ -151,7 +158,7 @@ function staticKind(expr: Expr): Kind | undefined {
 }
 
 function signature(name: string, spec: ComponentSpec): string {
-  const params = spec.params.filter((param) => param.legacy !== true).map(
+  const params = spec.params.filter((param) => param.legacy !== true && param.unlisted !== true).map(
     (param) => `${param.kind === "binding" ? "$" : ""}${param.name}${param.optional ? "?" : ""}`,
   );
   return `${name}(${params.join(", ")})`;
@@ -299,14 +306,24 @@ class Validator {
   private readonly synthesized = new Set<string>();
   /** Local (bb-plugins): the Cards Decision questions became; a Form takes their Radio as its own field (evaluate.ts). */
   private readonly questions = new Set<Expr>();
+  /** Top-level `Watch($state, Set(...))` rules in source order. */
+  private readonly watches: WatchRule[] = [];
 
   constructor(private readonly diagnostics: DiagnosticList) {}
 
   run(statements: readonly Statement[]): Program {
     const roots: Expr[] = [];
+    const rawWatches: CallExpr[] = [];
     for (const statement of statements) {
       if (statement.kind === "root") {
-        roots.push(statement.value);
+        if (
+          statement.value.type === "call" &&
+          (statement.value.name === "Watch" || statement.value.name === "watch")
+        ) {
+          rawWatches.push(statement.value);
+        } else {
+          roots.push(statement.value);
+        }
         continue;
       }
       this.forbidden(statement.name, statement.pos);
@@ -334,6 +351,15 @@ class Validator {
       for (const ref of refs.named) if (ref.name !== name) used.add(ref.name);
     }
     for (const root of roots) for (const ref of this.refs(root).named) used.add(ref.name);
+    for (const watch of rawWatches) {
+      // A user-declared named function `watch = ...` still wins over the top-level statement.
+      if (this.named.has(watch.name)) {
+        roots.push(watch);
+        for (const ref of this.refs(watch).named) used.add(ref.name);
+        continue;
+      }
+      for (const ref of this.validateWatch(watch).named) used.add(ref.name);
+    }
 
     const rootDecl = this.named.get("root");
     if (roots.length === 0) {
@@ -377,7 +403,104 @@ class Validator {
     for (const [name, decl] of this.named) {
       if (!used.has(name)) this.diagnostics.report(decl.pos, `\`${name}\` is never used`, "warning");
     }
-    return { states: this.stateDecls, named: this.named, roots, questions: this.questions };
+    return {
+      states: this.stateDecls,
+      named: this.named,
+      roots,
+      ...(this.watches.length > 0 ? { watches: this.watches } : {}),
+      questions: this.questions,
+    };
+  }
+
+  /** Validates a top-level `Watch($state | [$a, $b], Set(...) | [Set(...)])` statement. */
+  private validateWatch(call: CallExpr): Refs {
+    const refs: Refs = { named: [], states: [] };
+    if (call.name === "watch") {
+      this.diagnostics.report(call.pos, "`watch` is written `Watch`", "warning");
+    }
+    let targetExpr: Expr | undefined = call.args[0];
+    let actionExpr: Expr | undefined = call.args[1];
+    if (call.args.length > 2) {
+      this.diagnostics.report(call.args[2].pos, "too many arguments: Watch($state, action)");
+    }
+    for (const arg of call.named) {
+      if (arg.name === "state" || arg.name === "target") {
+        if (targetExpr !== undefined) this.diagnostics.report(arg.pos, `\`${arg.name}\` is given twice: Watch($state, action)`);
+        else targetExpr = arg.value;
+      } else if (arg.name === "action") {
+        if (actionExpr !== undefined) this.diagnostics.report(arg.pos, "`action` is given twice: Watch($state, action)");
+        else actionExpr = arg.value;
+      } else {
+        this.diagnostics.report(arg.pos, `\`Watch\` has no parameter \`${arg.name}\`: Watch($state, action)`);
+      }
+    }
+    const targets: string[] = [];
+    if (targetExpr === undefined) {
+      this.diagnostics.report(call.pos, "`Watch` is missing its `$state` target: Watch($state, Set($other, value))");
+    } else if (targetExpr.type === "state") {
+      this.check(targetExpr, [], refs);
+      targets.push(targetExpr.name);
+    } else if (targetExpr.type === "list") {
+      if (targetExpr.items.length === 0) {
+        this.diagnostics.report(targetExpr.pos, "`Watch` target list cannot be empty");
+      }
+      for (const item of targetExpr.items) {
+        if (item.type !== "state") {
+          this.diagnostics.report(item.pos, "`Watch` targets must be state variables written as `$name`");
+          this.check(item, [], refs);
+        } else {
+          this.check(item, [], refs);
+          if (!targets.includes(item.name)) targets.push(item.name);
+        }
+      }
+    } else {
+      this.diagnostics.report(targetExpr.pos, "`Watch` first argument must be `$state` or `[$a, $b]`");
+      this.check(targetExpr, [], refs);
+    }
+
+    if (actionExpr === undefined) {
+      this.diagnostics.report(call.pos, "`Watch` is missing its action: Watch($state, Set($other, value))");
+    } else {
+      this.check(actionExpr, [], refs);
+      this.checkWatchAction(actionExpr);
+    }
+
+    if (targets.length > 0 && actionExpr !== undefined) {
+      this.watches.push({ targets, action: actionExpr, pos: call.pos });
+    }
+    return refs;
+  }
+
+  /** Rejects non-`Set` actions statically inside a `Watch` rule so watchers stay pure client-side state updates. */
+  private checkWatchAction(expr: Expr): void {
+    if (expr.type === "list") {
+      for (const item of expr.items) this.checkWatchAction(item);
+      return;
+    }
+    if (expr.type === "conditional") {
+      this.checkWatchAction(expr.then);
+      this.checkWatchAction(expr.else);
+      return;
+    }
+    if (expr.type === "binary" && (expr.op === "&&" || expr.op === "||" || expr.op === "??")) {
+      this.checkWatchAction(expr.right);
+      return;
+    }
+    if (expr.type === "literal" && (expr.value === null || expr.value === false)) return;
+    if (expr.type === "call") {
+      if (expr.name === "Set") return;
+      if (ACTION_SPECS.has(expr.name)) {
+        this.diagnostics.report(expr.pos, `\`Watch\` can only run \`Set($state, value)\`, not \`${expr.name}\``);
+        return;
+      }
+      if (COMPONENT_SPECS.has(expr.name) || FUNCTION_ARITY.has(expr.name)) {
+        this.diagnostics.report(expr.pos, `\`Watch\` action must be \`Set($state, value)\`, got \`${expr.name}(...)\``);
+      }
+      return;
+    }
+    if (expr.type === "literal") {
+      this.diagnostics.report(expr.pos, `\`Watch\` action must be \`Set($state, value)\`, got ${JSON.stringify(expr.value)}`);
+    }
   }
 
   private refs(expr: Expr): Refs {
@@ -585,17 +708,21 @@ class Validator {
       }
       refs.named.push(expr);
     } else {
-      const arity = FUNCTION_ARITY.get(expr.name);
-      if (arity === undefined) {
-        this.diagnostics.report(expr.pos, this.unknownCallee(expr.name, params));
+      if (expr.name === "Watch" || expr.name === "watch") {
+        this.diagnostics.report(expr.pos, "`Watch` goes at the top level, outside components, like `$state = ...`");
       } else {
-        if (expr.named.length > 0) {
-          this.diagnostics.report(expr.named[0].pos, `\`${expr.name}\` takes positional arguments only`);
-        }
-        if (expr.args.length < arity[0] || expr.args.length > arity[1]) {
-          this.diagnostics.report(expr.pos, `\`${expr.name}\` takes ${arityText(arity)}: ${FUNCTIONS[expr.name as FunctionName]}`);
-        } else if (expr.name === "Load") {
-          this.literalPath(expr.args[0], "Load");
+        const arity = FUNCTION_ARITY.get(expr.name);
+        if (arity === undefined) {
+          this.diagnostics.report(expr.pos, this.unknownCallee(expr.name, params));
+        } else {
+          if (expr.named.length > 0) {
+            this.diagnostics.report(expr.named[0].pos, `\`${expr.name}\` takes positional arguments only`);
+          }
+          if (expr.args.length < arity[0] || expr.args.length > arity[1]) {
+            this.diagnostics.report(expr.pos, `\`${expr.name}\` takes ${arityText(arity)}: ${FUNCTIONS[expr.name as FunctionName]}`);
+          } else if (expr.name === "Load") {
+            this.literalPath(expr.args[0], "Load");
+          }
         }
       }
     }
@@ -653,7 +780,14 @@ class Validator {
       this.diagnostics.report(expr.args[spec.params.length].pos, `too many arguments: ${sig}`);
     }
     let sourceDropped = false;
+    let sawVisible = false;
+    const isComponent = COMPONENT_SPECS.has(expr.name);
     for (const arg of expr.named) {
+      if (isComponent && arg.name === "visible") {
+        if (sawVisible) this.diagnostics.report(arg.pos, `\`visible\` is given twice: ${sig}`);
+        sawVisible = true;
+        continue;
+      }
       const index = spec.params.findIndex((param) => param.name === arg.name);
       if (index < 0) {
         // Local (bb-plugins): `source:` where only Table, Chart and Metric caption one; dropped.
@@ -684,6 +818,7 @@ class Validator {
     this.coerceConfigObject(expr, spec, slots, sig);
     this.coerceLiteralBindings(expr, spec, slots, sig);
     this.coerceUndeclaredBindings(expr, spec, slots, sig);
+    this.coerceSingleCheck(expr, spec, slots);
     spec.params.forEach((param, index) => {
       const slot = slots[index];
       if (slot === undefined) {
@@ -805,8 +940,9 @@ class Validator {
         field = { ...fieldName, pos: entry.value.pos, at: entry.pos };
         continue;
       }
+      const isVisibleKey = COMPONENT_SPECS.has(expr.name) && entry.key === "visible";
       const param = spec.params.find((candidate) => candidate.name === entry.key);
-      if (param === undefined || slots.some((slot, index) => index > 0 && slot !== undefined && spec.params[index].name === entry.key)) return;
+      if ((!isVisibleKey && param === undefined) || slots.some((slot, index) => index > 0 && slot !== undefined && spec.params[index].name === entry.key)) return;
       named.push({ name: entry.key, value: entry.value, pos: entry.pos });
     }
     if (field !== undefined) {
@@ -817,7 +953,7 @@ class Validator {
     slots.fill(undefined);
     for (const arg of named) {
       const index = spec.params.findIndex((param) => param.name === arg.name);
-      slots[index] = arg.value;
+      if (index >= 0) slots[index] = arg.value;
     }
     // validate owns the parsed AST before it becomes the program (readonly is type-level).
     const mutable = expr as unknown as { args: Expr[]; named: NamedArg[] };
@@ -1114,9 +1250,101 @@ class Validator {
     this.stateDecls.push(decl);
   }
 
+  /** Coerces a single check (`checks: "required"` or `checks: {type: ...}`) into a 1-item list with a warning. */
+  private coerceSingleCheck(expr: CallExpr, spec: ComponentSpec, slots: (Expr | undefined)[]): void {
+    const index = spec.params.findIndex((param) => param.name === "checks");
+    if (index < 0) return;
+    const slot = slots[index];
+    if (slot === undefined) return;
+    const isSingle = (slot.type === "literal" && typeof slot.value === "string") || slot.type === "object";
+    if (!isSingle) return;
+    const wrapped: Expr = { type: "list", items: [slot], pos: slot.pos };
+    slots[index] = wrapped;
+    if (expr.args[index] === slot) (expr as unknown as { args: Expr[] }).args[index] = wrapped;
+    const namedArg = expr.named.find((arg) => arg.value === slot);
+    if (namedArg !== undefined) (namedArg as { value: Expr }).value = wrapped;
+    this.diagnostics.report(
+      slot.pos,
+      `\`${expr.name}\` checks expects a list; wrapped it as \`[...]\``,
+      "warning",
+    );
+  }
+
+  /** Static compile-time check of literal `checks: [...]` entries. */
+  private checkValidationRules(label: string, slot: Expr): void {
+    if (slot.type !== "list") return;
+    for (const item of slot.items) {
+      if (item.type === "literal") {
+        if (item.value === null || item.value === false) continue;
+        if (typeof item.value === "string") {
+          if (!(SHORTHAND_CHECKS as readonly string[]).includes(item.value)) {
+            const hint = didYouMean(item.value, SHORTHAND_CHECKS);
+            this.diagnostics.report(
+              item.pos,
+              `${label}: unknown shorthand check ${JSON.stringify(item.value)}.${hint} Use ${SHORTHAND_CHECKS.join(", ")} or an object check`,
+            );
+          }
+        } else {
+          this.diagnostics.report(item.pos, `${label}: each check must be a string (e.g. "required") or an object`);
+        }
+        continue;
+      }
+      if (item.type !== "object") continue;
+      const typeEntry = item.entries.find((entry) => entry.key === "type");
+      const hasValid = item.entries.some((entry) => entry.key === "valid" || entry.key === "ok");
+      if (typeEntry === undefined) {
+        if (!hasValid) {
+          this.diagnostics.report(
+            item.pos,
+            `${label}: check object needs \`type: "..."\` or \`valid: <condition>\``,
+          );
+        }
+        continue;
+      }
+      if (typeEntry.value.type !== "literal" || typeof typeEntry.value.value !== "string") continue;
+      const typeName = typeEntry.value.value;
+      if (!(CHECK_TYPES as readonly string[]).includes(typeName)) {
+        const hint = closestNames(typeName, CHECK_TYPES);
+        this.diagnostics.report(
+          typeEntry.value.pos,
+          `${label}: unknown check type ${JSON.stringify(typeName)}.${hint} Allowed: ${CHECK_TYPES.join(", ")}`,
+        );
+        continue;
+      }
+      const requiredKeys = CHECK_REQUIRED_KEYS[typeName as CheckType];
+      if (requiredKeys !== undefined) {
+        const argsEntry = item.entries.find((entry) => entry.key === "args");
+        const argsKeys =
+          argsEntry?.value.type === "object" ? argsEntry.value.entries.map((entry) => entry.key) : [];
+        const present = requiredKeys.some(
+          (key) => item.entries.some((entry) => entry.key === key) || argsKeys.includes(key),
+        );
+        if (!present && (argsEntry === undefined || argsEntry.value.type === "object")) {
+          this.diagnostics.report(
+            item.pos,
+            `${label}: \`${typeName}\` check is missing \`${requiredKeys[0]}\``,
+          );
+        }
+      }
+      if (typeName === "pattern") {
+        const argsEntry = item.entries.find((entry) => entry.key === "args");
+        const patEntry =
+          item.entries.find((entry) => entry.key === "pattern" || entry.key === "regex" || entry.key === "value") ??
+          (argsEntry?.value.type === "object"
+            ? argsEntry.value.entries.find((entry) => entry.key === "pattern" || entry.key === "regex" || entry.key === "value")
+            : undefined);
+        if (patEntry?.value.type === "literal" && typeof patEntry.value.value === "string") {
+          const problem = regexProblem(patEntry.value.value);
+          if (problem !== null) this.diagnostics.report(patEntry.value.pos, `${label}: ${problem}`);
+        }
+      }
+    }
+  }
+
   private checkParam(owner: string, param: ParamSpec, slot: Expr): void {
     const label = `\`${owner}\` ${param.name}`;
     if (owner === "Snippet" && param.name === "path") this.literalPath(slot, "Snippet");
+    if (param.name === "checks") this.checkValidationRules(label, slot);
     // A bare state name (`plan` for `$plan`) is already reported with a `$` suggestion.
     const isBareState = slot.type === "ident" && this.states.has(slot.name);
     if (param.kind === "binding" && slot.type !== "state" && !isBareState) {

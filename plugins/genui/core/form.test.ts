@@ -114,8 +114,8 @@ Form([Input($name, label: "Name"), Checklist($tags, ["a"])])`);
     const [form] = evaluate(result.program!, initialState(result.program!)).roots;
     if (form.type !== "Form") throw new Error(`expected a Form, got ${form.type}`);
     expect(formFields(form.props.children)).toEqual([
-      { name: "name", typed: true, line: "Name: —" },
-      { name: "tags", typed: false, line: "tags: none (options: a)" },
+      { name: "name", typed: true, line: "Name: —", errors: [] },
+      { name: "tags", typed: false, line: "tags: none (options: a)", errors: [] },
     ]);
   });
 
