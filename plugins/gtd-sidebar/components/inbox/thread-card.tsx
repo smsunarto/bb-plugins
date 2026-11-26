@@ -29,9 +29,8 @@ import {
   type DispatchRowCommand,
   type ThreadActionPlan,
 } from "./thread-actions";
-import type { ProviderGlyphInfo } from "./provider-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime, useRowDescribedBy } from "./status-slot";
-import { FadingText, HostLead, NAMING_TITLE_CLASS, ThreadDetails } from "./thread-details";
+import { FadingText, HostLead, NAMING_TITLE_CLASS } from "./thread-details";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { useNestRow, type SidebarDragApi } from "../../hooks/use-nest-drag";
 import { isLongLivedThread } from "../../lib/long-lived";
@@ -47,17 +46,12 @@ interface ThreadCardProps {
   shelf: ActiveThreadShelf;
   depth: number;
   parentId: string | null;
-  parentTitle: string | null;
   childCount: number;
   expanded: boolean;
   guides: string;
   lastChild: boolean;
   statusThread: PluginSidebarThread;
   toggleThread: (threadId: string) => void;
-  provider?: ProviderGlyphInfo;
-  projectName: string | null;
-  /** bb's branch, or GitButler's virtual-branch summary for its workspace. */
-  branchName: string | null;
   isActive: boolean;
   isNaming?: boolean;
   /** False while the thread is working or blocked on the user. */
@@ -113,10 +107,9 @@ export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
 });
 
 /**
- * One thread on one line: title, then activity, PR and status-or-age, with
- * project, branch and agent in the hover details. Status stays in the row
- * while section placement answers the larger question: whether the user or
- * the agent can act next.
+ * One thread on one line: title, then activity, PR and status-or-age. Status
+ * stays in the row while section placement answers the larger question: whether
+ * the user or the agent can act next.
  *
  * The row is a positioned container with a full-bleed anchor UNDER the
  * controls, the way bb's own thread row does it: a `<button>` inside an `<a>`
@@ -128,16 +121,12 @@ const ThreadCardBody = memo(function ThreadCardBody({
   shelf,
   depth,
   parentId,
-  parentTitle,
   childCount,
   expanded,
   guides,
   lastChild,
   statusThread,
   toggleThread,
-  provider,
-  projectName,
-  branchName,
   isActive,
   isNaming = false,
   canPark,
@@ -171,11 +160,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
   // A Captain stays open (lib/long-lived), so its row offers no Snooze or
   // Settle at all; the right-click menu still lists them, disabled with why.
   const showActions = !isLongLivedThread(thread) && (shelf === "nextAction" || canPark);
-  const relation = parentTitle
-    ? `Child of ${parentTitle}`
-    : childCount > 0
-      ? `${childCount} subthreads`
-      : undefined;
   const unreadId = useId();
   const statusId = useId();
   const describedBy = useRowDescribedBy(statusId, unreadId, {
@@ -236,12 +220,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
         toggleThread={toggleThread}
       />
       <ThreadRowLink
-        thread={thread}
-        projectName={projectName}
-        branchName={branchName}
-        provider={provider}
-        relation={relation}
-        showDetails={!isCompactViewport}
         shortcut={shortcut}
         threadId={thread.id}
         title={titleText}
@@ -439,7 +417,7 @@ function ThreadTitle({
 /**
  * The compact viewport's row: the line a desktop row draws, minus the hover
  * affordances a touch screen cannot reach. The long-press menu stands in for
- * the tooltip and the trailing actions.
+ * the trailing actions.
  */
 function MobileThreadSummary({
   title,
@@ -542,13 +520,7 @@ export function ThreadHierarchy({
 }
 
 function ThreadRowLink({
-  thread,
   describedBy,
-  projectName,
-  branchName,
-  provider,
-  relation,
-  showDetails,
   shortcut,
   threadId,
   title,
@@ -565,14 +537,8 @@ function ThreadRowLink({
   rename,
   command,
 }: {
-  thread: PluginSidebarThread;
   /** The status slot's id, then the unread note's where it adds anything. */
   describedBy: string;
-  projectName: string | null;
-  branchName: string | null;
-  provider?: ProviderGlyphInfo;
-  relation: string | undefined;
-  showDetails: boolean;
   shortcut: PluginSidebarThreadShortcut | null;
   threadId: string;
   title: string;
@@ -592,73 +558,63 @@ function ThreadRowLink({
   command: DispatchRowCommand;
 }) {
   return (
-    <ThreadDetails
-      thread={thread}
-      projectName={projectName}
-      branchName={branchName}
-      provider={provider}
-      relation={relation}
-      enabled={showDetails}
-    >
-      {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
-             anchor: the shortcut-target contract below and modifier-click
-             split-open both depend on it. A button breaks each. */}
-      <a
-        // Both attributes, or bb's nine thread shortcuts stop finding rows.
-        data-sidebar-thread-shortcut-target=""
-        data-sidebar-thread-id={threadId}
-        data-sidebar-rename-anchor=""
-        href="#"
-        aria-label={title}
-        aria-describedby={describedBy}
-        aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
-        aria-current={isActive ? "page" : undefined}
-        onKeyDown={(event) => {
-          // Shift+F10 or the Menu key opens the right-click menu, which macOS
-          // never does natively. Touch has no such menu, and a live drag owns
-          // the keys until it drops.
-          if (!mobile && !nestActive && openMenuFromKeyboard(event)) return;
-          // Space picks the row up (see use-nest-drag); while a drag is live
-          // the arrows move the pick, not the fold.
-          onNestKeyDown(event);
-          if (nestActive) return;
-          const tree =
-            event.currentTarget.closest("[data-sidebar-thread-tree]") ??
-            // A family's own list holds only its children, not their parent.
-            event.currentTarget.closest("ul:not([data-gtd-family])");
-          const rows = Array.from(
-            tree?.querySelectorAll<HTMLAnchorElement>("[data-sidebar-thread-id]") ?? [],
-          );
-          let focusId: string | null = null;
-          if (event.key === "ArrowRight" && childCount > 0) {
-            event.preventDefault();
-            if (!expanded) toggleThread(threadId);
-            else {
-              focusId =
-                rows[rows.indexOf(event.currentTarget) + 1]?.dataset.sidebarThreadId ?? null;
-            }
-          } else if (event.key === "ArrowLeft") {
-            event.preventDefault();
-            if (expanded) toggleThread(threadId);
-            else focusId = parentId;
-          }
-          if (focusId) rows.find((row) => row.dataset.sidebarThreadId === focusId)?.focus();
-        }}
-        onPointerDown={(event) => {
-          // Both gestures start here; the destination decides which one lands.
-          onNestPointerDown(event);
-          onSplitPointerDown?.(event);
-        }}
-        onDoubleClick={rename.onDoubleClick}
-        onClick={(event) => {
-          if (event.button !== 0) return;
+    /* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
+       anchor: the shortcut-target contract below and modifier-click
+       split-open both depend on it. A button breaks each. */
+    <a
+      // Both attributes, or bb's nine thread shortcuts stop finding rows.
+      data-sidebar-thread-shortcut-target=""
+      data-sidebar-thread-id={threadId}
+      data-sidebar-rename-anchor=""
+      href="#"
+      aria-label={title}
+      aria-describedby={describedBy}
+      aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
+      aria-current={isActive ? "page" : undefined}
+      onKeyDown={(event) => {
+        // Shift+F10 or the Menu key opens the right-click menu, which macOS
+        // never does natively. Touch has no such menu, and a live drag owns
+        // the keys until it drops.
+        if (!mobile && !nestActive && openMenuFromKeyboard(event)) return;
+        // Space picks the row up (see use-nest-drag); while a drag is live
+        // the arrows move the pick, not the fold.
+        onNestKeyDown(event);
+        if (nestActive) return;
+        const tree =
+          event.currentTarget.closest("[data-sidebar-thread-tree]") ??
+          // A family's own list holds only its children, not their parent.
+          event.currentTarget.closest("ul:not([data-gtd-family])");
+        const rows = Array.from(
+          tree?.querySelectorAll<HTMLAnchorElement>("[data-sidebar-thread-id]") ?? [],
+        );
+        let focusId: string | null = null;
+        if (event.key === "ArrowRight" && childCount > 0) {
           event.preventDefault();
-          if (rename.isEditing) return;
-          command({ kind: "open", threadId: threadId, split: event.metaKey || event.ctrlKey });
-        }}
-        className={cn("absolute inset-0 cursor-pointer", mobile ? "rounded-xl" : "rounded-md")}
-      />
-    </ThreadDetails>
+          if (!expanded) toggleThread(threadId);
+          else {
+            focusId = rows[rows.indexOf(event.currentTarget) + 1]?.dataset.sidebarThreadId ?? null;
+          }
+        } else if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          if (expanded) toggleThread(threadId);
+          else focusId = parentId;
+        }
+        if (focusId) rows.find((row) => row.dataset.sidebarThreadId === focusId)?.focus();
+      }}
+      onPointerDown={(event) => {
+        // Both gestures start here; the destination decides which one lands.
+        onNestPointerDown(event);
+        onSplitPointerDown?.(event);
+      }}
+      onDoubleClick={rename.onDoubleClick}
+      onClick={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        if (rename.isEditing) return;
+        command({ kind: "open", threadId: threadId, split: event.metaKey || event.ctrlKey });
+      }}
+      className={cn("absolute inset-0 cursor-pointer", mobile ? "rounded-xl" : "rounded-md")}
+    />
   );
 }
 

@@ -1965,69 +1965,40 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           ["primary", "remote"].filter((id) => card(id).querySelector(".gtd-host-lead"));
         assert.deepEqual(globes(), firstPaint);
         await waitFor(() => assert.deepEqual(globes(), globed));
-        // A globe's machine is named in the row's details, a local one never.
-        for (const [id, name] of [
-          ["primary", "Primary computer"],
-          ["remote", "Remote computer"],
-        ] as const) {
-          keyboardFocus(row(view.slot, id));
-          const details = (await screen.findByRole("tooltip")).textContent!;
-          assert.equal(details.includes(name), globed.includes(id), id);
-          act(() => row(view.slot, id).blur());
-          await waitFor(() => assert.equal(screen.queryByRole("tooltip"), null));
-        }
       },
     );
 
-    it("opens thread details from the keyboard navigation anchor", async () => {
-      const view = mount(hostState([thread("root"), thread("child", { parentThreadId: "root" })]));
-      keyboardFocus(row(view.slot, "child"));
-      const tooltip = await screen.findByRole("tooltip");
-      assert.match(tooltip.textContent ?? "", /child/);
-      assert.match(tooltip.textContent ?? "", /One/);
-      assert.match(tooltip.textContent ?? "", /Child of root/);
-      assert.match(tooltip.textContent ?? "", /codex/);
-      act(() => row(view.slot, "child").blur());
-    });
+    it("shows no hover or focus tooltip on any thread row while keeping action-button tooltips", async () => {
+      const host = {
+        ...hostState([
+          thread("pinned", { isPinned: true }),
+          thread("root"),
+          thread("child", { parentThreadId: "root" }),
+          thread("captain", { originPluginId: "captain" }),
+          thread("snoozed"),
+          settledThread("settled"),
+        ]),
+        lifecycle: lifecycle(["snoozed"]),
+      };
+      const view = mount(host);
+      expandParked(view.slot);
+      for (const id of ["pinned", "root", "child", "captain", "snoozed", "settled"]) {
+        const anchor = row(view.slot, id);
+        fireEvent.pointerMove(anchor);
+        keyboardFocus(anchor);
+        await act(async () => {});
+        assert.equal(screen.queryByRole("tooltip"), null, `unexpected tooltip on row ${id}`);
+        act(() => anchor.blur());
+      }
+      // Action buttons keep their own tooltips.
+      keyboardFocus(rowButton(view.slot, "root", "Snooze until tomorrow"));
+      assert.equal((await screen.findByRole("tooltip")).textContent, "Snooze until tomorrow");
+      act(() => rowButton(view.slot, "root", "Snooze until tomorrow").blur());
+      await waitFor(() => assert.equal(screen.queryByRole("tooltip"), null));
 
-    it("shows a root row's details even while its title fits", async () => {
-      const view = mount(hostState([thread("short")]));
-      keyboardFocus(row(view.slot, "short"));
-      const tooltip = await screen.findByRole("tooltip");
-      assert.equal(tooltip.firstElementChild?.textContent, "short");
-      act(() => row(view.slot, "short").blur());
-    });
-
-    it.each([false, true])(
-      "shows a parked row's details on desktop only, mobile=%s",
-      async (isCompactViewport) => {
-        const host = { ...hostState([thread("snoozed")]), lifecycle: lifecycle(["snoozed"]) };
-        const view = mount(host, { isCompactViewport });
-        fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
-        keyboardFocus(row(view.slot, "snoozed"));
-        if (isCompactViewport) {
-          await act(async () => {});
-          assert.equal(screen.queryByRole("tooltip"), null);
-        } else {
-          const tooltip = await screen.findByRole("tooltip");
-          assert.equal(tooltip.firstElementChild?.textContent, "snoozed");
-        }
-        act(() => row(view.slot, "snoozed").blur());
-      },
-    );
-
-    it("keeps a row's details closed when a mouse-picked menu hands focus back", async () => {
-      const view = mount(hostState([thread("a")]));
-      const anchor = row(view.slot, "a");
-      // A mouse pick starts with the pointer down, which marks the focus the
-      // menu hands back as the mouse's.
-      fireEvent.pointerDown(document.body);
-      act(() => anchor.focus());
-      fireEvent.contextMenu(anchor);
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Mark unread" }));
-      await waitFor(() => assert.ok(document.activeElement === anchor));
-      await act(async () => {});
-      assert.equal(screen.queryByRole("tooltip"), null);
+      keyboardFocus(rowButton(view.slot, "snoozed", "Wake now"));
+      assert.equal((await screen.findByRole("tooltip")).textContent, "Wake now");
+      act(() => rowButton(view.slot, "snoozed", "Wake now").blur());
     });
 
     it("reveals a matching descendant through a collapsed family without changing collapse state", () => {
@@ -2564,51 +2535,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.deepEqual(
         Array.from(view.slot.container.querySelectorAll("kbd"), (pill) => pill.textContent),
         ["⌃1", "⌃3", "⌃4"],
-      );
-    });
-
-    it("asks GitButler about plain checkouts only and prefers its label in the row's details", async () => {
-      const environment = (id: string, isWorktree: boolean | null) => ({
-        id,
-        name: id,
-        branchName: `${id}-branch`,
-        path: `/repos/${id}`,
-        isWorktree,
-        providerId: null,
-        workspaceDisplayKind: null,
-      });
-      const host = hostState([
-        thread("plain", { environment: environment("env-plain", false) }),
-        thread("worktree", { environment: environment("env-worktree", true) }),
-        thread("unknown", { environment: environment("env-unknown", null) }),
-      ]);
-      const view = mount(host, {}, "", {
-        settings: { gitButlerBranches: true },
-        rpc: {
-          listEnvironmentBranches: async () => ({
-            environments: [{ environmentId: "env-plain", label: "scott/feature" }],
-          }),
-        },
-      });
-      const details = () => screen.getByRole("tooltip").textContent!;
-      const close = async (id: string) => {
-        act(() => row(view.slot, id).blur());
-        await waitFor(() => assert.equal(screen.queryByRole("tooltip"), null));
-      };
-      keyboardFocus(row(view.slot, "plain"));
-      await waitFor(() => assert.ok(details().includes("scott/feature")));
-      assert.ok(!details().includes("env-plain-branch"));
-      await close("plain");
-      for (const id of ["worktree", "unknown"]) {
-        keyboardFocus(row(view.slot, id));
-        await waitFor(() => assert.ok(details().includes(`env-${id}-branch`)));
-        await close(id);
-      }
-      assert.deepEqual(
-        view.slot.rpcCalls
-          .filter((call) => call.method === "listEnvironmentBranches")
-          .map((call) => call.input),
-        [{ environmentIds: ["env-plain"] }],
       );
     });
 

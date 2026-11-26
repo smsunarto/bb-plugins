@@ -259,22 +259,21 @@ only when you use them, apart from reads and clocks needed to keep the inbox
 accurate. Normal inbox behavior does not invoke an AI model or poll external
 services. The explicit naming command below is a separate user-requested inference.
 
-| Core sidebar feature    | What it does                                                                                                                                                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Action shelves          | Pinned, Next Action, Waiting, Snoozed, and the last 24 hours of Settled. Running work and pending interactions stay visible.                                                               |
-| Repository groups       | Group shelves by BB repository, toggle groups from plugin settings, fold groups, create a thread from a group, and reorder groups.                                                         |
-| Thread families         | Fold using BB's shared preference. Desktop drag or keyboard drag nests/un-nests threads using BB's parent relation.                                                                        |
-| Thread actions          | Pin, snooze until tomorrow at 09:00, settle/archive with native Undo, restore, delete, and insert a thread reference into the composer.                                                    |
-| Navigation              | Row click, search, Cmd/Ctrl-click split-open, and drag-to-split. Preserve BB/Vimium thread shortcut anchors.                                                                               |
-| Status and details      | Unread titles, activity indicators/counts, time, native branch and PR information, provider tooltips, machine globe/color and host identity. These make thread state and location visible. |
-| Row layout              | Every thread takes one line; project, branch and agent show in its hover details. On mobile, long-press opens the action sheet without requiring haptics.                                  |
-| Explicit naming command | `bb gtd-sidebar rename [<threadId>]` is an explicit request for Codex title inference even with automatic naming off.                                                                      |
+| Core sidebar feature    | What it does                                                                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Action shelves          | Pinned, Next Action, Waiting, Snoozed, and the last 24 hours of Settled. Running work and pending interactions stay visible.                     |
+| Repository groups       | Group shelves by BB repository, toggle groups from plugin settings, fold groups, create a thread from a group, and reorder groups.               |
+| Thread families         | Fold using BB's shared preference. Desktop drag or keyboard drag nests/un-nests threads using BB's parent relation.                              |
+| Thread actions          | Pin, snooze until tomorrow at 09:00, settle/archive with native Undo, restore, delete, and insert a thread reference into the composer.          |
+| Navigation              | Row click, search, Cmd/Ctrl-click split-open, and drag-to-split. Preserve BB/Vimium thread shortcut anchors.                                     |
+| Status and details      | Unread titles, activity indicators/counts, time, PR badges, machine globe/color and host identity. These make thread state and location visible. |
+| Row layout              | Every thread takes one line. On mobile, long-press opens the action sheet without requiring haptics.                                             |
+| Explicit naming command | `bb gtd-sidebar rename [<threadId>]` is an explicit request for Codex title inference even with automatic naming off.                            |
 
 | Optional setting (key)                               | Default | Effect when enabled                                                                                                                                                                         |
 | ---------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Group threads by project (`groupThreadsByProject`)   | On      | Organize each shelf into project groups.                                                                                                                                                    |
 | Enable mobile haptics (`mobileHaptics`)              | Off     | Attach iOS tactile menu-tap switches. Turning off removes those switches, including from an open menu.                                                                                      |
-| Show GitButler branches (`gitButlerBranches`)        | Off     | Periodically read GitButler branches on primary checkouts through the host CLI. Off stops refreshes and server host reads, restoring BB's native labels.                                    |
 | Let agents name threads (`automaticallyNameThreads`) | Off     | Give each root thread's agent instructions to title it on the first request and rename it when the work changes direction, with your project naming rules inlined. Off leaves titles to bb. |
 
 | Supporting preference            | Default           | Purpose                                                                                                   |
@@ -289,8 +288,9 @@ services. The explicit naming command below is a separate user-requested inferen
 - Previously implicit defaults for automatic naming become **off**.
   GitButler branch lookups and haptics now require an explicit opt-in.
   No migration writes `true` on an existing or new installation.
-- Thread rows are always one line. The former `compactThreads` and
-  `showProviderIcon` settings are gone, and saved values for them are ignored.
+- Thread rows are always one line with no hover tooltip card. The former
+  `compactThreads`, `showProviderIcon`, and `gitButlerBranches` settings are
+  gone, and saved values for them are ignored.
 - Cursor Projects coordination has been removed. Existing native threads appear
   in the ordinary inbox. Legacy project data is retained but unused, and project
   subscription polling and delivery no longer run.

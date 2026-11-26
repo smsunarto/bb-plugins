@@ -27,7 +27,6 @@ function row(id: string, projectId = "p1"): VisibleInboxRow {
     depth: 0,
     parentId: null,
     parentProjectId: null,
-    parentTitle: null,
     expanded: true,
     guides: "",
     lastChild: false,

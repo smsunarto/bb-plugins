@@ -18,8 +18,7 @@ import {
   type ThreadAction,
 } from "./thread-actions";
 import { STATUS_SLOT_CLASS, ShortcutPill, StatusOrTime, useRowDescribedBy } from "./status-slot";
-import { FadingText, HostLead, NAMING_TITLE_CLASS, ThreadDetails } from "./thread-details";
-import type { ProviderGlyphInfo } from "./provider-glyph";
+import { FadingText, HostLead, NAMING_TITLE_CLASS } from "./thread-details";
 import { snoozeWakeLabel } from "../../lib/lifecycle";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
@@ -30,9 +29,6 @@ interface SlimRowProps {
   isUnread: boolean;
   isActive: boolean;
   isNaming?: boolean;
-  projectName: string | null;
-  branchName: string | null;
-  provider?: ProviderGlyphInfo;
   shelf: "snoozed" | "settled";
   wakeAt: number | null;
   isCompactViewport: boolean;
@@ -67,9 +63,6 @@ export const SlimRow = memo(function SlimRow(props: SlimRowProps) {
 const SlimRowBody = memo(function SlimRowBody({
   thread,
   isUnread,
-  projectName,
-  branchName,
-  provider,
   isActive,
   isNaming = false,
   shelf,
@@ -137,44 +130,36 @@ const SlimRowBody = memo(function SlimRowBody({
         mobile={isCompactViewport}
         toggleThread={toggleThread}
       />
-      <ThreadDetails
-        thread={thread}
-        projectName={projectName}
-        branchName={branchName}
-        provider={provider}
-        enabled={!isCompactViewport}
-      >
-        {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
-         anchor: the shortcut-target contract and modifier-click
-         split-open both depend on it. A button breaks each. */}
-        <a
-          onPointerDown={onSplitPointerDown}
-          data-sidebar-thread-shortcut-target=""
-          data-sidebar-thread-id={thread.id}
-          data-sidebar-rename-anchor=""
-          href="#"
-          aria-label={title}
-          aria-describedby={describedBy}
-          aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
-          aria-current={isActive ? "page" : undefined}
-          onKeyDown={(event) => {
-            // Shift+F10 or the Menu key, as on a card.
-            if (!isCompactViewport) openMenuFromKeyboard(event);
-          }}
-          onDoubleClick={rename.onDoubleClick}
-          onClick={(event) => {
-            if (event.button !== 0) return;
-            event.preventDefault();
-            if (rename.isEditing) return;
-            command({
-              kind: "open",
-              threadId: thread.id,
-              split: event.metaKey || event.ctrlKey,
-            });
-          }}
-          className="absolute inset-0 cursor-pointer rounded-xl"
-        />
-      </ThreadDetails>
+      {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
+       anchor: the shortcut-target contract and modifier-click
+       split-open both depend on it. A button breaks each. */}
+      <a
+        onPointerDown={onSplitPointerDown}
+        data-sidebar-thread-shortcut-target=""
+        data-sidebar-thread-id={thread.id}
+        data-sidebar-rename-anchor=""
+        href="#"
+        aria-label={title}
+        aria-describedby={describedBy}
+        aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
+        aria-current={isActive ? "page" : undefined}
+        onKeyDown={(event) => {
+          // Shift+F10 or the Menu key, as on a card.
+          if (!isCompactViewport) openMenuFromKeyboard(event);
+        }}
+        onDoubleClick={rename.onDoubleClick}
+        onClick={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          if (rename.isEditing) return;
+          command({
+            kind: "open",
+            threadId: thread.id,
+            split: event.metaKey || event.ctrlKey,
+          });
+        }}
+        className="absolute inset-0 cursor-pointer rounded-xl"
+      />
       {isUnread ? (
         <span id={unreadId} className="sr-only">
           {thread.isUnread ? "Unread response" : "Unread response in subthreads"}

@@ -32,7 +32,6 @@ export interface VisibleInboxRow {
   depth: number;
   parentId: string | null;
   parentProjectId: string | null;
-  parentTitle: string | null;
   expanded: boolean;
   guides: string;
   lastChild: boolean;
@@ -351,7 +350,6 @@ export function visibleInboxRows(
       depth: 0,
       parentId: null,
       parentProjectId: null,
-      parentTitle: null,
       guides: "",
       lastChild: false,
       ancestorMatches: false,
@@ -385,7 +383,6 @@ export function visibleInboxRows(
         depth: row.depth + 1,
         parentId: row.node.thread.id,
         parentProjectId: row.node.thread.projectId,
-        parentTitle: row.node.thread.displayTitle,
         guides: row.depth === 0 ? "" : row.guides + (row.lastChild ? "0" : "1"),
         lastChild: index === children.length - 1,
       });

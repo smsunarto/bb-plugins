@@ -4,8 +4,6 @@ import { createPortal } from "react-dom";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
-  experimental_useProviders as useProviders,
-  experimental_useRpcQuery as useRpcQuery,
   experimental_useSidebarThreads as useSidebarThreads,
   useBbNavigate,
   useSdk,
@@ -20,7 +18,6 @@ import { ThreadCard } from "./thread-card";
 import { SlimRow } from "./slim-row";
 import { rowActionPlan, type ActiveThreadShelf, type RowCommand } from "./thread-actions";
 import { RowMenuArea, type RowMenuTarget } from "./row-menu";
-import { gtdSidebarRpcContract } from "../../lib/rpc-contract";
 import { useCollapsedThreads } from "../../hooks/use-collapsed-threads";
 import { useNamingThreads } from "../../hooks/use-naming-threads";
 import {
@@ -65,8 +62,6 @@ import { isShelvedThread } from "../../lib/settled-threads";
 import { isLongLivedThread, stayOpenReason } from "../../lib/long-lived";
 import { useStableThreads } from "../../hooks/use-stable-threads";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
-import { useRetained } from "../../hooks/use-retained";
-import { resolveSidebarBranchLabel } from "../../lib/gitbutler";
 import { NewThreadFab } from "./new-thread-fab";
 import { NewCaptainDialog, type NewCaptainRequest } from "./new-captain-dialog";
 import { useCaptainAvailable, useNeedsYouCounts } from "../../hooks/use-captain";
@@ -93,8 +88,6 @@ import {
 // The Settled shelf is a view of bb's archive, so the host list is asked for
 // archived threads too; `isShelvedThread` cuts it to the shelf's window.
 const SIDEBAR_LIFECYCLES = ["active", "archived"] as const;
-
-const GITBUTLER_REFRESH_MS = 30_000;
 
 export function ThreadInbox(props: PluginThreadListProps) {
   const sdk = useSdk();
@@ -181,17 +174,9 @@ function InboxList({
     [now, sidebarThreads],
   );
   const unsettle = useUnsettle();
-  // bb's own cached roster, so no glyph waits on a round trip of this plugin's.
-  const { providers } = useProviders();
-  const providerInfoById = useMemo(
-    () => new Map(providers.map((provider) => [provider.id, provider])),
-    [providers],
-  );
   // Optional enhancements stay off until the SDK confirms an explicit opt-in.
   const { values: settingValues, isLoading: settingsLoading } = useSettings();
   const repositoryGroupsEnabled = settingValues?.groupThreadsByProject !== false;
-
-  const gitButlerLabels = useGitButlerLabels(threads, settingValues?.gitButlerBranches === true);
 
   const projectNameById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
@@ -379,20 +364,12 @@ function InboxList({
   );
   const renderRow = (shelf: InboxShelf, row: VisibleInboxRow) => {
     const thread = row.node.thread;
-    const branchName = resolveSidebarBranchLabel(
-      thread.environment?.branchName ?? null,
-      thread.environment?.id ?? null,
-      gitButlerLabels,
-    );
     if (shelf === "snoozed" || shelf === "settled") {
       return (
         <SlimRow
           isUnread={row.isUnread}
           isNaming={namingThreads.has(thread.id)}
           thread={thread}
-          projectName={projectNameById.get(thread.projectId) ?? null}
-          provider={providerInfoById.get(thread.providerId)}
-          branchName={branchName}
           isActive={thread.id === activeThreadId}
           shelf={shelf}
           wakeAt={shelf === "snoozed" ? lifecycle.wakeAtFor(thread) : null}
@@ -413,18 +390,14 @@ function InboxList({
         isNaming={namingThreads.has(thread.id)}
         thread={thread}
         shelf={shelf}
-        provider={providerInfoById.get(thread.providerId)}
         depth={row.depth}
         parentId={row.parentId}
-        parentTitle={row.parentTitle}
         childCount={row.node.children.length}
         expanded={row.expanded}
         guides={row.guides}
         lastChild={row.lastChild}
         statusThread={row.statusThread}
         toggleThread={toggleThread}
-        projectName={projectNameById.get(thread.projectId) ?? null}
-        branchName={branchName}
         isActive={thread.id === activeThreadId}
         canPark={canParkFamily(row.node, lifecycle)}
         isCompactViewport={isCompactViewport}
@@ -1101,63 +1074,6 @@ function useCollapsedGroups() {
     [toggled],
   );
   return { isGroupCollapsed, toggleGroup };
-}
-
-const NO_LABELS: ReadonlyMap<string, string> = new Map();
-
-/**
- * GitButler's branch labels for plain checkouts, re-read on a fixed beat while
- * the list is open: a checkout's applied branches change without bb hearing
- * of it. A new set of checkouts keeps the last labels until its read lands,
- * and a failed read keeps them too; bb's own label remains the fallback.
- */
-function useGitButlerLabels(
-  threads: readonly PluginSidebarThread[],
-  enabled: boolean,
-): ReadonlyMap<string, string> {
-  const environmentKey = useMemo(
-    () =>
-      [
-        ...new Set(
-          threads.flatMap((thread) => {
-            const environment = thread.environment;
-            // A worktree is bb's own branch; only a plain checkout can hold
-            // GitButler's applied branches, and null means bb does not know yet.
-            return environment?.isWorktree === false && environment.id !== null
-              ? [environment.id]
-              : [];
-          }),
-        ),
-      ]
-        .sort()
-        .join("\u0000"),
-    [threads],
-  );
-  const input = useMemo(
-    () => ({ environmentIds: environmentKey ? environmentKey.split("\u0000") : [] }),
-    [environmentKey],
-  );
-  const active = enabled && input.environmentIds.length > 0;
-  const { data, refetch } = useRpcQuery({
-    contract: gtdSidebarRpcContract,
-    method: "listEnvironmentBranches",
-    input,
-    enabled: active,
-  });
-  const reread = useCommittedEvent(refetch);
-  useEffect(() => {
-    if (!active) return;
-    const timer = setInterval(() => void reread(), GITBUTLER_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [active, reread]);
-  const labels = useRetained(active ? data : undefined);
-  return useMemo(
-    () =>
-      active && labels !== undefined
-        ? new Map(labels.environments.map(({ environmentId, label }) => [environmentId, label]))
-        : NO_LABELS,
-    [active, labels],
-  );
 }
 
 /** Wait for plugin shelf reads before deciding whether the list is empty. */
