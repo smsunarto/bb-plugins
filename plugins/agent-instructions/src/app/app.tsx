@@ -15,7 +15,7 @@ import { queryClient as promptsQueryClient } from "../prompts/app/query.ts";
 import type { Plugin } from "../prompts/shared/schema.ts";
 import type { RulesState } from "../shared/rules.ts";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { useSidebarColumnFill } from "@bb-plugins/ui/sidebar-fill";
 import { Button } from "../../components/ui/button.tsx";
 import { useIsCompactViewport } from "../../components/ui/hooks/use-compact-viewport.tsx";
@@ -40,12 +40,67 @@ import { parseRulesRoute, RulesPage } from "./rules.tsx";
 const PAGE_BLEED =
   "h-[calc(100%+var(--plugin-page-bottom-inset,0px))] mb-[calc(-1*var(--plugin-page-bottom-inset,0px))] pb-[var(--plugin-page-bottom-inset,0px)]";
 
-/** Refetches catalog, open file, and rules whenever the server folder or a mirror changes. */
+const liveUpdateOwners = new Set<symbol>();
+let lastCatalogRevision: number | null = null;
+let lastRulesRevision: number | null = null;
+
+export function resetSourceLiveUpdatesForTest(): void {
+  liveUpdateOwners.clear();
+  lastCatalogRevision = null;
+  lastRulesRevision = null;
+}
+
+/**
+ * Refetches catalog, open file, and rules whenever the server folder or a mirror changes.
+ * Ref-counted so desktop's mounted page + sidebar share one handler, and filtered by
+ * revision so unchanged slices and client-known revisions do not trigger redundant refetches.
+ */
 function useSourceLiveUpdates() {
-  useRealtime("sourceChanged", () => {
-    void queryClient.invalidateQueries({ queryKey: queryKey("catalog") });
-    void queryClient.invalidateQueries({ queryKey: ["catalogFile"] });
-    void queryClient.invalidateQueries({ queryKey: queryKey("rules") });
+  const owner = useRef<symbol | null>(null);
+  if (owner.current === null) owner.current = Symbol("sourceChanged");
+
+  useEffect(() => {
+    const token = owner.current!;
+    liveUpdateOwners.add(token);
+    return () => {
+      liveUpdateOwners.delete(token);
+    };
+  }, []);
+
+  useRealtime("sourceChanged", (payload: unknown) => {
+    // Only the first active owner handles each realtime event.
+    if (liveUpdateOwners.size > 0 && liveUpdateOwners.values().next().value !== owner.current) {
+      return;
+    }
+    const event =
+      payload && typeof payload === "object"
+        ? (payload as { revision?: unknown; rulesRevision?: unknown })
+        : null;
+    const rev = typeof event?.revision === "number" ? event.revision : null;
+    const rulesRev = typeof event?.rulesRevision === "number" ? event.rulesRevision : null;
+
+    const cachedCatalogRev =
+      queryClient.getQueryData<CatalogListing>(queryKey("catalog"))?.revision ?? null;
+    const cachedRulesRev =
+      queryClient.getQueryData<RulesState>(queryKey("rules"))?.revision ?? null;
+
+    const catalogMoved =
+      rev === null ||
+      (rev !== lastCatalogRevision && (cachedCatalogRev === null || rev > cachedCatalogRev));
+    const rulesMoved =
+      rulesRev === null ||
+      (rulesRev !== lastRulesRevision && (cachedRulesRev === null || rulesRev > cachedRulesRev));
+
+    if (rev !== null) lastCatalogRevision = rev;
+    if (rulesRev !== null) lastRulesRevision = rulesRev;
+
+    if (catalogMoved) {
+      void queryClient.invalidateQueries({ queryKey: queryKey("catalog") });
+      void queryClient.invalidateQueries({ queryKey: queryKey("catalogFile") });
+    }
+    if (rulesMoved) {
+      void queryClient.invalidateQueries({ queryKey: queryKey("rules") });
+    }
   });
 }
 
@@ -129,7 +184,7 @@ function PhoneHome({ subPath, section }: { subPath: string; section: Section }) 
 
 function SectionList(props: { subPath: string; section: Section; home?: boolean }) {
   const { subPath, section, home } = props;
-  if (section === "global") return <CatalogTab subPath={subPath} />;
+  if (section === "global") return <CatalogTab subPath={subPath} compactHome={home} />;
   if (section === "prompts") return <PluginsTab subPath={promptSubPath(subPath) ?? ""} />;
   // The page's project pickers sit in the page, so a phone home keeps them above the list.
   return home ? <DocumentsPage subPath={subPath} home /> : <DocumentsTab subPath={subPath} />;

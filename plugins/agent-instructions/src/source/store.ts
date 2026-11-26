@@ -1,7 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { randomBytes } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
-import { lstat, mkdir, readdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { readdir, readFile, rename, rm, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import type { CatalogChange, CatalogListing, ChangeResult } from "../catalog/contract.ts";
@@ -17,12 +17,16 @@ import {
   deleteSyncFileAndPrune,
   ensureSourceFolders,
   isIgnoredEntryName,
+  pathExists,
   readSyncFile,
   sameManifest,
   sha256Bytes,
   walkSyncTree,
+  writeJsonAtomic,
   writeSyncFileAtomic,
   type SyncManifest,
+  type WalkResult,
+  type WalkStatCache,
 } from "../sync/paths.ts";
 import {
   compareOrdered,
@@ -51,6 +55,7 @@ export type SourceChangeEvent = {
   rulesRevision: number;
   catalogChanged: boolean;
   rulesChanged: boolean;
+  manifestChanged: boolean;
 };
 
 type LoadedDoc = ParsedDoc & {
@@ -59,11 +64,13 @@ type LoadedDoc = ParsedDoc & {
   size: number;
 };
 
+/** Metadata-only representation kept in RAM; raw skill bytes are read on demand from disk. */
 type LoadedSkillFile = {
   path: string;
   executable: boolean;
   sha256: string;
-  bytes: Buffer;
+  size: number;
+  text: boolean;
 };
 
 type LoadedSkill = {
@@ -74,6 +81,14 @@ type LoadedSkill = {
   error?: string;
   treeSha: string;
   files: LoadedSkillFile[];
+};
+
+type TrashMeta = {
+  kind: "doc" | "skill";
+  key: string;
+  name: string;
+  at: number;
+  fileName: string;
 };
 
 type TrashPayload =
@@ -93,6 +108,12 @@ type TrashPayload =
       files: { path: string; executable: boolean; base64: string }[];
     };
 
+type PersistedRevisions = {
+  version: 1;
+  rulesRevision: number;
+  rulesHash: string;
+};
+
 export type SourceStore = ReturnType<typeof openSourceStore>;
 
 const REMEMBERED_SESSIONS = 200;
@@ -107,15 +128,6 @@ function trashFileName(kind: "skill" | "doc", key: string): string {
   return `${kind}--${encodeURIComponent(key)}.json`;
 }
 
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await lstat(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Unified file-backed source of truth under `<dataDir>/plugins/<pluginId>/source/`.
  * Replaces SQLite (`data.db`) and KV (`state`) as the authoritative store for
@@ -127,16 +139,42 @@ export function openSourceStore(bb: BbPluginApi) {
   const trashDir = join(pluginDir, "trash");
   const tmpDir = join(pluginDir, ".tmp");
   const markerPath = join(pluginDir, "migration.json");
+  const revisionsPath = join(pluginDir, "revisions.json");
   const legacyDbPath = join(pluginDir, "data.db");
 
   let revision = 0;
   let rulesRevision = 0;
-  let manifest: SyncManifest = {};
+  let persistedRulesHash: string | null = null;
+  let booted = false;
+  let migrationBlockedReason: string | null = null;
+
+  let manifest: SyncManifest = Object.create(null) as SyncManifest;
+  let lastWalk: WalkResult = { manifest, symlinks: [], tooLarge: [], truncated: false };
   let docs: LoadedDoc[] = [];
   let skills: LoadedSkill[] = [];
   let rules: Rule[] = [];
+  /** Rule IDs that parsed validly on the last load; unparseable rule files are never auto-deleted. */
+  let validRuleIds = new Set<string>();
   let conflicts: string[] = [];
-  let deleted: TrashPayload[] = [];
+  let deleted: TrashMeta[] = [];
+
+  // Incremental reload caches so a 1-file edit only reads and parses that 1 file.
+  const statCache: WalkStatCache = new Map();
+  const docCache = new Map<string, { sha256: string; doc: LoadedDoc | null }>();
+  const ruleCache = new Map<
+    string,
+    { sha256: string; parsed: { id: string; order: number | undefined; rule: Rule } | null }
+  >();
+  const skillFileMetaCache = new Map<
+    string,
+    { sha256: string; executable: boolean; size: number; text: boolean }
+  >();
+  const skillHeaderCache = new Map<
+    string,
+    { sha256: string; description: string; valid: boolean; error?: string }
+  >();
+  let trashDirMtimeMs: number | null = null;
+  let trashDirty = true;
 
   const sessions = new Map<string, Session>();
   const listeners = new Set<(event: SourceChangeEvent) => void>();
@@ -165,56 +203,157 @@ export function openSourceStore(bb: BbPluginApi) {
     }
   }
 
-  async function readTrash(): Promise<TrashPayload[]> {
+  async function loadPersistedRevisions(): Promise<void> {
+    try {
+      const parsed = JSON.parse(await readFile(revisionsPath, "utf8")) as PersistedRevisions;
+      if (
+        parsed &&
+        parsed.version === 1 &&
+        typeof parsed.rulesRevision === "number" &&
+        Number.isInteger(parsed.rulesRevision) &&
+        parsed.rulesRevision >= 0
+      ) {
+        rulesRevision = parsed.rulesRevision;
+        persistedRulesHash = typeof parsed.rulesHash === "string" ? parsed.rulesHash : null;
+      }
+    } catch {
+      // No persisted revisions yet.
+    }
+  }
+
+  async function persistRevisions(rulesHash: string): Promise<void> {
+    persistedRulesHash = rulesHash;
+    const payload: PersistedRevisions = { version: 1, rulesRevision, rulesHash };
+    await writeJsonAtomic(revisionsPath, tmpDir, payload).catch((error) => {
+      bb.log.warn(
+        `failed to persist revisions: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+  }
+
+  async function readTrashMeta(): Promise<TrashMeta[]> {
+    let dirStat;
+    try {
+      dirStat = await stat(trashDir);
+    } catch {
+      trashDirMtimeMs = null;
+      trashDirty = false;
+      return [];
+    }
+    if (!trashDirty && trashDirMtimeMs === dirStat.mtimeMs) {
+      return deleted;
+    }
     let entries: string[];
     try {
       entries = await readdir(trashDir);
     } catch {
+      trashDirMtimeMs = null;
+      trashDirty = false;
       return [];
     }
-    const items: TrashPayload[] = [];
+    const items: TrashMeta[] = [];
     for (const entry of entries) {
       if (!entry.endsWith(".json")) continue;
       try {
-        const parsed = JSON.parse(await readFile(join(trashDir, entry), "utf8")) as TrashPayload;
-        if (parsed && (parsed.kind === "doc" || parsed.kind === "skill") && parsed.key)
-          items.push(parsed);
+        const parsed = JSON.parse(
+          await readFile(join(trashDir, entry), "utf8"),
+        ) as Partial<TrashPayload>;
+        if (
+          parsed &&
+          (parsed.kind === "doc" || parsed.kind === "skill") &&
+          typeof parsed.key === "string" &&
+          typeof parsed.name === "string" &&
+          typeof parsed.at === "number"
+        ) {
+          items.push({
+            kind: parsed.kind,
+            key: parsed.key,
+            name: parsed.name,
+            at: parsed.at,
+            fileName: entry,
+          });
+        }
       } catch {
         // Ignore corrupt trash entry.
       }
     }
     items.sort((a, b) => b.at - a.at);
+    trashDirMtimeMs = dirStat.mtimeMs;
+    trashDirty = false;
     return items;
   }
 
+  async function readTrashPayload(entry: TrashMeta): Promise<TrashPayload | null> {
+    try {
+      const parsed = JSON.parse(
+        await readFile(join(trashDir, entry.fileName), "utf8"),
+      ) as TrashPayload;
+      if (parsed && (parsed.kind === "doc" || parsed.kind === "skill") && parsed.key) return parsed;
+    } catch {
+      // Corrupt or removed trash file.
+    }
+    return null;
+  }
+
   async function writeTrash(payload: TrashPayload): Promise<void> {
-    await mkdir(trashDir, { recursive: true });
-    await mkdir(tmpDir, { recursive: true });
-    const staged = join(tmpDir, `.trash-${randomBytes(6).toString("hex")}`);
-    await writeFile(staged, `${JSON.stringify(payload)}\n`);
-    await rename(staged, join(trashDir, trashFileName(payload.kind, payload.key)));
+    await writeJsonAtomic(
+      join(trashDir, trashFileName(payload.kind, payload.key)),
+      tmpDir,
+      payload,
+    );
+    trashDirty = true;
   }
 
   async function removeTrash(kind: "skill" | "doc", key: string): Promise<void> {
     await unlink(join(trashDir, trashFileName(kind, key))).catch(() => undefined);
+    trashDirty = true;
+  }
+
+  async function readSkillFileBuffers(
+    skillName: string,
+    files: readonly LoadedSkillFile[],
+  ): Promise<{ path: string; executable: boolean; sha256: string; bytes: Buffer }[]> {
+    const out: { path: string; executable: boolean; sha256: string; bytes: Buffer }[] = [];
+    for (const f of files) {
+      const read = await readSyncFile(sourceDir, `skills/${skillName}/${f.path}`);
+      if (!read) continue;
+      out.push({
+        path: f.path,
+        executable: read.executable,
+        sha256: read.sha256,
+        bytes: read.bytes,
+      });
+    }
+    return out;
   }
 
   /**
-   * Scans `sourceDir` and `trashDir` into memory.
-   * Returns what changed relative to the previous in-memory snapshot.
+   * Incrementally scans `sourceDir` and trash metadata into memory.
+   * Unchanged files reuse their cached digest & parsed metadata without re-reading disk.
    */
   async function reloadFromDiskUnlocked(
     reason: SourceChangeEvent["reason"],
     originHostId?: string,
-  ): Promise<{ changed: boolean; catalogChanged: boolean; rulesChanged: boolean }> {
-    const walked = await walkSyncTree(sourceDir);
+  ): Promise<{
+    changed: boolean;
+    catalogChanged: boolean;
+    rulesChanged: boolean;
+    manifestChanged: boolean;
+  }> {
+    const walked = await walkSyncTree(sourceDir, { statCache });
+    lastWalk = walked;
     if (walked.symlinks.length > 0)
       bb.log.warn(`source: skipped symlinks: ${walked.symlinks.slice(0, 10).join(", ")}`);
     if (walked.tooLarge.length > 0)
       bb.log.warn(`source: skipped oversized files: ${walked.tooLarge.slice(0, 10).join(", ")}`);
-    if (walked.truncated) bb.log.warn(`source: file count cap reached; some files were skipped`);
+    if (walked.truncated) {
+      bb.log.warn(
+        `source: sync cap reached (${Object.keys(walked.manifest).length} files); keeping previous state to avoid partial truncation`,
+      );
+      return { changed: false, catalogChanged: false, rulesChanged: false, manifestChanged: false };
+    }
 
-    const nextTrash = await readTrash();
+    const nextTrash = await readTrashMeta();
     const trashChanged =
       nextTrash.length !== deleted.length ||
       nextTrash.some(
@@ -222,12 +361,22 @@ export function openSourceStore(bb: BbPluginApi) {
           t.kind !== deleted[i]?.kind || t.key !== deleted[i]?.key || t.at !== deleted[i]?.at,
       );
 
-    if (sameManifest(walked.manifest, manifest) && !trashChanged) {
-      return { changed: false, catalogChanged: false, rulesChanged: false };
+    const manifestChanged = !sameManifest(walked.manifest, manifest);
+    if (!manifestChanged && !trashChanged) {
+      return { changed: false, catalogChanged: false, rulesChanged: false, manifestChanged: false };
     }
+
+    // Prune stale cache entries for deleted files.
+    for (const key of docCache.keys())
+      if (!Object.hasOwn(walked.manifest, key)) docCache.delete(key);
+    for (const key of ruleCache.keys())
+      if (!Object.hasOwn(walked.manifest, key)) ruleCache.delete(key);
+    for (const key of skillFileMetaCache.keys())
+      if (!Object.hasOwn(walked.manifest, key)) skillFileMetaCache.delete(key);
 
     const nextDocs: LoadedDoc[] = [];
     const nextRulesWithOrder: { id: string; order: number | undefined; rule: Rule }[] = [];
+    const nextValidRuleIds = new Set<string>();
     const skillFilesByName = new Map<string, LoadedSkillFile[]>();
     const disabledSkills = new Set<string>();
     const nextConflicts: string[] = [];
@@ -235,6 +384,7 @@ export function openSourceStore(bb: BbPluginApi) {
     const paths = Object.keys(walked.manifest).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
     for (const relPath of paths) {
+      const digest = walked.manifest[relPath]!;
       const segments = relPath.split("/");
       const root = segments[0]!;
       if (root === "conflicts") {
@@ -248,33 +398,54 @@ export function openSourceStore(bb: BbPluginApi) {
           bb.log.warn(`source: ignoring doc with unsupported filename ${relPath}`);
           continue;
         }
+        const cached = docCache.get(relPath);
+        if (cached && cached.sha256 === digest.sha256) {
+          if (cached.doc) nextDocs.push(cached.doc);
+          continue;
+        }
         const file = await readSyncFile(sourceDir, relPath);
         if (!file) continue;
         const text = editableText(file.bytes);
         if (text === null) {
           bb.log.warn(`source: ignoring non-UTF8 doc ${relPath}`);
+          docCache.set(relPath, { sha256: file.sha256, doc: null });
           continue;
         }
         const parsed = parseDocFile(id, text);
-        nextDocs.push({ ...parsed, sha256: file.sha256, size: file.bytes.length });
+        const loaded: LoadedDoc = { ...parsed, sha256: file.sha256, size: file.bytes.length };
+        docCache.set(relPath, { sha256: file.sha256, doc: loaded });
+        nextDocs.push(loaded);
         continue;
       }
       if (root === "rules") {
         if (segments.length !== 2 || !segments[1]!.endsWith(".md")) continue;
         const id = segments[1]!.slice(0, -3);
+        const cached = ruleCache.get(relPath);
+        if (cached && cached.sha256 === digest.sha256) {
+          if (cached.parsed) {
+            nextRulesWithOrder.push(cached.parsed);
+            nextValidRuleIds.add(id);
+          }
+          continue;
+        }
         const file = await readSyncFile(sourceDir, relPath);
         if (!file) continue;
         const text = editableText(file.bytes);
         if (text === null) {
           bb.log.warn(`source: ignoring non-UTF8 rule ${relPath}`);
+          ruleCache.set(relPath, { sha256: file.sha256, parsed: null });
           continue;
         }
         const parsed = parseRuleFile(id, text);
         if ("error" in parsed) {
           bb.log.warn(`source: skipping invalid rule ${relPath}: ${parsed.error}`);
+          ruleCache.set(relPath, { sha256: file.sha256, parsed: null });
           continue;
         }
-        nextRulesWithOrder.push({ id, order: parsed.order, rule: parsed.rule });
+        const entry = { id, order: parsed.order, rule: parsed.rule };
+        ruleCache.set(relPath, { sha256: file.sha256, parsed: entry });
+        nextRulesWithOrder.push(entry);
+        nextValidRuleIds.add(id);
         continue;
       }
       if (root === "skills") {
@@ -285,14 +456,25 @@ export function openSourceStore(bb: BbPluginApi) {
           disabledSkills.add(skillName);
           continue;
         }
-        const file = await readSyncFile(sourceDir, relPath);
-        if (!file) continue;
+        let meta = skillFileMetaCache.get(relPath);
+        if (!meta || meta.sha256 !== digest.sha256 || meta.executable !== digest.executable) {
+          const file = await readSyncFile(sourceDir, relPath);
+          if (!file) continue;
+          meta = {
+            sha256: file.sha256,
+            executable: file.executable,
+            size: file.bytes.length,
+            text: editableText(file.bytes) !== null,
+          };
+          skillFileMetaCache.set(relPath, meta);
+        }
         const list = skillFilesByName.get(skillName) ?? [];
         list.push({
           path: innerPath,
-          executable: file.executable,
-          sha256: file.sha256,
-          bytes: file.bytes,
+          executable: meta.executable,
+          sha256: meta.sha256,
+          size: meta.size,
+          text: meta.text,
         });
         skillFilesByName.set(skillName, list);
       }
@@ -302,6 +484,10 @@ export function openSourceStore(bb: BbPluginApi) {
     nextRulesWithOrder.sort(compareOrdered);
     const nextRules = nextRulesWithOrder.map((r) => r.rule);
 
+    for (const key of skillHeaderCache.keys()) {
+      if (!skillFilesByName.has(key)) skillHeaderCache.delete(key);
+    }
+
     const nextSkills: LoadedSkill[] = [];
     for (const [name, files] of [...skillFilesByName.entries()].sort(([a], [b]) =>
       a < b ? -1 : a > b ? 1 : 0,
@@ -310,38 +496,55 @@ export function openSourceStore(bb: BbPluginApi) {
         a.path === "SKILL.md" ? -1 : b.path === "SKILL.md" ? 1 : a.path < b.path ? -1 : 1,
       );
       const skillFile = files.find((f) => f.path === "SKILL.md");
-      const text = skillFile ? editableText(skillFile.bytes) : null;
-      let description = "";
-      let valid = false;
-      let error: string | undefined;
-      if (!SKILL_NAME_PATTERN.test(name)) {
-        error = `${JSON.stringify(name)} is not a valid bb skill name`;
-      } else if (text === null) {
-        error = "Missing or non-UTF8 SKILL.md";
-      } else {
-        const fm = parseFrontmatter(text);
-        if ("error" in fm) {
-          error = `SKILL.md: ${fm.error}`;
-        } else if (fm.name !== name) {
-          error = `SKILL.md declares name ${fm.name}; expected ${name}`;
+      let header = skillFile ? skillHeaderCache.get(name) : undefined;
+      if (!skillFile || !header || header.sha256 !== skillFile.sha256) {
+        let description = "";
+        let valid = false;
+        let error: string | undefined;
+        if (!SKILL_NAME_PATTERN.test(name)) {
+          error = `${JSON.stringify(name)} is not a valid bb skill name`;
+        } else if (!skillFile) {
+          error = "Missing or non-UTF8 SKILL.md";
         } else {
-          description = fm.description;
-          valid = true;
+          const rawSkill = await readSyncFile(sourceDir, `skills/${name}/SKILL.md`);
+          const text = rawSkill ? editableText(rawSkill.bytes) : null;
+          if (text === null) {
+            error = "Missing or non-UTF8 SKILL.md";
+          } else {
+            const fm = parseFrontmatter(text);
+            if ("error" in fm) {
+              error = `SKILL.md: ${fm.error}`;
+            } else if (fm.name !== name) {
+              error = `SKILL.md declares name ${fm.name}; expected ${name}`;
+            } else {
+              description = fm.description;
+              valid = true;
+            }
+          }
         }
+        if (error) bb.log.warn(`source: skill ${name} not publishable: ${error}`);
+        header = {
+          sha256: skillFile?.sha256 ?? "",
+          description,
+          valid,
+          ...(error ? { error } : {}),
+        };
+        if (skillFile) skillHeaderCache.set(name, header);
       }
-      if (error) bb.log.warn(`source: skill ${name} not publishable: ${error}`);
+
       nextSkills.push({
         name,
-        description,
+        description: header.description,
         enabled: !disabledSkills.has(name),
-        valid,
-        ...(error ? { error } : {}),
+        valid: header.valid,
+        ...(header.error ? { error: header.error } : {}),
         treeSha: treeSha(files),
         files,
       });
     }
 
-    const rulesChanged = JSON.stringify(nextRules) !== JSON.stringify(rules);
+    const nextRulesJson = JSON.stringify(nextRules);
+    const rulesChanged = nextRulesJson !== JSON.stringify(rules);
     const catalogChanged =
       trashChanged ||
       JSON.stringify(nextConflicts) !== JSON.stringify(conflicts) ||
@@ -366,27 +569,56 @@ export function openSourceStore(bb: BbPluginApi) {
     docs = nextDocs;
     skills = nextSkills;
     rules = nextRules;
+    validRuleIds = nextValidRuleIds;
     conflicts = nextConflicts;
     deleted = nextTrash;
 
-    // Only bump revisions after initial boot load, or whenever data changed from empty/prior state.
-    if (catalogChanged || rulesChanged) {
-      if (catalogChanged) revision++;
-      if (rulesChanged) rulesRevision++;
-      if (reason !== "local" || revision > 0 || rulesRevision > 0) {
-        // Callers of `local` mutations emit after finishing; disk & sync emit here.
-        if (reason !== "local") {
-          emit({ reason, originHostId, revision, rulesRevision, catalogChanged, rulesChanged });
-        }
+    if (catalogChanged) revision++;
+    if (rulesChanged) {
+      const nextRulesHash = sha256Bytes(nextRulesJson);
+      // On boot, keep persisted rulesRevision when rules match what was saved before reload.
+      if (booted || persistedRulesHash !== nextRulesHash) {
+        rulesRevision++;
+        await persistRevisions(nextRulesHash);
       }
     }
-    return { changed: catalogChanged || rulesChanged, catalogChanged, rulesChanged };
+
+    if (reason !== "local" && (catalogChanged || rulesChanged || manifestChanged)) {
+      emit({
+        reason,
+        originHostId,
+        revision,
+        rulesRevision,
+        catalogChanged,
+        rulesChanged,
+        manifestChanged,
+      });
+    }
+    return {
+      changed: catalogChanged || rulesChanged || manifestChanged,
+      catalogChanged,
+      rulesChanged,
+      manifestChanged,
+    };
+  }
+
+  /** Reloads after a local mutation and emits one `local` change event. */
+  async function commitLocal(force: { catalog?: boolean; rules?: boolean } = {}): Promise<void> {
+    const reloaded = await reloadFromDiskUnlocked("local");
+    emit({
+      reason: "local",
+      revision,
+      rulesRevision,
+      catalogChanged: reloaded.catalogChanged || force.catalog === true,
+      rulesChanged: reloaded.rulesChanged || force.rules === true,
+      manifestChanged: reloaded.manifestChanged || true,
+    });
   }
 
   /** Reads legacy SQLite + KV data for one-time migration (read-only). */
-  async function readLegacyData(): Promise<LegacyData> {
+  async function readLegacyData(options: { lenient?: boolean } = {}): Promise<LegacyData> {
     let sqliteData: Omit<LegacyData, "rules"> = { docs: [], skills: [], deleted: [] };
-    if (await fileExists(legacyDbPath)) {
+    if (await pathExists(legacyDbPath)) {
       const opened = await openReadOnlySqlite(legacyDbPath);
       try {
         sqliteData = readLegacySqlite(opened.db);
@@ -395,41 +627,106 @@ export function openSourceStore(bb: BbPluginApi) {
       }
     }
     const rawKv = await bb.storage.kv.get(LEGACY_KV_KEY);
-    const legacyRules = rawKv ? parseLegacyRules(rawKv) : [];
+    const legacyRules = rawKv
+      ? parseLegacyRules(rawKv, {
+          lenient: options.lenient,
+          onWarning: (msg) => bb.log.warn(msg),
+        })
+      : [];
     return { ...sqliteData, rules: legacyRules };
   }
 
-  async function maybeAutoMigrate(): Promise<void> {
-    if (await hasMigrationMarker(markerPath)) return;
-    if (await hasExistingSourceFiles(sourceDir)) return;
-    const legacy = await readLegacyData();
-    if (legacy.docs.length === 0 && legacy.skills.length === 0 && legacy.rules.length === 0) return;
-    const report = await runMigration({
-      data: legacy,
-      targetDir: sourceDir,
-      tmpDir,
-      markerPath,
-      apply: true,
-    });
-    bb.log.info(
-      `migrated legacy catalog to ${sourceDir}: ${report.plan.docs.length} docs, ${report.plan.rules.length} rules, ${report.plan.skills.length} skills (${report.verification.skillFilesChecked} files)`,
-    );
+  /** Cleans up any interrupted migration staging/backup folders on boot. */
+  async function recoverInterruptedMigrationDirs(): Promise<void> {
+    let entries: string[];
+    try {
+      entries = await readdir(pluginDir);
+    } catch {
+      return;
+    }
+    const sourcePresent = await pathExists(sourceDir);
+    const backups = entries.filter((e) => e.startsWith(".source-backup-")).sort();
+    if (!sourcePresent && backups.length > 0) {
+      // Previous swap moved sourceDir aside before crashing; restore it!
+      await rename(join(pluginDir, backups.at(-1)!), sourceDir).catch(() => undefined);
+    }
+    for (const entry of entries) {
+      if (entry.startsWith(".source-migrating-") || entry.startsWith(".source-backup-")) {
+        await rm(join(pluginDir, entry), { recursive: true, force: true }).catch(() => undefined);
+      }
+    }
   }
 
-  /** Writes `nextRules` to `source/rules/*.md` and removes deleted rule files. */
+  async function maybeAutoMigrate(): Promise<void> {
+    if (await hasMigrationMarker(markerPath)) {
+      migrationBlockedReason = null;
+      return;
+    }
+    const hasFiles = await hasExistingSourceFiles(sourceDir);
+    let legacy: LegacyData;
+    try {
+      legacy = await readLegacyData({ lenient: true });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      bb.log.error(`failed to read legacy catalog/rules during startup migration: ${msg}`);
+      if (hasFiles) {
+        migrationBlockedReason = `Could not inspect legacy data alongside partial source/: ${msg}`;
+      }
+      return;
+    }
+    const hasLegacy = legacy.docs.length > 0 || legacy.skills.length > 0 || legacy.rules.length > 0;
+    if (!hasLegacy) return;
+
+    if (hasFiles) {
+      // Partial source/ exists alongside unmigrated legacy data with no migration.json!
+      // Refuse silent truncation of published user-tier catalog; let operator run `migrate`.
+      migrationBlockedReason =
+        "Partial source/ folder found alongside unmigrated legacy data without migration.json. " +
+        "Skipping automatic publish to prevent catalog truncation; run `bb agent-instructions migrate` to inspect or `bb agent-instructions migrate --apply --force` to complete migration.";
+      bb.log.error(migrationBlockedReason);
+      return;
+    }
+
+    try {
+      const report = await runMigration({
+        data: legacy,
+        targetDir: sourceDir,
+        tmpDir,
+        markerPath,
+        apply: true,
+      });
+      migrationBlockedReason = null;
+      for (const warning of report.plan.warnings) bb.log.warn(`migration: ${warning}`);
+      bb.log.info(
+        `migrated legacy catalog to ${sourceDir}: ${report.plan.docs.length} docs, ${report.plan.rules.length} rules, ${report.plan.skills.length} skills (${report.verification.skillFilesChecked} files)`,
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      migrationBlockedReason = `Startup migration failed: ${msg}`;
+      bb.log.error(migrationBlockedReason);
+    }
+  }
+
+  /** Writes `nextRules` to `source/rules/*.md` and removes only previously valid deleted rule files. */
   async function writeRulesUnlocked(nextRules: Rule[]): Promise<void> {
     const validated = rulesSchema.parse(nextRules);
+    const seenLower = new Set<string>();
     for (const rule of validated) {
       if (!ITEM_ID_PATTERN.test(rule.id))
         throw new Error(`Invalid rule id ${JSON.stringify(rule.id)}`);
+      const lower = rule.id.toLowerCase();
+      if (seenLower.has(lower))
+        throw new Error(`Duplicate rule id (case-insensitive): ${JSON.stringify(rule.id)}`);
+      seenLower.add(lower);
     }
     await ensureSourceFolders(sourceDir);
-    const wanted = new Set(validated.map((r) => `rules/${r.id}.md`));
-    const existing = Object.keys(manifest).filter(
-      (p) => p.startsWith("rules/") && p.endsWith(".md") && p.split("/").length === 2,
-    );
-    for (const oldPath of existing) {
-      if (!wanted.has(oldPath)) await deleteSyncFileAndPrune(sourceDir, oldPath);
+    const wantedIds = new Set(validated.map((r) => r.id));
+    // Only delete files corresponding to previously loaded valid rules that were removed;
+    // unparseable `rules/*.md` files stay untouched on disk so user work is never lost.
+    for (const oldId of validRuleIds) {
+      if (!wantedIds.has(oldId)) {
+        await deleteSyncFileAndPrune(sourceDir, `rules/${oldId}.md`);
+      }
     }
     for (let i = 0; i < validated.length; i++) {
       const rule = validated[i]!;
@@ -446,10 +743,14 @@ export function openSourceStore(bb: BbPluginApi) {
     return new Set(skills.filter((s) => s.enabled && s.valid).map((s) => s.name));
   }
 
-  function incomingLinks(target: string): string[] {
-    const others = skills
-      .filter((s) => s.enabled && s.valid)
-      .map((s) => ({ name: s.name, files: s.files }));
+  async function incomingLinks(target: string): Promise<string[]> {
+    const others: { name: string; files: { path: string; bytes: Uint8Array }[] }[] = [];
+    for (const s of skills) {
+      if (!s.enabled || !s.valid || s.name === target) continue;
+      const textFiles = s.files.filter((f) => f.text);
+      const loaded = await readSkillFileBuffers(s.name, textFiles);
+      others.push({ name: s.name, files: loaded });
+    }
     return linksInto(target, others).map(
       (file) => `${file} links into ${target}, which agents will no longer find`,
     );
@@ -457,18 +758,14 @@ export function openSourceStore(bb: BbPluginApi) {
 
   async function applyCatalogChangeUnlocked(change: CatalogChange): Promise<ChangeResult> {
     // Always refresh from disk first so external edits are caught as conflicts before writing.
-    const priorSync = await reloadFromDiskUnlocked("disk");
-    if (priorSync.changed) {
-      // Reload already emitted to listeners; proceed with fresh state for CAS checks.
-    }
-
+    await reloadFromDiskUnlocked("disk");
     await ensureSourceFolders(sourceDir);
 
     switch (change.op) {
       case "saveFile": {
         const skill = skills.find((s) => s.name === change.skill);
         if (!skill) return conflict(`${change.skill} no longer exists`);
-        const err = pathError(change.path);
+        const err = pathError(change.path, skill.name);
         if (err) return invalid(err);
         const current = skill.files.find((f) => f.path === change.path);
         if ((current?.sha256 ?? null) !== change.expectedSha256) {
@@ -476,19 +773,20 @@ export function openSourceStore(bb: BbPluginApi) {
             current ? `${change.path} changed since you opened it` : `${change.path} was deleted`,
           );
         }
-        if (current && editableText(current.bytes) === null)
+        if (current && !current.text)
           return invalid(`${change.path} is not a text file, so it cannot be edited here`);
         const bytes = Buffer.from(change.content, "utf8");
         const executable = (current?.executable ?? false) || change.content.startsWith("#!");
-        const nextFile: LoadedSkillFile = {
+        const existingBuffers = await readSkillFileBuffers(skill.name, skill.files);
+        const nextFile = {
           path: change.path,
           executable,
           sha256: sha256Bytes(bytes),
           bytes,
         };
         const nextFiles = current
-          ? skill.files.map((f) => (f.path === change.path ? nextFile : f))
-          : [...skill.files, nextFile];
+          ? existingBuffers.map((f) => (f.path === change.path ? nextFile : f))
+          : [...existingBuffers, nextFile];
         const check = checkSkillTree(
           skill.name,
           nextFiles,
@@ -503,15 +801,8 @@ export function openSourceStore(bb: BbPluginApi) {
           bytes,
           executable,
         );
-        const reloaded = await reloadFromDiskUnlocked("local");
+        await commitLocal({ catalog: true });
         const updatedSkill = skills.find((s) => s.name === skill.name);
-        emit({
-          reason: "local",
-          revision,
-          rulesRevision,
-          catalogChanged: reloaded.catalogChanged || true,
-          rulesChanged: reloaded.rulesChanged,
-        });
         return {
           outcome: "saved",
           revision,
@@ -530,23 +821,19 @@ export function openSourceStore(bb: BbPluginApi) {
         if (!current) return conflict(`${change.path} was already deleted`);
         if (current.sha256 !== change.expectedSha256)
           return conflict(`${change.path} changed since you opened it`);
-        const nextFiles = skill.files.filter((f) => f !== current);
-        const check = checkSkillTree(skill.name, nextFiles, new Set(), enabledSkillNames());
+        const existingBuffers = await readSkillFileBuffers(
+          skill.name,
+          skill.files.filter((f) => f !== current),
+        );
+        const check = checkSkillTree(skill.name, existingBuffers, new Set(), enabledSkillNames());
         if (check.errors.length > 0) return invalid(...check.errors);
         await deleteSyncFileAndPrune(sourceDir, `skills/${skill.name}/${change.path}`);
-        const reloaded = await reloadFromDiskUnlocked("local");
+        await commitLocal({ catalog: true });
         const updatedSkill = skills.find((s) => s.name === skill.name);
-        emit({
-          reason: "local",
-          revision,
-          rulesRevision,
-          catalogChanged: reloaded.catalogChanged || true,
-          rulesChanged: reloaded.rulesChanged,
-        });
         return {
           outcome: "saved",
           revision,
-          treeSha: updatedSkill?.treeSha ?? treeSha(nextFiles),
+          treeSha: updatedSkill?.treeSha ?? treeSha(existingBuffers),
           warnings: check.warnings,
         };
       }
@@ -572,15 +859,8 @@ export function openSourceStore(bb: BbPluginApi) {
         const check = checkSkillTree(name, files, new Set(["SKILL.md"]), enabledSkillNames());
         if (check.errors.length > 0) return invalid(...check.errors);
         await writeSyncFileAtomic(sourceDir, tmpDir, `skills/${name}/SKILL.md`, bytes, false);
-        const reloaded = await reloadFromDiskUnlocked("local");
+        await commitLocal({ catalog: true });
         const created = skills.find((s) => s.name === name);
-        emit({
-          reason: "local",
-          revision,
-          rulesRevision,
-          catalogChanged: reloaded.catalogChanged || true,
-          rulesChanged: reloaded.rulesChanged,
-        });
         return {
           outcome: "saved",
           revision,
@@ -595,20 +875,20 @@ export function openSourceStore(bb: BbPluginApi) {
         if (!skill) return conflict(`${change.name} was already deleted`);
         if (skill.treeSha !== change.expectedTreeSha)
           return conflict(`${change.name} changed since you opened it; review it before deleting`);
-        const warnings = incomingLinks(skill.name);
+        const warnings = await incomingLinks(skill.name);
+        const buffers = await readSkillFileBuffers(skill.name, skill.files);
         await writeTrash({
           kind: "skill",
           key: skill.name,
           name: skill.name,
           at: Date.now(),
           enabled: skill.enabled,
-          files: skill.files.map((f) => ({
+          files: buffers.map((f) => ({
             path: f.path,
             executable: f.executable,
             base64: f.bytes.toString("base64"),
           })),
         });
-        // Remove every synced file in the skill folder (including .disabled).
         for (const f of skill.files) {
           await deleteSyncFileAndPrune(sourceDir, `skills/${skill.name}/${f.path}`);
         }
@@ -616,32 +896,18 @@ export function openSourceStore(bb: BbPluginApi) {
         await rm(join(sourceDir, "skills", skill.name), { recursive: true, force: true }).catch(
           () => undefined,
         );
-        const reloaded = await reloadFromDiskUnlocked("local");
-        emit({
-          reason: "local",
-          revision,
-          rulesRevision,
-          catalogChanged: reloaded.catalogChanged || true,
-          rulesChanged: reloaded.rulesChanged,
-        });
+        await commitLocal({ catalog: true });
         return { outcome: "saved", revision, warnings };
       }
 
       case "setSkillEnabled": {
         const skill = skills.find((s) => s.name === change.name);
         if (!skill) return conflict(`${change.name} no longer exists`);
-        const warnings = change.enabled ? [] : incomingLinks(skill.name);
+        const warnings = change.enabled ? [] : await incomingLinks(skill.name);
         const marker = `skills/${skill.name}/.disabled`;
         if (change.enabled) await deleteSyncFileAndPrune(sourceDir, marker);
         else await writeSyncFileAtomic(sourceDir, tmpDir, marker, new Uint8Array(), false);
-        const reloaded = await reloadFromDiskUnlocked("local");
-        emit({
-          reason: "local",
-          revision,
-          rulesRevision,
-          catalogChanged: reloaded.catalogChanged || true,
-          rulesChanged: reloaded.rulesChanged,
-        });
+        await commitLocal({ catalog: true });
         return { outcome: "saved", revision, warnings };
       }
 
@@ -658,14 +924,7 @@ export function openSourceStore(bb: BbPluginApi) {
         });
         const bytes = Buffer.from(serialized, "utf8");
         await writeSyncFileAtomic(sourceDir, tmpDir, `instructions/${id}.md`, bytes, false);
-        const reloaded = await reloadFromDiskUnlocked("local");
-        emit({
-          reason: "local",
-          revision,
-          rulesRevision,
-          catalogChanged: reloaded.catalogChanged || true,
-          rulesChanged: reloaded.rulesChanged,
-        });
+        await commitLocal({ catalog: true });
         return { outcome: "saved", revision, id, sha256: sha256Bytes(bytes), warnings: [] };
       }
 
@@ -689,14 +948,7 @@ export function openSourceStore(bb: BbPluginApi) {
             rawBase64: raw.bytes.toString("base64"),
           });
           await deleteSyncFileAndPrune(sourceDir, relPath);
-          const reloaded = await reloadFromDiskUnlocked("local");
-          emit({
-            reason: "local",
-            revision,
-            rulesRevision,
-            catalogChanged: reloaded.catalogChanged || true,
-            rulesChanged: reloaded.rulesChanged,
-          });
+          await commitLocal({ catalog: true });
           return { outcome: "saved", revision, warnings: [] };
         }
         const nextDoc =
@@ -708,26 +960,19 @@ export function openSourceStore(bb: BbPluginApi) {
         const serialized = serializeDocFile(nextDoc);
         const bytes = Buffer.from(serialized, "utf8");
         await writeSyncFileAtomic(sourceDir, tmpDir, relPath, bytes, false);
-        const reloaded = await reloadFromDiskUnlocked("local");
-        emit({
-          reason: "local",
-          revision,
-          rulesRevision,
-          catalogChanged: reloaded.catalogChanged || true,
-          rulesChanged: reloaded.rulesChanged,
-        });
+        await commitLocal({ catalog: true });
         return {
           outcome: "saved",
           revision,
-          ...(change.op === "saveDoc" ? { sha256: sha256Bytes(bytes) } : {}),
+          sha256: sha256Bytes(bytes),
           warnings: [],
         };
       }
 
       case "restore":
       case "forget": {
-        const entry = deleted.find((d) => d.kind === change.kind && d.key === change.key);
-        if (!entry) return conflict("It is no longer in Recently deleted");
+        const meta = deleted.find((d) => d.kind === change.kind && d.key === change.key);
+        if (!meta) return conflict("It is no longer in Recently deleted");
         if (change.op === "restore") {
           const taken =
             change.kind === "skill"
@@ -735,6 +980,8 @@ export function openSourceStore(bb: BbPluginApi) {
               : docs.some((d) => d.id.toLowerCase() === change.key.toLowerCase());
           if (taken)
             return invalid(`Something named ${change.key} exists now; rename or delete it first`);
+          const entry = await readTrashPayload(meta);
+          if (!entry) return conflict("It is no longer in Recently deleted");
           if (entry.kind === "doc") {
             const bytes = Buffer.from(entry.rawBase64, "base64");
             await writeSyncFileAtomic(
@@ -767,18 +1014,11 @@ export function openSourceStore(bb: BbPluginApi) {
           }
         }
         await removeTrash(change.kind, change.key);
-        const reloaded = await reloadFromDiskUnlocked("local");
+        await commitLocal({ catalog: true });
         const restoredSkill =
           change.op === "restore" && change.kind === "skill"
             ? skills.find((s) => s.name === change.key)
             : undefined;
-        emit({
-          reason: "local",
-          revision,
-          rulesRevision,
-          catalogChanged: reloaded.catalogChanged || true,
-          rulesChanged: reloaded.rulesChanged,
-        });
         return {
           outcome: "saved",
           revision,
@@ -810,12 +1050,21 @@ export function openSourceStore(bb: BbPluginApi) {
     markerPath,
     legacyDbPath,
 
+    /** Non-null when boot detected an unsafe partial migration state and withheld auto-publish. */
+    migrationBlocked: (): string | null => migrationBlockedReason,
+    clearMigrationBlocked(): void {
+      migrationBlockedReason = null;
+    },
+
     /** Loads the source folder (auto-migrating once if legacy data exists and source is empty). */
     async load(): Promise<void> {
       await withLock(async () => {
+        await recoverInterruptedMigrationDirs();
         await ensureSourceFolders(sourceDir);
+        await loadPersistedRevisions();
         await maybeAutoMigrate();
         await reloadFromDiskUnlocked("local");
+        booted = true;
       });
     },
 
@@ -856,14 +1105,19 @@ export function openSourceStore(bb: BbPluginApi) {
       return () => void listeners.delete(listener);
     },
 
-    /** Serializes an external operation (such as mirror sync) with store mutations. */
+    /** Serializes an external operation (such as mirror sync or migration) with store mutations. */
     withLock,
 
-    /** Forces a reload from disk (inside the lock). */
+    /** Forces an incremental stat-cached reload from disk (inside the lock). */
     reloadFromDisk(
       reason: SourceChangeEvent["reason"] = "disk",
       originHostId?: string,
-    ): Promise<{ changed: boolean; catalogChanged: boolean; rulesChanged: boolean }> {
+    ): Promise<{
+      changed: boolean;
+      catalogChanged: boolean;
+      rulesChanged: boolean;
+      manifestChanged: boolean;
+    }> {
       return withLock(() => reloadFromDiskUnlocked(reason, originHostId));
     },
 
@@ -872,6 +1126,9 @@ export function openSourceStore(bb: BbPluginApi) {
 
     /** Current in-memory synced manifest snapshot. */
     manifest: (): SyncManifest => ({ ...manifest }),
+
+    /** Metadata from the most recent source tree walk (symlinks, tooLarge, truncated). */
+    lastWalk: (): WalkResult => lastWalk,
 
     /** Reads legacy SQLite + KV data (read-only) for `migrate` CLI. */
     readLegacyData,
@@ -883,10 +1140,13 @@ export function openSourceStore(bb: BbPluginApi) {
         .map((s) => ({ name: s.name, treeSha: s.treeSha }));
     },
 
-    skillFiles(name: string): { path: string; executable: boolean; bytes: Uint8Array }[] {
+    async skillFiles(
+      name: string,
+    ): Promise<{ path: string; executable: boolean; bytes: Uint8Array }[]> {
       const found = skills.find((s) => s.name === name);
       if (!found) return [];
-      return found.files.map((f) => ({
+      const buffers = await readSkillFileBuffers(name, found.files);
+      return buffers.map((f) => ({
         path: f.path,
         executable: f.executable,
         bytes: f.bytes,
@@ -906,6 +1166,37 @@ export function openSourceStore(bb: BbPluginApi) {
     // --- Catalog reads & writes ---
     revision: () => revision,
 
+    findDoc(id: string) {
+      const found = docs.find((d) => d.id === id);
+      return found
+        ? {
+            id: found.id,
+            name: found.name,
+            enabled: found.enabled,
+            characters: found.body.length,
+            sha256: found.sha256,
+          }
+        : null;
+    },
+
+    findSkill(name: string) {
+      const found = skills.find((s) => s.name === name);
+      return found
+        ? {
+            name: found.name,
+            description: found.description,
+            enabled: found.enabled,
+            treeSha: found.treeSha,
+            files: found.files.map((f) => ({
+              path: f.path,
+              executable: f.executable,
+              size: f.size,
+              text: f.text,
+            })),
+          }
+        : null;
+    },
+
     skills() {
       return skills.map((s) => ({
         name: s.name,
@@ -914,7 +1205,7 @@ export function openSourceStore(bb: BbPluginApi) {
         valid: s.valid,
         ...(s.error ? { error: s.error } : {}),
         files: s.files.length,
-        bytes: s.files.reduce((sum, f) => sum + f.bytes.length, 0),
+        bytes: s.files.reduce((sum, f) => sum + f.size, 0),
         treeSha: s.treeSha,
       }));
     },
@@ -941,31 +1232,33 @@ export function openSourceStore(bb: BbPluginApi) {
           files: s.files.map((f) => ({
             path: f.path,
             executable: f.executable,
-            size: f.bytes.length,
-            text: editableText(f.bytes) !== null,
+            size: f.size,
+            text: f.text,
           })),
         })),
         deleted: deleted.map((d) => ({ kind: d.kind, key: d.key, name: d.name, at: d.at })),
       };
     },
 
-    file(target: { doc: string } | { skill: string; path: string }) {
+    /** Reads one doc or skill file directly from disk (targeted single-file check, no full walk). */
+    async readFileFresh(target: { doc: string } | { skill: string; path: string }) {
       if ("doc" in target) {
-        const found = docs.find((d) => d.id === target.doc);
-        return found
-          ? {
-              bytes: Buffer.from(found.body, "utf8"),
-              sha256: found.sha256,
-              executable: false,
-            }
-          : null;
+        if (!ITEM_ID_PATTERN.test(target.doc)) return null;
+        const raw = await readSyncFile(sourceDir, `instructions/${target.doc}.md`);
+        if (!raw) return null;
+        const text = editableText(raw.bytes);
+        if (text === null) return null;
+        const parsed = parseDocFile(target.doc, text);
+        return {
+          bytes: Buffer.from(parsed.body, "utf8"),
+          sha256: raw.sha256,
+          executable: false,
+        };
       }
-      const found = skills
-        .find((s) => s.name === target.skill)
-        ?.files.find((f) => f.path === target.path);
-      return found
-        ? { bytes: found.bytes, sha256: found.sha256, executable: found.executable }
-        : null;
+      if (pathError(target.path, target.skill) !== null) return null;
+      const raw = await readSyncFile(sourceDir, `skills/${target.skill}/${target.path}`);
+      if (!raw) return null;
+      return { bytes: raw.bytes, sha256: raw.sha256, executable: raw.executable };
     },
 
     change(change: CatalogChange): Promise<ChangeResult> {
@@ -982,14 +1275,7 @@ export function openSourceStore(bb: BbPluginApi) {
         await reloadFromDiskUnlocked("disk");
         const next = change([...rules]);
         await writeRulesUnlocked(next);
-        const reloaded = await reloadFromDiskUnlocked("local");
-        emit({
-          reason: "local",
-          revision,
-          rulesRevision,
-          catalogChanged: reloaded.catalogChanged,
-          rulesChanged: reloaded.rulesChanged || true,
-        });
+        await commitLocal({ rules: true });
         return { revision: rulesRevision, rules };
       });
     },
@@ -1004,14 +1290,7 @@ export function openSourceStore(bb: BbPluginApi) {
           return { revision: rulesRevision, rules, saved: false };
         }
         await writeRulesUnlocked(nextRules);
-        const reloaded = await reloadFromDiskUnlocked("local");
-        emit({
-          reason: "local",
-          revision,
-          rulesRevision,
-          catalogChanged: reloaded.catalogChanged,
-          rulesChanged: reloaded.rulesChanged || true,
-        });
+        await commitLocal({ rules: true });
         return { revision: rulesRevision, rules, saved: true };
       });
     },

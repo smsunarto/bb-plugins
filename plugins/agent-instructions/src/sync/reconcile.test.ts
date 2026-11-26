@@ -53,7 +53,9 @@ describe("planSync (3-way reconciliation)", () => {
     expect(plan.conflicts).toEqual([
       {
         path: "rules/r1.md",
-        conflictPath: "conflicts/dev-mac-20261126-043000/rules/r1.md",
+        conflictPath: expect.stringMatching(
+          /^conflicts\/dev-mac-20261126-043000-[0-9a-f]{6}\/rules\/r1\.md$/,
+        ),
         kind: "modify-modify",
       },
     ]);
@@ -113,7 +115,9 @@ describe("planSync (3-way reconciliation)", () => {
     expect(plan.conflicts).toEqual([
       {
         path: "rules/r1.md",
-        conflictPath: "conflicts/dev-mac-20261126-043000/rules/r1.md",
+        conflictPath: expect.stringMatching(
+          /^conflicts\/dev-mac-20261126-043000-[0-9a-f]{6}\/rules\/r1\.md$/,
+        ),
         kind: "server-delete-host-modify",
       },
     ]);

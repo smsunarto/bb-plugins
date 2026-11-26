@@ -48,6 +48,17 @@ async function setup() {
     experimental_callHostRpc: (call) =>
       machine.experimental_call(call.method as never, call.input as never),
     sdk: {
+      files: {
+        read: async (req: { path: string }) => {
+          const content = await readFile(req.path, "utf8");
+          return {
+            content,
+            contentEncoding: "utf8",
+            sizeBytes: Buffer.byteLength(content, "utf8"),
+            sha256: "0".repeat(64),
+          } as never;
+        },
+      } as never,
       projects: {
         list: async () => [
           {
@@ -199,6 +210,11 @@ test("paths that cannot exist together are refused, and #! scripts are executabl
   assert.equal((await save("references")).outcome, "invalid");
   assert.equal((await save("Skill.md")).outcome, "invalid");
   assert.equal((await save("../escape.md")).outcome, "invalid");
+  assert.equal((await save(".disabled")).outcome, "invalid");
+  assert.equal((await save(".DS_Store")).outcome, "invalid");
+  assert.equal((await save("notes.tmp")).outcome, "invalid");
+  assert.equal((await save(".git/config")).outcome, "invalid");
+  assert.equal((await save(`a/${"x".repeat(505)}.md`)).outcome, "invalid");
   assert.equal((await save("scripts/run.sh", "#!/bin/sh\necho ok\n")).outcome, "saved");
   assert.equal((await stat(join(dataDir, "skills/notes/scripts/run.sh"))).mode & 0o111, 0o111);
 });

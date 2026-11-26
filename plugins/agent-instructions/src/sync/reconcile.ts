@@ -1,4 +1,4 @@
-import { conflictPathFor, sameDigest, type SyncManifest } from "./paths.ts";
+import { conflictPathFor, sameDigest, type FileDigest, type SyncManifest } from "./paths.ts";
 
 export type SyncConflict = {
   /** Original relative path that changed on both server and host. */
@@ -39,12 +39,29 @@ export type SyncPlan = {
   restoredOnHost: string[];
 };
 
+function ownDigest(manifest: SyncManifest, path: string): FileDigest | undefined {
+  return Object.hasOwn(manifest, path) ? manifest[path] : undefined;
+}
+
+/** True when `path` equals or lies beneath any excluded path (symlink or oversized entry). */
+export function isExcludedSyncPath(path: string, excluded: readonly string[] | undefined): boolean {
+  if (!excluded || excluded.length === 0) return false;
+  for (const item of excluded) {
+    if (path === item || path.startsWith(`${item}/`)) return true;
+  }
+  return false;
+}
+
 /**
  * Pure 3-way reconciliation between `server` (S), `host` (H), and their last
  * agreed snapshot `base` (B). Never silently loses a concurrent edit: when both
  * sides modified the same path (or server deleted what host modified), the host's
- * bytes are preserved under `conflicts/<hostSlug>-<timestamp>/<path>` while the
- * server's state remains canonical at `<path>`.
+ * bytes are preserved under `conflicts/<hostSlug>-<timestamp>-<rand>/<path>` while
+ * the server's state remains canonical at `<path>`.
+ *
+ * Paths listed in `excludedHostPaths` or `excludedServerPaths` (symlinks, symlinked
+ * directories, or oversized files omitted from the walk) are skipped so omitted entries
+ * can never trigger deletions on the opposite side.
  */
 export function planSync(args: {
   server: SyncManifest;
@@ -52,8 +69,10 @@ export function planSync(args: {
   base: SyncManifest;
   hostSlug: string;
   timestamp: string;
+  excludedHostPaths?: readonly string[];
+  excludedServerPaths?: readonly string[];
 }): SyncPlan {
-  const { server, host, base, hostSlug, timestamp } = args;
+  const { server, host, base, hostSlug, timestamp, excludedHostPaths, excludedServerPaths } = args;
   const allPaths = new Set<string>([
     ...Object.keys(server),
     ...Object.keys(host),
@@ -69,9 +88,16 @@ export function planSync(args: {
   const restoredOnHost: string[] = [];
 
   for (const path of sorted) {
-    const s = server[path];
-    const h = host[path];
-    const b = base[path];
+    if (
+      isExcludedSyncPath(path, excludedHostPaths) ||
+      isExcludedSyncPath(path, excludedServerPaths)
+    ) {
+      continue;
+    }
+
+    const s = ownDigest(server, path);
+    const h = ownDigest(host, path);
+    const b = ownDigest(base, path);
 
     // 1. Already converged.
     if (sameDigest(s, h)) continue;

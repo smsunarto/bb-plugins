@@ -48,6 +48,21 @@ describe("doc format", () => {
     }
   });
 
+  test("prevents YAML frontmatter injection when plain doc body begins with --- block", () => {
+    const spoofedBody = "---\nname: Spoofed\nenabled: false\n---\n\nBody\n";
+    const serialized = serializeDocFile({
+      id: "notes",
+      name: "notes",
+      enabled: true,
+      body: spoofedBody,
+      hasFrontmatter: false,
+    });
+    const parsed = parseDocFile("notes", serialized);
+    expect(parsed.name).toBe("notes");
+    expect(parsed.enabled).toBe(true);
+    expect(parsed.body).toBe(spoofedBody);
+  });
+
   test("sanitizes legacy doc ids cleanly", () => {
     expect(sanitizeDocId("imported:shared")).toBe("shared");
     expect(sanitizeDocId("doc_abc123")).toBe("doc_abc123");

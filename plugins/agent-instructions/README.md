@@ -14,9 +14,9 @@ Global instructions, rules, and catalog skills live as plain editable files owne
   conflicts/<host>-<ts>/…  # Conflict copies from concurrent edits (never published)
 ```
 
-- **Edit directly with ordinary file tools:** run `bb agent-instructions path` to get the editable folder on your current machine (the server folder on the primary host, or `<hostDataDir>/mirror/` on remote hosts).
+- **Edit directly with ordinary file tools:** run `bb agent-instructions path` to get the editable folder on your current machine (the server folder on the primary host, or `<daemonDataDir>/plugins/agent-instructions/host-data/mirror/` on remote hosts).
 - **Automatic publishing and live UI updates:** the server watches `source/`, updates `<dataDir>/AGENTS.md` and `<dataDir>/skills/<name>`, updates rule delivery for new threads, and refreshes open **Global** tabs in realtime.
-- **Two-way host mirror sync:** every connected non-primary host keeps an editable mirror at `<hostDataDir>/mirror/` watched via the daemon's native watcher. Edits made in a mirror sync back to the server, publish for new threads, and fan out to other hosts.
+- **Two-way host mirror sync:** every connected non-primary host keeps an editable mirror at `<daemonDataDir>/plugins/agent-instructions/host-data/mirror/` watched via the daemon's native watcher. Edits made in a mirror sync back to the server, publish for new threads, and fan out to other hosts.
 - **Conflict safety:** concurrent edits on two machines are never silently lost. The server keeps its version at the canonical path and writes the host's bytes to `conflicts/<host>-<timestamp>/<path>` on the server and all mirrors. `conflicts/` is never published to agents and is surfaced in the Global tab and CLI.
 - **One-time migration:** `bb agent-instructions migrate` (dry-run by default; `--apply` to write) exports legacy SQLite (`data.db`) docs/skills and KV (`state`) rules losslessly into `source/` and verifies every file.
 
@@ -33,7 +33,7 @@ Global instructions, rules, and catalog skills live as plain editable files owne
 - `bb agent-instructions list [--json]` — list scoped rules in delivery order.
 - `bb agent-instructions preview [--thread <id>]` — print the rules matching a thread's session.
 - `bb agent-instructions publish [--json]` — force republishing `source/` to bb's user tier.
-- `bb agent-instructions sync [--json]` — reconcile `source/` with every connected host mirror.
+- `bb agent-instructions sync [--host <id>] [--json]` — reconcile `source/` with connected host mirrors (or one specific host).
 - `bb agent-instructions migrate [--apply] [--json]` — dry-run or run lossless migration from legacy SQLite/KV.
 - Thin file-write helpers remain available: `add`, `remove`, `skill show|create|write|delete`, and `doc show|write|delete`.
 

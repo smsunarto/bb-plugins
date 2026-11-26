@@ -1,7 +1,9 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
+import { FRONTMATTER } from "../catalog/skill-rules.ts";
 import {
   ANYWHERE,
+  conditionsSchema,
   MAX_INSTRUCTIONS_LENGTH,
   ruleSchema,
   type Conditions,
@@ -10,8 +12,6 @@ import {
 
 /** Safe filename stem for a doc or rule file (`<id>.md`). */
 export const ITEM_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/;
-
-const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
 const docMetaSchema = z
   .object({
@@ -26,15 +26,7 @@ const ruleFrontmatterSchema = z
     name: z.string().max(80).optional(),
     enabled: z.boolean().optional(),
     order: z.number().int().optional(),
-    when: z
-      .object({
-        hosts: z.array(z.string().min(1)).optional(),
-        providers: z.array(z.string().min(1)).optional(),
-        models: z.array(z.string().trim().min(1).max(200)).optional(),
-        projects: z.array(z.string().min(1)).optional(),
-      })
-      .strict()
-      .optional(),
+    when: conditionsSchema.partial().strict().optional(),
   })
   .strict();
 
@@ -52,7 +44,7 @@ export type ParsedRule = {
   order: number | undefined;
 };
 
-/** Maps a legacy doc id (such as `imported:shared`) to a portable filename stem. */
+/** Maps a legacy doc/rule id (such as `imported:shared`) to a portable filename stem. */
 export function sanitizeDocId(raw: string): string {
   const withoutImported = raw.startsWith("imported:") ? raw.slice("imported:".length) : raw;
   const cleaned = withoutImported
@@ -84,7 +76,7 @@ function formatWithFrontmatter(meta: Record<string, unknown>, body: string): str
  * YAML mapping containing at least one known doc key (`name`, `enabled`, `order`).
  */
 export function parseDocFile(id: string, raw: string): ParsedDoc {
-  const match = FRONTMATTER_RE.exec(raw);
+  const match = FRONTMATTER.exec(raw);
   if (match) {
     try {
       const parsed: unknown = parseYaml(match[1]!);
@@ -119,8 +111,13 @@ export function serializeDocFile(doc: {
   body: string;
   hasFrontmatter?: boolean;
 }): string {
+  // Always emit real frontmatter if body starts with `---` so body text can never spoof metadata.
   const needsFrontmatter =
-    doc.hasFrontmatter === true || doc.name !== doc.id || !doc.enabled || doc.order !== undefined;
+    doc.hasFrontmatter === true ||
+    doc.name !== doc.id ||
+    !doc.enabled ||
+    doc.order !== undefined ||
+    FRONTMATTER.test(doc.body);
   if (!needsFrontmatter) return doc.body;
   const meta: Record<string, unknown> = { name: doc.name, enabled: doc.enabled };
   if (doc.order !== undefined) meta.order = doc.order;
@@ -134,7 +131,7 @@ export function serializeDocFile(doc: {
  */
 export function parseRuleFile(id: string, raw: string): ParsedRule | { error: string } {
   if (!ITEM_ID_PATTERN.test(id)) return { error: `Invalid rule file id ${JSON.stringify(id)}` };
-  const match = FRONTMATTER_RE.exec(raw);
+  const match = FRONTMATTER.exec(raw);
   let name: string = id;
   let enabled = true;
   let order: number | undefined;

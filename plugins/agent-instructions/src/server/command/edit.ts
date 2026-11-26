@@ -7,6 +7,7 @@ import {
   type PluginCliContext,
 } from "@get-bb/plugin-sdk";
 import { catalogChange, type CatalogChange } from "../../catalog/contract.ts";
+import { MAX_FILE_BYTES } from "../../catalog/edit-rules.ts";
 import type { catalogHandlers } from "../../catalog/rpc.ts";
 import type { AgentInstructionsContext } from "../lib/context.ts";
 import { callerHost } from "../lib/targets.ts";
@@ -15,6 +16,10 @@ type Handlers = ReturnType<typeof catalogHandlers>;
 
 const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 const asJson = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
+
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && /ENOENT|Path does not exist|not found/i.test(error.message);
+}
 
 /**
  * Thin CLI wrappers over the file-backed catalog handlers.
@@ -42,7 +47,7 @@ export function editCommands(ctx: AgentInstructionsContext, handlers: Handlers) 
     host: {
       type: "string",
       placeholder: "host-id",
-      description: "Host that has --file. Defaults to this thread's host",
+      description: "Host that has --file (outside a bb thread; threads always use their own host)",
     },
   } as const;
 
@@ -56,22 +61,43 @@ export function editCommands(ctx: AgentInstructionsContext, handlers: Handlers) 
       });
     if (options.content !== undefined) return options.content;
     const file = posix.resolve(context.cwd ?? "/", options.file ?? "");
-    const hostId = options.host ?? (await callerHost(ctx.bb, context.threadId));
+    const threadHost = await callerHost(ctx.bb, context.threadId);
+    if (context.threadId && options.host && options.host !== threadHost) {
+      throw new PluginCliError("Cannot override --host to another host from inside a bb thread", {
+        code: "forbidden_host",
+      });
+    }
+    const hostId = threadHost ?? options.host;
     if (!hostId)
       throw new PluginCliError("--file needs --host outside a bb thread", { code: "no_host" });
-    const { content } = await ctx.host.call(
-      "readText",
-      { rootPath: posix.dirname(file), path: posix.basename(file) },
-      { hostId, timeoutMs: 60_000 },
-    );
-    if (content === null)
-      throw new PluginCliError(`${file} does not exist on host ${hostId}`, { code: "no_file" });
-    return content;
+    let read;
+    try {
+      read = await ctx.bb.sdk.files.read({
+        hostId,
+        path: file,
+        rootPath: posix.dirname(file),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        throw new PluginCliError(`${file} does not exist on host ${hostId}`, { code: "no_file" });
+      }
+      throw error;
+    }
+    if (read.contentEncoding !== "utf8") {
+      throw new PluginCliError(`${file} is not a UTF-8 text file`, { code: "not_text" });
+    }
+    if (read.sizeBytes > MAX_FILE_BYTES) {
+      throw new PluginCliError(`${file} exceeds the ${MAX_FILE_BYTES}-byte editor limit`, {
+        code: "too_large",
+      });
+    }
+    return read.content;
   }
 
   async function skill(name: string) {
     await ctx.store.reloadFromDisk("disk");
-    const found = ctx.store.listing().skills.find((s) => s.name === name);
+    const found = ctx.store.findSkill(name);
     if (!found)
       throw new PluginCliError(`No skill ${name} in the catalog`, {
         code: "unknown_skill",
@@ -82,7 +108,7 @@ export function editCommands(ctx: AgentInstructionsContext, handlers: Handlers) 
 
   async function doc(id: string) {
     await ctx.store.reloadFromDisk("disk");
-    const found = ctx.store.listing().docs.find((d) => d.id === id);
+    const found = ctx.store.findDoc(id);
     if (!found)
       throw new PluginCliError(`No doc ${id} in the catalog`, {
         code: "unknown_doc",

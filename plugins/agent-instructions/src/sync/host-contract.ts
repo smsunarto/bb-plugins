@@ -1,6 +1,6 @@
 import type { ExperimentalHostSignals } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { isSafeSyncPath } from "./paths.ts";
+import { isSafeSyncPath, MAX_SYNC_FILES } from "./paths.ts";
 
 const syncPathSchema = z
   .string()
@@ -21,7 +21,12 @@ export const fileDigestSchema = z
   })
   .strict();
 
-export const syncManifestSchema = z.record(z.string(), fileDigestSchema);
+export const syncManifestSchema = z
+  .record(syncPathSchema, fileDigestSchema)
+  .refine(
+    (manifest) => Object.keys(manifest).length <= MAX_SYNC_FILES,
+    `manifest cannot exceed ${MAX_SYNC_FILES} files`,
+  );
 
 /**
  * Host RPC methods for two-way mirror synchronization.
@@ -29,22 +34,6 @@ export const syncManifestSchema = z.record(z.string(), fileDigestSchema);
  * so callers cannot redirect mirror I/O to arbitrary host paths.
  */
 export const syncHostMethods = {
-  readText: {
-    experimental_retryable: true,
-    input: z
-      .object({
-        rootPath: z.string().min(1),
-        path: z
-          .string()
-          .min(1)
-          .refine(
-            (p) => !p.includes("\\") && p.split("/").every((s) => s && s !== "." && s !== ".."),
-            "must be a plain relative path",
-          ),
-      })
-      .strict(),
-    output: z.object({ content: z.string().nullable() }).strict(),
-  },
   mirrorInfo: {
     experimental_retryable: true,
     input: z.null(),
@@ -120,13 +109,15 @@ export const syncHostMethods = {
               .strict(),
           )
           .max(500),
+        /** When false, skip the post-batch full tree walk (caller requests it on the final batch). */
+        includeManifest: z.boolean().optional(),
       })
       .strict(),
     output: z
       .object({
         applied: z.array(z.string()),
         conflicts: z.array(z.string()),
-        manifest: syncManifestSchema,
+        manifest: syncManifestSchema.optional(),
       })
       .strict(),
   },

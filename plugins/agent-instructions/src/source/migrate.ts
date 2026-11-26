@@ -1,14 +1,22 @@
-import { lstat, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { lstat, mkdir, readFile, rename, rm } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { editableText } from "../catalog/edit-rules.ts";
 import { globalText } from "../catalog/publish.ts";
 import { treeSha } from "../catalog/tree.ts";
 import { rulesStateSchema, type Rule } from "../shared/rules.ts";
 import {
   ensureSourceFolders,
+  isIgnoredEntryName,
   isSafeSyncPath,
+  MAX_SYNC_FILES,
+  MAX_SYNC_TOTAL_BYTES,
+  pathExists,
   readSyncFile,
   sha256Bytes,
+  SymlinkRefusedError,
   walkSyncTree,
+  writeJsonAtomic,
   writeSyncFileAtomic,
 } from "../sync/paths.ts";
 import {
@@ -21,7 +29,7 @@ import {
   serializeRuleFile,
 } from "./format.ts";
 
-/** Minimal synchronous read-only SQLite interface (works with better-sqlite3 and bun:sqlite). */
+/** Minimal synchronous read-only SQLite interface (works with bun:sqlite and node:sqlite). */
 export type ReadOnlySqlite = {
   prepare(sql: string): {
     all(...params: unknown[]): unknown[];
@@ -75,11 +83,19 @@ export type PlannedFile = {
 
 export type MigrationPlan = {
   docs: { legacyId: string; id: string; relPath: string; name: string; enabled: boolean }[];
-  rules: { id: string; relPath: string; name: string; enabled: boolean }[];
-  skills: { name: string; enabled: boolean; fileCount: number; treeSha: string }[];
+  rules: { legacyId: string; id: string; relPath: string; name: string; enabled: boolean }[];
+  skills: {
+    name: string;
+    enabled: boolean;
+    fileCount: number;
+    treeSha: string;
+    expectedTreeSha: string;
+    includedPaths: string[];
+  }[];
   skippedDeleted: LegacyDeleted[];
   files: PlannedFile[];
   expectedAgentsMdSha256: string | null;
+  warnings: string[];
   errors: string[];
 };
 
@@ -97,7 +113,11 @@ export type MigrationReport = {
   dryRun: boolean;
   applied: boolean;
   targetDir: string;
-  plan: Omit<MigrationPlan, "files"> & { fileCount: number; totalBytes: number };
+  plan: Omit<MigrationPlan, "files"> & {
+    fileCount: number;
+    totalBytes: number;
+    skillBytes: number;
+  };
   verification: MigrationVerification;
 };
 
@@ -106,6 +126,26 @@ function tableExists(db: ReadOnlySqlite, name: string): boolean {
     .prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = ?")
     .get(name) as { ok: number } | undefined;
   return row?.ok === 1;
+}
+
+/** Allocates a unique case-insensitive stem <= 80 chars matching `ITEM_ID_PATTERN`. */
+function allocateUniqueId(raw: string, used: Set<string>, fallback = "doc"): string {
+  const base = sanitizeDocId(raw) || fallback;
+  let candidate = base;
+  if (used.has(candidate.toLowerCase())) {
+    let suffix = 2;
+    while (true) {
+      const tail = `-${suffix}`;
+      const next = `${base.slice(0, 80 - tail.length).replace(/-+$/, "") || fallback}${tail}`;
+      if (!used.has(next.toLowerCase())) {
+        candidate = next;
+        break;
+      }
+      suffix++;
+    }
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
 }
 
 /** Reads legacy catalog docs, skills, skill_files, and tombstones without writing anything. */
@@ -176,7 +216,10 @@ export function readLegacySqlite(db: ReadOnlySqlite): Omit<LegacyData, "rules"> 
 }
 
 /** Parses legacy rules from plugin KV `state` (or `{ rules: [...] }` JSON). */
-export function parseLegacyRules(raw: unknown): Rule[] {
+export function parseLegacyRules(
+  raw: unknown,
+  options: { lenient?: boolean; onWarning?: (message: string) => void } = {},
+): Rule[] {
   if (raw === null || raw === undefined) return [];
   const full = rulesStateSchema.safeParse(raw);
   if (full.success) return full.data.rules;
@@ -187,6 +230,10 @@ export function parseLegacyRules(raw: unknown): Rule[] {
     });
     if (withDefaultRev.success) return withDefaultRev.data.rules;
   }
+  if (options.lenient) {
+    options.onWarning?.("Ignored unreadable legacy rules payload in KV state");
+    return [];
+  }
   throw new Error("Unreadable legacy rules payload");
 }
 
@@ -196,6 +243,7 @@ export function parseLegacyRules(raw: unknown): Rule[] {
  */
 export function planMigration(data: LegacyData): MigrationPlan {
   const errors: string[] = [];
+  const warnings: string[] = [];
   const files: PlannedFile[] = [];
   const usedPaths = new Set<string>();
   const usedDocIds = new Set<string>();
@@ -203,86 +251,124 @@ export function planMigration(data: LegacyData): MigrationPlan {
   const plannedRules: MigrationPlan["rules"] = [];
   const plannedSkills: MigrationPlan["skills"] = [];
 
-  const addFile = (relPath: string, bytes: Uint8Array, executable: boolean) => {
+  const addFile = (relPath: string, bytes: Uint8Array, executable: boolean): boolean => {
     if (!isSafeSyncPath(relPath)) {
       errors.push(`Refused unsafe target path: ${relPath}`);
-      return;
+      return false;
     }
     const lower = relPath.toLowerCase();
     if (usedPaths.has(lower)) {
       errors.push(`Target path collision: ${relPath}`);
-      return;
+      return false;
     }
     usedPaths.add(lower);
     files.push({ relPath, executable, bytes, sha256: sha256Bytes(bytes) });
+    return true;
   };
 
   // 1. Global instruction docs
   data.docs.forEach((doc, index) => {
-    let id = sanitizeDocId(doc.id);
-    if (usedDocIds.has(id.toLowerCase())) {
-      let suffix = 2;
-      while (usedDocIds.has(`${id}-${suffix}`.toLowerCase())) suffix++;
-      id = `${id}-${suffix}`;
+    const id = allocateUniqueId(doc.id, usedDocIds, "doc");
+    if (!ITEM_ID_PATTERN.test(id)) {
+      errors.push(`Sanitized doc id ${JSON.stringify(id)} fails ITEM_ID_PATTERN`);
+      return;
     }
-    usedDocIds.add(id.toLowerCase());
+    const cleanName = doc.name.trim().slice(0, 80) || id;
+    if (cleanName !== doc.name) {
+      warnings.push(
+        `Normalized legacy doc ${JSON.stringify(doc.id)} name from ${JSON.stringify(doc.name)} to ${JSON.stringify(cleanName)}`,
+      );
+    }
     const relPath = `instructions/${id}.md`;
     const serialized = serializeDocFile({
       id,
-      name: doc.name,
+      name: cleanName,
       enabled: doc.enabled,
       order: index,
       body: doc.body,
       hasFrontmatter: true,
     });
+    const bytes = Buffer.from(serialized, "utf8");
+    if (editableText(bytes) === null) {
+      errors.push(`Doc ${doc.id} contains non-editable binary/NUL bytes`);
+      return;
+    }
     const roundTrip = parseDocFile(id, serialized);
     if (
-      roundTrip.name !== doc.name ||
+      roundTrip.name !== cleanName ||
       roundTrip.enabled !== doc.enabled ||
       roundTrip.order !== index ||
       roundTrip.body !== doc.body
     ) {
       errors.push(`Doc ${doc.id} failed lossless round-trip check`);
     }
-    addFile(relPath, Buffer.from(serialized, "utf8"), false);
-    plannedDocs.push({ legacyId: doc.id, id, relPath, name: doc.name, enabled: doc.enabled });
+    addFile(relPath, bytes, false);
+    plannedDocs.push({ legacyId: doc.id, id, relPath, name: cleanName, enabled: doc.enabled });
   });
 
   // 2. Scoped rules
   const usedRuleIds = new Set<string>();
   data.rules.forEach((rule, index) => {
-    if (!ITEM_ID_PATTERN.test(rule.id)) {
-      errors.push(`Rule id ${JSON.stringify(rule.id)} is not a safe filename stem`);
+    let id = rule.id;
+    if (!ITEM_ID_PATTERN.test(id) || usedRuleIds.has(id.toLowerCase())) {
+      id = allocateUniqueId(rule.id, usedRuleIds, "rule");
+      warnings.push(
+        `Normalized legacy rule id ${JSON.stringify(rule.id)} to ${JSON.stringify(id)}`,
+      );
+    } else {
+      usedRuleIds.add(id.toLowerCase());
+    }
+    const normalizedRule: Rule = id === rule.id ? rule : { ...rule, id };
+    const relPath = `rules/${id}.md`;
+    const serialized = serializeRuleFile(normalizedRule, index);
+    const bytes = Buffer.from(serialized, "utf8");
+    if (editableText(bytes) === null) {
+      errors.push(`Rule ${rule.id} contains non-editable binary/NUL bytes`);
       return;
     }
-    if (usedRuleIds.has(rule.id.toLowerCase())) {
-      errors.push(`Duplicate rule id (case-insensitive): ${rule.id}`);
-      return;
-    }
-    usedRuleIds.add(rule.id.toLowerCase());
-    const relPath = `rules/${rule.id}.md`;
-    const serialized = serializeRuleFile(rule, index);
-    const roundTrip = parseRuleFile(rule.id, serialized);
+    const roundTrip = parseRuleFile(id, serialized);
     if ("error" in roundTrip) {
       errors.push(`Rule ${rule.id} failed round-trip parse: ${roundTrip.error}`);
     } else if (
-      JSON.stringify(roundTrip.rule) !== JSON.stringify(rule) ||
+      JSON.stringify(roundTrip.rule) !== JSON.stringify(normalizedRule) ||
       roundTrip.order !== index
     ) {
       errors.push(`Rule ${rule.id} failed lossless round-trip equality`);
     }
-    addFile(relPath, Buffer.from(serialized, "utf8"), false);
-    plannedRules.push({ id: rule.id, relPath, name: rule.name, enabled: rule.enabled });
+    addFile(relPath, bytes, false);
+    plannedRules.push({
+      legacyId: rule.id,
+      id,
+      relPath,
+      name: normalizedRule.name,
+      enabled: normalizedRule.enabled,
+    });
   });
 
-  // 3. Skills (raw bytes preserved verbatim)
+  // 3. Skills (raw bytes preserved verbatim; sync-ignored junk & reserved `.disabled` files skipped with warning)
   for (const skill of data.skills) {
+    const includedPaths: string[] = [];
+    const includedForHash: { path: string; executable: boolean; sha256: string }[] = [];
     for (const file of skill.files) {
+      const segments = file.path.split("/");
+      if (file.path === ".disabled" || segments.some(isIgnoredEntryName)) {
+        warnings.push(
+          `Skipped legacy skill file skills/${skill.name}/${file.path} (ignored or reserved filename)`,
+        );
+        continue;
+      }
       const actualSha = sha256Bytes(file.bytes);
       if (actualSha !== file.sha256) {
         errors.push(`Skill ${skill.name}/${file.path} stored sha256 disagrees with bytes`);
       }
-      addFile(`skills/${skill.name}/${file.path}`, file.bytes, file.executable);
+      if (addFile(`skills/${skill.name}/${file.path}`, file.bytes, file.executable)) {
+        includedPaths.push(file.path);
+        includedForHash.push({
+          path: file.path,
+          executable: file.executable,
+          sha256: actualSha,
+        });
+      }
     }
     if (!skill.enabled) {
       addFile(`skills/${skill.name}/.disabled`, new Uint8Array(), false);
@@ -290,9 +376,24 @@ export function planMigration(data: LegacyData): MigrationPlan {
     plannedSkills.push({
       name: skill.name,
       enabled: skill.enabled,
-      fileCount: skill.files.length,
+      fileCount: includedPaths.length,
       treeSha: skill.treeSha,
+      expectedTreeSha:
+        includedPaths.length === skill.files.length ? skill.treeSha : treeSha(includedForHash),
+      includedPaths,
     });
+  }
+
+  if (files.length > MAX_SYNC_FILES) {
+    errors.push(
+      `Migration plan has ${files.length} files, exceeding MAX_SYNC_FILES (${MAX_SYNC_FILES})`,
+    );
+  }
+  const totalBytes = files.reduce((sum, f) => sum + f.bytes.length, 0);
+  if (totalBytes > MAX_SYNC_TOTAL_BYTES) {
+    errors.push(
+      `Migration plan is ${totalBytes} bytes, exceeding MAX_SYNC_TOTAL_BYTES (${MAX_SYNC_TOTAL_BYTES})`,
+    );
   }
 
   const agentsText = globalText(data.docs);
@@ -303,6 +404,7 @@ export function planMigration(data: LegacyData): MigrationPlan {
     skippedDeleted: data.deleted,
     files,
     expectedAgentsMdSha256: agentsText === null ? null : sha256Bytes(agentsText),
+    warnings,
     errors,
   };
 }
@@ -341,21 +443,32 @@ export async function verifyMigration(
       mismatches.push(`Missing planned doc for ${legacy.id}`);
       continue;
     }
+    if (!ITEM_ID_PATTERN.test(planned.id)) {
+      mismatches.push(`Doc ${legacy.id} exported id ${planned.id} fails ITEM_ID_PATTERN`);
+      continue;
+    }
     const entry = await readEntry(planned.relPath);
     if (!entry) {
       mismatches.push(`Missing exported doc file ${planned.relPath}`);
       continue;
     }
-    const parsed = parseDocFile(planned.id, Buffer.from(entry.bytes).toString("utf8"));
+    const text = editableText(entry.bytes);
+    if (text === null) {
+      mismatches.push(`Exported doc ${planned.relPath} is not valid editable UTF-8 text`);
+      continue;
+    }
+    const parsed = parseDocFile(planned.id, text);
     parsedDocs.push({
       id: parsed.id,
       body: parsed.body,
       enabled: parsed.enabled,
       order: parsed.order,
     });
-    if (parsed.name !== legacy.name)
-      mismatches.push(`Doc ${legacy.id} name mismatch: ${parsed.name} !== ${legacy.name}`);
+    if (parsed.name !== planned.name)
+      mismatches.push(`Doc ${legacy.id} name mismatch: ${parsed.name} !== ${planned.name}`);
     if (parsed.enabled !== legacy.enabled) mismatches.push(`Doc ${legacy.id} enabled mismatch`);
+    if (parsed.order !== i)
+      mismatches.push(`Doc ${legacy.id} order mismatch: ${parsed.order} !== ${i}`);
     if (parsed.body !== legacy.body)
       mismatches.push(`Doc ${legacy.id} body mismatch (bytes differ)`);
   }
@@ -370,36 +483,53 @@ export async function verifyMigration(
 
   // Verify rules
   const parsedRules: { id: string; order: number | undefined; rule: Rule }[] = [];
-  for (const legacy of data.rules) {
-    const relPath = `rules/${legacy.id}.md`;
-    const entry = await readEntry(relPath);
+  for (let i = 0; i < data.rules.length; i++) {
+    const legacy = data.rules[i]!;
+    const planned = plan.rules[i];
+    if (!planned) {
+      mismatches.push(`Missing planned rule for ${legacy.id}`);
+      continue;
+    }
+    const entry = await readEntry(planned.relPath);
     if (!entry) {
-      mismatches.push(`Missing exported rule file ${relPath}`);
+      mismatches.push(`Missing exported rule file ${planned.relPath}`);
       continue;
     }
-    const parsed = parseRuleFile(legacy.id, Buffer.from(entry.bytes).toString("utf8"));
+    const text = editableText(entry.bytes);
+    if (text === null) {
+      mismatches.push(`Exported rule ${planned.relPath} is not valid editable UTF-8 text`);
+      continue;
+    }
+    const parsed = parseRuleFile(planned.id, text);
     if ("error" in parsed) {
-      mismatches.push(`Rule ${legacy.id} parse error: ${parsed.error}`);
+      mismatches.push(`Rule ${planned.id} parse error: ${parsed.error}`);
       continue;
     }
-    parsedRules.push({ id: legacy.id, order: parsed.order, rule: parsed.rule });
+    parsedRules.push({ id: planned.id, order: parsed.order, rule: parsed.rule });
   }
   parsedRules.sort(compareOrdered);
   if (parsedRules.length !== data.rules.length) {
     mismatches.push(`Rule count mismatch: ${parsedRules.length} !== ${data.rules.length}`);
   } else {
     for (let i = 0; i < data.rules.length; i++) {
-      if (JSON.stringify(parsedRules[i]!.rule) !== JSON.stringify(data.rules[i])) {
-        mismatches.push(`Rule ${data.rules[i]!.id} at index ${i} differs after export`);
+      const planned = plan.rules[i]!;
+      const expectedRule: Rule =
+        planned.id === data.rules[i]!.id ? data.rules[i]! : { ...data.rules[i]!, id: planned.id };
+      if (JSON.stringify(parsedRules[i]!.rule) !== JSON.stringify(expectedRule)) {
+        mismatches.push(`Rule ${expectedRule.id} at index ${i} differs after export`);
       }
     }
   }
 
   // Verify skills byte-for-byte
   let skillFilesChecked = 0;
-  for (const skill of data.skills) {
+  for (let sIdx = 0; sIdx < data.skills.length; sIdx++) {
+    const skill = data.skills[sIdx]!;
+    const plannedSkill = plan.skills[sIdx];
+    const includedSet = new Set(plannedSkill?.includedPaths ?? skill.files.map((f) => f.path));
     const hashed: { path: string; executable: boolean; sha256: string }[] = [];
     for (const file of skill.files) {
+      if (!includedSet.has(file.path)) continue;
       const relPath = `skills/${skill.name}/${file.path}`;
       const entry = await readEntry(relPath);
       if (!entry) {
@@ -419,9 +549,10 @@ export async function verifyMigration(
       skillFilesChecked++;
     }
     const actualTreeSha = treeSha(hashed);
-    if (actualTreeSha !== skill.treeSha) {
+    const expectedTreeSha = plannedSkill?.expectedTreeSha ?? skill.treeSha;
+    if (actualTreeSha !== expectedTreeSha) {
       mismatches.push(
-        `Skill ${skill.name} treeSha mismatch: ${actualTreeSha} !== ${skill.treeSha}`,
+        `Skill ${skill.name} treeSha mismatch: ${actualTreeSha} !== ${expectedTreeSha}`,
       );
     }
     const disabledEntry = await readEntry(`skills/${skill.name}/.disabled`);
@@ -434,6 +565,7 @@ export async function verifyMigration(
   // When verified on disk, ensure no unexpected extra files were written.
   if (targetDir !== null) {
     const walked = await walkSyncTree(targetDir);
+    if (walked.truncated) mismatches.push("Exported tree hit sync truncation cap");
     const actualPaths = Object.keys(walked.manifest).sort();
     const expectedPaths = plan.files.map((f) => f.relPath).sort();
     for (const p of actualPaths) {
@@ -465,17 +597,27 @@ export async function hasExistingSourceFiles(dir: string): Promise<boolean> {
 
 /** True when `markerPath` exists on disk. */
 export async function hasMigrationMarker(markerPath: string): Promise<boolean> {
+  return pathExists(markerPath);
+}
+
+/** Refuses symlinks on a directory path if it already exists. */
+async function assertNotSymlink(path: string): Promise<boolean> {
   try {
-    await lstat(markerPath);
+    const st = await lstat(path);
+    if (st.isSymbolicLink()) throw new SymlinkRefusedError(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
   }
 }
 
 /**
  * Runs a dry-run or live migration of `data` into `targetDir`.
- * Refuses to overwrite non-empty `targetDir` unless `force` is true.
+ * Stages the entire export into a sibling directory on the target filesystem,
+ * verifies every file on disk, and atomically swaps it into `targetDir` before
+ * writing `migration.json`. Refuses symlinks and refuses to overwrite non-empty
+ * `targetDir` unless `force` is true.
  */
 export async function runMigration(args: {
   data: LegacyData;
@@ -488,15 +630,20 @@ export async function runMigration(args: {
   const { data, targetDir, tmpDir, markerPath, apply, force = false } = args;
   const plan = planMigration(data);
   const totalBytes = plan.files.reduce((sum, f) => sum + f.bytes.length, 0);
+  const skillBytes = plan.files
+    .filter((f) => f.relPath.startsWith("skills/"))
+    .reduce((sum, f) => sum + f.bytes.length, 0);
   const summaryPlan: MigrationReport["plan"] = {
     docs: plan.docs,
     rules: plan.rules,
     skills: plan.skills,
     skippedDeleted: plan.skippedDeleted,
     expectedAgentsMdSha256: plan.expectedAgentsMdSha256,
+    warnings: plan.warnings,
     errors: plan.errors,
     fileCount: plan.files.length,
     totalBytes,
+    skillBytes,
   };
 
   if (!apply) {
@@ -507,26 +654,59 @@ export async function runMigration(args: {
   if (plan.errors.length > 0) {
     throw new Error(`Migration plan has errors; nothing written:\n${plan.errors.join("\n")}`);
   }
-  if (!force && (await hasExistingSourceFiles(targetDir))) {
+
+  const resolvedTarget = resolve(targetDir);
+  const targetExists = await assertNotSymlink(resolvedTarget);
+  if (markerPath) await assertNotSymlink(resolve(markerPath));
+
+  if (!force && targetExists && (await hasExistingSourceFiles(resolvedTarget))) {
     throw new Error(
       `Target source folder ${targetDir} already contains files; pass --force to overwrite.`,
     );
   }
 
-  await ensureSourceFolders(targetDir);
-  for (const file of plan.files) {
-    await writeSyncFileAtomic(targetDir, tmpDir, file.relPath, file.bytes, file.executable);
-  }
+  // Stage completely in a sibling folder on the SAME filesystem so rename() is atomic and never hits EXDEV.
+  const parentDir = dirname(resolvedTarget);
+  await mkdir(parentDir, { recursive: true });
+  const suffix = randomBytes(6).toString("hex");
+  const stageDir = join(parentDir, `.source-migrating-${suffix}`);
+  const stageTmpDir = join(parentDir, `.source-migrating-tmp-${suffix}`);
 
-  const verification = await verifyMigration(data, plan, targetDir);
-  if (!verification.ok) {
-    throw new Error(
-      `Migration verification failed after writing:\n${verification.mismatches.join("\n")}`,
-    );
+  let verification: MigrationVerification;
+  try {
+    await ensureSourceFolders(stageDir);
+    for (const file of plan.files) {
+      await writeSyncFileAtomic(stageDir, stageTmpDir, file.relPath, file.bytes, file.executable);
+    }
+
+    verification = await verifyMigration(data, plan, stageDir);
+    if (!verification.ok) {
+      throw new Error(
+        `Migration verification failed before swap:\n${verification.mismatches.join("\n")}`,
+      );
+    }
+
+    // Atomically swap staged tree into `resolvedTarget`.
+    if (targetExists) {
+      const backupDir = join(parentDir, `.source-backup-${suffix}`);
+      await rename(resolvedTarget, backupDir);
+      try {
+        await rename(stageDir, resolvedTarget);
+      } catch (error) {
+        // Restore previous targetDir if the swap failed.
+        await rename(backupDir, resolvedTarget).catch(() => undefined);
+        throw error;
+      }
+      await rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
+    } else {
+      await rename(stageDir, resolvedTarget);
+    }
+  } finally {
+    await rm(stageDir, { recursive: true, force: true }).catch(() => undefined);
+    await rm(stageTmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
 
   if (markerPath) {
-    await mkdir(dirname(markerPath), { recursive: true });
     const marker = {
       version: 1,
       migratedAt: new Date().toISOString(),
@@ -536,10 +716,7 @@ export async function runMigration(args: {
       files: plan.files.length,
       expectedAgentsMdSha256: plan.expectedAgentsMdSha256,
     };
-    const staged = join(tmpDir, `.migration-marker-${Date.now()}.tmp`);
-    await mkdir(tmpDir, { recursive: true });
-    await writeFile(staged, `${JSON.stringify(marker, null, 2)}\n`);
-    await rename(staged, markerPath);
+    await writeJsonAtomic(markerPath, tmpDir, marker, { pretty: true });
   }
 
   return { dryRun: false, applied: true, targetDir, plan: summaryPlan, verification };
@@ -560,7 +737,7 @@ export function formatMigrationReport(report: MigrationReport): string {
     ...plan.rules.map(
       (r) => `  + ${r.relPath}  (name=${JSON.stringify(r.name)}, ${r.enabled ? "on" : "off"})`,
     ),
-    `Skills: ${plan.skills.length} (${verification.skillFilesChecked} files, ${(plan.totalBytes / 1024).toFixed(1)} KiB total)`,
+    `Skills: ${plan.skills.length} (${verification.skillFilesChecked} files, ${(plan.skillBytes / 1024).toFixed(1)} KiB skills / ${(plan.totalBytes / 1024).toFixed(1)} KiB total)`,
     ...plan.skills.map(
       (s) =>
         `  + skills/${s.name}/  (${s.fileCount} files, treeSha=${s.treeSha.slice(0, 12)}, ${s.enabled ? "on" : "off"})`,
@@ -568,6 +745,7 @@ export function formatMigrationReport(report: MigrationReport): string {
     `Deleted tombstones skipped (not resurrected): ${plan.skippedDeleted.length}`,
     `AGENTS.md sha256: ${plan.expectedAgentsMdSha256 ?? "(none)"} (${verification.agentsMdMatched ? "MATCH" : "MISMATCH"})`,
     `Verification: ${verification.ok ? "PASS — 0 mismatches (100% lossless)" : `FAIL — ${verification.mismatches.length} mismatch(es)`}`,
+    ...plan.warnings.map((w) => `  WARN: ${w}`),
     ...plan.errors.map((e) => `  ERROR: ${e}`),
     ...verification.mismatches.map((m) => `  MISMATCH: ${m}`),
   ];
@@ -575,11 +753,13 @@ export function formatMigrationReport(report: MigrationReport): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** Opens a SQLite database file read-only, supporting both Bun and Node runtimes. */
+/** Opens a SQLite database file read-only, supporting both Bun and Node built-in `node:sqlite`. */
 export async function openReadOnlySqlite(dbPath: string): Promise<{
   db: ReadOnlySqlite;
   close(): void;
 }> {
+  const st = await lstat(dbPath);
+  if (st.isSymbolicLink()) throw new SymlinkRefusedError(dbPath);
   if ("Bun" in globalThis) {
     const bunSqlite = "bun:sqlite";
     const mod = (await import(bunSqlite)) as {
@@ -597,24 +777,19 @@ export async function openReadOnlySqlite(dbPath: string): Promise<{
       close: () => instance.close(),
     };
   }
-  const mod = (await import("better-sqlite3")) as {
-    default: new (path: string, opts: { readonly: boolean }) => ReadOnlySqlite & { close(): void };
+  const nodeSqlite = "node:sqlite";
+  const mod = (await import(nodeSqlite)) as {
+    DatabaseSync: new (
+      path: string,
+      opts: { readOnly: boolean },
+    ) => ReadOnlySqlite & { close(): void };
   };
-  const instance = new mod.default(dbPath, { readonly: true });
+  const instance = new mod.DatabaseSync(dbPath, { readOnly: true });
   return { db: instance, close: () => instance.close() };
 }
 
-/** Helper to read legacy rules JSON from a file path for offline CLI dry-runs. */
+/** Helper to read legacy rules JSON from a file path for offline dry-runs/tests. */
 export async function readLegacyRulesFile(path: string): Promise<Rule[]> {
   const raw = JSON.parse(await readFile(path, "utf8")) as unknown;
   return parseLegacyRules(raw);
-}
-
-/** Counts entries under `dir`, returning 0 when missing. */
-export async function countEntries(dir: string): Promise<number> {
-  try {
-    return (await readdir(dir)).length;
-  } catch {
-    return 0;
-  }
 }

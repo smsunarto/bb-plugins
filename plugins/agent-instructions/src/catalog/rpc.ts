@@ -91,8 +91,7 @@ export function catalogHandlers(ctx: AgentInstructionsContext) {
     },
 
     async catalogFile(target: FileTarget) {
-      await ctx.store.reloadFromDisk("disk");
-      const file = ctx.store.file(target);
+      const file = await ctx.store.readFileFresh(target);
       if (file === null && "doc" in target)
         throw new Error("This doc is not in the catalog; it may have been deleted.");
       // A missing skill file opens empty, and saving creates it.

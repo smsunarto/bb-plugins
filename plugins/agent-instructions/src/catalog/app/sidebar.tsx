@@ -25,6 +25,7 @@ import {
   publishTrouble,
   sameSelection,
   useDraftKeys,
+  useExistingDraftKeys,
   useGo,
   type CatalogSelection,
   type Deleted,
@@ -50,9 +51,11 @@ function Shimmer({ rows }: { rows: number }) {
 function StatusLine({
   listing,
   refreshError,
+  compactHome,
 }: {
   listing: CatalogListing;
   refreshError: string | null;
+  compactHome?: boolean;
 }) {
   const publish = usePublish();
   const state = publishState(listing.published);
@@ -81,11 +84,25 @@ function StatusLine({
           </Button>
         )}
       </div>
-      {listing.conflicts.length > 0 && (
-        <p className="pe-meta" data-tone="warn">
-          {listing.conflicts.length} sync conflict{listing.conflicts.length === 1 ? "" : "s"} in{" "}
-          conflicts/
+      {compactHome && (
+        <p className="pe-meta pe-wrap min-w-0">
+          Folder: <code className="pe-mono">{listing.sourcePath}</code>
         </p>
+      )}
+      {listing.conflicts.length > 0 && (
+        <details className="min-w-0">
+          <summary className="pe-meta cursor-pointer" data-tone="warn">
+            {listing.conflicts.length} sync conflict{listing.conflicts.length === 1 ? "" : "s"} in{" "}
+            conflicts/
+          </summary>
+          <ul className="mt-1 flex min-w-0 flex-col gap-1 ps-3">
+            {listing.conflicts.map((conflictPath) => (
+              <li key={conflictPath} className="pe-meta pe-mono pe-wrap min-w-0" data-tone="warn">
+                {conflictPath}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       {refreshError !== null && (
         <output className="pe-meta" data-tone="warn">
@@ -117,6 +134,8 @@ const CatalogSkillGroup = memo(function CatalogSkillGroup(props: {
   selectedPath: string | null;
   /** Paths with drafts, NUL-joined (see `draftPaths`). */
   pending: string;
+  /** Paths whose draft started from an existing disk file (`baseSha !== null`), NUL-joined. */
+  existingPending: string;
   reveal: boolean;
   onSelect: (selection: CatalogSelection) => void;
 }) {
@@ -128,6 +147,9 @@ const CatalogSkillGroup = memo(function CatalogSkillGroup(props: {
     if ((selectedHere || reveal) && disclosure.current) disclosure.current.open = true;
   }, [selectedHere, reveal]);
   const pending = props.pending === "" ? [] : props.pending.split("\u0000");
+  const existingPending = new Set(
+    props.existingPending === "" ? [] : props.existingPending.split("\u0000"),
+  );
   const known = new Set(skill.files.map((file) => file.path));
   const extra = pending.filter((path) => !known.has(path));
   if (selectedPath !== null && !known.has(selectedPath) && !extra.includes(selectedPath))
@@ -191,7 +213,7 @@ const CatalogSkillGroup = memo(function CatalogSkillGroup(props: {
       </Hint>
       <div className="ps-3">
         {skill.files.map((file) => row(file.path, false))}
-        {extra.map((path) => row(path, true))}
+        {extra.map((path) => row(path, !existingPending.has(path)))}
       </div>
     </details>
   );
@@ -361,6 +383,7 @@ function DeletedRow({ entry }: { entry: Deleted }) {
 function CatalogNav(props: { listing: CatalogListing; subPath: string; filterText: string }) {
   const { listing, subPath, filterText } = props;
   const dirty = useDraftKeys();
+  const existingDirty = useExistingDraftKeys();
   const go = useGo();
   const change = useCatalogChange();
   const shadows = useRpcQuery("catalogShadows", null, { staleTime: 5 * 60_000 });
@@ -452,6 +475,7 @@ function CatalogNav(props: { listing: CatalogListing; subPath: string; filterTex
                 : null
             }
             pending={draftPaths(dirty, skill.name)}
+            existingPending={draftPaths(existingDirty, skill.name)}
             reveal={reveal && filter !== ""}
             onSelect={go}
           />
@@ -491,7 +515,7 @@ function CatalogNav(props: { listing: CatalogListing; subPath: string; filterTex
   );
 }
 
-function CatalogTabBody({ subPath }: { subPath: string }) {
+function CatalogTabBody({ subPath, compactHome }: { subPath: string; compactHome?: boolean }) {
   const listing = useRpcQuery("catalog", null);
   const [filterText, setFilterText] = useState("");
   if (!listing.data) {
@@ -521,6 +545,7 @@ function CatalogTabBody({ subPath }: { subPath: string }) {
         <StatusLine
           listing={listing.data}
           refreshError={listing.isError ? listing.error.message : null}
+          compactHome={compactHome}
         />
         <div className="pe-filter">
           <Input
@@ -538,11 +563,11 @@ function CatalogTabBody({ subPath }: { subPath: string }) {
   );
 }
 
-export function CatalogTab({ subPath }: { subPath: string }) {
+export function CatalogTab({ subPath, compactHome }: { subPath: string; compactHome?: boolean }) {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <CatalogTabBody subPath={subPath} />
+        <CatalogTabBody subPath={subPath} compactHome={compactHome} />
       </TooltipProvider>
     </QueryClientProvider>
   );

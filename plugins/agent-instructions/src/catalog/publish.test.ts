@@ -227,8 +227,8 @@ describe("publish", () => {
     const crashing: PublishSource = {
       publishable: good.publishable,
       docs: good.docs,
-      skillFiles: (name) => {
-        const files = good.skillFiles(name);
+      skillFiles: async (name) => {
+        const files = await good.skillFiles(name);
         if (name !== "probe") return files;
         return files.map((f, i) => {
           let reads = 0;

@@ -89,6 +89,16 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
       );
   }
 
+  let localSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleLocalMirrorSync(): void {
+    if (localSyncTimer) clearTimeout(localSyncTimer);
+    localSyncTimer = setTimeout(() => {
+      localSyncTimer = null;
+      void sync.syncAllConnected();
+    }, 1_500);
+    localSyncTimer.unref?.();
+  }
+
   const unsubChange = store.onChange((event) => {
     // Disk edits and remote sync pulls must republish immediately; local UI/CLI writes
     // already await publishCatalog/publishWithin, though rules/doc edits still notify clients.
@@ -100,11 +110,22 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
         revision: event.revision,
         rulesRevision: event.rulesRevision,
       });
-      void sync.syncAllConnected({ excludeHostId: event.originHostId });
+    }
+    if (event.catalogChanged || event.rulesChanged || event.manifestChanged) {
+      if (event.reason === "local") {
+        // Debounce rapid local autosaves (e.g. Rules typing every 500ms) before fanning out over the network.
+        scheduleLocalMirrorSync();
+      } else {
+        void sync.syncAllConnected({ excludeHostId: event.originHostId });
+      }
     }
   });
 
   bb.onDispose(() => {
+    if (localSyncTimer) {
+      clearTimeout(localSyncTimer);
+      localSyncTimer = null;
+    }
     unsubChange();
     store.dispose();
     sync.dispose();
@@ -112,8 +133,10 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
 
   await store.load();
   store.startWatch();
-  // Converges whatever an earlier run left, including one stopped mid-publish.
-  publishInBackground();
+  // Converges whatever an earlier run left, unless a partial migration state was detected.
+  if (store.migrationBlocked() === null) {
+    publishInBackground();
+  }
 
   // `configure`, unlike `contributeInstructions`, sees the host, provider,
   // and model a thread resolves with, which is what rules match on.

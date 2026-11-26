@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -217,7 +217,7 @@ test("dry-run and apply migration export docs, skills (binary + exec), and rules
   );
 });
 
-test("plugin startup auto-migrates legacy data.db + KV state once and publishes", async () => {
+test("plugin startup auto-migrates legacy data.db + KV state once, auto-publishes, and stays idempotent on reload", async () => {
   const dataDir = await makeTemp("auto-migrate-");
   const pluginDir = join(dataDir, "plugins", "agent-instructions");
   await mkdir(pluginDir, { recursive: true });
@@ -236,8 +236,17 @@ test("plugin startup auto-migrates legacy data.db + KV state once and publishes"
   await bb.storage.kv.set("state", { revision: 3, rules: sampleRules });
 
   await plugin(bb);
-  const published = await harness.behavior.runCli(["publish"]);
-  expect(published.exitCode).toBe(0);
+
+  // Wait for startup auto-publish without manually calling runCli(["publish"]).
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (
+      existsSync(join(dataDir, "AGENTS.md")) &&
+      existsSync(join(dataDir, "skills/alpha/SKILL.md"))
+    )
+      break;
+    await new Promise((r) => setTimeout(r, 30));
+  }
 
   expect(existsSync(join(pluginDir, "migration.json"))).toBe(true);
   expect(await readFile(join(dataDir, "AGENTS.md"), "utf8")).toBe(
@@ -248,4 +257,69 @@ test("plugin startup auto-migrates legacy data.db + KV state once and publishes"
 
   const rulesOut = (await harness.callRpc("rules")) as { rules: Rule[] };
   expect(rulesOut.rules).toEqual(sampleRules);
+
+  // Edit source/instructions/shared.md and reload -> migration.json prevents re-migrating over edits!
+  await writeFile(
+    join(pluginDir, "source/instructions/shared.md"),
+    "Post-migration edit.\n",
+    "utf8",
+  );
+  const reloaded = await harness.reload(plugin);
+  cleanup.push(() => reloaded.harness.lifecycle.dispose());
+  expect(await readFile(join(pluginDir, "source/instructions/shared.md"), "utf8")).toBe(
+    "Post-migration edit.\n",
+  );
+
+  // Test `migrate` CLI dry-run and `--apply --force` with pre-existing extra files & stale .disabled (#10, #23, #28).
+  await writeFile(join(pluginDir, "source/instructions/extra.md"), "Stale extra.\n", "utf8");
+  await writeFile(join(pluginDir, "source/skills/alpha/.disabled"), "", "utf8");
+  const dryCli = await reloaded.harness.behavior.runCli(["migrate"]);
+  expect(dryCli.exitCode).toBe(0);
+  expect(dryCli.stdout).toContain("PASS — 0 mismatches");
+
+  const forceCli = await reloaded.harness.behavior.runCli(["migrate", "--apply", "--force"]);
+  expect(forceCli.exitCode).toBe(0);
+  expect(existsSync(join(pluginDir, "source/instructions/extra.md"))).toBe(false);
+  expect(existsSync(join(pluginDir, "source/skills/alpha/.disabled"))).toBe(false);
+  expect(await readFile(join(dataDir, "AGENTS.md"), "utf8")).toBe(
+    "# Shared\n\nAlways be direct.\n",
+  );
+});
+
+test("#22 & #34: colliding 80-char doc ids stay <= 80 chars, NUL bytes fail cleanly, and report prints skillBytes", async () => {
+  const dir = await makeTemp("migrate-edge-");
+  const stem80 = "a".repeat(80);
+  const res = await runMigration({
+    data: {
+      docs: [
+        { id: stem80, name: "First", body: "One.", enabled: true, position: 0 },
+        { id: `imported:${stem80}`, name: "Second", body: "Two.", enabled: false, position: 1 },
+      ],
+      rules: [],
+      skills: [],
+      deleted: [],
+    },
+    targetDir: join(dir, "source"),
+    tmpDir: join(dir, ".tmp"),
+    apply: true,
+  });
+  expect(res.verification.ok).toBe(true);
+  expect(res.plan.docs.every((d) => d.id.length <= 80)).toBe(true);
+  expect(res.plan.docs[0]!.id).not.toBe(res.plan.docs[1]!.id);
+  expect(formatMigrationReport(res)).toContain("0.0 KiB skills");
+
+  // NUL byte in doc body is caught in planMigration instead of silently dropped post-migration.
+  const nulDry = await runMigration({
+    data: {
+      docs: [{ id: "bad", name: "Bad", body: "a\0b", enabled: true, position: 0 }],
+      rules: [],
+      skills: [],
+      deleted: [],
+    },
+    targetDir: join(dir, "source-nul"),
+    tmpDir: join(dir, ".tmp"),
+    apply: false,
+  });
+  expect(nulDry.verification.ok).toBe(false);
+  expect(nulDry.plan.errors.some((e) => e.includes("binary/NUL"))).toBe(true);
 });

@@ -77,6 +77,7 @@ let drafts: ReadonlyMap<string, Draft> = new Map();
  * so typing re-renders the open editor but not the sidebar.
  */
 let draftKeys: ReadonlySet<string> = new Set();
+let existingDraftKeys: ReadonlySet<string> = new Set();
 
 /** The text each running save is storing, by draft key. */
 const saving = new Map<string, string>();
@@ -102,17 +103,40 @@ export function useDraftKeys(): ReadonlySet<string> {
   return useSyncExternalStore(subscribeDrafts, () => draftKeys);
 }
 
+export function useExistingDraftKeys(): ReadonlySet<string> {
+  return useSyncExternalStore(subscribeDrafts, () => existingDraftKeys);
+}
+
+function sameKeys(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const key of a) if (!b.has(key)) return false;
+  return true;
+}
+
 function setDrafts(next: ReadonlyMap<string, Draft>) {
   drafts = next;
-  if (next.size !== draftKeys.size || [...next.keys()].some((key) => !draftKeys.has(key)))
-    draftKeys = new Set(next.keys());
+  const nextKeys = new Set(next.keys());
+  if (!sameKeys(nextKeys, draftKeys)) draftKeys = nextKeys;
+  const nextExisting = new Set<string>();
+  for (const [key, draft] of next) {
+    if (draft.baseSha !== null) nextExisting.add(key);
+  }
+  if (!sameKeys(nextExisting, existingDraftKeys)) existingDraftKeys = nextExisting;
   for (const listener of draftListeners) listener();
 }
 
 /** Marks the text a save is storing, or clears it when the save ends. */
 export function setSaving(key: string, text: string | undefined): void {
+  const had = saving.has(key);
   if (text === undefined) saving.delete(key);
   else saving.set(key, text);
+  if (had !== saving.has(key)) {
+    for (const listener of draftListeners) listener();
+  }
+}
+
+export function isSaving(key: string): boolean {
+  return saving.has(key);
 }
 
 /**

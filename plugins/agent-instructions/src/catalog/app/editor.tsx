@@ -28,6 +28,7 @@ import { errorsOf, PublishNotices, useCatalogChange, useFocusOnMount } from "./s
 import {
   draftKey,
   dropSkillDrafts,
+  isSaving,
   parseCatalogRoute,
   publishTrouble,
   setFlash,
@@ -68,7 +69,7 @@ function Overview({ listing }: { listing: CatalogListing }) {
       </p>
       {listing.conflicts.length > 0 && (
         <Alert variant="warning" role="alert">
-          <AlertDescription>
+          <AlertDescription className="pe-wrap min-w-0">
             {listing.conflicts.length} sync conflict{listing.conflicts.length === 1 ? "" : "s"}{" "}
             saved under <code className="pe-mono">conflicts/</code> (not published to agents):{" "}
             {listing.conflicts.join(", ")}
@@ -163,8 +164,25 @@ function useOpenFile(selection: CatalogSelection) {
   const refetch = () => client.invalidateQueries({ queryKey: queryKey("catalogFile", selection) });
   /** Runs a change; a conflict reloads the file so the editor shows what changed. */
   const run = async (op: CatalogChange) => {
-    const result = await change.mutateAsync(op).catch(() => null);
+    const key = draftKey(selection);
+    const updatesDocHeader = op.op === "renameDoc" || op.op === "setDocEnabled";
+    if (updatesDocHeader) setSaving(key, "meta");
+    const result = await change
+      .mutateAsync(op)
+      .catch(() => null)
+      .finally(() => {
+        if (updatesDocHeader) setSaving(key, undefined);
+      });
     if (result?.outcome === "conflict") await refetch();
+    if (updatesDocHeader && result?.outcome === "saved" && result.sha256) {
+      // Frontmatter changed on disk due to our own toggle/rename: advance draft.baseSha & cached sha256
+      // so the user's unsaved body edit does not trigger a false disk-conflict banner.
+      const nextSha = result.sha256;
+      updateDraft(key, (current) => (current ? { ...current, baseSha: nextSha } : undefined));
+      client.setQueryData<LoadedFile | undefined>(queryKey("catalogFile", selection), (prev) =>
+        prev ? { ...prev, sha256: nextSha } : prev,
+      );
+    }
     return result;
   };
   return { key: draftKey(selection), selection, loaded, draft, client, change, refetch, run };
@@ -346,10 +364,17 @@ function DocToolbar({ doc, open, moved }: { doc: Doc; open: OpenFile; moved: boo
   );
 }
 
-function SkillToolbar(props: { skill: Skill; path: string; open: OpenFile; file: LoadedFile }) {
-  const { skill, path, open, file } = props;
+function SkillToolbar(props: {
+  skill: Skill;
+  path: string;
+  open: OpenFile;
+  file: LoadedFile;
+  moved: boolean;
+}) {
+  const { skill, path, open, file, moved } = props;
   const go = useGo();
   const busy = open.change.isPending;
+  const isNewFile = file.sha256 === null && !moved;
   const deleteFile = async (expectedSha256: string) => {
     const done = await open.run({ op: "deleteFile", skill: skill.name, path, expectedSha256 });
     if (done?.outcome !== "saved") return;
@@ -382,7 +407,7 @@ function SkillToolbar(props: { skill: Skill; path: string; open: OpenFile; file:
           onConfirm={() => void deleteFile(file.sha256!)}
         />
       )}
-      {file.sha256 === null && open.draft !== undefined && (
+      {isNewFile && open.draft !== undefined && (
         <Button
           type="button"
           variant="outline"
@@ -408,9 +433,15 @@ function SkillToolbar(props: { skill: Skill; path: string; open: OpenFile; file:
 const SCRIPT = /\.(sh|py|js|ts|rb|pl)$/;
 
 /** What is true of the file itself: off, shadowed, binary, or new. */
-function StateNotices(props: { subject: EditorSubject; facts: Facts; file: LoadedFile }) {
-  const { subject, facts: f, file } = props;
+function StateNotices(props: {
+  subject: EditorSubject;
+  facts: Facts;
+  file: LoadedFile;
+  moved: boolean;
+}) {
+  const { subject, facts: f, file, moved } = props;
   const skill = subject.kind === "skill" ? subject : null;
+  const isNewFile = file.sha256 === null && !moved;
   return (
     <>
       {!f.enabled && (
@@ -441,7 +472,7 @@ function StateNotices(props: { subject: EditorSubject; facts: Facts; file: Loade
           </AlertDescription>
         </Alert>
       )}
-      {file.content !== null && file.sha256 === null && (
+      {file.content !== null && isNewFile && (
         <Alert role="none">
           <AlertDescription>
             New file. Save to add it to {f.name}.
@@ -579,7 +610,14 @@ function LoadedEditor(props: { subject: EditorSubject; open: OpenFile; file: Loa
   const { draft, key } = open;
   const editable = file.content !== null;
   const value = draft?.text ?? file.content ?? "";
-  const moved = draft !== undefined && draft.baseSha !== file.sha256;
+  const savingNow = isSaving(key);
+  const moved = draft !== undefined && !savingNow && draft.baseSha !== file.sha256;
+  const footMeta = [
+    !editable && `${file.size.toLocaleString()} bytes`,
+    file.executable && "executable",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const save = async (expected: string | null, text: string) => {
     setSaving(key, text);
@@ -631,9 +669,15 @@ function LoadedEditor(props: { subject: EditorSubject; open: OpenFile; file: Loa
       {subject.kind === "doc" ? (
         <DocToolbar doc={subject.doc} open={open} moved={moved} />
       ) : (
-        <SkillToolbar skill={subject.skill} path={subject.path} open={open} file={file} />
+        <SkillToolbar
+          skill={subject.skill}
+          path={subject.path}
+          open={open}
+          file={file}
+          moved={moved}
+        />
       )}
-      <StateNotices subject={subject} facts={f} file={file} />
+      <StateNotices subject={subject} facts={f} file={file} moved={moved} />
       <ResultNotices
         open={open}
         file={file}
@@ -650,12 +694,8 @@ function LoadedEditor(props: { subject: EditorSubject; open: OpenFile; file: Loa
         />
       )}
       <footer className="pe-editor-foot">
-        <span className="pe-meta">
-          {[!editable && `${file.size.toLocaleString()} bytes`, file.executable && "executable"]
-            .filter(Boolean)
-            .join(" · ")}
-        </span>
-        <span className="pe-meta pe-mono">{f.relativePath}</span>
+        {footMeta.length > 0 && <span className="pe-meta">{footMeta}</span>}
+        <span className="pe-meta pe-mono pe-wrap min-w-0">{f.relativePath}</span>
       </footer>
     </div>
   );

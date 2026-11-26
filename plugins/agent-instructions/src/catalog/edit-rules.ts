@@ -1,5 +1,10 @@
 import { posix } from "node:path";
-import { MAX_SYNC_FILE_BYTES } from "../sync/paths.ts";
+import {
+  isIgnoredEntryName,
+  isSafeSyncPath,
+  MAX_SYNC_FILE_BYTES,
+  MAX_SYNC_PATH_BYTES,
+} from "../sync/paths.ts";
 import { MAX_SKILL_FILES, parseFrontmatter, pathProblems, relativeLinks } from "./skill-rules.ts";
 
 /** Maximum total size of one skill tree. */
@@ -7,6 +12,9 @@ export const MAX_TREE_BYTES = MAX_SYNC_FILE_BYTES;
 
 /** The largest text file the editor saves. */
 export const MAX_FILE_BYTES = 1_048_576;
+
+// eslint-disable-next-line no-control-regex -- intentionally rejects NUL and ASCII control chars
+const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
 
 type File = { path: string; bytes: Uint8Array };
 
@@ -18,12 +26,21 @@ export function editableText(bytes: Uint8Array): string | null {
 }
 
 /** Why `path` cannot name a file inside a skill, or null. */
-export function pathError(path: string): string | null {
-  if (path.length > 512) return `${path.slice(0, 40)}…: paths are limited to 512 characters`;
-  if (path.includes("\\") || path.includes("\0") || /[\r\n]/.test(path))
-    return `${path}: use / between folders, with no backslashes or line breaks`;
-  if (path.split("/").some((s) => s === "" || s === "." || s === ".."))
+export function pathError(path: string, skillName?: string): string | null {
+  if (path.length > 512 || Buffer.byteLength(path, "utf8") > MAX_SYNC_PATH_BYTES)
+    return `${path.slice(0, 40)}…: paths are limited to ${MAX_SYNC_PATH_BYTES} bytes`;
+  if (path.includes("\\") || CONTROL_CHARS.test(path))
+    return `${path}: use / between folders, with no backslashes or control characters`;
+  if (path === ".disabled") return `${path}: .disabled is reserved for toggling a skill on or off`;
+  const segments = path.split("/");
+  if (segments.some((s) => s === "" || s === "." || s === ".."))
     return `${path}: must be a plain path inside the skill, such as references/notes.md`;
+  if (segments.some(isIgnoredEntryName)) return `${path}: uses a reserved or ignored filename`;
+  if (skillName !== undefined) {
+    const syncPath = `skills/${skillName}/${path}`;
+    if (!isSafeSyncPath(syncPath))
+      return `${path}: full path exceeds the ${MAX_SYNC_PATH_BYTES}-byte sync limit or is invalid`;
+  }
   return null;
 }
 

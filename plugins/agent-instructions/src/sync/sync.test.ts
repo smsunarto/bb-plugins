@@ -12,7 +12,13 @@ import {
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
 import hostEntry from "../host.ts";
 import plugin from "../server/server.ts";
-import { deleteSyncFileAndPrune, readSyncFile, SymlinkRefusedError } from "./paths.ts";
+import {
+  deleteSyncFileAndPrune,
+  readSyncFile,
+  SymlinkRefusedError,
+  writeSyncFileAtomic,
+} from "./paths.ts";
+import { syncManifestSchema } from "./host-contract.ts";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
@@ -64,6 +70,7 @@ async function setupTwoHostEnv() {
       return target.experimental_call(call.method as never, call.input as never);
     },
     sdk: {
+      subscribe: () => () => undefined,
       system: {
         config: async () => ({ primaryHostId: "host_server" }) as never,
       },
@@ -174,7 +181,9 @@ test("concurrent edits on server and mirror keep a conflict copy and never publi
   expect(synced.exitCode).toBe(0);
   const parsed = JSON.parse(synced.stdout) as { conflicts: string[] };
   expect(parsed.conflicts).toHaveLength(1);
-  expect(parsed.conflicts[0]).toMatch(/^conflicts\/dev-mac-\d{8}-\d{6}\/instructions\/shared\.md$/);
+  expect(parsed.conflicts[0]).toMatch(
+    /^conflicts\/dev-mac-\d{8}-\d{6}-[0-9a-f]{6}\/instructions\/shared\.md$/,
+  );
 
   // Server keeps its version at the canonical path and converges Mac to it.
   expect(await readFile(join(serverSourceDir, "instructions/shared.md"), "utf8")).toBe(
@@ -228,11 +237,186 @@ test("security: symlinks in mirror or source are never followed or exfiltrated",
   expect(synced.exitCode).toBe(0);
   expect(existsSync(join(serverSourceDir, "instructions/stolen.md"))).toBe(false);
 
-  // Direct read/delete through paths.ts also refuses symlinks.
+  // Direct read/write/delete through paths.ts and serverSourceDir symlink are refused.
   await expect(readSyncFile(macMirrorDir, "instructions/stolen.md")).rejects.toThrow(
     SymlinkRefusedError,
   );
+  await expect(
+    writeSyncFileAtomic(
+      macMirrorDir,
+      join(macMirrorDir, "../.tmp"),
+      "instructions/stolen.md",
+      Buffer.from("overwrite"),
+      false,
+    ),
+  ).rejects.toThrow(SymlinkRefusedError);
   await expect(deleteSyncFileAndPrune(macMirrorDir, "instructions/stolen.md")).rejects.toThrow(
     SymlinkRefusedError,
   );
+
+  // Server-side symlink is also never synced out to mirrors.
+  await mkdir(join(serverSourceDir, "instructions"), { recursive: true });
+  await symlink(secretFile, join(serverSourceDir, "instructions/server-link.md"));
+  const syncedServer = await harness.behavior.runCli(["sync"]);
+  expect(syncedServer.exitCode).toBe(0);
+  expect(existsSync(join(macMirrorDir, "instructions/server-link.md"))).toBe(false);
+});
+
+test("#4: file<->directory replacements sync cleanly in both directions without ENOTDIR/EISDIR", async () => {
+  const { harness, serverSourceDir, macMirrorDir } = await setupTwoHostEnv();
+
+  await writeText(join(serverSourceDir, "skills/alpha/SKILL.md"), skillMd("alpha"));
+  await writeText(join(serverSourceDir, "skills/alpha/ref"), "plain file\n");
+  expect((await harness.behavior.runCli(["sync"])).exitCode).toBe(0);
+  expect(await readFile(join(macMirrorDir, "skills/alpha/ref"), "utf8")).toBe("plain file\n");
+
+  // File -> directory replacement on server
+  await rm(join(serverSourceDir, "skills/alpha/ref"));
+  await writeText(join(serverSourceDir, "skills/alpha/ref/guide.md"), "inside dir\n");
+  expect((await harness.behavior.runCli(["sync"])).exitCode).toBe(0);
+  expect(await readFile(join(macMirrorDir, "skills/alpha/ref/guide.md"), "utf8")).toBe(
+    "inside dir\n",
+  );
+
+  // Directory -> file replacement on server
+  await rm(join(serverSourceDir, "skills/alpha/ref"), { recursive: true, force: true });
+  await writeText(join(serverSourceDir, "skills/alpha/ref"), "back to file\n");
+  expect((await harness.behavior.runCli(["sync"])).exitCode).toBe(0);
+  expect(await readFile(join(macMirrorDir, "skills/alpha/ref"), "utf8")).toBe("back to file\n");
+});
+
+test("#5: deleting >500 files chunks mirrorApplyOps deletes under the Zod max(500) cap", async () => {
+  const { harness, serverSourceDir, macMirrorDir } = await setupTwoHostEnv();
+
+  await writeText(join(serverSourceDir, "skills/big/SKILL.md"), skillMd("big"));
+  for (let i = 0; i < 505; i++) {
+    await writeText(
+      join(serverSourceDir, `skills/big/files/f-${String(i).padStart(3, "0")}.txt`),
+      `v${i}`,
+    );
+  }
+  expect((await harness.behavior.runCli(["sync", "--host", "host_mac"])).exitCode).toBe(0);
+  expect(existsSync(join(macMirrorDir, "skills/big/files/f-504.txt"))).toBe(true);
+
+  await rm(join(serverSourceDir, "skills/big"), { recursive: true, force: true });
+  const res = await harness.behavior.runCli(["sync", "--host", "host_mac"]);
+  expect(res.exitCode).toBe(0);
+  expect(existsSync(join(macMirrorDir, "skills/big/files/f-504.txt"))).toBe(false);
+});
+
+test("#6 & #28: background mirror-sync service handles mirrorChanged signals, fan-out, auto-publish, and worker exit re-watch", async () => {
+  const { harness, serverDataDir, serverSourceDir, macMirrorDir, otherMirrorDir } =
+    await setupTwoHostEnv();
+
+  const service = harness.behavior.runService("mirror-sync");
+  try {
+    // Wait for initial startup mirrorEnsureWatch to settle.
+    await writeText(join(serverSourceDir, "instructions/shared.md"), "From server.\n");
+    await harness.behavior.runCli(["sync"]);
+
+    // Edit in Mac mirror and emit mirrorChanged signal -> server pulls, auto-publishes, and fans out to Build Linux!
+    await writeText(join(macMirrorDir, "instructions/shared.md"), "Live from Mac signal.\n");
+    await harness.behavior.experimental_emitHostSignal("host_mac", "mirrorChanged", {
+      mirrorDir: macMirrorDir,
+    });
+
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (
+        existsSync(join(serverDataDir, "AGENTS.md")) &&
+        (await readFile(join(serverDataDir, "AGENTS.md"), "utf8")) === "Live from Mac signal.\n" &&
+        existsSync(join(otherMirrorDir, "instructions/shared.md")) &&
+        (await readFile(join(otherMirrorDir, "instructions/shared.md"), "utf8")) ===
+          "Live from Mac signal.\n"
+      ) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 40));
+    }
+
+    expect(await readFile(join(serverDataDir, "AGENTS.md"), "utf8")).toBe(
+      "Live from Mac signal.\n",
+    );
+    expect(await readFile(join(otherMirrorDir, "instructions/shared.md"), "utf8")).toBe(
+      "Live from Mac signal.\n",
+    );
+
+    // Emit worker exit during an active change -> must re-arm watch without throwing.
+    await harness.behavior.experimental_emitHostWorkerExit("host_mac");
+    await new Promise((r) => setTimeout(r, 100));
+  } finally {
+    service.controller.abort();
+    await service.done;
+  }
+});
+
+test("#16: syncManifestSchema rejects prototype/unsafe keys and fetchHostFiles does not infinite-loop on bogus missing paths", async () => {
+  expect(
+    syncManifestSchema.safeParse({
+      toString: { sha256: "a".repeat(64), executable: false, size: 1 },
+    }).success,
+  ).toBe(false);
+  expect(
+    syncManifestSchema.safeParse({
+      "../escape.md": { sha256: "a".repeat(64), executable: false, size: 1 },
+    }).success,
+  ).toBe(false);
+
+  const serverDataDir = await makeTemp("sync-16-server-");
+  let readCalls = 0;
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "agent-instructions",
+    dataDir: serverDataDir,
+    experimental_callHostRpc: async (call) => {
+      if (call.method === "mirrorEnsureWatch" || call.method === "mirrorSnapshot") {
+        return {
+          mirrorDir: "/fake/mirror",
+          manifest: {
+            "instructions/a.md": { sha256: "a".repeat(64), executable: false, size: 5 },
+          },
+          symlinks: [],
+          tooLarge: [],
+          truncated: false,
+        };
+      }
+      if (call.method === "mirrorReadFiles") {
+        readCalls++;
+        // Malicious/buggy host returns unrelated missing path instead of requested path.
+        return { files: [], missing: ["instructions/other.md"] };
+      }
+      return { applied: [], conflicts: [], manifest: {} };
+    },
+    sdk: {
+      subscribe: () => () => undefined,
+      system: { config: async () => ({ primaryHostId: "host_server" }) as never },
+      hosts: {
+        list: async () => [
+          makeHostResponse({ id: "host_server", name: "Server", status: "connected" }),
+          makeHostResponse({ id: "host_bad", name: "Bad Host", status: "connected" }),
+        ],
+      },
+      providers: { list: async () => [] },
+      projects: { list: async () => [] },
+    },
+  });
+  cleanup.push(() => harness.lifecycle.dispose());
+  await plugin(bb);
+
+  const res = await harness.behavior.runCli(["sync", "--host", "host_bad"]);
+  expect(res.exitCode).toBe(0);
+  // Broke out after 1 non-progressing batch instead of spinning forever.
+  expect(readCalls).toBe(1);
+});
+
+test("#31 & #32: sync --host scopes to one host and non-parsed files sync across hosts", async () => {
+  const { harness, serverSourceDir, macMirrorDir, otherMirrorDir } = await setupTwoHostEnv();
+  await writeText(join(serverSourceDir, "instructions/notes.txt"), "non-md synced note\n");
+
+  const macOnly = await harness.behavior.runCli(["sync", "--host", "host_mac"]);
+  expect(macOnly.exitCode).toBe(0);
+  expect(await readFile(join(macMirrorDir, "instructions/notes.txt"), "utf8")).toBe(
+    "non-md synced note\n",
+  );
+  // Build Linux was NOT synced when --host host_mac was passed!
+  expect(existsSync(join(otherMirrorDir, "instructions/notes.txt"))).toBe(false);
 });

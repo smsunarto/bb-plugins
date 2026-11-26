@@ -1,12 +1,5 @@
 import { cliCommand } from "@get-bb/plugin-sdk";
-import {
-  formatMigrationReport,
-  openReadOnlySqlite,
-  readLegacyRulesFile,
-  readLegacySqlite,
-  runMigration,
-  type LegacyData,
-} from "../../source/migrate.ts";
+import { formatMigrationReport, runMigration } from "../../source/migrate.ts";
 import type { AgentInstructionsContext } from "../lib/context.ts";
 
 export function migrateCommand(ctx: AgentInstructionsContext) {
@@ -19,59 +12,29 @@ export function migrateCommand(ctx: AgentInstructionsContext) {
       },
       force: {
         type: "boolean",
-        description: "Overwrite an existing non-empty target source folder",
-      },
-      "source-db": {
-        type: "string",
-        placeholder: "path",
-        description: "Path to a SQLite data.db copy (defaults to this plugin's data.db)",
-      },
-      "source-rules-json": {
-        type: "string",
-        placeholder: "path",
-        description: "Path to a JSON file containing legacy rules (defaults to plugin KV state)",
-      },
-      target: {
-        type: "string",
-        placeholder: "dir",
-        description: "Target source folder (defaults to this plugin's source/ directory)",
+        description: "Overwrite an existing non-empty source folder",
       },
       json: { type: "boolean", description: "Print the migration report as JSON" },
     },
     async run({ options }) {
-      let data: LegacyData;
-      if (options["source-db"] || options["source-rules-json"]) {
-        const sqlite = options["source-db"]
-          ? await (async () => {
-              const opened = await openReadOnlySqlite(options["source-db"]!);
-              try {
-                return readLegacySqlite(opened.db);
-              } finally {
-                opened.close();
-              }
-            })()
-          : { docs: [], skills: [], deleted: [] };
-        const rules = options["source-rules-json"]
-          ? await readLegacyRulesFile(options["source-rules-json"])
-          : [];
-        data = { ...sqlite, rules };
-      } else {
-        data = await ctx.store.readLegacyData();
-      }
-
-      const targetDir = options.target ?? ctx.store.sourceDir;
-      const isDefaultTarget = options.target === undefined;
-      const report = await runMigration({
-        data,
-        targetDir,
-        tmpDir: ctx.store.tmpDir,
-        markerPath: isDefaultTarget ? ctx.store.markerPath : undefined,
-        apply: options.apply === true,
-        force: options.force === true,
+      const report = await ctx.store.withLock(async () => {
+        const data = await ctx.store.readLegacyData({ lenient: true });
+        const result = await runMigration({
+          data,
+          targetDir: ctx.store.sourceDir,
+          tmpDir: ctx.store.tmpDir,
+          markerPath: ctx.store.markerPath,
+          apply: options.apply === true,
+          force: options.force === true,
+        });
+        if (result.applied) {
+          ctx.store.clearMigrationBlocked();
+          await ctx.store.reloadUnlocked("disk");
+        }
+        return result;
       });
 
-      if (report.applied && isDefaultTarget) {
-        await ctx.store.reloadFromDisk("disk");
+      if (report.applied) {
         await ctx.publisher.run();
       }
 
