@@ -151,6 +151,7 @@ If modifying an existing plugin:
 
 - Run `bb plugin source <id>` and make sure bb is loading the plugin from the correct local path instead of NPM installation, etc. If it's not, reinstall the plugin using local path source.
 - Reload without asking: once the checks above pass, run `bb plugin reload <id>` against the live bb and confirm it is running. Other agents' applied or uncommitted work in the live checkout is not a reason to wait or ask.
+- **If the change is under `packages/`:** bb rebuilds a plugin's `dist/app.js` only when a file in that plugin's own folder is newer, so reloading serves the old bundle. Before reloading, `touch` the `bb.app` entry from `package.json` of every plugin that imports the changed package. Then confirm each `dist/app.css` or `dist/app.js` contains the change.
 - **If another agent has uncommitted edits in the same plugin:** reload anyway when its typecheck and build pass with those edits. If they fail, wait for that agent's thread to go idle and reload then, as the global Version control instructions describe for a busy branch.
 - If the plugin cannot be reloaded, explicitly state that it was not reloaded and explain the blocking reason to the user. Never silently skip the reload.
 - Do not leave a development watcher targeting live; future edits belong in the test-instance loop.
