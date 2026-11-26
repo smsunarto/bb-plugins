@@ -59,7 +59,8 @@ async function resolveAll(
 
 export function add(ctx: AgentInstructionsContext) {
   return cliCommand({
-    summary: "Add an instruction rule, optionally scoped to hosts, providers, models, or projects",
+    summary:
+      "Add a global or scoped BB instruction rule (keep repo-only guidance in that repo's AGENTS.md or .agents/skills/)",
     positionals: [
       { name: "text", description: "The instructions", required: true, variadic: true },
     ],

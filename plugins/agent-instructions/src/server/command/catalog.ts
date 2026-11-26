@@ -3,7 +3,8 @@ import type { AgentInstructionsContext } from "../lib/context.ts";
 
 export function catalogCommand(ctx: AgentInstructionsContext) {
   return cliCommand({
-    summary: "Show the skills, global docs, and sync conflicts in the source folder",
+    summary:
+      "Show the global cross-project skills, global docs, and sync conflicts in the source folder",
     options: { json: { type: "boolean", description: "Print the catalog as JSON" } },
     async run({ options }) {
       await ctx.store.reloadFromDisk("disk");

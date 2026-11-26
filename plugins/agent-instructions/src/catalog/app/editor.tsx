@@ -64,8 +64,10 @@ function Overview({ listing }: { listing: CatalogListing }) {
       ))}
       <p className="pe-meta pe-wrap">
         bb gives every agent the enabled global instructions as one AGENTS.md, appends the rules
-        that match its machine, provider, model, or project, and lists the enabled skills. Edit
-        files here or directly in <code className="pe-mono">{listing.sourcePath}</code>.
+        that match its machine, provider, model, or project, and lists the enabled cross-project
+        skills. Edit files here or directly in <code className="pe-mono">{listing.sourcePath}</code>
+        . Keep repo-specific instructions and skills in that repository (AGENTS.md and
+        .agents/skills/) on the Projects tab.
       </p>
       {listing.conflicts.length > 0 && (
         <Alert variant="warning" role="alert">

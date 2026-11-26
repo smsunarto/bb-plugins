@@ -61,7 +61,8 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   bb.cli.register(
     defineCli({
       name: "agent-instructions",
-      summary: "CLI for the agent-instructions plugin",
+      summary:
+        "Manage global cross-project BB instructions, scoped rules, and shared skills (put repo-specific skills in <repo>/.agents/skills/<name>/, not here)",
       commands: {
         path: pathCommand(ctx),
         sync: syncCommand(ctx),

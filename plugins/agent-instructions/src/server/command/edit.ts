@@ -209,7 +209,7 @@ export function editCommands(ctx: AgentInstructionsContext, handlers: Handlers) 
 
   const commands: Record<string, PluginCliCommand> = {
     "skill show": cliCommand({
-      summary: "Print a catalog skill's file; stderr has the sha256 to pass to --expect",
+      summary: "Print a global catalog skill's file; stderr has the sha256 to pass to --expect",
       positionals: [
         { name: "name", description: "Skill name", required: true },
         { name: "path", description: "File in the skill. Defaults to SKILL.md" },
@@ -237,7 +237,8 @@ export function editCommands(ctx: AgentInstructionsContext, handlers: Handlers) 
     }),
 
     "skill create": cliCommand({
-      summary: "Create a catalog skill with a starter SKILL.md",
+      summary:
+        "Create a global cross-project skill (published to every BB thread/host; put repo- or project-specific skills in <repo>/.agents/skills/<name>/ instead)",
       positionals: [
         {
           name: "name",
@@ -250,7 +251,8 @@ export function editCommands(ctx: AgentInstructionsContext, handlers: Handlers) 
           type: "string",
           required: true,
           placeholder: "text",
-          description: "What the skill does and when to use it",
+          description:
+            "What the cross-project skill does and when to use it (use <repo>/.agents/skills/ instead if tied to one repo)",
         },
         json,
       },
@@ -263,7 +265,8 @@ export function editCommands(ctx: AgentInstructionsContext, handlers: Handlers) 
     }),
 
     "skill write": cliCommand({
-      summary: "Replace or create one file of a catalog skill",
+      summary:
+        "Replace or create one file of a global cross-project catalog skill (not for repo-specific skills under <repo>/.agents/skills/)",
       positionals: [
         { name: "name", description: "Skill name", required: true },
         { name: "path", description: "File in the skill, such as SKILL.md", required: true },
@@ -294,7 +297,7 @@ export function editCommands(ctx: AgentInstructionsContext, handlers: Handlers) 
     }),
 
     "skill delete": cliCommand({
-      summary: "Delete a file of a catalog skill, or the whole skill when no path is given",
+      summary: "Delete a file of a global catalog skill, or the whole skill when no path is given",
       positionals: [
         { name: "name", description: "Skill name", required: true },
         { name: "path", description: "File to delete. Omit it to delete the skill" },
