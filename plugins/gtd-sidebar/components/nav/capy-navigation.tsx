@@ -1,4 +1,4 @@
-import { memo, useRef, type MouseEvent } from "react";
+import { Fragment, memo, useRef, type MouseEvent } from "react";
 import {
   experimental_ShortcutHint as ShortcutHint,
   experimental_SidebarNavigationIcon as NavigationIcon,
@@ -27,6 +27,8 @@ import {
 } from "../ui/dropdown-menu";
 import { Icon } from "../hugeicon";
 import { MenuSurface } from "../inbox/menu-surface";
+import { useCaptainAvailable } from "../../hooks/use-captain";
+import { openNewCaptain } from "../../lib/sidebar-actions-bridge";
 import { markScrolled, revealFocusedRow, useNavScroll } from "./nav-scroll";
 
 const ROW_CLASS = cn(
@@ -44,14 +46,18 @@ function activationTarget(event: MouseEvent): "current" | "tab" {
   return event.metaKey || event.ctrlKey || event.button === 1 ? "tab" : "current";
 }
 
+export const NEW_CAPTAIN_NAV_ITEM_ID = "gtd-sidebar/new-captain";
+
 export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigationProps) {
   const navigation = useSidebarNavigation();
   const { items, activeItemId, isShortcutModifierHeld, actions } = navigation;
+  const captainAvailable = useCaptainAvailable();
   const isCoarsePointer = usePointerCoarse();
   const isPhone = isCompactViewport && isCoarsePointer;
   const hidden = items.filter((item) => !item.isVisible);
   const visible = items.filter((item) => item.isVisible);
-  const scroller = useNavScroll(activeItemId, isPhone, visible.length);
+  const newThreadIndex = visible.findIndex((item) => item.action.kind === "new-thread");
+  const scroller = useNavScroll(activeItemId, isPhone, visible.length + (captainAvailable ? 1 : 0));
 
   return (
     <ContextMenu>
@@ -68,14 +74,17 @@ export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigat
             onScroll={markScrolled}
             onFocus={revealFocusedRow}
           >
-            {visible.map((item) => (
-              <NavigationRow
-                key={item.id}
-                item={item}
-                isActive={item.id === activeItemId}
-                showShortcut={isShortcutModifierHeld}
-                actions={actions}
-              />
+            {captainAvailable && newThreadIndex === -1 ? <NewCaptainRow /> : null}
+            {visible.map((item, index) => (
+              <Fragment key={item.id}>
+                <NavigationRow
+                  item={item}
+                  isActive={item.id === activeItemId}
+                  showShortcut={isShortcutModifierHeld}
+                  actions={actions}
+                />
+                {captainAvailable && index === newThreadIndex ? <NewCaptainRow /> : null}
+              </Fragment>
             ))}
           </div>
           {hidden.length > 0 ? <MoreRow hidden={hidden} actions={actions} /> : null}
@@ -90,6 +99,25 @@ export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigat
         </ContextMenuGroup>
       </MenuSurface>
     </ContextMenu>
+  );
+}
+
+/**
+ * Starts a new Captain through the mounted inbox's dialog. Uses the navigation
+ * row styling and item attribute so desktop and phone layouts match New thread
+ * and Search without extra rules.
+ */
+function NewCaptainRow() {
+  return (
+    <button
+      type="button"
+      data-sidebar-navigation-item={NEW_CAPTAIN_NAV_ITEM_ID}
+      className={ROW_CLASS}
+      onClick={() => openNewCaptain()}
+    >
+      <Icon name="Anchor" className="gtd-nav-icon size-3.5 shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1 truncate">New Captain</span>
+    </button>
   );
 }
 

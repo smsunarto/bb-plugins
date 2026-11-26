@@ -4,10 +4,13 @@ import type { ExperimentalSidebarNavigationItem } from "@get-bb/plugin-sdk/app";
 import { installDom } from "@bb-plugins/testing";
 
 installDom();
-const { cleanup, fireEvent } = await import("@testing-library/react");
+const { act, cleanup, fireEvent, waitFor } = await import("@testing-library/react");
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
-const { CapyNavigation } = await import("../components/nav/capy-navigation.tsx");
+const { CapyNavigation, NEW_CAPTAIN_NAV_ITEM_ID } =
+  await import("../components/nav/capy-navigation.tsx");
+const { forgetSidebarActions, publishSidebarActions } =
+  await import("../lib/sidebar-actions-bridge.ts");
 
 const SEARCH = "__bb__/search-threads";
 const originalMatchMedia = window.matchMedia;
@@ -46,10 +49,15 @@ function items(
 
 function mount(
   list = items(),
-  options: { isShortcutModifierHeld?: boolean; activeItemId?: string | null } = {},
+  options: {
+    isShortcutModifierHeld?: boolean;
+    activeItemId?: string | null;
+    plugins?: readonly { id: string; enabled: boolean; status: string }[];
+  } = {},
   isCompactViewport = false,
   coarsePointer = isCompactViewport,
 ): ReturnType<typeof renderSlot> {
+  const { plugins, ...sidebarNavigation } = options;
   window.matchMedia = (query) => ({
     media: query,
     matches: coarsePointer && query === "(pointer: coarse)",
@@ -63,7 +71,14 @@ function mount(
   return renderSlot(
     { component: CapyNavigation },
     { isCompactViewport, placement: "list", experimental_Original: () => null },
-    { sidebarNavigation: { items: list, activeItemId: null, ...options } },
+    {
+      sidebarNavigation: { items: list, activeItemId: null, ...sidebarNavigation },
+      sdk: {
+        plugins: {
+          list: async () => ({ plugins: plugins ?? [] }) as never,
+        },
+      },
+    },
   );
 }
 
@@ -159,6 +174,58 @@ describe("CapyNavigation", () => {
     };
     assert.deepEqual(row(true), { text: "Search threadsCtrl K", keys: "Control+K" });
     assert.deepEqual(row(false), { text: "Search threads", keys: "Control+K" });
+  });
+
+  describe("New Captain entry", () => {
+    const CAPTAIN_RUNNING = [{ id: "captain", enabled: true, status: "running" }];
+
+    it("does not render when Captain is absent or disabled", async () => {
+      const absent = mount();
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      assert.equal(absent.queryByRole("button", { name: "New Captain" }), null);
+      cleanup();
+
+      const disabled = mount(items(), {
+        plugins: [{ id: "captain", enabled: false, status: "disabled" }],
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      assert.equal(disabled.queryByRole("button", { name: "New Captain" }), null);
+    });
+
+    it.each([false, true])(
+      "renders beside New thread and Search on compact=%s when Captain runs and opens New Captain",
+      async (compact) => {
+        let opened = 0;
+        const published = {
+          settle() {},
+          canSettle: () => false,
+          openNewCaptain: () => {
+            opened += 1;
+          },
+        };
+        publishSidebarActions(published);
+        try {
+          const slot = mount(items(), { plugins: CAPTAIN_RUNNING }, compact, compact);
+          const button = await slot.findByRole("button", { name: "New Captain" });
+          await waitFor(() =>
+            assert.deepEqual(rowIds(slot), [
+              "__bb__/new-thread",
+              NEW_CAPTAIN_NAV_ITEM_ID,
+              SEARCH,
+              "__bb__/extensions",
+            ]),
+          );
+          fireEvent.click(button);
+          assert.equal(opened, 1);
+        } finally {
+          forgetSidebarActions(published);
+        }
+      },
+    );
   });
 
   describe("phone scrolling", () => {

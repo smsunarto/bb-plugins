@@ -243,6 +243,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     "useRowDescribedBy",
   );
   const { ThreadInbox } = await import("../components/inbox/thread-inbox.tsx");
+  const { CapyNavigation } = await import("../components/nav/capy-navigation.tsx");
   const { HeaderSettle } = await import("../components/header/header-settle.tsx");
   const { useCommittedEvent } = await import("../hooks/use-committed-event.ts");
   const { openNewCaptain: triggerNewCaptain, settleThread } =
@@ -3440,6 +3441,82 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.match(alert.textContent ?? "", /no thread storage yet; bb host list/);
       assert.equal(host.actions.open.mock.calls.length, 0);
       assert.ok(screen.getByRole("dialog", { name: "New Captain" }));
+    });
+
+    it("clicking New Captain in sidebar navigation opens the dialog and starts a Captain", async () => {
+      const sent: unknown[] = [];
+      const host = {
+        ...hostState([thread("t1"), thread("t2", { projectId: "two" })]),
+        plugins: CAPTAIN_RUNNING,
+      };
+      const slot = renderSlot(
+        {
+          component: ({ host: currentHost }: { host: HostState }) =>
+            createElement(
+              HostContext.Provider,
+              { value: currentHost },
+              createElement(CapyNavigation, {
+                isCompactViewport: false,
+                placement: "list",
+                experimental_Original: () => null,
+              }),
+              createElement(ThreadInbox, {
+                activeProjectId: null,
+                activeThreadId: null,
+                isCompactViewport: false,
+                onNavigate: () => {},
+                searchQuery: "",
+              }),
+            ),
+        },
+        { host },
+        {
+          sidebarNavigation: {
+            items: [
+              {
+                id: "__bb__/new-thread",
+                label: "New thread",
+                icon: { kind: "host", name: "new-thread" },
+                action: { kind: "new-thread" },
+                isDisabled: false,
+                isVisible: true,
+                isLoading: false,
+                pluginId: null,
+                shortcut: null,
+                badge: null,
+              },
+            ],
+            activeItemId: null,
+          },
+          rpc: {
+            captains: async () => ({ ids: [] }),
+            needsYou: async () => ({}),
+            newCaptain: async (input: unknown) => {
+              sent.push(input);
+              return { ok: true, threadId: "thr_from_nav", state: "started", warnings: [] };
+            },
+          } as never,
+        },
+      );
+      const navButton = await slot.findByRole("button", { name: "New Captain" });
+      fireEvent.click(navButton);
+      const dialog = within(await screen.findByRole("dialog", { name: "New Captain" }));
+      assert.equal(
+        dialog.getByRole("checkbox", { name: "One" }).getAttribute("aria-checked"),
+        "false",
+      );
+      assert.equal(
+        dialog.getByRole("checkbox", { name: "Two" }).getAttribute("aria-checked"),
+        "false",
+      );
+      fireEvent.change(dialog.getByRole("textbox", { name: "Name" }), {
+        target: { value: "Nav Captain" },
+      });
+      fireEvent.click(dialog.getByRole("checkbox", { name: "One" }));
+      fireEvent.click(dialog.getByRole("button", { name: "Start Captain" }));
+      await waitFor(() => assert.equal(host.actions.open.mock.calls.length, 1));
+      assert.deepEqual(sent, [{ name: "Nav Captain", repos: ["one"] }]);
+      assert.equal(host.actions.open.mock.calls[0]![0], "thr_from_nav");
     });
   });
 }
