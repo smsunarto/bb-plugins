@@ -6,7 +6,7 @@
 // check_ui reports those so the agent fixes them before replying.
 import type { Program } from "./ast";
 import type { LoadedData } from "./data";
-import { evaluate } from "./evaluate";
+import { applyWatchers, evaluate } from "./evaluate";
 import type { Binding, Diagnostic, UiNode, UiState, Value } from "./types";
 
 /** Interactions tried per block, as in Zeron's visual preflight. */
@@ -53,9 +53,11 @@ export function probeInteractions(
   const failures: ProbeFailure[] = [];
   const interactionRoots: (readonly UiNode[])[] = [];
   for (const probe of probes) {
-    const { roots, diagnostics } = evaluate(program, { ...state, [probe.name]: probe.value }, data);
+    const watched = applyWatchers(program, state, { ...state, [probe.name]: probe.value }, data);
+    const { roots, diagnostics } = evaluate(program, watched.state, data);
     interactionRoots.push(roots);
-    const added = diagnostics.filter((d) => d.severity === "error" && !baseline.has(diagnosticKey(d)));
+    const allDiagnostics = [...watched.diagnostics, ...diagnostics];
+    const added = allDiagnostics.filter((d) => d.severity === "error" && !baseline.has(diagnosticKey(d)));
     if (added.length > 0) failures.push({ probe, diagnostics: added });
   }
   return { tried: probes.length, failures, interactionRoots };

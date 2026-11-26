@@ -21,6 +21,7 @@ import { list, nodes, type Props } from "../values";
 import { actionIntent, sendEffect, type SendEffect } from "./action-logic";
 import { cardOptions, followUpPrompts, sameColor, swatchColors, togglePick, type CardOption } from "./choose-logic";
 import { CheckMark, ErrorLine } from "./display";
+import { FieldValidationMessage, useFieldValidation } from "./fieldValidation";
 import { ActionHint, CAPTION, InMessageLine, SentLine, useClosedChoices } from "./inputs";
 import { useImageUrl, type ImageState } from "./media";
 import { reducedMotion, RISE, useEntrance } from "./motion";
@@ -185,11 +186,13 @@ export function OptionCards({ props }: { props: PropsOf<"OptionCards"> }) {
   const { setValue } = useUiRuntime();
   const labelId = useId();
   const binding = props.value;
+  const validation = useFieldValidation(binding.value, props.checks, "OptionCards");
   const options = cardOptions(props.options);
   const values: Scalar[] = options.map((option) => option.value);
   const multiple = Array.isArray(binding.value);
   const picked = multiple ? list(binding.value) : [binding.value];
   const { group, onKeyDown } = useRovingRadios((index) => {
+    validation.touch();
     if (!multiple) setValue(binding.name, values[index] ?? null);
   });
   if (options.length === 0) return null;
@@ -214,6 +217,8 @@ export function OptionCards({ props }: { props: PropsOf<"OptionCards"> }) {
           role={multiple ? "group" : "radiogroup"}
           aria-labelledby={label === null ? undefined : labelId}
           aria-label={label === null ? binding.name : undefined}
+          aria-invalid={validation.showError || undefined}
+          aria-describedby={validation.showError ? validation.errorId : undefined}
           onKeyDown={multiple ? undefined : onKeyDown}
           className="grid min-w-0 gap-2"
           style={grid}
@@ -228,11 +233,15 @@ export function OptionCards({ props }: { props: PropsOf<"OptionCards"> }) {
               multiple={multiple}
               // Roving focus for radios: Tab lands on the selected option, else the first.
               tabIndex={multiple || index === Math.max(0, selected) ? 0 : -1}
-              onSelect={() => setValue(binding.name, multiple ? togglePick(picked, option.value, values) : option.value)}
+              onSelect={() => {
+                validation.touch();
+                setValue(binding.name, multiple ? togglePick(picked, option.value, values) : option.value);
+              }}
             />
           ))}
         </div>
       </ViewerGroup>
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }
@@ -255,10 +264,14 @@ export function Swatches({ props }: { props: PropsOf<"Swatches"> }) {
   const labelId = useId();
   const binding = props.value ?? null;
   const picker = binding !== null;
+  const validation = useFieldValidation(binding?.value ?? null, picker ? props.checks : undefined, "Swatches");
   const parsed = swatchColors(props.colors, isCssColor);
   const colors = parsed.colors;
   const { group, onKeyDown } = useRovingRadios((index) => {
-    if (picker && colors[index] !== undefined) setValue(binding.name, colors[index].value);
+    if (picker && colors[index] !== undefined) {
+      validation.touch();
+      setValue(binding.name, colors[index].value);
+    }
   });
   const label = props.label ?? null;
   const selected = picker ? colors.findIndex((color) => sameColor(binding.value, color.value)) : -1;
@@ -295,16 +308,20 @@ export function Swatches({ props }: { props: PropsOf<"Swatches"> }) {
               role={picker ? "radio" : undefined}
               tabIndex={picker ? (index === Math.max(0, selected) ? 0 : -1) : 0}
               ariaLabel={picker ? shown : `Copy ${shown}`}
-              onClick={() =>
-                picker
-                  ? setValue(binding.name, color.value)
-                  : run([{ kind: "action", type: "copy", text: color.value }])
-              }
+              onClick={() => {
+                if (picker) {
+                  validation.touch();
+                  setValue(binding.name, color.value);
+                } else {
+                  void run([{ kind: "action", type: "copy", text: color.value }]);
+                }
+              }}
             />
           );
         })}
       </div>
       {invalid}
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import type { ArrowExpr, CallExpr, Expr, Program } from "./ast";
 import { CONSTANTS, FORBIDDEN_PROPERTIES, LIMITS, type ComponentName, type ComponentSpec, type ParamSpec } from "./catalog";
+import { validateCheckListRuntime } from "./checks";
 import { DiagnosticList, type Pos } from "./diagnostics";
 import { dataKey, languageOf, loadsReached, snippetLines, snippetRangeError, type LoadedData, type SnippetShown } from "./data";
 import { sceneErrors } from "./scene";
@@ -547,13 +548,17 @@ class Interpreter {
     return node;
   }
 
-  private component(call: CallExpr, spec: ComponentSpec, scope: Scope | null): UiNode {
+  private component(call: CallExpr, spec: ComponentSpec, scope: Scope | null): UiNode | null {
     const key = `${call.pos.line}:${call.pos.column}${this.suffix}`;
     // COMPONENT_SPECS only holds catalog names.
     const type = call.name as ComponentName;
     const depth = this.depth;
     const suffix = this.suffix;
     try {
+      const visibleArg = call.named.find((arg) => arg.name === "visible");
+      if (visibleArg !== undefined && !truthy(this.expr(visibleArg.value, scope))) {
+        return null;
+      }
       const props: Record<string, Value> = {};
       spec.params.forEach((param, index) => {
         const arg = argument(call, spec.params, index);
@@ -561,6 +566,10 @@ class Interpreter {
         const value = this.param(param, arg, scope, `${call.name} ${param.name}`, key);
         if (value !== undefined) props[param.name] = value;
       });
+      if (props.checks !== undefined && isList(props.checks)) {
+        const problem = validateCheckListRuntime(props.checks);
+        if (problem !== null) throw new RuntimeError(call.pos, `${type} checks: ${problem}`);
+      }
       if (isSourced(type) && props.source === undefined) {
         const from = this.loadedFrom(call, spec);
         if (from.length > 0) props.loadedFrom = from;
@@ -708,7 +717,7 @@ class Interpreter {
     return out;
   }
 
-  private actions(value: Value, pos: Pos, label: string): Action[] {
+  actions(value: Value, pos: Pos, label: string): Action[] {
     const out: Action[] = [];
     const visit = (item: Value): void => {
       if (item === null || item === false) return;
@@ -953,6 +962,90 @@ export function initialState(program: Program, data = NO_DATA): Record<string, V
     }
   }
   return values;
+}
+
+/** Maximum cascading passes `applyWatchers` runs before breaking out of a cycle. */
+export const MAX_WATCH_PASSES = 8;
+
+function valueEquals(a: Value | undefined, b: Value | undefined): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined || a === null || b === null) return false;
+  if (typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((item, index) => valueEquals(item, b[index]));
+  }
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  const oa = a as PlainObject;
+  const ob = b as PlainObject;
+  return ka.every((key) => Object.hasOwn(ob, key) && valueEquals(oa[key], ob[key]));
+}
+
+/**
+ * Runs top-level `Watch($state, Set(...))` rules triggered by differences
+ * between `previous` and `next`. Evaluates watcher actions against the latest
+ * state and cascades up to `MAX_WATCH_PASSES` passes until state settles.
+ */
+export function applyWatchers(
+  program: Program,
+  previous: UiState,
+  next: UiState,
+  data = NO_DATA,
+): { readonly state: UiState; readonly changed: readonly string[]; readonly diagnostics: readonly Diagnostic[] } {
+  const watches = program.watches ?? [];
+  if (watches.length === 0) return { state: next, changed: [], diagnostics: [] };
+  const pending = new Set<string>();
+  const allKeys = new Set([...Object.keys(previous), ...Object.keys(next)]);
+  for (const key of allKeys) {
+    if (!valueEquals(previous[key], next[key])) pending.add(key);
+  }
+  if (pending.size === 0) return { state: next, changed: [], diagnostics: [] };
+
+  const current: Record<string, Value> = { ...next };
+  const cascaded = new Set<string>();
+  const diagnostics = new DiagnosticList();
+  let active = pending;
+  let passes = 0;
+
+  while (active.size > 0) {
+    if (++passes > MAX_WATCH_PASSES) {
+      diagnostics.report(
+        watches[0].pos,
+        `Watch rules did not settle after ${MAX_WATCH_PASSES} passes; check for a Watch cycle`,
+      );
+      break;
+    }
+    const nextActive = new Set<string>();
+    for (const watch of watches) {
+      if (!watch.targets.some((target) => active.has(target))) continue;
+      const interpreter = new Interpreter(program, current, data);
+      let actions: Action[] = [];
+      try {
+        actions = interpreter.actions(interpreter.expr(watch.action, null), watch.action.pos, "Watch action");
+      } catch (error) {
+        interpreter.recover(error, 0, "");
+      }
+      for (const d of interpreter.diagnostics.items) {
+        diagnostics.report({ line: d.line, column: d.column }, d.message, d.severity);
+      }
+      for (const action of actions) {
+        if (action.type !== "set") {
+          diagnostics.report(watch.pos, "`Watch` can only run `Set($state, value)` updates");
+          continue;
+        }
+        if (Object.hasOwn(current, action.name) && !valueEquals(current[action.name], action.value)) {
+          current[action.name] = action.value;
+          cascaded.add(action.name);
+          nextActive.add(action.name);
+        }
+      }
+    }
+    active = nextActive;
+  }
+
+  return { state: current, changed: [...cascaded], diagnostics: diagnostics.items };
 }
 
 /** Renders the program's roots against `state`, with `data` holding the files `Load` and `Snippet` read (keyed by `dataKey`). Failures become Error nodes plus diagnostics. */

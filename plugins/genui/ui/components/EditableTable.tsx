@@ -20,6 +20,7 @@ import {
   type TableRow,
 } from "./choose-logic";
 import { ErrorLine } from "./display";
+import { FieldValidationMessage, useFieldValidation } from "./fieldValidation";
 import { CAPTION } from "./inputs";
 import { RISE, useEntrance } from "./motion";
 import { Input } from "@/components/ui/input";
@@ -57,6 +58,7 @@ export function EditableTable({ props }: { props: PropsOf<"EditableTable"> }) {
     root.current?.querySelector<HTMLElement>(selector)?.focus();
   });
   const binding = props.value;
+  const validation = useFieldValidation(binding.value, props.checks, "EditableTable");
   const rows = tableRows(binding.value);
   if (rows === null) return <ErrorLine message="EditableTable rows must be objects, one per row" />;
   const columns = tableColumns(props.columns, rows);
@@ -66,10 +68,12 @@ export function EditableTable({ props }: { props: PropsOf<"EditableTable"> }) {
   const grid = { "--cols": [...columns.map((column) => TRACK[column.type]), "2rem"].join(" ") } as CSSProperties;
 
   const add = () => {
+    validation.touch();
     pendingFocus.current = `[data-row="${rows.length}"] [data-field]`;
     setValue(binding.name, [...rows, blankRow(columns)]);
   };
   const remove = (index: number) => {
+    validation.touch();
     pendingFocus.current = index < rows.length - 1 ? `[data-row="${index}"] [data-remove]` : "[data-add]";
     setValue(
       binding.name,
@@ -139,6 +143,7 @@ export function EditableTable({ props }: { props: PropsOf<"EditableTable"> }) {
         <Icon name="Plus" aria-hidden className="size-3.5" />
         Add row
       </BaseButton>
+      <FieldValidationMessage id={validation.errorId} message={validation.showError ? validation.firstError : null} />
     </div>
   );
 }

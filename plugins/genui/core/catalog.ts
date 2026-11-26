@@ -83,6 +83,8 @@ const label = { name: "label", kind: "string", optional: true } as const;
 const children = { name: "children", kind: "nodes" } as const;
 /** Where a Table's, Chart's or Metric's numbers come from; a quiet caption under it. */
 const source = { name: "source", kind: "string", optional: true, unlisted: true } as const;
+/** Declarative validation rules on a bound input; listed once in the reference instead of per signature. */
+const checks = { name: "checks", kind: "list", optional: true, unlisted: true } as const;
 
 export const COMPONENTS = {
   Card: {
@@ -250,6 +252,7 @@ export const COMPONENTS = {
       { name: "max", kind: "number" },
       { name: "step", kind: "number", optional: true },
       label,
+      checks,
     ],
   },
   Stepper: {
@@ -260,6 +263,7 @@ export const COMPONENTS = {
       { name: "max", kind: "number", optional: true },
       { name: "step", kind: "number", optional: true },
       label,
+      checks,
     ],
     summary: "counts",
   },
@@ -268,26 +272,27 @@ export const COMPONENTS = {
     params: [
       { name: "value", kind: "binding", holds: "boolean" },
       { name: "label", kind: "string" },
+      checks,
     ],
   },
   Choice: {
     group: "Inputs",
-    params: [{ name: "value", kind: "binding", holds: "scalar" }, { name: "options", kind: "list" }, label],
+    params: [{ name: "value", kind: "binding", holds: "scalar" }, { name: "options", kind: "list" }, label, checks],
     summary: "short options",
   },
   Radio: {
     group: "Inputs",
-    params: [{ name: "value", kind: "binding", holds: "scalar" }, { name: "options", kind: "list" }, label],
+    params: [{ name: "value", kind: "binding", holds: "scalar" }, { name: "options", kind: "list" }, label, checks],
     summary: "{value,detail} options",
   },
   Select: {
     group: "Inputs",
-    params: [{ name: "value", kind: "binding", holds: "scalar" }, { name: "options", kind: "list" }, label],
+    params: [{ name: "value", kind: "binding", holds: "scalar" }, { name: "options", kind: "list" }, label, checks],
     summary: "many options",
   },
   Checklist: {
     group: "Inputs",
-    params: [{ name: "value", kind: "binding", holds: "list" }, { name: "options", kind: "list" }, label],
+    params: [{ name: "value", kind: "binding", holds: "list" }, { name: "options", kind: "list" }, label, checks],
     summary: "multi-select, state []",
   },
   ListEditor: {
@@ -296,6 +301,7 @@ export const COMPONENTS = {
       { name: "value", kind: "binding", holds: "list" },
       label,
       { name: "placeholder", kind: "string", optional: true },
+      checks,
     ],
     summary: "editable list of strings",
   },
@@ -305,6 +311,7 @@ export const COMPONENTS = {
       { name: "value", kind: "binding", holds: "text" },
       label,
       { name: "placeholder", kind: "string", optional: true },
+      checks,
     ],
   },
   TextArea: {
@@ -313,11 +320,12 @@ export const COMPONENTS = {
       { name: "value", kind: "binding", holds: "text" },
       label,
       { name: "placeholder", kind: "string", optional: true },
+      checks,
     ],
   },
   DateInput: {
     group: "Inputs",
-    params: [{ name: "value", kind: "binding", holds: "text" }, label],
+    params: [{ name: "value", kind: "binding", holds: "text" }, label, checks],
     summary: "yyyy-mm-dd",
   },
   Rating: {
@@ -326,6 +334,7 @@ export const COMPONENTS = {
       { name: "value", kind: "binding", holds: "number" },
       { name: "max", kind: "number", optional: true },
       label,
+      checks,
     ],
   },
   Button: {
@@ -470,7 +479,7 @@ export const COMPONENTS = {
   },
   OptionCards: {
     group: "Inputs",
-    params: [{ name: "value", kind: "binding" }, { name: "options", kind: "list" }, label],
+    params: [{ name: "value", kind: "binding" }, { name: "options", kind: "list" }, label, checks],
     summary: "picture or detail options {value, title?, detail?, image?, icon?}; a list state picks several",
   },
   Swatches: {
@@ -479,12 +488,13 @@ export const COMPONENTS = {
       { name: "colors", kind: "list" },
       { name: "value", kind: "binding", holds: "text", optional: true },
       label,
+      checks,
     ],
     summary: "CSS colors or {value, name?}; with a $state the user picks one",
   },
   EditableTable: {
     group: "Inputs",
-    params: [{ name: "value", kind: "binding", holds: "list" }, { name: "columns", kind: "list" }, label],
+    params: [{ name: "value", kind: "binding", holds: "list" }, { name: "columns", kind: "list" }, label, checks],
     summary: "state: list of row objects; columns: keys or {key, label?, type?: text|number|boolean}",
   },
   FollowUps: {

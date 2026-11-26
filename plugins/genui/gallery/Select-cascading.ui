@@ -1,0 +1,13 @@
+$cloud = "AWS"
+$region = "us-east-1"
+$tier = "t3.medium"
+regions = {AWS: ["us-east-1", "us-west-2", "eu-west-1"], GCP: ["us-central1", "us-east1", "europe-west1"], Azure: ["eastus", "westus2", "westeurope"]}
+tiers = {AWS: ["t3.micro", "t3.medium", "m6i.large"], GCP: ["e2-micro", "e2-standard-2", "n2-standard-4"], Azure: ["B1s", "D2s_v5", "D4s_v5"]}
+Watch($cloud, [Set($region, regions[$cloud][0]), Set($tier, tiers[$cloud][0])])
+Card("Cloud deployment", [Form([
+  Row([
+    Select($cloud, ["AWS", "GCP", "Azure"], label: "Provider"),
+    Select($region, regions[$cloud], label: "Region"),
+    Select($tier, tiers[$cloud], label: "Instance")
+  ])
+])])

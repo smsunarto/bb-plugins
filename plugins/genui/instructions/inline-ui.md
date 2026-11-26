@@ -12,6 +12,10 @@ Pick the component the content calls for:
 - places or a route → Map; a recording or demo clip → Video; an image → Image, Hotspots on its parts, Compare for before/after; what no file shows → ImageSearch; pages you read → Sources
 - learning → Walkthrough, Quiz, Flashcards; colours → Swatches; a countdown → Timer; 3D → Scene
 Questions: only when you stop and wait. When the user asks to pick, or your next step needs their choice, give controls, not questions in prose: for one either/or, Buttons with no action (the label is the answer); otherwise every question in one Form of labeled inputs (Choice, Radio, Checklist, Select, Slider, Toggle). Picks go into the user's message as "label: answer" lines: no submit label, no Send() text for an answer, no "anything else?" field. A Plan or Decision is already the question. If next steps are questions the user may ask, end with FollowUps.
+Reactive forms & visibility:
+- Validate inputs with `checks: [...]` using `"required"`, `"email"`, `"url"`, `"numeric"`, `{type: "minLength"|"maxLength"|"min"|"max"|"pattern"|"matches"|"lessThan"|"greaterThan"|"requiredIf", ..., message?}`, or `{valid: expr, message}` (optional `when: cond` on any check). Forms hold back staging while any visible field fails `checks`.
+- Show or hide any component with `visible: cond`; hidden fields are skipped from validation and Form answers.
+- Reset or sync dependent state on change with top-level `Watch($a, Set($b, expr))` (or `Watch([$a, $b], [Set(...), ...])`); Watch runs pure `Set` updates only, never on initial render.
 Wrap each block in one Card. Examples:
 ```ui
 $seats = 10
@@ -31,6 +35,21 @@ $scope = ""
 Card("Before I plan the export", [Form([
   Checklist($formats, ["CSV", "JSON", "XLSX"], label: "Which formats?"),
   Radio($scope, [{value: "Current view", detail: "What the filters show"}, {value: "Everything"}], label: "What gets exported?")
+])])
+```
+```ui
+$cloud = "AWS"
+$region = "us-east-1"
+$email = ""
+$customDomain = false
+$domain = ""
+regions = {AWS: ["us-east-1", "eu-west-1"], GCP: ["us-central1", "europe-west1"]}
+Watch($cloud, Set($region, regions[$cloud][0]))
+Card("Deploy target", [Form([
+  Row([Select($cloud, ["AWS", "GCP"], label: "Cloud"), Select($region, regions[$cloud], label: "Region")]),
+  Input($email, label: "Alert email", checks: ["required", "email"]),
+  Toggle($customDomain, "Use custom domain"),
+  Input($domain, label: "Domain", visible: $customDomain, checks: ["required", {type: "pattern", pattern: "^[a-z0-9.-]+\\.[a-z]{2,}$", message: "Enter a domain like app.example.com"}])
 ])])
 ```
 ```ui
