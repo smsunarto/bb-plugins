@@ -185,7 +185,7 @@ function askRow(ask: Ask): StatusRow {
     return {
       ...base,
       state: "health",
-      note: `answer ${answer} not delivered after ${ask.deliveryAttempts} sends; retry: bb captain ask resolve ${ask.id} --answer ${answer}${at}`,
+      note: `answer ${answer} not delivered after ${ask.deliveryAttempts} sends${at}; retry: bb captain ask resolve ${ask.id} --answer ${answer}`,
       since: ask.answeredAt,
       changedAt,
     };

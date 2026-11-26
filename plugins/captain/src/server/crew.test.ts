@@ -929,7 +929,7 @@ describe("bb captain verdict", () => {
       `a2  undelivered  BBPLUGINS-1  answer "Merge" not delivered · Merge BBPLUGINS-1: Render PR images @${head}`,
     );
     expect(healthStatus.stdout).toContain(
-      `a2  health  answer "Merge" not delivered after 6 sends; retry: bb captain ask resolve a2 --answer "Merge" @${head}`,
+      `a2  health  answer "Merge" not delivered after 6 sends @${head}; retry: bb captain ask resolve a2 --answer "Merge"`,
     );
     const askStatusRow = (
       JSON.parse(statusJson.stdout) as { rows: { id: string; head: string | null }[] }
