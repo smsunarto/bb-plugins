@@ -73,6 +73,19 @@
         "typescript": "^6.0.0",
       },
     },
+    "packages/header-bar": {
+      "name": "@bb-plugins/header-bar",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/react": "^19.0.0",
+        "bun-types": "^1.4.0",
+        "react": "19.2.8",
+        "typescript": "^6.0.0",
+      },
+      "peerDependencies": {
+        "react": "^19.0.0",
+      },
+    },
     "packages/instructions": {
       "name": "@bb-plugins/instructions",
       "version": "0.1.0",
@@ -308,6 +321,7 @@
         "zod": "^4.4.3",
       },
       "devDependencies": {
+        "@bb-plugins/header-bar": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
         "@get-bb/plugin-sdk": "0.6.157",
         "@radix-ui/react-dialog": "^1.1.19",
@@ -539,6 +553,7 @@
         "zod": "^4.4.3",
       },
       "devDependencies": {
+        "@bb-plugins/header-bar": "workspace:*",
         "@bb-plugins/testing": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
         "@get-bb/plugin-sdk": "0.6.157",
@@ -652,6 +667,7 @@
         "zustand": "^5.0.16",
       },
       "devDependencies": {
+        "@bb-plugins/header-bar": "workspace:*",
         "@bb-plugins/review-request": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
         "@get-bb/plugin-sdk": "0.6.157",
@@ -959,6 +975,8 @@
     "@bb-plugins/codex-inference": ["@bb-plugins/codex-inference@workspace:packages/codex-inference"],
 
     "@bb-plugins/effect-bridge": ["@bb-plugins/effect-bridge@workspace:packages/effect-bridge"],
+
+    "@bb-plugins/header-bar": ["@bb-plugins/header-bar@workspace:packages/header-bar"],
 
     "@bb-plugins/icons": ["@bb-plugins/icons@workspace:packages/bb-kit-icons"],
 
