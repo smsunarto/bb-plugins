@@ -22,6 +22,7 @@ import { ManagePanel } from "../views/manage/manage-panel.js";
 import { ViewEmptyState } from "../components/empty-state.js";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { isNonImeKey } from "@/lib/ime-keyboard";
 import { TasksDataRoot } from "./data-root.js";
 import { useTasksUi } from "./ui-store.js";
 import { hasOpenOverlay } from "./keyboard.js";
@@ -132,7 +133,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
   useEffect(() => {
     if (!onTaskRoute) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (!isNonImeKey(event, "Escape") || event.defaultPrevented) return;
       if (isEditableTarget(event.target)) return;
       if (hasOpenOverlay()) return;
       backRef.current();

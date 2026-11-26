@@ -18,20 +18,19 @@ import SourceCodeIcon from "@hugeicons/core-free-icons/SourceCodeIcon";
 import TextBoldIcon from "@hugeicons/core-free-icons/TextBoldIcon";
 import TextItalicIcon from "@hugeicons/core-free-icons/TextItalicIcon";
 import type { SuggestionProps } from "@tiptap/suggestion";
+import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { Textarea } from "@/components/ui/textarea";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { usePointerCoarse } from "@/components/ui/hooks/use-pointer-coarse";
+import { isNonImeKey } from "@/lib/ime-keyboard";
 import { cn } from "@/lib/utils";
 import {
   createEditorExtensions,
   type MentionItem,
   type MentionSuggestionHandle,
 } from "./extensions.js";
-
-function isImeComposing(event: KeyboardEvent): boolean {
-  return event.isComposing || event.keyCode === 229;
-}
+import { handleEditorLinkClick } from "./links.js";
 
 const STYLE_MARKER = "data-bb-tasks-editor-styles";
 const EDITOR_CSS = `
@@ -255,6 +254,8 @@ export function TasksEditor({
   const openThreadRef = useRef(onOpenThread);
   const onSubmitRef = useRef(onSubmit);
   const readyRef = useRef(onEditorReady);
+  const navigate = useBbNavigate();
+  const navigateRef = useRef(navigate);
   const initialValueRef = useRef(value);
   const isPointerCoarse = usePointerCoarse();
   const canSubmitWithEnterKey = Boolean(onSubmit) && !isPointerCoarse;
@@ -268,6 +269,7 @@ export function TasksEditor({
     openThreadRef.current = onOpenThread;
     onSubmitRef.current = onSubmit;
     readyRef.current = onEditorReady;
+    navigateRef.current = navigate;
     canSubmitWithEnterRef.current = canSubmitWithEnterKey;
   });
   useLayoutEffect(() => {
@@ -329,12 +331,12 @@ export function TasksEditor({
           });
           return true;
         }
-        if (event.key === "Enter" || event.key === "Tab") {
+        if (isNonImeKey(event, "Enter") || event.key === "Tab") {
           const item = state.items[state.selectedIndex];
           if (item) state.command(item);
           return true;
         }
-        if (event.key === "Escape") {
+        if (isNonImeKey(event, "Escape")) {
           setMention(null);
           return true;
         }
@@ -351,10 +353,15 @@ export function TasksEditor({
       content: initialValueRef.current,
       autofocus: false,
       editorProps: {
+        handleDOMEvents: {
+          click: (_view, event) =>
+            handleEditorLinkClick(event, {
+              url: (href) => navigateRef.current.openUrl(href),
+            }),
+        },
         handleKeyDown(_view, event) {
           if (!onSubmitRef.current || readOnly) return false;
-          if (event.key !== "Enter") return false;
-          if (isImeComposing(event)) return false;
+          if (!isNonImeKey(event, "Enter")) return false;
           const openMention = mentionRef.current;
           if (openMention && openMention.items.length > 0) return false;
 

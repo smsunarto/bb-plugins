@@ -11,11 +11,13 @@ it. Both claim the `bb tasks` command, so disable the built-in before enabling
 the fork.
 
 Forked from [`get-bb/bb/plugins/tasks`](https://github.com/get-bb/bb/tree/desktop-v0.44.0/plugins/tasks).
-Last synced with upstream `main` at `48c3a78488667fde6883d13da7ef54f8175b4671`
-on 2026-11-18, whose latest Tasks change is
-[#7613](https://github.com/get-bb/bb/pull/7613). Every upstream Tasks change
-since the previous base (`80a9837`, 2026-09-30) is ported or covered, except
-these, which the fork holds on purpose:
+Last synced with upstream `main` at `b0ddaad731565d7e4de68d824120d802fc78f7d5`
+on 2026-11-26, whose latest Tasks change is
+[#7968](https://github.com/get-bb/bb/pull/7968) (`041f71314435ab617487edc265e906169aca15ee`).
+Every upstream Tasks change since the previous base (`48c3a784`, 2026-11-18) is
+ported or covered, except these:
+
+Held on purpose:
 
 - [#4464](https://github.com/get-bb/bb/pull/4464) (lifecycle without polling):
   the fork keeps its thread-status reconcile loop. The host fixes #4464
@@ -32,6 +34,23 @@ these, which the fork holds on purpose:
 - [#4606](https://github.com/get-bb/bb/pull/4606) is ported only in part. Its
   blanked `is_image` migration already ran here. Fork tests still use
   `displayWidth` and the description saver's `schedule` option.
+
+Held for a newer bb / Plugin SDK (live bb `0.50.1` runs `@get-bb/plugin-sdk`
+`0.6.157`):
+
+- [#7786](https://github.com/get-bb/bb/pull/7786) (`cb14a40d`): requires
+  `experimental_matchesShortcutKey` (`bbPluginSdk >=0.6.160`).
+- [#7749](https://github.com/get-bb/bb/pull/7749) (`53cb9701`): requires
+  `experimental_thread.settled` and the server spawn event-ordering gate
+  (`bbPluginSdk >=0.6.160`).
+- [#7875](https://github.com/get-bb/bb/pull/7875) (`bce7015f`): requires
+  `experimental_BbHttpError` and server-branded SDK errors
+  (`bbPluginSdk >=0.6.167`).
+- [#8047](https://github.com/get-bb/bb/pull/8047) (`1c8e7434`): requires
+  `PluginMentionSearchContext.experimental_signal` (`bbPluginSdk >=0.6.183`).
+- [#7956](https://github.com/get-bb/bb/pull/7956) (`29173ce7`): requires
+  `PluginCommandRegistration.experimental_keyScope: "pluginPage"`
+  (`bbPluginSdk >=0.6.183`).
 
 The fork also fixes three bugs from upstream's incremental loading
 ([#4442](https://github.com/get-bb/bb/pull/4442)):

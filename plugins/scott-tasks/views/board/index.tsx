@@ -43,6 +43,7 @@ import { Button, CompactButton } from "@/components/ui/button";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
 import { Icon } from "@/components/ui/icon";
 import { StatusDot } from "@/components/ui/status-dot";
+import { isNonImeKey } from "@/lib/ime-keyboard";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -1075,7 +1076,7 @@ export function BoardView({ projectId, onError }: BoardViewProps) {
         finish(null, true);
       };
       const onKeyDown = (keyEvent: KeyboardEvent) => {
-        if (keyEvent.key === "Escape" && cardRect) {
+        if (isNonImeKey(keyEvent, "Escape") && cardRect) {
           keyEvent.preventDefault();
           finish(null, true);
         }

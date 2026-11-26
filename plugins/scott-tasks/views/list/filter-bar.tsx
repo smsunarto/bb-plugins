@@ -15,12 +15,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Icon, type IconName } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
 import {
   ResourceControlButton,
   ResourceMultiSelectMenuItems,
   ResourceSortMenuItems,
   type ResourceOption,
 } from "@/components/ui/resource/toolbar";
+import { isNonImeKey } from "@/lib/ime-keyboard";
 import { PriorityIcon, StatusIcon } from "./icons.js";
 import { PRIORITY_LABELS, SORT_LABELS, STATUS_LABELS, type LabelFilterOption } from "./lib.js";
 
@@ -142,9 +144,36 @@ export function hasActiveFilters(filters: ListFilterState): boolean {
   );
 }
 
+function SearchInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="relative w-56 min-w-24">
+      <Icon
+        name="Search"
+        className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
+      />
+      <Input
+        type="search"
+        aria-label="Search tasks"
+        placeholder="Search"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (isNonImeKey(event, "Escape") && value !== "") {
+            event.preventDefault();
+            onChange("");
+          }
+        }}
+        className="h-7 pl-6 text-xs max-md:pointer-coarse:h-11"
+      />
+    </div>
+  );
+}
+
 export function ListFilterBar({
   filters,
   onChange,
+  search,
+  onSearchChange,
   sort,
   onSortChange,
   labelOptions,
@@ -153,6 +182,8 @@ export function ListFilterBar({
 }: {
   filters: ListFilterState;
   onChange: (filters: ListFilterState) => void;
+  search: string;
+  onSearchChange: (search: string) => void;
   sort: TaskSort;
   onSortChange: (sort: TaskSort) => void;
   labelOptions: readonly LabelFilterOption[];
@@ -192,6 +223,7 @@ export function ListFilterBar({
       className="shrink-0 border-b border-border-hairline px-3 @md:px-6"
     >
       <div className="flex min-h-10 items-center gap-1.5">
+        <SearchInput value={search} onChange={onSearchChange} />
         <CollapsibleTrigger asChild>
           <CompactButton variant="ghost" size="sm" className={COMPACT_TRIGGER_CLASS}>
             <Icon name="Filter" className="size-3.5" />
@@ -251,11 +283,14 @@ export function ListFilterBar({
               onChange={(labelNames) => onChange({ ...filters, labelNames })}
             />
           ) : null}
-          {hasActiveFilters(filters) ? (
+          {hasActiveFilters(filters) || search !== "" ? (
             <CompactButton
               variant="outline"
               size="sm"
-              onClick={() => onChange(EMPTY_FILTERS)}
+              onClick={() => {
+                onChange(EMPTY_FILTERS);
+                onSearchChange("");
+              }}
               className="shrink-0 gap-1 text-muted-foreground max-md:pointer-coarse:h-11"
             >
               <Icon name="X" className="size-3" />

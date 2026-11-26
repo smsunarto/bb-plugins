@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { makeTask, rpcInput } from "../test-fixtures.js";
@@ -977,6 +977,71 @@ describe("tasks app shell", () => {
       for (const release of pendingAll.splice(0)) release();
     });
     await slot.findByText("Scope truth");
+  });
+
+  it("shows active sub-tasks under their parent and matches the sidebar Active count", async () => {
+    const activeSolo = makeTask({
+      id: "01HZT5ZZZZZZZZZZZZZZZZZZT5",
+      projectId: PROJECT_ID,
+      key: "TSK-18",
+      number: 18,
+      status: "in_progress",
+      title: "Solo active",
+    });
+    const idleParent = makeTask({
+      id: "01HZT6ZZZZZZZZZZZZZZZZZZT6",
+      projectId: PROJECT_ID,
+      key: "TSK-16",
+      number: 16,
+      title: "Idle parent",
+    });
+    const activeChild = makeTask({
+      id: "01HZT7ZZZZZZZZZZZZZZZZZZT7",
+      projectId: PROJECT_ID,
+      key: "TSK-17",
+      number: 17,
+      parentTaskId: idleParent.id,
+      status: "in_progress",
+      title: "Active child",
+    });
+    const allTasks = [activeSolo, idleParent, activeChild];
+    const activeThreads = [activeSolo, activeChild].map((item, idx) => ({
+      id: `01HZHZZZZZZZZZZZZZZZZZZZ0${idx}`,
+      taskId: item.id,
+      threadId: `thr_active_${idx}`,
+      presetName: "Sonnet",
+      title: "Worker",
+      liveStatus: "working" as const,
+      attachedAt: "2026-07-15T00:00:00.000Z",
+      updatedAt: "2026-07-15T00:00:00.000Z",
+    }));
+    const rpc = seededRpc({
+      listLabels: () => ({ labels: [] }),
+      listActiveTaskThreads: () => ({ taskThreads: activeThreads }),
+      listTasks: (raw: unknown) => {
+        const input = rpcInput(raw);
+        let rows = allTasks;
+        if (Array.isArray(input.taskIds)) {
+          const allowed = new Set(input.taskIds);
+          rows = rows.filter((item) => allowed.has(item.id));
+        }
+        if (Array.isArray(input.statuses)) {
+          const allowed = new Set(input.statuses);
+          rows = rows.filter((item) => allowed.has(item.status));
+        }
+        return { tasks: rows };
+      },
+    });
+    const navSlot = renderSlot(navigationRegistration, { subPath: "active" }, { rpc });
+    const activeButton = (await navSlot.findByText("Active")).closest("button");
+    expect(activeButton).toBeTruthy();
+    expect(await within(activeButton!).findByText("2")).toBeTruthy();
+
+    const slot = renderSlot(app.navPanels[0]!, { subPath: "active" }, { rpc });
+    expect(await slot.findByText("2 tasks")).toBeTruthy();
+    await slot.findByText("TSK-18");
+    await slot.findByText("TSK-16");
+    await slot.findByText("TSK-17");
   });
 
   it("loads closed rows once a stored status filter is cleared", async () => {

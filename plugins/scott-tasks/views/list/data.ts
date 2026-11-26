@@ -1,4 +1,5 @@
-import { eq, inArray, isNull, or, type InitialQueryBuilder } from "@tanstack/react-db";
+import { useMemo } from "react";
+import { eq, inArray, type InitialQueryBuilder } from "@tanstack/react-db";
 import {
   CLOSED_TASK_STATUSES,
   OPEN_TASK_STATUSES,
@@ -10,97 +11,103 @@ import {
   useTasksLiveQuery,
   type ListTasks,
 } from "../../shell/data.js";
-import type { TaskPriority, TaskStatus } from "../../shared/contract.js";
-import { matchesFilters } from "./lib.js";
+import type { Task, TaskStatus } from "../../shared/contract.js";
 
-interface ListTaskFilters {
-  statuses: readonly TaskStatus[];
-  priorities: readonly TaskPriority[];
-  /** Null leaves labels unfiltered; empty matches nothing. */
-  labelIds: readonly string[] | null;
-}
-
-interface ListScope {
-  projectId: string | null;
-  statuses: readonly TaskStatus[];
-  priorities: readonly TaskPriority[];
-  labelIds: readonly string[] | null;
-}
-
-function listQuery(q: InitialQueryBuilder, scope: ListScope) {
-  let query = q.from({ task: tasksCollection }).where(({ task }) => isNull(task.parentTaskId));
-  const { projectId, statuses, priorities, labelIds } = scope;
+function listQuery(
+  q: InitialQueryBuilder,
+  projectId: string | null,
+  statuses: readonly TaskStatus[],
+) {
+  let query = q.from({ task: tasksCollection });
   if (projectId !== null) query = query.where(({ task }) => eq(task.projectId, projectId));
-  if (statuses.length > 0) query = query.where(({ task }) => inArray(task.status, [...statuses]));
-  if (priorities.length > 0) {
-    query = query.where(({ task }) => inArray(task.priority, [...priorities]));
-  }
-  if (labelIds !== null) {
-    query = query.where(({ task }) => {
-      const [first, second, ...rest] = labelIds.map((labelId) => inArray(labelId, task.labelIds));
-      if (first === undefined) return inArray(task.id, []);
-      return second === undefined ? first : or(first, second, ...rest);
-    });
-  }
-  return query;
+  return query.where(({ task }) => inArray(task.status, [...statuses]));
 }
+
+function mergeById(...lists: readonly (readonly Task[] | undefined)[]): Task[] {
+  const byId = new Map<string, Task>();
+  for (const list of lists) {
+    for (const task of list ?? []) byId.set(task.id, task);
+  }
+  return [...byId.values()];
+}
+
+export type ListTasksResult = (
+  | { phase: "loading" }
+  | { phase: "failed"; error: string }
+  | {
+      phase: "ready";
+      tasks: Task[];
+      activeIds: ReadonlySet<string> | null;
+      closedPending: boolean;
+    }
+) & { retry: () => void };
 
 /**
- * The list's top-level tasks. Without a status filter, open tasks load
- * apart from closed ones and paint as soon as they arrive, with
- * `closedPending` set until the closed ones do.
+ * Every task and sub-task in the list's project scope. Open tasks load apart
+ * from closed ones and paint as soon as they arrive, with `closedPending` set
+ * until the closed ones do. Active views read active task links first and load
+ * the scope's open/closed rows only when an active sub-task needs its parent
+ * and sibling progress.
  */
-export function useListTasks(
-  projectId: string | null,
-  activeOnly: boolean,
-  filters: ListTaskFilters,
-): ListTasks & { retry: () => void } {
-  const split = !activeOnly && filters.statuses.length === 0;
-  const scope = (statuses: readonly TaskStatus[]): ListScope => ({
-    projectId,
-    statuses,
-    priorities: filters.priorities,
-    labelIds: filters.labelIds,
+export function useListTasks(projectId: string | null, activeOnly: boolean): ListTasksResult {
+  const active: ListTasks & { retry: () => void } = useActiveTasks({
+    topLevelOnly: false,
+    enabled: activeOnly,
   });
-  const primaryScope = scope(split ? OPEN_TASK_STATUSES : filters.statuses);
-  // A key names whether its query runs: a live query rebuilds only when its key changes.
-  const primary = useTasksLiveQuery(
-    ["list-tasks", "primary", activeOnly ? null : primaryScope],
-    (q) => (activeOnly ? undefined : listQuery(q, primaryScope)),
-  );
-  const closedScope = scope(CLOSED_TASK_STATUSES);
-  const closed = useTasksLiveQuery(["list-tasks", "closed", split ? closedScope : null], (q) =>
-    split ? listQuery(q, closedScope) : undefined,
-  );
-  const active = useActiveTasks({ topLevelOnly: true, enabled: activeOnly });
 
-  if (activeOnly) {
-    if (active.phase !== "ready") return active;
-    const { labelIds } = filters;
-    return {
-      ...active,
-      tasks: active.tasks.filter(
-        (task) =>
-          (projectId === null || task.projectId === projectId) &&
-          labelIds?.length !== 0 &&
-          matchesFilters(task, filters.statuses, filters.priorities, labelIds ?? []),
-      ),
-    };
-  }
+  const activeInScope = useMemo(() => {
+    if (!activeOnly || active.phase !== "ready") return undefined;
+    return projectId === null
+      ? active.tasks
+      : active.tasks.filter((task) => task.projectId === projectId);
+  }, [activeOnly, active, projectId]);
+
+  const loadScope =
+    !activeOnly || (activeInScope?.some((task) => task.parentTaskId !== null) ?? false);
+
+  const open = useTasksLiveQuery(["list-tasks", "open", loadScope ? projectId : false], (q) =>
+    loadScope ? listQuery(q, projectId, OPEN_TASK_STATUSES) : undefined,
+  );
+  const closed = useTasksLiveQuery(["list-tasks", "closed", loadScope ? projectId : false], (q) =>
+    loadScope ? listQuery(q, projectId, CLOSED_TASK_STATUSES) : undefined,
+  );
+
+  const activeIds = useMemo(
+    (): ReadonlySet<string> | null =>
+      activeInScope === undefined ? null : new Set(activeInScope.map((task) => task.id)),
+    [activeInScope],
+  );
+
+  const openData = loadScope && open.isReady ? open.data : undefined;
+  const closedData = loadScope && closed.isReady ? closed.data : undefined;
+  const tasks = useMemo(() => {
+    if (activeOnly && activeInScope === undefined) return undefined;
+    if (loadScope && openData === undefined) return undefined;
+    return mergeById(openData, closedData, activeInScope);
+  }, [activeOnly, activeInScope, loadScope, openData, closedData]);
+
   const retry = () => {
-    primary.retry();
-    closed.retry();
+    if (loadScope) {
+      open.retry();
+      closed.retry();
+    }
+    if (activeOnly) active.retry();
   };
-  if (primary.isError || (split && closed.isError)) {
+
+  if (activeOnly && active.phase === "failed") {
+    return { phase: "failed", error: active.error, retry };
+  }
+  if (loadScope && (open.isError || closed.isError)) {
     return { phase: "failed", error: tasksLoadError(), retry };
   }
-  if (!primary.isReady) return { phase: "loading", retry };
+  if (tasks === undefined) {
+    return { phase: "loading", retry };
+  }
   return {
     phase: "ready",
-    tasks: split
-      ? [...(primary.data ?? []), ...(closed.isReady ? (closed.data ?? []) : [])]
-      : (primary.data ?? []),
-    closedPending: split && !closed.isReady,
+    tasks,
+    activeIds,
+    closedPending: loadScope && !closed.isReady,
     retry,
   };
 }

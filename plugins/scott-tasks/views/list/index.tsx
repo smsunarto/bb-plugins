@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { replaceEqualDeep } from "@tanstack/react-query";
 import {
   TASK_STATUSES,
@@ -26,6 +35,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { isImeComposing, isNonImeKey } from "@/lib/ime-keyboard";
 import { useListTasks } from "./data.js";
 import {
   EMPTY_FILTERS,
@@ -50,8 +60,21 @@ import {
   type CollapsedGroups,
   type ListScrollAnchor,
 } from "./scroll-restoration.js";
-import { groupTasksByStatus, labelFilterOptions, selectedLabelIds, STATUS_LABELS } from "./lib.js";
-import { TaskRow } from "./row.js";
+import {
+  childrenByParent,
+  childrenForList,
+  displayRows,
+  groupTasksByStatus,
+  labelFilterOptions,
+  listTaskCount,
+  parentIsOpen,
+  selectedLabelIds,
+  STATUS_LABELS,
+  taskMatches,
+  widestKeysByPrefix,
+  type TaskMatchCriteria,
+} from "./lib.js";
+import { KeyColumnScope, TaskRow } from "./row.js";
 import { rowWindows, useRowWindowViewport } from "./row-window.js";
 import { isBareKey } from "./property-menus.js";
 
@@ -80,6 +103,12 @@ interface ListViewProps {
   resume: ListResume | null;
   onOpenTask: (taskKey: string, resume: ListResume) => void;
   onError: (message: string) => void;
+}
+
+interface FlatRow {
+  task: Task;
+  child: boolean;
+  open: boolean;
 }
 
 function readRow(container: HTMLElement, key: string) {
@@ -116,14 +145,19 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
     scope: preferenceScope,
     preference: loadListPreference(preferenceScope),
   }));
-  const { filters, sort } = stored.preference;
-  const statuses: TaskStatus[] = backlogOnly ? ["backlog"] : filters.statuses;
+  const [search, setSearch] = useState("");
+  const { filters, sort, expandedTaskIds: expanded } = stored.preference;
+  const statuses: TaskStatus[] = useMemo(
+    () => (backlogOnly ? ["backlog"] : filters.statuses),
+    [backlogOnly, filters.statuses],
+  );
   const scopeKey = listScrollScopeKey({
     projectId,
     activeOnly,
     backlogOnly,
     filters: { ...filters, statuses },
     sort,
+    search,
   });
   const [selection, setSelection] = useState<ReadonlySet<string>>(() =>
     resume?.scopeKey === scopeKey ? resume.selection : new Set(),
@@ -131,30 +165,40 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
   const [collapsed, setCollapsed] = useState<CollapsedGroups>(() => resume?.collapsed ?? {});
   if (stored.scope !== preferenceScope) {
     setStored({ scope: preferenceScope, preference: loadListPreference(preferenceScope) });
+    setSearch("");
     setSelection(new Set());
     setCollapsed({});
   }
-  const setPreference = (update: (current: ListPreference) => ListPreference) => {
-    setStored((current) => ({ scope: current.scope, preference: update(current.preference) }));
-  };
+  const updatePreference = useCallback(
+    (update: (current: ListPreference) => ListPreference) => {
+      setStored((current) => {
+        const updated = update(current.preference);
+        storeListPreference(preferenceScope, updated);
+        return { scope: current.scope, preference: updated };
+      });
+    },
+    [preferenceScope],
+  );
   const setFilters = (next: ListFilterState) => {
     setSelection(new Set());
-    setPreference((current) => {
-      const updated: ListPreference = {
-        filters: backlogOnly ? { ...next, statuses: current.filters.statuses } : next,
-        sort: current.sort,
-      };
-      storeListPreference(preferenceScope, updated);
-      return updated;
-    });
+    updatePreference((current) => ({
+      ...current,
+      filters: backlogOnly ? { ...next, statuses: current.filters.statuses } : next,
+    }));
   };
   const setSort = (next: TaskSort) => {
-    setPreference((current) => {
-      const updated: ListPreference = { filters: current.filters, sort: next };
-      storeListPreference(preferenceScope, updated);
-      return updated;
-    });
+    updatePreference((current) => ({ ...current, sort: next }));
   };
+  const toggleSubTasks = useCallback(
+    (taskId: string) =>
+      updatePreference((current) => ({
+        ...current,
+        expandedTaskIds: current.expandedTaskIds.includes(taskId)
+          ? current.expandedTaskIds.filter((id) => id !== taskId)
+          : [...current.expandedTaskIds, taskId],
+      })),
+    [updatePreference],
+  );
   const openNewTask = useTasksUi((state) => state.openNewTask);
 
   const allLabels = useLabels();
@@ -173,11 +217,7 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
   }, [filters.labelNames, labelOptions, labels]);
 
   const visibleFilters = backlogOnly ? { ...filters, statuses: [] } : filters;
-  const tasksQuery = useListTasks(projectId, activeOnly, {
-    statuses,
-    priorities: filters.priorities,
-    labelIds,
-  });
+  const tasksQuery = useListTasks(projectId, activeOnly);
   const activeThreads = useActiveThreads();
   const onEdit = useCallback(
     (task: Task, patch: TaskEdit) => {
@@ -224,18 +264,65 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
     [projectList],
   );
 
-  const tasks = tasksQuery.phase === "ready" ? tasksQuery.tasks : NO_TASKS;
-  const groups = useMemo(() => groupTasksByStatus(sortTasks(tasks, sort)), [tasks, sort]);
+  const loadedTasks = tasksQuery.phase === "ready" ? tasksQuery.tasks : NO_TASKS;
+  const activeIds = tasksQuery.phase === "ready" ? tasksQuery.activeIds : null;
+  const topLevelTasks = useMemo(
+    () => loadedTasks.filter((task) => task.parentTaskId === null),
+    [loadedTasks],
+  );
+  const allChildrenByParent = useMemo(() => childrenByParent(loadedTasks), [loadedTasks]);
+  const matchCriteria = useMemo(
+    (): TaskMatchCriteria => ({
+      statuses,
+      priorities: filters.priorities,
+      labelIds,
+      search,
+      activeIds,
+    }),
+    [statuses, filters.priorities, labelIds, search, activeIds],
+  );
+  const { visible: visibleChildren, totals: childTotals } = useMemo(
+    () => childrenForList(allChildrenByParent, matchCriteria, sort),
+    [allChildrenByParent, matchCriteria, sort],
+  );
+  const displayTasks = useMemo(
+    () => displayRows(topLevelTasks, matchCriteria, visibleChildren),
+    [topLevelTasks, matchCriteria, visibleChildren],
+  );
+  const taskCount = useMemo(
+    () =>
+      tasksQuery.phase === "ready"
+        ? listTaskCount(displayTasks, matchCriteria, visibleChildren)
+        : undefined,
+    [tasksQuery.phase, displayTasks, matchCriteria, visibleChildren],
+  );
+  const widestKeys = useMemo(() => widestKeysByPrefix(loadedTasks), [loadedTasks]);
+  const groups = useMemo(
+    () =>
+      groupTasksByStatus(sortTasks(displayTasks, sort)).map((group) => {
+        const rows: FlatRow[] = [];
+        for (const task of group.tasks) {
+          const open = parentIsOpen(task.id, expanded, matchCriteria, visibleChildren);
+          rows.push({ task, child: false, open });
+          if (!open) continue;
+          for (const child of visibleChildren.get(task.id) ?? []) {
+            rows.push({ task: child, child: true, open: false });
+          }
+        }
+        return { status: group.status, count: group.tasks.length, rows };
+      }),
+    [displayTasks, sort, expanded, matchCriteria, visibleChildren],
+  );
   const groupId = useId();
   const orderedTasks = useMemo(
-    () => groups.flatMap(({ status, tasks }) => (collapsed[status] ? [] : tasks)),
+    () => groups.flatMap(({ status, rows }) => (collapsed[status] ? [] : rows.map((r) => r.task))),
     [collapsed, groups],
   );
   const openTaskRef = useRef<(taskKey: string) => void>(() => {});
   const openTask = useCallback((taskKey: string) => openTaskRef.current(taskKey), []);
   const selectedTasks = useMemo(
-    () => tasks.filter((task) => selection.has(task.id)),
-    [selection, tasks],
+    () => loadedTasks.filter((task) => selection.has(task.id)),
+    [selection, loadedTasks],
   );
   const bulkStatusPending = useTasksUi((state) => state.bulkStatusPending);
   const setBulkStatus = async (status: TaskStatus) => {
@@ -283,7 +370,7 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
   }, []);
 
   const showProject = projectId === null;
-  const filtered = hasActiveFilters(visibleFilters);
+  const filtered = hasActiveFilters(visibleFilters) || search.trim() !== "";
 
   const listRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -306,19 +393,22 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
     setSelection(new Set(selectedTasks.map(({ id }) => id)));
   }
   useListScrollRestoration(scrollRef, scopeKey, {
-    contentReady: tasks.length > 0,
+    contentReady: orderedTasks.length > 0,
     loading: loading || scopeChanged,
-    revision: tasks.length,
+    revision: orderedTasks.length,
   });
 
   const viewport = useRowWindowViewport(scrollRef, groups);
   const anchorLayout = {
-    groups,
+    groups: groups.map((group) => ({
+      status: group.status,
+      tasks: group.rows.map((row) => row.task),
+    })),
     collapsed,
     rowHeight: viewport.rowHeight,
     headerHeight: viewport.headerHeight,
   };
-  const visibleCounts = groups.map((group) => (collapsed[group.status] ? 0 : group.tasks.length));
+  const visibleCounts = groups.map((group) => (collapsed[group.status] ? 0 : group.rows.length));
   const ranges = rowWindows({
     counts: visibleCounts,
     headerHeight: viewport.headerHeight,
@@ -392,7 +482,9 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
       row.scrollIntoView?.({ block: "nearest" });
       return;
     }
-    const groupIndex = groups.findIndex((group) => group.status === next.status);
+    const groupIndex = groups.findIndex((group) =>
+      group.rows.some((entry) => entry.task.id === next.id),
+    );
     pendingFocus.current = { key: next.key, reveal: true };
     container.scrollTop = Math.max(
       0,
@@ -408,6 +500,7 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
       if (
         !container ||
         event.defaultPrevented ||
+        isImeComposing(event) ||
         !isBareKey(event) ||
         !(target instanceof HTMLElement) ||
         target.isContentEditable ||
@@ -427,12 +520,14 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
       const page = listRef.current?.closest("[data-scott-tasks-page]");
       if (target !== document.body && !page?.contains(target)) return;
       if (hasOpenOverlay()) return;
-      const key = event.key.toLowerCase();
-      if (key === "escape" && selectedTasks.length > 0) {
+      if (isNonImeKey(event, "Escape") && selectedTasks.length > 0) {
         event.preventDefault();
         setSelection(new Set());
         if (checkboxRow && rowKey) readRow(container, rowKey)?.focus({ preventScroll: true });
-      } else if (key === "j" || key === "k" || key === "arrowup" || key === "arrowdown") {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "j" || key === "k" || key === "arrowup" || key === "arrowdown") {
         event.preventDefault();
         const focusedKey = rowKey ?? (target === container ? pendingFocus.current?.key : undefined);
         moveFocus(focusedKey, key === "j" || key === "arrowdown" ? 1 : -1);
@@ -445,7 +540,7 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  let body: React.ReactNode;
+  let body: ReactNode;
   if (tasksQuery.phase === "failed") {
     body = (
       <ViewEmptyState
@@ -456,14 +551,21 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
     );
   } else if (tasksQuery.phase === "loading") {
     body = <LoadingRows />;
-  } else if (tasks.length === 0) {
+  } else if (displayTasks.length === 0) {
     if (filtered) {
       body = (
         <ViewEmptyState
           icon="Search"
           heading="No tasks match these filters"
           action={
-            <Button variant="outline" size="sm" onClick={() => setFilters(EMPTY_FILTERS)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setFilters(EMPTY_FILTERS);
+                setSearch("");
+              }}
+            >
               Clear filters
             </Button>
           }
@@ -499,11 +601,11 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
     }
   } else {
     body = groups.map((group, groupIndex) => {
-      const [start, end] = ranges[groupIndex] ?? [0, group.tasks.length];
+      const [start, end] = ranges[groupIndex] ?? [0, group.rows.length];
       const isCollapsed = collapsed[group.status] === true;
       const listId = `${groupId}-${group.status}`;
       const hiddenAbove = start * viewport.rowHeight;
-      const hiddenBelow = (group.tasks.length - end) * viewport.rowHeight;
+      const hiddenBelow = (group.rows.length - end) * viewport.rowHeight;
       return (
         <section key={group.status}>
           <div
@@ -525,7 +627,7 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
               />
               <StatusIcon status={group.status} />
               {STATUS_LABELS[group.status]}
-              <Badge variant="count">{group.tasks.length}</Badge>
+              <Badge variant="count">{group.count}</Badge>
             </Button>
             <CompactButton
               type="button"
@@ -543,10 +645,16 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
             {!isCollapsed ? (
               <>
                 {hiddenAbove > 0 ? <div aria-hidden style={{ height: hiddenAbove }} /> : null}
-                {group.tasks.slice(start, end).map((task) => (
+                {group.rows.slice(start, end).map(({ task, child, open }) => (
                   <TaskRow
                     key={task.id}
                     task={task}
+                    child={child}
+                    muted={!taskMatches(task, matchCriteria)}
+                    subTasks={child ? undefined : childTotals.get(task.id)}
+                    subTasksOpen={open}
+                    subTasksLocked={open && !expanded.includes(task.id)}
+                    onToggleSubTasks={child ? undefined : toggleSubTasks}
                     activeThreads={activeThreads.get(task.id)}
                     project={projectsById.get(task.projectId)}
                     showProject={showProject}
@@ -576,10 +684,12 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
       <ListFilterBar
         filters={visibleFilters}
         onChange={setFilters}
+        search={search}
+        onSearchChange={setSearch}
         sort={sort}
         onSortChange={setSort}
         labelOptions={labelOptions}
-        taskCount={tasksQuery.phase === "ready" ? tasksQuery.tasks.length : undefined}
+        taskCount={taskCount}
         fixedStatus={backlogOnly}
       />
       {selectedTasks.length > 0 ? (
@@ -625,9 +735,12 @@ export function ListView({ projectId, scope, resume, onOpenTask, onError: push }
         aria-keyshortcuts="J K ArrowUp ArrowDown"
         className="min-h-0 flex-1 overflow-y-auto focus-visible:outline-none"
       >
-        <div className="@container flex min-h-full flex-col max-md:pointer-coarse:pb-22">
+        <KeyColumnScope
+          keys={widestKeys}
+          className="@container flex min-h-full flex-col max-md:pointer-coarse:pb-22"
+        >
           {body}
-        </div>
+        </KeyColumnScope>
       </div>
     </div>
   );

@@ -25,7 +25,10 @@ Element.prototype.scrollIntoView ??= () => {};
 
 const app = await loadPluginApp(() => import("../../app"));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
 
 const PROJECT_ID = "01HZZZZZZZZZZZZZZZZZZZZZP1";
 
@@ -228,5 +231,111 @@ describe("inline row editing", () => {
 
     await waitFor(() => expect(slot.queryByRole("dialog")).toBeNull());
     expect(slot.rpcCalls.some((call) => call.method === "updateTask")).toBe(false);
+  });
+});
+
+describe("list search and key column", () => {
+  it("filters rows by key or title from the search box", async () => {
+    const slot = renderList([
+      task({ id: "01HZT1ZZZZZZZZZZZZZZZZZZT1", number: 1, title: "Fix login" }),
+      task({ id: "01HZT2ZZZZZZZZZZZZZZZZZZT2", number: 2, title: "Ship docs" }),
+    ]);
+    await rowFor(slot, "TSK-1");
+    const search = slot.getByRole("searchbox", { name: "Search tasks" });
+    fireEvent.change(search, { target: { value: "LOGIN" } });
+    await waitFor(() => expect(slot.queryByText("TSK-2")).toBeNull());
+    expect(slot.getByText("TSK-1")).toBeTruthy();
+    fireEvent.change(search, { target: { value: "tsk-2" } });
+    await waitFor(() => expect(slot.queryByText("TSK-1")).toBeNull());
+    fireEvent.keyDown(search, { key: "Escape" });
+    await slot.findByText("TSK-1");
+    expect(slot.getByText("TSK-2")).toBeTruthy();
+  });
+
+  it("sizes the key column from the widest key per prefix across all loaded tasks", async () => {
+    const slot = renderList([
+      task({
+        id: "01HZT1ZZZZZZZZZZZZZZZZZZT1",
+        number: 223,
+        key: "AGENTS-223",
+      }),
+      task({ id: "01HZT2ZZZZZZZZZZZZZZZZZZT2", number: 9, key: "AGENTS-9" }),
+      task({ id: "01HZT3ZZZZZZZZZZZZZZZZZZT3", number: 1, key: "OPS-1" }),
+    ]);
+    const sizedKeys = () =>
+      Array.from(
+        slot.container.querySelectorAll<HTMLElement>("[data-key-sizer]"),
+        (element) => element.dataset.keySizer,
+      ).sort();
+    const keyCell = await slot.findByText("AGENTS-223");
+    expect(keyCell.title).toBe("AGENTS-223");
+    expect(sizedKeys()).toEqual(["AGENTS-223", "OPS-1"]);
+
+    const search = slot.getByRole("searchbox", { name: "Search tasks" });
+    fireEvent.change(search, { target: { value: "ops" } });
+    await waitFor(() => expect(slot.queryByText("AGENTS-223")).toBeNull());
+    expect(sizedKeys()).toEqual(["AGENTS-223", "OPS-1"]);
+  });
+});
+
+describe("sub-task nesting", () => {
+  const parent = task({
+    id: "01HZT1ZZZZZZZZZZZZZZZZZZT1",
+    number: 1,
+    title: "Parent",
+  });
+  const child = task({
+    id: "01HZT1ZZZZZZZZZZZZZZZZZZT2",
+    number: 12,
+    parentTaskId: parent.id,
+    status: "done",
+    title: "Needle",
+  });
+  const toggle = (row: HTMLElement, name: RegExp) =>
+    within(row).getByRole<HTMLButtonElement>("button", { name });
+  const childRow = (slot: ReturnType<typeof renderList>) =>
+    slot.container.querySelector(`[data-task-key="${child.key}"]`);
+
+  it("starts collapsed and remembers a parent the user expanded", async () => {
+    const slot = renderList([parent, child]);
+    const row = await rowFor(slot, parent.key);
+    expect(within(row).getByText("1/1")).toBeTruthy();
+    expect(childRow(slot)).toBeNull();
+    fireEvent.click(toggle(row, /Expand sub-tasks/));
+    expect((await rowFor(slot, child.key)).className).toContain("pl-9");
+    cleanup();
+
+    const reopened = renderList([parent, child]);
+    const reopenedRow = await rowFor(reopened, parent.key);
+    expect(await rowFor(reopened, child.key)).toBeTruthy();
+    fireEvent.click(toggle(reopenedRow, /Collapse sub-tasks/));
+    await waitFor(() => expect(childRow(reopened)).toBeNull());
+  });
+
+  it("opens a collapsed parent while searching without changing its saved state", async () => {
+    const slot = renderList([parent, child]);
+    await rowFor(slot, parent.key);
+    expect(childRow(slot)).toBeNull();
+    const search = slot.getByRole("searchbox", { name: "Search tasks" });
+    fireEvent.change(search, { target: { value: "needle" } });
+    await rowFor(slot, child.key);
+    const parentRow = await rowFor(slot, parent.key);
+    expect(parentRow.className).toContain("opacity-50");
+    expect(slot.getByText("1 task")).toBeTruthy();
+    const locked = toggle(parentRow, /Collapse sub-tasks/);
+    expect(locked.disabled).toBe(true);
+    fireEvent.change(search, { target: { value: "" } });
+    await waitFor(() => expect(childRow(slot)).toBeNull());
+  });
+
+  it("sizes the key column from sub-task keys too", async () => {
+    const slot = renderList([parent, child]);
+    await rowFor(slot, parent.key);
+    expect(
+      Array.from(
+        slot.container.querySelectorAll<HTMLElement>("[data-key-sizer]"),
+        (element) => element.dataset.keySizer,
+      ),
+    ).toEqual([child.key]);
   });
 });

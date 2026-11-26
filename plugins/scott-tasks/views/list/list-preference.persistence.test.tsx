@@ -635,10 +635,9 @@ describe("list filter/sort preference persistence", () => {
     expect(activeSlot.getByRole("button", { name: /Sort/ }).textContent).not.toContain("Priority");
   });
 
-  it("persists priority and label filters and sends resolved label ids", async () => {
+  it("persists priority and label filters and filters the list with them", async () => {
     const registration = app.navPanels[0]!;
-    const listTasksCalls: Record<string, unknown>[] = [];
-    const rpc = baseRpc({}, listTasksCalls);
+    const rpc = baseRpc();
     const slot = renderSlot(registration, { subPath: PROJECT_A }, { rpc });
     await slot.findByText("ALP-1");
 
@@ -646,6 +645,10 @@ describe("list filter/sort preference persistence", () => {
     fireEvent.click(slot.getByRole("button", { name: /^Priority/ }));
     fireEvent.click(await slot.findByRole("menuitemcheckbox", { name: /Urgent/ }));
     pageKeyboardEscape(slot);
+
+    await waitFor(() => expect(slot.queryByText("ALP-1")).toBeNull());
+    expect(slot.getByText("ALP-2")).toBeTruthy();
+    await waitFor(() => expect(slot.queryByText("ALP-3")).toBeNull());
 
     fireEvent.click(slot.getByRole("button", { name: /^Label/ }));
     fireEvent.click(await slot.findByRole("menuitemcheckbox", { name: /Bug/ }));
@@ -657,17 +660,7 @@ describe("list filter/sort preference persistence", () => {
       expect(stored.scopes[`project:${PROJECT_A}`].filters.labelNames).toEqual(["Bug"]);
     });
 
-    await waitFor(() => {
-      expect(
-        listTasksCalls.some(
-          (call) =>
-            Array.isArray(call.labelIds) &&
-            call.labelIds.includes(LABEL_BUG) &&
-            Array.isArray(call.priorities) &&
-            call.priorities.includes("urgent"),
-        ),
-      ).toBe(true);
-    });
+    await waitFor(() => expect(slot.queryByText("ALP-2")).toBeNull());
 
     slot.lifecycle.unmount();
     const remounted = renderSlot(registration, { subPath: PROJECT_A }, { rpc: baseRpc() });

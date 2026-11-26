@@ -2,11 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import type { Label, Task } from "../../shared/contract.js";
 import {
   activeWorkLabel,
+  childrenByParent,
+  childrenForList,
+  displayRows,
   formatDueDate,
   groupTasksByStatus,
   labelFilterOptions,
+  listTaskCount,
+  parentIsOpen,
   partitionLabels,
   selectedLabelIds,
+  widestKeysByPrefix,
+  type TaskMatchCriteria,
 } from "./lib.js";
 import { makeTask } from "../../test-fixtures.js";
 
@@ -116,5 +123,44 @@ describe("partitionLabels", () => {
       visible: [labels[0]],
       hidden: [labels[1], labels[2]],
     });
+  });
+});
+
+describe("sub-task matching and widest keys", () => {
+  const emptyCriteria: TaskMatchCriteria = {
+    statuses: [],
+    priorities: [],
+    labelIds: null,
+    search: "",
+    activeIds: null,
+  };
+
+  it("keeps a non-matching parent when a sub-task matches and counts only matching rows", () => {
+    const parent = task({ id: ULID_A, status: "todo", title: "Parent", key: "TSK-1" });
+    const doneChild = task({
+      id: ULID_B,
+      parentTaskId: parent.id,
+      status: "done",
+      title: "Needle",
+      key: "TSK-12",
+    });
+    const otherChild = task({
+      id: ULID_C,
+      parentTaskId: parent.id,
+      status: "todo",
+      title: "Other",
+      key: "TSK-13",
+    });
+    const grouped = childrenByParent([parent, doneChild, otherChild]);
+    const criteria: TaskMatchCriteria = { ...emptyCriteria, search: "needle" };
+    const { visible, totals } = childrenForList(grouped, criteria, "manual");
+
+    expect(totals.get(parent.id)).toEqual({ done: 1, total: 2 });
+    expect(visible.get(parent.id)?.map((t) => t.id)).toEqual([doneChild.id]);
+    expect(displayRows([parent], criteria, visible).map((t) => t.id)).toEqual([parent.id]);
+    expect(parentIsOpen(parent.id, [], criteria, visible)).toBe(true);
+    expect(listTaskCount([parent], criteria, visible)).toBe(1);
+    expect(listTaskCount([parent], emptyCriteria, visible)).toBe(1);
+    expect(widestKeysByPrefix([parent, doneChild, otherChild])).toEqual(["TSK-12"]);
   });
 });
