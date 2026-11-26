@@ -355,25 +355,32 @@ export function visibleInboxRows(
       guides: "",
       lastChild: false,
       ancestorMatches: false,
+      underLongLived: false,
     }))
     .reverse() as (Omit<VisibleInboxRow, "expanded" | "statusThread" | "isUnread"> & {
     ancestorMatches: boolean;
+    underLongLived: boolean;
   })[];
   while (stack.length) {
     const row = stack.pop()!;
     const ancestorMatches = row.ancestorMatches || row.node.matchesTitle;
     const children = row.node.children.filter((child) => ancestorMatches || child.matchesSearch);
     const expanded = children.length > 0 && (searching || !collapsed.has(row.node.thread.id));
+    const { underLongLived, ancestorMatches: _ancestorMatches, ...visibleRow } = row;
     rows.push({
-      ...row,
+      ...visibleRow,
       expanded,
       statusThread: expanded ? row.node.thread : row.node.statusThread,
-      isUnread: expanded ? row.node.thread.isUnread : row.node.hasUnread,
+      // Keep expanded crew rows consistent with their Captain parent: crew
+      // threads left unread by recovered errors do not show an unread dot.
+      isUnread: underLongLived ? false : expanded ? row.node.thread.isUnread : row.node.hasUnread,
     });
     if (!expanded) continue;
+    const childUnderLongLived = underLongLived || isLongLivedThread(row.node.thread);
     for (let index = children.length - 1; index >= 0; index--) {
       stack.push({
         ancestorMatches,
+        underLongLived: childUnderLongLived,
         node: children[index]!,
         depth: row.depth + 1,
         parentId: row.node.thread.id,

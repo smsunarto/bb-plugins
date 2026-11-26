@@ -323,7 +323,7 @@ describe("inbox families", () => {
     assert.equal(tree[0]?.lifecycle, "active");
   });
 
-  it("does not roll unread crew subthreads up onto a collapsed Captain row", () => {
+  it("suppresses unread dots on Captain parents and expanded crew rows alike", () => {
     const captain = thread({ id: "captain", originPluginId: "captain", isUnread: false });
     const crew = thread({
       id: "crew",
@@ -331,13 +331,37 @@ describe("inbox families", () => {
       originPluginId: "scott-tasks",
       isUnread: true,
     });
-    const tree = buildInboxTree([captain, crew], active);
+    const grandchild = thread({
+      id: "grandchild",
+      parentThreadId: "crew",
+      originPluginId: "scott-tasks",
+      isUnread: true,
+    });
+    const tree = buildInboxTree([captain, crew, grandchild], active);
+    // Collapsed Captain row: no unread dot from crew.
     assert.equal(visibleInboxRows(tree, new Set(["captain"]))[0]?.isUnread, false);
+    // Expanded Captain row: neither Captain nor its crew descendants show unread dots.
+    const expanded = visibleInboxRows(tree, new Set());
+    assert.deepEqual(
+      expanded.map((row) => [row.node.thread.id, row.isUnread]),
+      [
+        ["captain", false],
+        ["crew", false],
+        ["grandchild", false],
+      ],
+    );
 
-    // When the Captain itself has an unread response, it still shows unread.
+    // When the Captain itself has an unread response, it still shows unread while crew stay quiet.
     const unreadCaptain = thread({ id: "captain", originPluginId: "captain", isUnread: true });
     const unreadTree = buildInboxTree([unreadCaptain, crew], active);
     assert.equal(visibleInboxRows(unreadTree, new Set(["captain"]))[0]?.isUnread, true);
+    assert.deepEqual(
+      visibleInboxRows(unreadTree, new Set()).map((row) => [row.node.thread.id, row.isUnread]),
+      [
+        ["captain", true],
+        ["crew", false],
+      ],
+    );
 
     // Live crew status (waiting-for-input, working) still rolls up to the Captain.
     const blockedCrew = thread({

@@ -515,9 +515,10 @@ test("the tab omits the Workspace header and This thread heading, moves Pull bes
   // Redundant forge line and "Local" chip (and its empty sc-chips row) are absent.
   expect(slot.queryByTestId("sc-forge-line")).toBeNull();
   expect(slot.queryByTestId("sc-chips")).toBeNull();
-  // Unpushed badge uses kit Badge padding without px-1/py-0/leading-none override.
+  // Unpushed badge uses the kit Badge classes verbatim without cramped padding overrides.
+  const { badgeVariants } = await import("./components/ui/badge.tsx");
   const unpushedBadge = slot.getByText("Unpushed");
-  expect(unpushedBadge.className).not.toMatch(/\bpx-1\b|\bpy-0\b|\bleading-none\b/);
+  expect(unpushedBadge.className).toBe(badgeVariants({ variant: "outline" }));
   // Pull button lives inside sc-ready beside the branch and dispatches pull with target head.
   const pull = slot.getByRole("button", { name: "Pull 2 new commits" });
   expect(ready.contains(pull)).toBe(true);
@@ -539,6 +540,16 @@ test("non-redundant forge diagnostics still render on sc-forge-line", async () =
   };
   const { slot } = renderRow(row);
   expect((await slot.findByTestId("sc-forge-line")).textContent).toContain("rate-limiting");
+});
+
+test("ThisThread omits the trailing container when there is no PR and no target action", async () => {
+  const row = checkout("scott/local-only", null);
+  if (row.state !== "checkout" || !row.local.read) throw new Error("fixture");
+  row.local.read.value = local("scott/local-only", { target: null });
+  const { slot } = renderRow(row);
+  const title = await slot.findByTestId("sc-title");
+  const topRow = title.parentElement!.parentElement!;
+  expect(topRow.children).toHaveLength(1);
 });
 
 test("the tab is registered as Source Control", () => {

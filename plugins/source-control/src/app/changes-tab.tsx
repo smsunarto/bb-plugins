@@ -139,7 +139,6 @@ const ChangesView = memo(function ChangesView({
   const vcs = useVcsActions(threadId, gate);
   const now = useNow();
   const workspace = view.kind === "ready" ? view.workspace : null;
-  const target = workspace?.target ?? null;
   const readState = readStateText(view, refresh.isPending, live, now);
 
   return (
@@ -152,7 +151,7 @@ const ChangesView = memo(function ChangesView({
         {workspace ? (
           <PullStatus
             outcome={vcs.outcomes.get(WORKSPACE)}
-            targetHead={target?.head ?? null}
+            targetHead={workspace.target?.head ?? null}
             native={workspace.provider === "git"}
             running={vcs.running.has(WORKSPACE)}
             busy={vcs.busy}
@@ -160,7 +159,7 @@ const ChangesView = memo(function ChangesView({
           />
         ) : null}
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
-          {view.kind === "loading" ? <LoadingBody readState={readState} /> : null}
+          {view.kind === "loading" ? <LoadingBody /> : null}
           {view.kind === "none" ? (
             <EmptyState
               className="mx-3 my-8 max-md:mx-4 @md:mx-4"
@@ -249,7 +248,6 @@ function ReadyBody({
           workspace={workspace}
           forge={row.forge}
           vcs={vcs}
-          readOnly={row.readAsGit}
           readState={readState}
           offline={view.stale?.kind === "host-offline"}
         />
@@ -338,7 +336,7 @@ function commitBranches(workspace: WorkspaceValue): Branch[] {
     : all;
 }
 
-function LoadingBody({ readState }: { readState: string | null }) {
+function LoadingBody() {
   return (
     <div
       data-testid="sc-loading"
@@ -350,14 +348,12 @@ function LoadingBody({ readState }: { readState: string | null }) {
         <div className="flex items-center gap-2">
           <Skeleton className="h-6 w-16 rounded-full" />
           <Skeleton className="h-5 w-58 max-w-full" />
-          {readState ? (
-            <span
-              className="ms-auto shrink-0 text-[12px] leading-5 text-muted-foreground"
-              data-testid="sc-read-state"
-            >
-              {readState}
-            </span>
-          ) : null}
+          <span
+            className="ms-auto shrink-0 text-[12px] leading-5 text-muted-foreground"
+            data-testid="sc-read-state"
+          >
+            Reading…
+          </span>
         </div>
         <Skeleton className="h-3 w-50 max-w-full" />
       </div>
@@ -659,19 +655,16 @@ function ThisThread({
   workspace,
   forge,
   vcs,
-  readOnly,
   readState,
   offline,
 }: {
   threadId: string;
-  row: ThreadChange;
+  row: CheckoutChange;
   branchName: string | null;
   branch: Branch | null;
   workspace: WorkspaceValue;
   forge: Facet<ForgeValue>;
   vcs: Vcs;
-  /** A GitButler workspace read as plain git: its writes would act on GitButler's own branch. */
-  readOnly: boolean;
   readState: string | null;
   offline: boolean;
 }) {
@@ -685,7 +678,8 @@ function ThisThread({
   const note = headerNote(forge, workspace, branch);
   const uncommitted = uncommittedCount(workspace);
   const visible = useTabVisible();
-  const changeKey = row.state === "checkout" ? row.key : null;
+  const hasTrailing =
+    Boolean(pr) || (workspace.target !== null && (!row.readAsGit || workspace.target.behind > 0));
   return (
     <section
       data-testid="sc-ready"
@@ -703,10 +697,12 @@ function ThisThread({
               {pr ? pr.title : (name ?? "No branch")}
             </span>
           </div>
-          <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1">
-            {pr ? <OpenOnGitHub href={pr.url} label={`Open #${pr.number} on GitHub`} /> : null}
-            <TargetPull target={workspace.target} readOnly={readOnly} vcs={vcs} />
-          </div>
+          {hasTrailing ? (
+            <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1">
+              {pr ? <OpenOnGitHub href={pr.url} label={`Open #${pr.number} on GitHub`} /> : null}
+              <TargetPull target={workspace.target} readOnly={row.readAsGit} vcs={vcs} />
+            </div>
+          ) : null}
         </div>
         <span
           className="flex min-w-0 flex-wrap items-center gap-x-2 text-[12px] leading-4"
@@ -748,10 +744,10 @@ function ThisThread({
           Push, pull, and land need the host. Pull request state still comes from GitHub.
         </span>
       ) : null}
-      {changeKey ? (
+      {row.key ? (
         <FindingsCard
-          key={changeKey}
-          changeKey={changeKey}
+          key={row.key}
+          changeKey={row.key}
           threadId={threadId}
           head={branch?.head ?? null}
           visible={visible}
