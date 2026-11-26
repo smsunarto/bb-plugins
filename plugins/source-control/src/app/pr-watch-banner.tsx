@@ -145,7 +145,7 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
         <Item
           asChild
           size="row"
-          className="min-h-6 min-w-0 flex-1 cursor-pointer gap-1.5 py-0 text-xs"
+          className="min-h-6 min-w-0 flex-1 cursor-pointer gap-1.5 border-0 py-0 text-xs"
         >
           <CollapsibleTrigger
             {...KEEP_COMPOSER_FOCUS}

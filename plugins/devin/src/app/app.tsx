@@ -221,10 +221,10 @@ function CloudBanner() {
   };
 
   return (
-    <div className="flex flex-col gap-2 px-3 py-2 text-xs text-foreground">
+    <div className="flex min-h-8 flex-col justify-center gap-2 px-3 py-1.5 text-xs text-foreground">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-          <DevinIcon />
+          <DevinIcon className="devin-cloud-logo text-foreground" />
           <span className="shrink-0 font-medium text-foreground">Devin Cloud</span>
           {active === null ? (
             <span className="truncate">Starting a cloud session…</span>

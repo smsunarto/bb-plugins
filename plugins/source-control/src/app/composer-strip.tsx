@@ -59,7 +59,16 @@ export function useStripVisible(input: ExperimentalThreadContextSegmentInput): b
   return stripSummary(useThreadChange(input.threadId, input.environment !== null)) !== null;
 }
 
-type Part = { text: string; tone: string; icon?: string };
+type Part = { text: string; tone: string; branch?: boolean };
+
+const LEAD_ICONS: Record<ChangeState["tone"], { name: string; tone: string }> = {
+  local: { name: "GitBranch", tone: "text-foreground" },
+  pushed: { name: "GitBranch", tone: "text-foreground" },
+  draft: { name: "GitPullRequestDraft", tone: "text-muted-foreground" },
+  open: { name: "GitPullRequest", tone: "text-success" },
+  merged: { name: "GitMerge", tone: "text-(--pr-merged)" },
+  closed: { name: "GitPullRequestClosed", tone: "text-destructive-text" },
+};
 
 /** "Draft #482", or how far a branch without a pull request got: the chat card's chip, in words. */
 export function lead(state: ChangeState): string {
@@ -84,9 +93,7 @@ export function stripParts(
 ): Part[] {
   const pr = summary.pullRequest;
   const counts = pr?.state === "open" ? pr.checks : null;
-  const parts: Part[] = [
-    { text: lead(changeState(summary)), tone: "font-semibold text-foreground" },
-  ];
+  const parts: Part[] = [{ text: lead(changeState(summary)), tone: "font-medium text-foreground" }];
   // A merge started from any surface, until the pull request's read catches up.
   if (pr?.state === "open" && merge !== "idle")
     parts.push(
@@ -96,7 +103,7 @@ export function stripParts(
     );
   // Without a pull request number, the branch is what names the Change.
   if (!pr && summary.branch)
-    parts.push({ text: summary.branch.name, tone: "text-muted-foreground", icon: "GitBranch" });
+    parts.push({ text: summary.branch.name, tone: "text-muted-foreground", branch: true });
   if (summary.findings > 0)
     parts.push({ text: `${summary.findings} findings`, tone: "text-muted-foreground" });
   if (pr && conflictsWithBase(pr))
@@ -139,14 +146,16 @@ export function StripSummary({
   if (!summary) return null;
   const countUncommitted = !segments.some((segment) => segment.key === CHANGED_FILES_SEGMENT);
   const chips = attentionChips(summary);
+  const state = changeState(summary);
+  const leadIcon = LEAD_ICONS[state.tone];
   const [first, ...rest] = stripParts(summary, countUncommitted, merge);
-  const hasBranch = rest.some((part) => part.icon);
+  const hasBranch = rest.some((part) => part.branch);
   return (
     <span
       data-bb-plugin="source-control"
       data-testid="sc-strip"
       className={cx(
-        "flex min-h-6 min-w-0 items-center gap-2 overflow-hidden px-2 py-1 text-[12px] leading-4 whitespace-nowrap",
+        "flex min-h-6 min-w-0 items-center gap-1.5 overflow-hidden px-2 py-1 text-xs leading-4 whitespace-nowrap",
         STACKED,
       )}
       title={chips.map((chip) => chip.label).join(" · ") || undefined}
@@ -154,37 +163,32 @@ export function StripSummary({
       {first && (
         <span
           className={cx(
+            "flex min-w-0 shrink-0 items-center gap-1.5",
             first.tone,
             LEAD_TOUCH,
-            "@max-[34rem]/promptbox-shell:max-w-full @max-[34rem]/promptbox-shell:truncate",
+            "@max-[34rem]/promptbox-shell:max-w-full",
           )}
         >
-          {first.text}
+          <Icon
+            name={leadIcon.name}
+            className={cx("size-3.5 shrink-0", leadIcon.tone)}
+            aria-hidden
+          />
+          <span className="@max-[34rem]/promptbox-shell:truncate">{first.text}</span>
         </span>
       )}
       {rest.length > 0 && (
-        <span className="flex min-w-0 items-center gap-2 @max-[34rem]/promptbox-shell:self-stretch">
+        <span className="flex min-w-0 items-center gap-1.5 @max-[34rem]/promptbox-shell:self-stretch">
           {rest.map((part) => (
             <span
               key={part.text}
               // Beside a branch, a count keeps its width and the branch truncates.
               className={cx(
                 part.tone,
-                part.icon
-                  ? "flex min-w-0 items-center gap-1"
-                  : hasBranch
-                    ? "shrink-0"
-                    : "min-w-0 truncate",
+                part.branch ? "min-w-0 truncate" : hasBranch ? "shrink-0" : "min-w-0 truncate",
               )}
             >
-              {part.icon ? (
-                <>
-                  <Icon name={part.icon} className="size-3 shrink-0" aria-hidden />
-                  <span className="min-w-0 truncate">{part.text}</span>
-                </>
-              ) : (
-                part.text
-              )}
+              {part.text}
             </span>
           ))}
         </span>

@@ -137,11 +137,18 @@ describe("prompt-stack banner contract", () => {
     const mod = await import(`../${modulePath}`);
     const css: string = mod.PROMPT_STACK_BANNER_CSS;
 
-    // Must never anchor on Tailwind utility classes or individual banner IDs/labels.
+    // Must never anchor on Tailwind utility classes, individual banner IDs/labels,
+    // or universal-bucket :is(...) selector endings.
     expect(css).not.toMatch(/\.rounded-lg|\.border-border|\.ring-1|\.bg-background/);
     expect(css).not.toMatch(/thread-prompt-banner-|aria-label="/);
+    expect(css).not.toMatch(/:is\([^)]*\)(?::not\([^)]*\))?\s*[,{]/);
     // Hairline must draw via ::after so child fills never wash it out.
     expect(css).toContain("::after");
+    // Must define shared label/value typography tokens once and apply them across header rows.
+    expect(css).toContain("--prompt-banner-label-weight: 500");
+    expect(css).toContain("--prompt-banner-label-color: var(--foreground)");
+    expect(css).toContain("--prompt-banner-value-weight: 400");
+    expect(css).toContain("--prompt-banner-value-color: var(--muted-foreground)");
     // Must normalize active-row washes/rings and disclosure dividers uniformly.
     expect(css).toContain("background-color: transparent");
     expect(css).toContain('section[aria-hidden="false"]::before');
@@ -151,5 +158,93 @@ describe("prompt-stack banner contract", () => {
     const appCss = stripComments(readFileSync("plugins/t3-composer/app.css", "utf8"), "app.css");
     expect(appCss).not.toContain("section.rounded-lg.border-border");
     expect(appCss).not.toContain("section.rounded-b-none.border-border");
+  });
+
+  test("plugin prompt banners share one leading-icon inset and 12px medium foreground label grammar", () => {
+    const violations: string[] = [];
+
+    // Captain QueueStatus: leading 14px icon + 12px medium foreground label unconditionally.
+    const captainBanner = stripComments(
+      readFileSync("plugins/captain/src/app/banner.tsx", "utf8"),
+      "plugins/captain/src/app/banner.tsx",
+    );
+    const queueStatusMatch = /function QueueStatus[\s\S]*?^\}/m.exec(captainBanner);
+    const queueStatus = queueStatusMatch?.[0] ?? "";
+    if (!queueStatus.includes("font-medium text-foreground")) {
+      violations.push(
+        "plugins/captain/src/app/banner.tsx:QueueStatus must style its status label with font-medium text-foreground.",
+      );
+    }
+    if (!queueStatus.includes("size-3.5 shrink-0")) {
+      violations.push(
+        "plugins/captain/src/app/banner.tsx:QueueStatus must render a leading size-3.5 icon.",
+      );
+    }
+
+    // Source Control composer strip: leading 14px state icon + font-medium (not font-semibold) lead.
+    const composerStrip = stripComments(
+      readFileSync("plugins/source-control/src/app/composer-strip.tsx", "utf8"),
+      "plugins/source-control/src/app/composer-strip.tsx",
+    );
+    if (/\bfont-semibold\b/.test(composerStrip)) {
+      violations.push(
+        "plugins/source-control/src/app/composer-strip.tsx uses font-semibold; prompt-stack banner labels use font-medium text-foreground.",
+      );
+    }
+    if (!composerStrip.includes("font-medium text-foreground")) {
+      violations.push(
+        "plugins/source-control/src/app/composer-strip.tsx must style the strip lead with font-medium text-foreground.",
+      );
+    }
+    if (!composerStrip.includes("size-3.5 shrink-0")) {
+      violations.push(
+        "plugins/source-control/src/app/composer-strip.tsx must render a leading size-3.5 icon so text aligns with sibling banners.",
+      );
+    }
+
+    // Source Control PR watch banner: 12px inset (border-0 on Item), gap-1.5, leading StateIcon, medium foreground label.
+    const prWatch = stripComments(
+      readFileSync("plugins/source-control/src/app/pr-watch-banner.tsx", "utf8"),
+      "plugins/source-control/src/app/pr-watch-banner.tsx",
+    );
+    if (!prWatch.includes("border-0") || !prWatch.includes("gap-1.5")) {
+      violations.push(
+        "plugins/source-control/src/app/pr-watch-banner.tsx must keep border-0 and gap-1.5 on its Item trigger for 12px icon / 32px text alignment.",
+      );
+    }
+    if (!prWatch.includes("<StateIcon") || !prWatch.includes("font-medium text-foreground")) {
+      violations.push(
+        "plugins/source-control/src/app/pr-watch-banner.tsx must render leading StateIcon and font-medium text-foreground label.",
+      );
+    }
+
+    // Kitchen Sink RPIV todo banner: leading 14px ListTodoIcon + font-medium text-foreground count label.
+    const rpivTodo = stripComments(
+      readFileSync("plugins/kitchen-sink/src/app/rpiv-todo/banner.tsx", "utf8"),
+      "plugins/kitchen-sink/src/app/rpiv-todo/banner.tsx",
+    );
+    if (!rpivTodo.includes("<ListTodoIcon") || !rpivTodo.includes("font-medium text-foreground")) {
+      violations.push(
+        "plugins/kitchen-sink/src/app/rpiv-todo/banner.tsx must render leading ListTodoIcon and font-medium text-foreground count label.",
+      );
+    }
+
+    // Devin Cloud banner: leading 14px DevinIcon + px-3 + gap-1.5 + font-medium text-foreground label.
+    const devinApp = stripComments(
+      readFileSync("plugins/devin/src/app/app.tsx", "utf8"),
+      "plugins/devin/src/app/app.tsx",
+    );
+    const cloudBannerMatch = /function CloudBanner[\s\S]*?^\}/m.exec(devinApp);
+    const cloudBanner = cloudBannerMatch?.[0] ?? "";
+    if (
+      !cloudBanner.includes("<DevinIcon") ||
+      !cloudBanner.includes("font-medium text-foreground")
+    ) {
+      violations.push(
+        "plugins/devin/src/app/app.tsx:CloudBanner must render leading DevinIcon and font-medium text-foreground label.",
+      );
+    }
+
+    expect(violations).toEqual([]);
   });
 });

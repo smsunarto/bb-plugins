@@ -39,7 +39,14 @@ describe("mountPromptStackBannerStyle", () => {
     expect(PROMPT_STACK_BANNER_CSS).not.toMatch(
       /\.rounded-lg|\.border-border|\.ring-1|\.bg-background|thread-prompt-banner-|aria-label="/,
     );
+    expect(PROMPT_STACK_BANNER_CSS).not.toMatch(/:is\([^)]*\)(?::not\([^)]*\))?\s*[,{]/);
     expect(PROMPT_STACK_BANNER_CSS).toContain("::after");
     expect(PROMPT_STACK_BANNER_CSS).toContain('section[aria-hidden="false"]::before');
+    expect(PROMPT_STACK_BANNER_CSS).toContain("--prompt-banner-label-weight: 500");
+    expect(PROMPT_STACK_BANNER_CSS).toContain("--prompt-banner-label-color: var(--foreground)");
+    expect(PROMPT_STACK_BANNER_CSS).toContain("--prompt-banner-value-weight: 400");
+    expect(PROMPT_STACK_BANNER_CSS).toContain(
+      "--prompt-banner-value-color: var(--muted-foreground)",
+    );
   });
 });

@@ -132,10 +132,7 @@ function QueueStatus({ id, label, degraded }: { id: string; label: string; degra
         aria-hidden
         className={cn("size-3.5 shrink-0", degraded ? "text-warning-text" : "text-foreground")}
       />
-      <span
-        id={id}
-        className={cn("min-w-0 flex-1 truncate text-foreground", degraded && "font-medium")}
-      >
+      <span id={id} className="min-w-0 flex-1 truncate font-medium text-foreground">
         {label}
       </span>
       <Button

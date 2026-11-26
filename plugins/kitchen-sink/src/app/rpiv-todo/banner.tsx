@@ -180,7 +180,6 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
   const current = sorted.find((item) => item.status === "in_progress");
   const currentLabel = current ? current.activeForm || current.text : null;
   const counts = `${completed}/${sorted.length} complete`;
-  const visible = currentLabel ? `${counts} · ${currentLabel}` : counts;
   const aria = currentLabel
     ? `${completed} of ${sorted.length} items complete, now ${currentLabel}`
     : `${completed} of ${sorted.length} ${sorted.length === 1 ? "item" : "items"} complete`;
@@ -202,7 +201,14 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
           className="flex min-h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-none px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-background/80"
         >
           <ListTodoIcon className="rpiv-todo-icon" />
-          <span className="min-w-0 flex-1 truncate text-left">{visible}</span>
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+            <span className="shrink-0 font-medium text-foreground">{counts}</span>
+            {currentLabel ? (
+              <span className="min-w-0 truncate font-normal text-muted-foreground">
+                · {currentLabel}
+              </span>
+            ) : null}
+          </span>
           <ChevronDownIcon
             className={`rpiv-todo-icon rpiv-todo-chevron${expanded ? " rpiv-todo-chevron-open" : ""}`}
           />
