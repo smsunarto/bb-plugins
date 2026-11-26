@@ -10,7 +10,7 @@ import {
   useBbNavigate,
   type ExperimentalThreadHeaderRowProps,
 } from "@get-bb/plugin-sdk/app";
-import { Fragment, useCallback, useMemo, type MouseEvent } from "react";
+import { Fragment, useCallback, useMemo, useSyncExternalStore, type MouseEvent } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,11 +18,39 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu.tsx";
+import { COMPACT_VIEWPORT_QUERY } from "../components/ui/hooks/use-compact-viewport.tsx";
+import {
+  getMediaQuerySnapshot,
+  subscribeMediaQuery,
+} from "../components/ui/hooks/use-media-query.ts";
+import { POINTER_COARSE_QUERY } from "../components/ui/hooks/use-pointer-coarse.ts";
 import { Icon } from "../components/ui/icon.tsx";
 import { Separator } from "../components/ui/separator.tsx";
 import { cn } from "../lib/utils.ts";
 import { StatusBarGlyph, toneTextClass } from "./glyphs.tsx";
 import { buildKitchenSinkHeaderSegments } from "./lineage.ts";
+
+export const PHONE_VIEWPORT_QUERY = `${COMPACT_VIEWPORT_QUERY} and ${POINTER_COARSE_QUERY}`;
+
+function subscribePhoneViewport(notify: () => void): () => void {
+  return subscribeMediaQuery(PHONE_VIEWPORT_QUERY, notify);
+}
+
+function getPhoneViewportSnapshot(): boolean {
+  return getMediaQuerySnapshot(PHONE_VIEWPORT_QUERY);
+}
+
+function getServerPhoneViewportSnapshot(): boolean {
+  return false;
+}
+
+function useIsPhoneViewport(): boolean {
+  return useSyncExternalStore(
+    subscribePhoneViewport,
+    getPhoneViewportSnapshot,
+    getServerPhoneViewportSnapshot,
+  );
+}
 
 const PLUGIN_SCOPE_PROPS = {
   "data-bb-plugin": "kitchen-sink",
@@ -30,7 +58,7 @@ const PLUGIN_SCOPE_PROPS = {
 } as const;
 
 const INTERACTIVE_ITEM =
-  "inline-flex h-6 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:pointer-coarse:h-11 max-md:pointer-coarse:min-w-11 max-md:pointer-coarse:px-2.5";
+  "inline-flex h-6 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 function clickOptions(event: MouseEvent): HeaderBarClickOptions | undefined {
   return event.metaKey || event.ctrlKey ? { split: true } : undefined;
@@ -39,12 +67,19 @@ function clickOptions(event: MouseEvent): HeaderBarClickOptions | undefined {
 /**
  * Unified Vim-style thread statusbar directly under the thread header.
  *
- * Publishes Kitchen Sink's own fallback lineage/subthread segments and renders
+ * Hidden on phone viewports (compact width + coarse pointer) so mobile thread
+ * headers keep full vertical space with no empty slot gap. Otherwise,
+ * publishes Kitchen Sink's own fallback lineage/subthread segments and renders
  * the winning segments across all participating plugins in one 32px row with
  * fixed left (`lineage`, `task`) and right (`meta`, `threads`, `action`) zones.
  * Returns `null` when every slot is empty so normal threads stay at 0px.
  */
-export function HeaderStatusBar({ threadId }: ExperimentalThreadHeaderRowProps) {
+export function HeaderStatusBar(props: ExperimentalThreadHeaderRowProps) {
+  if (useIsPhoneViewport()) return null;
+  return <HeaderStatusBarContent {...props} />;
+}
+
+function HeaderStatusBarContent({ threadId }: ExperimentalThreadHeaderRowProps) {
   const { threads } = useSidebarThreads();
   const navigate = useBbNavigate();
 
@@ -77,7 +112,7 @@ export function HeaderStatusBar({ threadId }: ExperimentalThreadHeaderRowProps) 
       {...PLUGIN_SCOPE_PROPS}
       data-kitchen-sink-header-bar=""
       data-testid="thread-header-status-bar"
-      className="flex h-8 w-full min-w-0 items-center justify-start gap-1.5 overflow-hidden border-b border-border bg-background/80 px-2.5 text-xs text-foreground whitespace-nowrap select-none max-md:pointer-coarse:h-11 max-md:pointer-coarse:px-2"
+      className="flex h-8 w-full min-w-0 items-center justify-start gap-1.5 overflow-hidden border-b border-border bg-background/80 px-2.5 text-xs text-foreground whitespace-nowrap select-none"
     >
       {segments.map((segment, index) => (
         <Fragment key={`${segment.slot}:${segment.owner}`}>
@@ -204,8 +239,7 @@ function SegmentMenu({
             INTERACTIVE_ITEM,
             "shrink-0",
             toneTextClass(menu.tone ?? "muted"),
-            compact &&
-              "h-5 bg-surface-raised px-1.5 font-mono text-[11px] hover:bg-state-hover max-md:pointer-coarse:h-11",
+            compact && "h-5 bg-surface-raised px-1.5 font-mono text-[11px] hover:bg-state-hover",
           )}
         >
           {menu.glyph !== undefined ? <StatusBarGlyph glyph={menu.glyph} /> : null}
