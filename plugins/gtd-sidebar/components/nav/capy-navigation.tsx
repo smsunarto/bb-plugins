@@ -63,7 +63,7 @@ export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigat
         <nav
           aria-label="Navigation"
           data-gtd-phone-nav={isPhone || undefined}
-          className="flex shrink-0 flex-col px-2 py-1"
+          className={cn("flex shrink-0 flex-col px-2 py-1", !isPhone && "gap-1")}
         >
           {isPhone ? (
             <div className="gtd-phone-nav-header">
@@ -73,7 +73,7 @@ export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigat
           ) : null}
           <div
             ref={scroller}
-            className="relative flex min-h-0 flex-col"
+            className={cn("relative flex min-h-0 flex-col", !isPhone && "gap-1")}
             data-gtd-nav-scroll=""
             onScroll={markScrolled}
             onFocus={revealFocusedRow}

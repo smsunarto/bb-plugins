@@ -106,6 +106,21 @@ describe("CapyNavigation", () => {
     assert.equal(mount().queryByRole("button", { name: "More" }), null);
   });
 
+  it("spaces desktop navigation rows and More evenly with gap-1, matching the thread list", () => {
+    const desktop = mount(items({}, { isVisible: false }), {}, false);
+    const nav = desktop.getByRole("navigation");
+    const scroller = nav.querySelector("[data-gtd-nav-scroll]");
+    assert.ok(nav.className.split(/\s+/).includes("gap-1"));
+    assert.ok(scroller?.className.split(/\s+/).includes("gap-1"));
+    cleanup();
+
+    const phone = mount(items({}, { isVisible: false }), {}, true);
+    const phoneNav = phone.getByRole("navigation");
+    const phoneScroller = phoneNav.querySelector("[data-gtd-nav-scroll]");
+    assert.equal(phoneNav.className.split(/\s+/).includes("gap-1"), false);
+    assert.equal(phoneScroller?.className.split(/\s+/).includes("gap-1"), false);
+  });
+
   it("keeps More outside the phone rows' scroll region", () => {
     const slot = mount(items({}, { isVisible: false }), {}, true);
     const nav = slot.getByRole("navigation");

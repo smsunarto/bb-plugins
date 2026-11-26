@@ -1,5 +1,6 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import { activeSectionFor, effectiveParentThreadId } from "./inbox.ts";
+import { isLongLivedThread } from "./long-lived.ts";
 
 export type InboxLifecycle = "active" | "snoozed" | "settled";
 export type InboxShelf = "pinned" | "nextAction" | "waiting" | "slopcop" | "snoozed" | "settled";
@@ -209,7 +210,12 @@ function aggregateFamilies(roots: readonly InboxThreadNode[]): void {
     const node = preorder[index]!;
     for (const child of node.children) {
       node.matchesSearch ||= child.matchesSearch;
-      node.hasUnread ||= child.hasUnread;
+      // Long-lived threads (Captains) coordinate crew that report back to them
+      // rather than directly to the user; a crew thread left unread by a
+      // recovered error (e.g. host restart) must not pin a permanent dot on
+      // the Captain row. Live status (working, waiting-for-input) still rolls
+      // up via `statusThread`.
+      if (!isLongLivedThread(node.thread)) node.hasUnread ||= child.hasUnread;
       if (statusPriority(child.statusThread) > statusPriority(node.statusThread))
         node.statusThread = child.statusThread;
     }

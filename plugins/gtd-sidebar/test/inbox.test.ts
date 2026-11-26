@@ -323,6 +323,34 @@ describe("inbox families", () => {
     assert.equal(tree[0]?.lifecycle, "active");
   });
 
+  it("does not roll unread crew subthreads up onto a collapsed Captain row", () => {
+    const captain = thread({ id: "captain", originPluginId: "captain", isUnread: false });
+    const crew = thread({
+      id: "crew",
+      parentThreadId: "captain",
+      originPluginId: "scott-tasks",
+      isUnread: true,
+    });
+    const tree = buildInboxTree([captain, crew], active);
+    assert.equal(visibleInboxRows(tree, new Set(["captain"]))[0]?.isUnread, false);
+
+    // When the Captain itself has an unread response, it still shows unread.
+    const unreadCaptain = thread({ id: "captain", originPluginId: "captain", isUnread: true });
+    const unreadTree = buildInboxTree([unreadCaptain, crew], active);
+    assert.equal(visibleInboxRows(unreadTree, new Set(["captain"]))[0]?.isUnread, true);
+
+    // Live crew status (waiting-for-input, working) still rolls up to the Captain.
+    const blockedCrew = thread({
+      id: "crew",
+      parentThreadId: "captain",
+      originPluginId: "scott-tasks",
+      hasPendingInteraction: true,
+      indicator: "waiting-for-input",
+    });
+    const blockedTree = buildInboxTree([captain, blockedCrew], active);
+    assert.equal(visibleInboxRows(blockedTree, new Set(["captain"]))[0]?.statusThread, blockedCrew);
+  });
+
   it("moves a quiet family into waiting while any subthread is working", () => {
     const tree = buildInboxTree(
       [
