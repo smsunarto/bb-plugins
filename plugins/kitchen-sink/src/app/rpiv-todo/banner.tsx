@@ -199,7 +199,7 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
             manuallyToggled.current = true;
             setExpanded((open) => !open);
           }}
-          className="flex min-h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-none px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-background/80 max-md:pointer-coarse:min-h-11"
+          className="flex min-h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-none px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-state-hover max-md:pointer-coarse:min-h-11"
         >
           <ListTodoIcon className="rpiv-todo-icon" />
           <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left">

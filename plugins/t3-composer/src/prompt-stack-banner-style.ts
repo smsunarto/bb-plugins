@@ -31,6 +31,21 @@ const CARD = `[${CARD_ATTR}]`;
 const PEEK_LAYER = "[data-promptbox-shell] > div:first-child [data-prompt-stack-peek]";
 
 export const PROMPT_STACK_BANNER_CSS = `
+/* One shared lightening hover token for every interactive prompt-stack banner
+   row: in dark themes (bb Monokai dark, default dark), --state-hover lightens
+   the --surface-raised-solid card; in light theme, raising to --background
+   (#fff over #f9f9f9) with a subtle edge lift reads clearly lighter than rest. */
+:root {
+  --prompt-banner-hover-bg: var(--background);
+  --prompt-banner-hover-shadow: inset 0 0 0 var(--t3-composer-ring-width)
+    color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+
+.dark {
+  --prompt-banner-hover-bg: var(--state-hover);
+  --prompt-banner-hover-shadow: none;
+}
+
 /* One frame and one-device-pixel hairline for every prompt-stack card, painted
    above full-width headers and opaque expanded bodies so nothing washes it out. */
 ${CARD} {
@@ -76,6 +91,16 @@ ${CARD} #thread-todo-card-toggle:not(:focus-visible) {
 ${CARD} #thread-prompt-banner-child-threads-toggle:not(:hover),
 ${CARD} #thread-todo-card-toggle:not(:hover) {
   background-color: transparent;
+}
+
+/* Every interactive prompt-stack banner row lightens on hover via one shared
+   token, gated to hover-capable pointers; non-interactive rows stay flat. */
+@media (hover: hover) {
+  ${CARD} button[aria-expanded]:not([aria-haspopup]):hover,
+  ${CARD} #thread-prompt-banner-child-threads-toggle:hover {
+    background-color: var(--prompt-banner-hover-bg);
+    box-shadow: var(--prompt-banner-hover-shadow);
+  }
 }
 
 /* Disclosure bodies (both direct core children and plugin-wrapped segments such

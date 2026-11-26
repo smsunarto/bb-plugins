@@ -148,6 +148,9 @@ describe("mountPromptStackBannerStyle", () => {
     expect(PROMPT_STACK_BANNER_CSS).toContain(`[${CARD_ATTR}] .animate-shine-icon`);
     expect(PROMPT_STACK_BANNER_CSS).toContain("mask-image: none !important");
     expect(PROMPT_STACK_BANNER_CSS).toContain("animation: none !important");
+    expect(PROMPT_STACK_BANNER_CSS).toContain("--prompt-banner-hover-bg");
+    expect(PROMPT_STACK_BANNER_CSS).toContain("@media (hover: hover)");
+    expect(PROMPT_STACK_BANNER_CSS).toContain("button[aria-expanded]:not([aria-haspopup]):hover");
     expect(PROMPT_STACK_BANNER_CSS).toContain(
       `[${CARD_ATTR}] section[aria-hidden="false"]::before`,
     );
