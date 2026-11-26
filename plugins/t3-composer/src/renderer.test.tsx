@@ -441,7 +441,26 @@ const MODELS: Record<string, object[]> = {
   ],
   devin: [
     catalogModel("acp-default", "Agent default", {
-      sessionOptions: [{ id: "mode", label: "Mode", type: "select", value: "a", values: [] }],
+      sessionOptions: [
+        { id: "approach", label: "Approach", type: "select", value: "a", values: [] },
+      ],
+    }),
+    catalogModel("acp-mode", "ACP Mode", {
+      sessionOptions: [
+        {
+          id: "mode",
+          label: "Mode",
+          category: "mode",
+          type: "select",
+          value: "default",
+          values: [
+            { id: "default", label: "Default" },
+            { id: "accept-edits", label: "Accept edits" },
+            { id: "auto", label: "Auto" },
+            { id: "plan", label: "Plan" },
+          ],
+        },
+      ],
     }),
   ],
 };
@@ -1111,7 +1130,22 @@ describe("T3 Code model picker", () => {
     }
   });
 
-  it("keeps BB's picker for a model with an agent option to choose from", async () => {
+  it("shows these pickers for an ACP model whose list option has category mode", async () => {
+    const { slot } = await mountComposer(
+      {},
+      undefined,
+      pickerOptions({ providerId: "devin", model: "acp-mode", reasoningLevel: "high" }),
+    );
+    try {
+      expect(await slot.findByRole("button", { name: "ACP Mode" })).toBeTruthy();
+      expect(await slot.findByRole("button", { name: "Effort: high" })).toBeTruthy();
+      expect(slot.queryByText("Host model picker")).toBeNull();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("keeps BB's picker for a model with a non-mode list agent option", async () => {
     const { slot } = await mountComposer(
       {},
       undefined,
