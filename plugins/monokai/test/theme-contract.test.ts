@@ -1,3 +1,4 @@
+import { FRAME_BORDER_CSS } from "../app/frame-border.ts";
 import { SEARCH_FIELDS_CSS } from "../app/search-fields.ts";
 import { NEW_TAB_LAUNCHER_CSS } from "../app/new-tab-launcher.ts";
 import { describe, expect, test } from "bun:test";
@@ -257,8 +258,6 @@ describe("bb Monokai contract audit", () => {
     // inset rings; only boxes a ring cannot replace keep the border width.
     const fullBox = rules.filter((rule) => /^\s*border: var\(--hairline-width\)/m.test(rule.body));
     expect(fullBox.map((rule) => rule.selector).sort()).toEqual([
-      '.dark [data-framed] [data-sidebar="inset-edge"]', // desktop window only
-      '.dark [data-testid="app-layout-root"]:not([data-framed]) [data-app-content-shell]::after', // desktop width only
       ".dark img[data-markdown-image], .dark button.cursor-zoom-in.border", // an img covers an inset ring
     ]);
     expect(theme).not.toMatch(/inset 0 0 0 var\(--hairline-width\)/);
@@ -360,9 +359,7 @@ describe("bb Monokai contract audit", () => {
     );
     expect(inset).toContain("mask-position: top, bottom;");
     expect(inset).toContain("clip-path: none;");
-    expect(body('.dark [data-framed] [data-sidebar="inset-edge"]')).toBe(
-      "\n  border: var(--hairline-width) solid var(--border);\n  border-radius: 12px;\n  transition: none;\n",
-    );
+    expect(body('.dark [data-framed] [data-sidebar="inset-edge"]')).toBe("\n  display: none;\n");
     expect(body('.dark [data-framed] [data-sidebar="inset"]::after')).toContain("display: none;");
     // Neither sidebar edge glows; the right divider is the page's hairline.
     expect(body('.dark [data-testid="app-sidebar-resize-handle"]::before')).toBe(
@@ -371,13 +368,9 @@ describe("bb Monokai contract audit", () => {
     expect(body(".dark #thread-detail-secondary-panel-handle > span + span")).toBe(
       "\n  width: var(--hairline-width);\n  background-color: var(--sidebar-border);\n",
     );
-    // The New thread screen drops the framed edge too.
-    expect(theme).toContain(
-      '.dark[data-monokai-home] [data-framed] [data-sidebar="inset-edge"] {\n  display: none;',
-    );
   });
 
-  test("insets the unframed desktop page and draws the new-thread backdrop", () => {
+  test("insets the unframed desktop page without a frame border and draws the new-thread backdrop", () => {
     const inset = styleRules(theme).filter(({ selector }) =>
       selector.includes('[data-testid="app-layout-root"]:not([data-framed])'),
     );
@@ -387,13 +380,16 @@ describe("bb Monokai contract audit", () => {
       '.dark [data-testid="app-layout-root"]:not([data-framed]) {\n    padding: 8px;\n    background-color: var(--sidebar);',
     );
     expect(theme).toContain(
-      "[data-app-content-shell]::after {\n    position: absolute;\n    inset: 0;\n    z-index: 40;",
+      '.dark [data-testid="app-layout-root"]:not([data-framed]) > [data-sidebar="inset"] {\n    overflow: clip;\n    border-radius: 12px;',
     );
+    // No main-frame border overlay on unframed desktop pages.
+    expect(
+      inset.filter(({ selector }) => selector.includes("[data-app-content-shell]::after")),
+    ).toEqual([]);
+    // Desktop hides both shell halftone pseudos so only #root-compose-main-panel draws them.
     expect(theme).toContain(
-      "border: var(--hairline-width) solid var(--border);\n    border-radius: 12px;",
+      "@media (min-width: 768px) {\n  .dark[data-monokai-home] [data-app-content-shell]::before,\n  .dark[data-monokai-home] [data-app-content-shell]::after {\n    display: none;",
     );
-    // The New thread screen drops that overlay.
-    expect(theme).toContain(".dark[data-monokai-home] [data-app-content-shell]::after,");
     // The halftone starts below the macOS title bar, which bb tints translucent.
     expect(theme).toContain(
       "[data-app-content-shell]::after {\n  position: absolute;\n  inset: var(--bb-window-frame-top, 0px) 0 0;",
@@ -755,6 +751,7 @@ describe("bb Monokai selector cost", () => {
   });
 
   test("allows only the direct child search label exception in injected CSS", () => {
+    expect(FRAME_BORDER_CSS).not.toContain(":has(");
     expect(NEW_TAB_LAUNCHER_CSS).not.toContain(":has(");
     const exception =
       'label:has(> input[aria-label^="Search"]:not([data-bb-control], [data-t3-model-search]))';

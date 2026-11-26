@@ -11,6 +11,7 @@ test("mounts one marked stylesheet and removes it on disposal", () => {
   try {
     const [style] = document.querySelectorAll(selector);
     expect(document.querySelectorAll(selector)).toHaveLength(1);
+    expect(style?.textContent).toContain('[data-framed] [data-sidebar="inset-edge"]');
     expect(style?.textContent).toContain("[data-t3-model-search]");
     expect(style?.textContent).toContain('[aria-label="Recent"]');
   } finally {

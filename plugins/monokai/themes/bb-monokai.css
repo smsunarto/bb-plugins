@@ -470,9 +470,9 @@
 /* The macOS framed window takes Capy's desktop shell. The sidebar lies flat
  * on the frame with no card or outline. The page is Capy's inset panel below
  * the title bar: bb's own 8px frame lip keeps it off the window's edges, and
- * all four corners round at 12px under a 0.5px hairline, as on the unframed
- * page. bb's card mask (8px corners, the top-left squared beside an open
- * sidebar) and title-bar seam go. */
+ * all four corners round at 12px with no border, as on the unframed page.
+ * bb's card mask (8px corners, the top-left squared beside an open sidebar),
+ * inset edge, and title-bar seam go. */
 .dark [data-testid="app-layout-root"][data-framed] {
   background-image: none;
 }
@@ -486,7 +486,7 @@
 
 /* The inset spans the title bar, whose band holds the page header, so the
  * mask keeps that band whole and clips everything below it to the rounded
- * page. The SVG's rx is the page radius; keep it equal to the edge's. */
+ * page. The SVG's rx is the page radius. */
 .dark [data-framed] [data-sidebar="inset"] {
   mask-image:
     linear-gradient(black, black),
@@ -500,9 +500,7 @@
 }
 
 .dark [data-framed] [data-sidebar="inset-edge"] {
-  border: var(--hairline-width) solid var(--border);
-  border-radius: 12px;
-  transition: none;
+  display: none;
 }
 
 .dark [data-framed] [data-sidebar="inset"]::after {
@@ -513,9 +511,9 @@
 /* Unframed desktop layouts (Linux, the web app) take Capy's inset page: the
  * frame shows 8px around the page on every side, so the gap holds while the
  * sidebar slides away; the sidebar shares the frame's color, so the extra
- * left gap is invisible beside it. The page is a rounded panel
- * with a hairline edge. The left sidebar keeps its own shared hairline edge.
- * Compact viewports keep bb's full-bleed layout. */
+ * left gap is invisible beside it. The page is a borderless rounded panel.
+ * The left sidebar keeps its own shared hairline edge. Compact viewports
+ * keep bb's full-bleed layout. */
 @media (min-width: 768px) {
   .dark [data-testid="app-layout-root"]:not([data-framed]) {
     padding: 8px;
@@ -524,19 +522,6 @@
 
   .dark [data-testid="app-layout-root"]:not([data-framed]) > [data-sidebar="inset"] {
     overflow: clip;
-    border-radius: 12px;
-  }
-
-  /* The page's hairline is an overlay inside the content shell, matching
-   * bb's framed inset-edge, so the New thread screen can drop both the same
-   * way (see data-monokai-home below). */
-  .dark [data-testid="app-layout-root"]:not([data-framed]) [data-app-content-shell]::after {
-    position: absolute;
-    inset: 0;
-    z-index: 40;
-    content: "";
-    pointer-events: none;
-    border: var(--hairline-width) solid var(--border);
     border-radius: 12px;
   }
 }
@@ -1729,13 +1714,6 @@
   isolation: isolate;
 }
 
-/* The New thread screen has no page outline. app/home-marker.ts sets the
- * attribute while that screen is open; bb marks no route itself. */
-.dark[data-monokai-home] [data-app-content-shell]::after,
-.dark[data-monokai-home] [data-framed] [data-sidebar="inset-edge"] {
-  display: none;
-}
-
 @media (width > 767px) {
   /* Keep the empty homepage marker from reserving space. Each visible section
    * has clearance below it before the next section or the composer. */
@@ -1808,15 +1786,11 @@
 
 /* On phones bb pads the content shell by the status bar's safe area and clips
  * the panel below it, so the panel's dither stopped short of the screen's top
- * edge. Paint it from the shell instead, which spans the safe area; the shell
- * draws no page outline at this width. Wider layouts keep it on the panel. */
+ * edge. Paint it from the shell instead, which spans the safe area. Wider
+ * layouts keep it on the panel. */
 @media (max-width: 767px) {
   .dark[data-monokai-home] [data-app-content-shell] {
     isolation: isolate;
-  }
-
-  .dark[data-monokai-home] [data-app-content-shell]::after {
-    display: block;
   }
 
   .dark[data-monokai-home] [data-app-content-shell]::before,
@@ -1831,7 +1805,8 @@
 }
 
 @media (min-width: 768px) {
-  .dark[data-monokai-home] [data-app-content-shell]::before {
+  .dark[data-monokai-home] [data-app-content-shell]::before,
+  .dark[data-monokai-home] [data-app-content-shell]::after {
     display: none;
   }
 }
