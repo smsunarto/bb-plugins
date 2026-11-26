@@ -164,17 +164,33 @@ describe("bb Monokai contract audit", () => {
     expect(theme).not.toContain("0 0 0 1px var(--border),");
   });
 
-  test("draws every focus ring and outline inside its control", () => {
+  test("draws every focus ring and outline inside its control, except compact selection controls", () => {
     expect(theme).toContain(
       ".dark :focus-visible {\n  --tw-ring-inset: inset;\n  --tw-ring-offset-width: 0px;\n  outline-offset: -2px;\n}",
     );
+    expect(theme).toContain(
+      '.dark button[role="radio"][data-state="checked"]:focus-visible,\n' +
+        '.dark button[role="radio"][data-state="unchecked"]:focus-visible,\n' +
+        '.dark button[role="checkbox"][data-state="checked"]:focus-visible,\n' +
+        '.dark button[role="checkbox"][data-state="unchecked"]:focus-visible,\n' +
+        '.dark button[role="checkbox"][data-state="indeterminate"]:focus-visible,\n' +
+        '.dark button[role="switch"][data-state="checked"]:focus-visible,\n' +
+        '.dark button[role="switch"][data-state="unchecked"]:focus-visible {\n' +
+        "  outline: 2px solid var(--muted-foreground);\n" +
+        "  outline-offset: 2px;\n" +
+        "  --tw-ring-shadow: 0 0 transparent;\n}",
+    );
   });
 
-  test("leaves Radix checkboxes to bb's checked fill", () => {
+  test("leaves Radix checkboxes and compact radios to bb's checked fill while keeping outline ToggleGroups", () => {
     const rules = theme.replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(rules.match(/button\.border-input(?!:not\(\[role="checkbox"\]\))/g)).toBeNull();
+    expect(
+      rules.match(
+        /button\.border-input(?!:not\(\[role="checkbox"\], \[role="radio"\]\[data-state="checked"\], \[role="radio"\]\[data-state="unchecked"\]\))/g,
+      ),
+    ).toBeNull();
     expect(theme).toContain(
-      '.dark button.border-input:not([role="checkbox"]),\n.dark button.border.bg-card,\n.dark [data-bb-control="field"],\n.dark button[data-bb-control="outline"] {\n  background-color: var(--control-background);',
+      '.dark button.border-input:not([role="checkbox"], [role="radio"][data-state="checked"], [role="radio"][data-state="unchecked"]),\n.dark button.border.bg-card,\n.dark [data-bb-control="field"],\n.dark button[data-bb-control="outline"] {\n  background-color: var(--control-background);',
     );
   });
 

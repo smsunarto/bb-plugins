@@ -43,6 +43,8 @@ const tailwind = `
   .border-t-\\[0\\.5px\\] { border-top-width: 0.5px; }
   .h-px { height: 1px; }
   .bg-border { background-color: var(--border); }
+  .bg-transparent { background-color: transparent; }
+  .data-\\[state\\=checked\\]\\:bg-foreground[data-state="checked"] { background-color: var(--foreground); }
   .data-\\[dragging\\]\\:bg-ring\\/40[data-dragging] { background-color: ring-40; }
   @container plugin-detail (width >= 28rem) {
     .\\@min-\\[28rem\\]\\/plugin-detail\\:border-b-0 { border-bottom-width: 0px; }
@@ -405,5 +407,26 @@ describe("bb Monokai hairline cascade", () => {
     expect(cascade(splitter, "background-color", AT_3X)).toBe("var(--border)");
     splitter.setAttribute("data-dragging", "");
     expect(cascade(splitter, "background-color", AT_3X)).toBe("ring-40");
+  });
+
+  test("preserves checked RadioGroupItem fill while keeping outline ToggleGroup fills", () => {
+    const radio = element(
+      "button",
+      "border border-input rounded-full data-[state=checked]:border-foreground data-[state=checked]:bg-foreground",
+      { role: "radio", "data-state": "checked" },
+    );
+    expect(cascade(radio, "background-color", AT_2X)).toBe("var(--foreground)");
+
+    const toggleOff = element("button", "border border-input bg-transparent", {
+      role: "radio",
+      "data-state": "off",
+    });
+    expect(cascade(toggleOff, "background-color", AT_2X)).toBe("var(--control-background)");
+
+    const toggleOn = element("button", "border border-input bg-transparent", {
+      role: "radio",
+      "data-state": "on",
+    });
+    expect(cascade(toggleOn, "background-color", AT_2X)).toBe("var(--surface-selected)");
   });
 });
