@@ -16,6 +16,10 @@
       "source": "./plugins/agent-instructions"
     },
     {
+      "name": "account-pool-plus",
+      "source": "./plugins/account-pool-plus"
+    },
+    {
       "name": "antigravity",
       "source": "./plugins/antigravity"
     },

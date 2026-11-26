@@ -125,6 +125,35 @@ test("applies BB_ANTIGRAVITY_EXECUTABLE override to default agy launch specs", (
   assert.equal(modelList.params.providerOptions.acpLaunchSpec.command, "/opt/bin/agy");
 });
 
+test("injects --gemini-dir, --app-data-dir, and keyring isolation when pooled env vars are present", () => {
+  const translator = createAntigravitySessionTranslator();
+  const options = sent(
+    translator.inbound(
+      request(
+        "thread/start",
+        turn("full", {
+          envVars: {
+            BB_ANTIGRAVITY_GEMINI_DIR: "/home/user/.bb-plugins/profiles/acc-1/.gemini",
+            BB_ANTIGRAVITY_APP_DATA_DIR: "antigravity-cli",
+            BB_ANTIGRAVITY_DISABLE_KEYRING: "1",
+          },
+        }),
+      ),
+    ),
+  );
+  const launch = (options.providerOptions as Record<string, Record<string, unknown>>).acpLaunchSpec;
+  assert.ok(launch);
+  assert.deepEqual(launch.args, [
+    "acp",
+    "--gemini-dir",
+    "/home/user/.bb-plugins/profiles/acc-1/.gemini",
+    "--app-data-dir",
+    "antigravity-cli",
+  ]);
+  assert.equal((launch.env as Record<string, string>).DBUS_SESSION_BUS_ADDRESS, "");
+  assert.equal((options.envVars as Record<string, string>).DBUS_SESSION_BUS_ADDRESS, "");
+});
+
 test("drops redundant mode option from outbound bb/session-options deltas", () => {
   const translator = createAntigravitySessionTranslator();
   const line = `${JSON.stringify({

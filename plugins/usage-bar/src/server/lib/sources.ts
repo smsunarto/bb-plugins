@@ -26,12 +26,14 @@ import {
 } from "./pool.ts";
 
 export const POOL_PLUGIN_ID = "account-pool";
+export const POOL_PLUGIN_IDS = ["account-pool-plus", POOL_PLUGIN_ID] as const;
 
 type ExtrasReader = (provider: SourceProviderId, accountId: string) => Promise<ExtrasUpdate>;
 
 /** Where the menu's accounts come from, and how to reach each one's extras. */
 export interface Source {
   kind: "pool" | "builtin";
+  poolPluginId?: string;
   providers: MenuProvider<SourceProviderId>[];
   /** Each call creates one fan-out batch. Observations are shared only within that batch. */
   extras(refresh?: boolean): ExtrasReader;
@@ -98,11 +100,12 @@ type PluginSources = Awaited<ReturnType<BbPluginApi["sdk"]["plugins"]["experimen
 /** Account Pooler's accounts, or null when it holds none. */
 async function poolSource(
   bb: BbPluginApi,
+  pluginId: string,
   signal: AbortSignal,
   readWeb: ClaudeWebReader,
 ): Promise<Source | null> {
   const accounts = await bb.sdk.plugins.callRpc({
-    pluginId: POOL_PLUGIN_ID,
+    pluginId,
     method: "account.list",
     input: null,
     outputSchema: accountListSchema,
@@ -114,9 +117,10 @@ async function poolSource(
   return webFallback(
     {
       kind: "pool",
+      poolPluginId: pluginId,
       providers: poolProviders(accounts),
       extras: () => async (provider, accountId) => {
-        const token = await poolToken(dataDir, accountId);
+        const token = await poolToken(dataDir, accountId, pluginId);
         if (token === null) return NO_EXTRAS;
         return provider === "codex"
           ? codexExtras(token, codexIds.get(accountId) ?? null, signal)
@@ -209,7 +213,7 @@ async function builtinSource(
   const collected: Collected[] = [];
   let failures = 0;
   for (const { pluginId } of sources) {
-    if (pluginId === POOL_PLUGIN_ID) continue;
+    if ((POOL_PLUGIN_IDS as readonly string[]).includes(pluginId)) continue;
     try {
       collected.push(...(await collect(bb, pluginId, primaryHostId, signal, refresh, cache)));
     } catch (error) {
@@ -262,9 +266,11 @@ async function readSource(
     method: USAGE_LIST_METHOD,
     signal,
   });
-  if (sources.some((source) => source.pluginId === POOL_PLUGIN_ID)) {
-    const pool = await poolSource(bb, signal, readWeb);
-    if (pool !== null) return pool;
+  for (const poolId of POOL_PLUGIN_IDS) {
+    if (sources.some((source) => source.pluginId === poolId)) {
+      const pool = await poolSource(bb, poolId, signal, readWeb);
+      if (pool !== null) return pool;
+    }
   }
   return builtinSource(bb, sources, signal, refresh, cache, readWeb);
 }

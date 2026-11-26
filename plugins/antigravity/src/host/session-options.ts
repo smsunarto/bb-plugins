@@ -86,25 +86,115 @@ export function isAntigravityRateLimitMessage(message: string): boolean {
   return RATE_LIMIT_PATTERNS.some((pattern) => pattern.test(message));
 }
 
+function readStringRecord(value: unknown): Record<string, string> {
+  const record = asRecord(value);
+  if (record === null) return {};
+  const result: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    if (typeof entry === "string") result[key] = entry;
+  }
+  return result;
+}
+
+function firstNonEmpty(values: readonly (string | undefined)[]): string {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
+function resolveProfileLaunchConfig(
+  envVars: Record<string, string>,
+  specEnv: Record<string, string>,
+): { geminiDir: string; appDataDir: string; disableKeyring: boolean } {
+  const geminiDir = firstNonEmpty([
+    envVars["BB_ANTIGRAVITY_GEMINI_DIR"],
+    specEnv["BB_ANTIGRAVITY_GEMINI_DIR"],
+    process.env.BB_ANTIGRAVITY_GEMINI_DIR,
+  ]);
+  const appDataDir =
+    firstNonEmpty([
+      envVars["BB_ANTIGRAVITY_APP_DATA_DIR"],
+      specEnv["BB_ANTIGRAVITY_APP_DATA_DIR"],
+      process.env.BB_ANTIGRAVITY_APP_DATA_DIR,
+    ]) || "antigravity-cli";
+  const disableKeyring =
+    firstNonEmpty([
+      envVars["BB_ANTIGRAVITY_DISABLE_KEYRING"],
+      specEnv["BB_ANTIGRAVITY_DISABLE_KEYRING"],
+      process.env.BB_ANTIGRAVITY_DISABLE_KEYRING,
+    ]) === "1";
+  return { geminiDir, appDataDir, disableKeyring };
+}
+
+function applyLaunchOverrides(
+  providerOptions: Message | null,
+  envVars: Record<string, string>,
+  executableOverride: string | undefined,
+): Message | null {
+  const launchSpec = asRecord(providerOptions?.["acpLaunchSpec"]);
+  if (providerOptions === null || launchSpec === null) {
+    return providerOptions;
+  }
+  const specEnv = readStringRecord(launchSpec["env"]);
+  const { geminiDir, appDataDir, disableKeyring } = resolveProfileLaunchConfig(envVars, specEnv);
+
+  let nextLaunchSpec = launchSpec;
+  let changed = false;
+
+  if (executableOverride && nextLaunchSpec["command"] === "agy") {
+    nextLaunchSpec = { ...nextLaunchSpec, command: executableOverride };
+    changed = true;
+  }
+
+  if (geminiDir !== "") {
+    const existingArgs = Array.isArray(nextLaunchSpec["args"])
+      ? nextLaunchSpec["args"].filter((entry): entry is string => typeof entry === "string")
+      : [];
+    const hasGeminiDir =
+      existingArgs.includes("--gemini-dir") || existingArgs.includes("--gemini_dir");
+    if (!hasGeminiDir) {
+      nextLaunchSpec = {
+        ...nextLaunchSpec,
+        args: [...existingArgs, "--gemini-dir", geminiDir, "--app-data-dir", appDataDir],
+      };
+      changed = true;
+    }
+  }
+
+  if (disableKeyring) {
+    nextLaunchSpec = {
+      ...nextLaunchSpec,
+      env: { ...specEnv, DBUS_SESSION_BUS_ADDRESS: "" },
+    };
+    changed = true;
+  }
+
+  return changed ? { ...providerOptions, acpLaunchSpec: nextLaunchSpec } : providerOptions;
+}
+
 function applyExecutableOverride(
   options: Message,
   executableOverride: string | undefined,
 ): Message {
-  if (!executableOverride) return options;
+  const envVars = readStringRecord(options["envVars"]);
   const providerOptions = asRecord(options["providerOptions"]);
-  const launchSpec = asRecord(providerOptions?.["acpLaunchSpec"]);
-  if (providerOptions === null || launchSpec === null || launchSpec["command"] !== "agy") {
+  const updatedProviderOptions = applyLaunchOverrides(providerOptions, envVars, executableOverride);
+  const disableKeyring =
+    (envVars["BB_ANTIGRAVITY_DISABLE_KEYRING"] ?? process.env.BB_ANTIGRAVITY_DISABLE_KEYRING) ===
+    "1";
+  const nextEnvVars = disableKeyring ? { ...envVars, DBUS_SESSION_BUS_ADDRESS: "" } : null;
+
+  if (updatedProviderOptions === providerOptions && nextEnvVars === null) {
     return options;
   }
   return {
     ...options,
-    providerOptions: {
-      ...providerOptions,
-      acpLaunchSpec: {
-        ...launchSpec,
-        command: executableOverride,
-      },
-    },
+    ...(updatedProviderOptions === providerOptions
+      ? {}
+      : { providerOptions: updatedProviderOptions }),
+    ...(nextEnvVars === null ? {} : { envVars: nextEnvVars }),
   };
 }
 
@@ -214,19 +304,27 @@ export function createAntigravitySessionTranslator(args?: {
       const params = asRecord(message["params"]);
       if (params === null) return line;
 
-      // Apply executable override to sessionless methods (`model/list`, `provider/*`).
-      if (executableOverride && !OPTION_REQUESTS.has(method)) {
+      // Apply executable and pooled-profile overrides to sessionless methods (`model/list`, `provider/*`).
+      if (!OPTION_REQUESTS.has(method)) {
+        const envVars = readStringRecord(params["envVars"]);
         const providerOptions = asRecord(params["providerOptions"]);
-        const launchSpec = asRecord(providerOptions?.["acpLaunchSpec"]);
-        if (providerOptions !== null && launchSpec !== null && launchSpec["command"] === "agy") {
+        const updatedProviderOptions = applyLaunchOverrides(
+          providerOptions,
+          envVars,
+          executableOverride,
+        );
+        const disableKeyring =
+          (envVars["BB_ANTIGRAVITY_DISABLE_KEYRING"] ??
+            process.env.BB_ANTIGRAVITY_DISABLE_KEYRING) === "1";
+        if (updatedProviderOptions !== providerOptions || disableKeyring) {
           return JSON.stringify({
             ...message,
             params: {
               ...params,
-              providerOptions: {
-                ...providerOptions,
-                acpLaunchSpec: { ...launchSpec, command: executableOverride },
-              },
+              ...(updatedProviderOptions === providerOptions
+                ? {}
+                : { providerOptions: updatedProviderOptions }),
+              ...(disableKeyring ? { envVars: { ...envVars, DBUS_SESSION_BUS_ADDRESS: "" } } : {}),
             },
           });
         }
