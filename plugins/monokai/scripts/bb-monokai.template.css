@@ -229,7 +229,6 @@
                                            * on phones. */
 
   --agent-surface-background: {{layer.control}};
-  --agent-surface-border: {{solid.hairline}};
 
   --state-hover: {{layer.hover}};
   --state-active: {{layer.active}};
@@ -732,11 +731,11 @@
   color: var(--sidebar-accent-foreground);
 }
 
-/* User requests follow shadcn/ui Base UI Bubble (base-rhea, variant="muted"):
- * a borderless rounded-3xl (24px) pill on Monokai's muted layer. Agent replies
- * stay flat on the conversation ground. */
+/* User requests pair with the composer on the shared 6% ink surface per
+ * CONTRACT.md, shaped as shadcn/ui Base UI Bubble (base-rhea, rounded-3xl
+ * borderless pill). Agent replies stay flat on the conversation ground. */
 .dark .rounded-xl.border.border-border-seam.bg-surface-recessed {
-  background-color: var(--muted);
+  background-color: var(--agent-surface-background);
   background-clip: padding-box;
   border-color: transparent;
   border-radius: 24px;
@@ -3638,31 +3637,39 @@ diffs-container {
 }
 
 /* Trace (base-rhea): ALL tool, terminal, reasoning, chain-of-thought, plan,
- * and task rows are unboxed muted lines with a 16px leading icon, past-tense
- * label, and an always-visible trailing chevron directly after the label. */
-.dark [data-timeline-row-list] .flex.leading-5 > span.min-w-0.max-w-full {
+ * task, and TimelineWorkingIndicator rows are unboxed muted lines with a 16px
+ * leading icon, past-tense label, and an always-visible trailing chevron
+ * directly after the label. Scoped on both [data-timeline-row-list] and
+ * .group/timeline-row so TimelineWorkingIndicator (rendered after the list)
+ * receives the exact same treatment as a finished Thought row. */
+.dark [data-timeline-row-list] .flex.leading-5 > span.min-w-0.max-w-full,
+.dark .group\/timeline-row .flex.leading-5 > span.min-w-0.max-w-full {
   display: flex;
 }
 
-.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 {
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 {
   gap: 8px;
 }
 
-.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > [data-icon-root].size-3\.5 {
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > [data-icon-root].size-3\.5,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > [data-icon-root].size-3\.5 {
   width: 16px;
   height: 16px;
   color: inherit;
 }
 
 .dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 *,
-.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg * {
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg *,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 *,
+.dark .group\/timeline-row span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg * {
   stroke-width: 1.75;
 }
 
 /* TraceCollapsibleTrigger: w-fit unboxed button inheriting color down to
  * muted/subtle title segments and icons, preserving clickable --timeline-accent
  * file links and bb's own hover:duration-0 / motion-reduce transitions. */
-.dark [data-timeline-row-list] .group\/timeline-row > button[aria-expanded] {
+.dark .group\/timeline-row > button[aria-expanded] {
   width: fit-content;
   max-width: 100%;
   gap: 6px;
@@ -3672,32 +3679,34 @@ diffs-container {
 }
 
 @media (max-width: 767px), (pointer: coarse) {
-  .dark [data-timeline-row-list] .group\/timeline-row > button[aria-expanded] {
+  .dark .group\/timeline-row > button[aria-expanded] {
     min-height: 44px;
     padding-block: 10px;
   }
 }
 
-.dark [data-timeline-row-list] .group\/timeline-row > button[aria-expanded] .opacity-40,
-.dark [data-timeline-row-list] [data-monokai-trace-static] {
+/* Static past-row dim removal is pure CSS so first paint is final across
+ * single- and multi-intent TimelineStaticRowHeader siblings. */
+.dark .group\/timeline-row > button[aria-expanded] .opacity-40,
+.dark [data-timeline-row-list] [data-timeline-row-id] > .w-full.rounded-md.opacity-40 {
   opacity: 1;
 }
 
-.dark [data-timeline-row-list] .group\/timeline-row > button[aria-expanded] .text-muted-foreground,
-.dark [data-timeline-row-list] .group\/timeline-row > button[aria-expanded] .text-subtle-foreground,
-.dark [data-timeline-row-list] .group\/timeline-row > button[aria-expanded] .font-medium.text-foreground.opacity-70 {
+.dark .group\/timeline-row > button[aria-expanded] .text-muted-foreground,
+.dark .group\/timeline-row > button[aria-expanded] .text-subtle-foreground,
+.dark .group\/timeline-row > button[aria-expanded] .font-medium.text-foreground.opacity-70 {
   font-weight: 400;
   color: inherit;
   opacity: 1;
 }
 
 /* TraceDescription: duration decorations stay muted one step down in tabular-nums. */
-.dark [data-timeline-row-list] .group\/timeline-row > button[aria-expanded] .tabular-nums {
+.dark .group\/timeline-row > button[aria-expanded] .tabular-nums {
   color: var(--readback-foreground);
 }
 
 /* Trailing chevron uses the readback color role instead of component opacity. */
-.dark [data-timeline-row-list] .group\/timeline-row > button[aria-expanded] > svg[data-icon-root] {
+.dark .group\/timeline-row > button[aria-expanded] > svg[data-icon-root] {
   width: 14px;
   height: 14px;
   opacity: 1;
@@ -3705,20 +3714,20 @@ diffs-container {
 }
 
 @media (hover: hover) {
-  .dark [data-timeline-row-list] .group\/timeline-row > button[aria-expanded]:hover {
+  .dark .group\/timeline-row > button[aria-expanded]:hover {
     color: var(--foreground);
   }
 
-  .dark [data-timeline-row-list] .group\/timeline-row > button[aria-expanded]:hover > svg[data-icon-root] {
+  .dark .group\/timeline-row > button[aria-expanded]:hover > svg[data-icon-root] {
     color: var(--foreground);
   }
 }
 
-/* TraceCollapsibleContent thin left rail (base-rhea): keyed on exact
- * data-monokai-trace-rail tokens stamped by app/timeline-trace.ts, applied
- * only to open disclosures (aria-hidden="false") and keyed on .pb-1.pt-0.5
- * so collapsed rows and bare div tags incur zero selector cost. */
-.dark [data-monokai-trace-rail] > .rounded-md > div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 {
+/* TraceCollapsibleContent thin left rail (base-rhea): 100% pure CSS keyed on
+ * bb's ExpandablePanel structure (.group/timeline-row + div[aria-hidden="false"])
+ * and its px-0 / px-2 content padding class so first paint is final with zero
+ * cold-load layout shift. Collapsed disclosures (aria-hidden="true") do not match. */
+.dark .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 {
   margin-block: 8px 4px;
   border-inline-start: var(--hairline-width) solid var(--border);
   padding-block: 0;
@@ -3726,25 +3735,26 @@ diffs-container {
   padding-inline-end: 4px;
 }
 
-.dark [data-monokai-trace-rail="flush"] > .rounded-md > div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 {
+/* Bundle children (px-0): align under the 16px leading icon center (7px). */
+.dark .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .px-0.pb-1.pt-0\.5 {
   margin-inline-start: 7px;
 }
 
-.dark [data-monokai-trace-rail="flush-text"] > .rounded-md > div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 {
-  margin-inline-start: 1px;
-}
-
-.dark [data-monokai-trace-rail="inset"] > .rounded-md > div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 {
+/* Top-level and nested rows (px-2): align under the 16px leading icon center (15px). */
+.dark .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .px-2.pb-1.pt-0\.5 {
   margin-inline-start: 15px;
 }
 
-.dark [data-monokai-trace-rail="inset-text"] > .rounded-md > div[aria-hidden="false"] > .overflow-hidden > .pb-1.pt-0\.5 {
+/* Text-only top-level rows whose structure is pure CSS (Turn rows and
+ * TimelineWorkingIndicator): align right under the 8px text start (9px). */
+.dark [data-timeline-row-id$=":turn"] > .rounded-md > .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .px-2.pb-1.pt-0\.5,
+.dark .mt-4 > .rounded-md > .group\/timeline-row + div[aria-hidden="false"] > .overflow-hidden > .px-2.pb-1.pt-0\.5 {
   margin-inline-start: 9px;
 }
 
-/* Reasoning detail: drop bb's inner duplicate border so only Trace's single
- * thin left rail renders, with relaxed muted prose. */
-.dark [data-monokai-trace-reasoning] .border-l.border-border-seam.pl-3.text-sm.leading-relaxed.text-muted-foreground {
+/* Reasoning detail (both finished Thought rows and live TimelineWorkingIndicator):
+ * drop bb's inner duplicate border so only Trace's single thin left rail renders. */
+.dark .group\/timeline-row + div[aria-hidden="false"] .border-l.border-border-seam.pl-3.text-sm.leading-relaxed.text-muted-foreground {
   margin-inline-start: 0;
   border-inline-start-width: 0;
   padding-inline-start: 0;
@@ -3753,23 +3763,21 @@ diffs-container {
   color: var(--muted-foreground);
 }
 
-/* Nested timeline group rail (turn & delegation rows, which already own
- * NESTED_TIMELINE_GROUP_LINE_CLASS_NAME): align to icon or text start with
- * Trace's exact hairline rail and 16px indent. */
-.dark [data-monokai-trace-group] .relative.my-1.pl-3.pr-2.before\:bg-border-seam {
-  margin-block: 8px 4px;
-  padding-inline-start: 16px;
-  padding-inline-end: 0;
+/* Nested timeline group rail (TurnRowBody & DelegationRowBody): suppress bb's
+ * duplicate inner ::before line and padding inside ExpandablePanel so only the
+ * outer pure-CSS Trace rail renders (zero double rails, zero cold-load shift).
+ * GeneratedConversationMessage uses AnimatedExpandablePanelContent (no
+ * aria-hidden="false" wrapper) and styles its own rail cleanly below. */
+.dark .group\/timeline-row + div[aria-hidden="false"] .relative.my-1.pl-3.pr-2.before\:bg-border-seam {
+  margin-block: 0;
+  padding-inline: 0;
 }
 
-.dark [data-monokai-trace-group="icon"] .relative.my-1.pl-3.pr-2.before\:bg-border-seam::before {
-  inset-inline-start: 7px;
-  width: var(--hairline-width);
-  background-color: var(--border);
+.dark .group\/timeline-row + div[aria-hidden="false"] .relative.my-1.pl-3.pr-2.before\:bg-border-seam::before {
+  display: none;
 }
 
-.dark [data-monokai-trace-group="text"] .relative.my-1.pl-3.pr-2.before\:bg-border-seam::before {
-  inset-inline-start: 1px;
+.dark [data-timeline-row-list] .relative.my-1.pl-3.pr-2.before\:bg-border-seam::before {
   width: var(--hairline-width);
   background-color: var(--border);
 }
@@ -3883,7 +3891,7 @@ diffs-container {
   line-height: 1.5;
 }
 
-.dark [data-timeline-row-list] .group\/timeline-row > button[aria-expanded] .text-destructive-text {
+.dark .group\/timeline-row > button[aria-expanded] .text-destructive-text {
   color: var(--destructive-text);
   opacity: 1;
 }
@@ -3962,7 +3970,8 @@ diffs-container {
   stroke-width: 1.75;
 }
 
-.dark [data-timeline-row-list] span.text-sm.leading-5 {
+.dark [data-timeline-row-list] span.text-sm.leading-5,
+.dark .group\/timeline-row span.text-sm.leading-5 {
   font-size: var(--agent-fluid-size);
   line-height: 1.5;
 }

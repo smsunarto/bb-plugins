@@ -526,6 +526,16 @@ describe("bb Monokai contract audit", () => {
       "a.underline code.bg-muted\\/70,\n.dark .bb-markdown-prose a :not(pre) > code {\n  color: inherit;",
     );
     expect(theme).toContain(
+      ".dark [data-timeline-row-list] span.text-sm.leading-5,\n.dark .group\\/timeline-row span.text-sm.leading-5 {\n  font-size: var(--agent-fluid-size);\n  line-height: 1.5;",
+    );
+    expect(theme).toContain(
+      ".dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > [data-icon-root].size-3\\.5,\n.dark .group\\/timeline-row span.inline-flex.gap-1\\.5 > [data-icon-root].size-3\\.5 {\n  width: 16px;\n  height: 16px;\n  color: inherit;",
+    );
+    expect(theme).toContain(
+      ".dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > svg[data-icon-root].size-3\\.5 *,\n.dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > span[data-icon-root].size-3\\.5 > svg *,\n.dark .group\\/timeline-row span.inline-flex.gap-1\\.5 > svg[data-icon-root].size-3\\.5 *,\n.dark .group\\/timeline-row span.inline-flex.gap-1\\.5 > span[data-icon-root].size-3\\.5 > svg * {\n  stroke-width: 1.75;",
+    );
+    expect(theme).not.toContain("--agent-surface-border");
+    expect(theme).toContain(
       ".dark .review-canvas-root[data-review-theme] .review-document {\n  --wb-text: calc(var(--agent-fluid-size) * 15 / 14);\n}",
     );
     expect(theme).toContain(
@@ -538,7 +548,7 @@ describe("bb Monokai contract audit", () => {
       (rule) => !rule.atRules.some((at) => at.startsWith("@keyframes")),
     );
     const traceRules = rules.filter((rule) =>
-      /data-monokai-trace-|data-timeline-row-list|Scroll to latest event|thread-unread-divider|plan-steps-body/.test(
+      /data-monokai-trace-|data-timeline-row-list|group\\\/timeline-row|Scroll to latest event|thread-unread-divider|plan-steps-body/.test(
         rule.selector,
       ),
     );
@@ -551,13 +561,52 @@ describe("bb Monokai contract audit", () => {
       // No bare tag-bucketed `> div`, `> span`, or ` pre` rules in trace styling.
       expect(rule.selector).not.toMatch(/>\s*(?:div|span)\s*(?:,|$)/);
       expect(rule.selector).not.toMatch(/\bpre\s*(?:,|$)/);
-      // No tool-card inset border rings or composer/prompt-stack banner selectors.
-      expect(rule.body).not.toContain("box-shadow: inset 0 0 0 var(--hairline-ring-width)");
-      expect(rule.selector).not.toContain("[data-promptbox]");
-      expect(rule.selector).not.toContain("[data-follow-up-composer]");
-      expect(rule.selector).not.toContain('section[aria-label="To-do list"]');
-      expect(rule.selector).not.toContain("#thread-todo-card-");
-      expect(rule.selector).not.toContain("[data-queued-message-row]");
+      // No tool-card inset border rings (normalize multi-line box-shadow).
+      // Only the 3x DPR circular ScrollToBottomButton keeps an inset hairline ring.
+      const normalizedBody = rule.body.replace(/\s+/g, " ");
+      if (!rule.selector.includes('button[aria-label="Scroll to latest event"]')) {
+        expect(normalizedBody).not.toContain("box-shadow: inset 0 0 0 var(--hairline-ring-width)");
+      }
+    }
+    // Prompt-stack banner and composer guards run over ALL rules in the shipped theme.
+    const allowedComposerSelectors = new Set([
+      ".dark [data-promptbox]",
+      ".dark [data-promptbox] [data-promptbox-editor-scroll]",
+      ".dark [data-follow-up-composer]",
+      ".dark [data-follow-up-composer] [data-promptbox]:not([data-promptbox-compact]) [data-promptbox-editor-scroll]",
+      ".dark [data-follow-up-composer-expanded]",
+      ":where(.dark) [data-promptbox]",
+      ".dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror",
+      ".dark [data-promptbox] [data-promptbox-editor-content]::before, .dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror p.is-editor-empty:first-child::before",
+      ".dark [data-promptbox-send-menu].bg-foreground",
+      '.dark [data-promptbox-submit-action][aria-label="Stop run"]',
+      '.dark [data-promptbox-submit-action][aria-label="Stop run"]:hover',
+      '.dark button[aria-label="Environment"][data-promptbox-shrinkable-control] svg[data-icon="Folder"]',
+      '.dark button[aria-label="Environment"][data-promptbox-shrinkable-control] svg[data-icon="Folder"] > *',
+      "#root-compose-main-panel [data-promptbox-typeahead-menu]",
+    ]);
+    for (const rule of rules) {
+      const normalizedSelector = rule.selector.replace(/\s+/g, " ");
+      expect(normalizedSelector).not.toContain('section[aria-label="To-do list"]');
+      expect(normalizedSelector).not.toContain("#thread-todo-card-");
+      expect(normalizedSelector).not.toContain('[aria-label="Thread context before sending"]');
+      expect(normalizedSelector).not.toContain("[data-agentation-staging-banner]");
+      if (normalizedSelector.includes("[data-queued-message-row]")) {
+        expect(normalizedSelector).toBe(
+          '.dark [data-queued-message-row] button[aria-label^="Reorder queued message"]:disabled',
+        );
+      }
+      if (
+        normalizedSelector.includes("[data-promptbox]") ||
+        normalizedSelector.includes("[data-follow-up-composer]")
+      ) {
+        const isContainerCompactRule =
+          rule.atRules.some((at) => at.includes("follow-up-composer-container-compact")) ||
+          normalizedSelector.includes("[data-promptbox-shell]");
+        if (!isContainerCompactRule) {
+          expect(allowedComposerSelectors.has(normalizedSelector)).toBe(true);
+        }
+      }
     }
     // Keep total `*=` substring selectors at or below the pre-BBP-133 baseline (37).
     const substringCount = (theme.replace(/\/\*[\s\S]*?\*\//g, "").match(/\*=/g) ?? []).length;

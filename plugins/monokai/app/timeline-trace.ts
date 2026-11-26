@@ -1,8 +1,6 @@
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 
 type RecordValue = Record<string, unknown>;
-type RailVariant = "inset" | "inset-text" | "flush" | "flush-text";
-type GroupVariant = "icon" | "text";
 
 export interface TraceRowMeta {
   kind?: string;
@@ -16,9 +14,6 @@ const ROW_SELECTOR = "[data-timeline-row-id]";
 const TRACE_ATTRS = [
   "data-monokai-trace-status",
   "data-monokai-trace-has-error",
-  "data-monokai-trace-rail",
-  "data-monokai-trace-group",
-  "data-monokai-trace-reasoning",
   "data-monokai-trace-static",
 ] as const;
 
@@ -28,28 +23,35 @@ const record = (value: unknown): RecordValue | null =>
 const isMonokaiActive = (): boolean =>
   getComputedStyle(document.documentElement).getPropertyValue("--bb-monokai-active").trim() === "1";
 
+const stringField = (obj: RecordValue, key: string): string | undefined => {
+  const value = obj[key];
+  return typeof value === "string" ? value : undefined;
+};
+
 /**
  * Reads the host timeline row model from the element's React fiber boundary,
  * without depending on component names or hook positions (matching diff-header.ts).
  */
 export function readTimelineRowMeta(element: Element): TraceRowMeta | null {
+  const obj = element as unknown as RecordValue;
   const fiberKey = Object.keys(element).find((name) => name.startsWith("__reactFiber$"));
-  let fiber = fiberKey ? record((element as unknown as RecordValue)[fiberKey]) : null;
+  let fiber = fiberKey ? record(obj[fiberKey]) : null;
   const propsKey = Object.keys(element).find((name) => name.startsWith("__reactProps$"));
-  const props = propsKey ? record((element as unknown as RecordValue)[propsKey]) : null;
+  const props = propsKey ? record(obj[propsKey]) : null;
   if (props && fiber?.memoizedProps !== props) {
     const alt = record(fiber?.alternate);
     if (alt?.memoizedProps === props) fiber = alt;
   }
   for (let depth = 0; fiber && depth < 16; depth++, fiber = record(fiber.return)) {
     const row = record(record(fiber.memoizedProps)?.row);
-    if (!row || typeof row.kind !== "string") continue;
+    const kind = row ? stringField(row, "kind") : undefined;
+    if (!row || !kind) continue;
     return {
-      kind: row.kind,
-      status: typeof row.status === "string" ? row.status : undefined,
-      workKind: typeof row.workKind === "string" ? row.workKind : undefined,
-      systemKind: typeof row.systemKind === "string" ? row.systemKind : undefined,
-      operationKind: typeof row.operationKind === "string" ? row.operationKind : undefined,
+      kind,
+      status: stringField(row, "status"),
+      workKind: stringField(row, "workKind"),
+      systemKind: stringField(row, "systemKind"),
+      operationKind: stringField(row, "operationKind"),
     };
   }
   return null;
@@ -60,30 +62,24 @@ function isSummaryRow(meta: TraceRowMeta | null, rowId: string): boolean {
   return rowId.includes(":work-summary:") || rowId.includes(":step-summary:");
 }
 
-function ownsNestedGroupRail(meta: TraceRowMeta | null, rowId: string): boolean {
-  if (meta) return meta.kind === "turn" || meta.workKind === "delegation";
-  if (rowId.endsWith(":turn")) return true;
-  return rowId.includes(":delegation:") && !rowId.includes(":child:");
+function isContainerSummary(meta: TraceRowMeta | null, rowId: string): boolean {
+  return isSummaryRow(meta, rowId) || meta?.kind === "turn" || rowId.endsWith(":turn");
 }
 
-function isReasoningRow(meta: TraceRowMeta | null, rowId: string): boolean {
-  if (meta) return meta.operationKind === "reasoning";
-  return rowId.includes(":op:reasoning:") && !isSummaryRow(meta, rowId);
-}
-
-function hasErrorFallback(rowEl: Element, headerEl: Element, rowId: string): boolean {
-  if (rowId.includes(":error:") && !isSummaryRow(null, rowId)) return true;
+function headerShowsError(headerEl: Element): boolean {
   if (headerEl.querySelector(".text-destructive-text") !== null) return true;
   const statusSpans = headerEl.querySelectorAll(".font-mono.text-xs.text-subtle-foreground");
   for (const span of statusSpans) {
     const text = span.textContent?.trim().toLowerCase();
     if (text === "error" || text === "failed") return true;
   }
-  return rowEl.querySelector(":scope > .rounded-md .text-destructive") !== null;
+  return false;
 }
 
-function hasLeadingIcon(headerEl: Element): boolean {
-  return headerEl.querySelector("span.inline-flex > [data-icon-root]") !== null;
+function hasErrorFallback(rowEl: Element, headerEls: readonly Element[], rowId: string): boolean {
+  if (rowId.includes(":error:") && !isSummaryRow(null, rowId)) return true;
+  if (headerEls.some(headerShowsError)) return true;
+  return rowEl.querySelector(":scope > .rounded-md .text-destructive") !== null;
 }
 
 function classifyRow(rowEl: Element): Map<Element, Map<string, string>> {
@@ -95,50 +91,32 @@ function classifyRow(rowEl: Element): Map<Element, Map<string, string>> {
   const meta = readTimelineRowMeta(rowEl);
   if (meta?.kind === "conversation") return result;
 
-  const rowAttrs = new Map<string, string>();
   const expandableBtn = rowEl.querySelector(
     ":scope > .rounded-md > .group\\/timeline-row > button[aria-expanded]",
   );
-  const staticWrapper = expandableBtn ? null : rowEl.querySelector(":scope > .w-full.rounded-md");
-  const headerEl = expandableBtn ?? staticWrapper;
-  if (!headerEl) return result;
+  const staticWrappers = expandableBtn
+    ? []
+    : Array.from(rowEl.querySelectorAll(":scope > .w-full.rounded-md"));
+  const headerEls = expandableBtn ? [expandableBtn] : staticWrappers;
+  if (headerEls.length === 0) return result;
 
-  const summary = isSummaryRow(meta, rowId);
+  for (const wrapper of staticWrappers) {
+    result.set(wrapper, new Map([["data-monokai-trace-static", ""]]));
+  }
+
   const isError =
     meta?.status === "error" ||
     meta?.systemKind === "error" ||
-    (!meta && hasErrorFallback(rowEl, headerEl, rowId));
+    (!meta && hasErrorFallback(rowEl, headerEls, rowId));
 
   if (isError) {
-    if (summary || meta?.kind === "turn") {
-      rowAttrs.set("data-monokai-trace-has-error", "");
-    } else {
-      rowAttrs.set("data-monokai-trace-status", "error");
-    }
+    const attr = isContainerSummary(meta, rowId)
+      ? "data-monokai-trace-has-error"
+      : "data-monokai-trace-status";
+    const value = attr === "data-monokai-trace-status" ? "error" : "";
+    result.set(rowEl, new Map([[attr, value]]));
   }
 
-  if (expandableBtn) {
-    const leadingIcon = hasLeadingIcon(expandableBtn);
-    if (ownsNestedGroupRail(meta, rowId)) {
-      const groupVariant: GroupVariant = leadingIcon ? "icon" : "text";
-      rowAttrs.set("data-monokai-trace-group", groupVariant);
-    } else {
-      const isInset = expandableBtn.classList.contains("px-2");
-      const rail: RailVariant = isInset
-        ? leadingIcon
-          ? "inset"
-          : "inset-text"
-        : leadingIcon
-          ? "flush"
-          : "flush-text";
-      rowAttrs.set("data-monokai-trace-rail", rail);
-      if (isReasoningRow(meta, rowId)) rowAttrs.set("data-monokai-trace-reasoning", "");
-    }
-  } else if (staticWrapper) {
-    result.set(staticWrapper, new Map([["data-monokai-trace-static", ""]]));
-  }
-
-  if (rowAttrs.size > 0) result.set(rowEl, rowAttrs);
   return result;
 }
 
@@ -195,19 +173,46 @@ function collectRemovedRows(
   return added;
 }
 
+function isStylesheetNode(node: Node): boolean {
+  if (!(node instanceof Element)) return false;
+  const tag = node.tagName;
+  if (tag === "STYLE") return true;
+  return tag === "LINK" && (node.getAttribute("rel") ?? "").toLowerCase().includes("stylesheet");
+}
+
+function isThemeMutation(mutation: MutationRecord): boolean {
+  if (mutation.target === document.documentElement) {
+    return mutation.type === "attributes";
+  }
+  if (mutation.type === "characterData") {
+    return mutation.target.parentElement?.tagName === "STYLE";
+  }
+  if (mutation.type === "childList") {
+    if (mutation.target instanceof Element && mutation.target.tagName === "STYLE") return true;
+    for (const node of mutation.addedNodes) {
+      if (isStylesheetNode(node)) return true;
+    }
+    for (const node of mutation.removedNodes) {
+      if (isStylesheetNode(node)) return true;
+    }
+  }
+  return false;
+}
+
 /**
- * Tags bb timeline rows with exact `data-monokai-trace-*` attributes while
- * bb Monokai is active, replacing costly substring/tag selectors and enabling
- * error styling across every error row shape without `:has()`.
- *
- * Performs at most one whole-document query at mount (and on theme toggle);
- * subsequent DOM mutations reconcile only the affected timeline rows.
+ * Tags bb timeline rows with exact `data-monokai-trace-*` attributes ONLY for
+ * state pure CSS cannot express (failed work/system error status, mixed-summary
+ * error badges, and multi-intent static headers), strictly while bb Monokai is
+ * active. Layout (rails, indents, static-row opacity) lives in pure CSS so
+ * first paint has zero layout shift.
  */
 export function mountTimelineTrace({ signal }: PluginContentScriptContext) {
   const rowTags = new Map<Element, Map<Element, Map<string, string>>>();
   const dirtyRows = new Set<Element>();
   let fullScanPending = true;
+  let themeCheckPending = true;
   let wasActive = false;
+  let bodyObserved = false;
   let frame: number | null = null;
   let disposed = false;
 
@@ -238,36 +243,6 @@ export function mountTimelineTrace({ signal }: PluginContentScriptContext) {
     else rowTags.delete(rowEl);
   };
 
-  const flush = () => {
-    frame = null;
-    if (disposed) return;
-    const active = isMonokaiActive();
-    if (!active) {
-      if (wasActive || rowTags.size > 0) clearAll();
-      wasActive = false;
-      fullScanPending = false;
-      return;
-    }
-    if (!wasActive || fullScanPending) {
-      wasActive = true;
-      fullScanPending = false;
-      dirtyRows.clear();
-      const seen = new Set<Element>();
-      for (const list of document.querySelectorAll("[data-timeline-row-list]")) {
-        for (const row of list.querySelectorAll(ROW_SELECTOR)) {
-          seen.add(row);
-          reconcileRow(row);
-        }
-      }
-      for (const row of rowTags.keys()) {
-        if (!seen.has(row)) clearRow(row);
-      }
-      return;
-    }
-    for (const row of dirtyRows) reconcileRow(row);
-    dirtyRows.clear();
-  };
-
   const schedule = () => {
     if (!disposed && frame === null) frame = requestAnimationFrame(flush);
   };
@@ -295,6 +270,7 @@ export function mountTimelineTrace({ signal }: PluginContentScriptContext) {
   };
 
   const bodyObserver = new MutationObserver((mutations) => {
+    if (!wasActive || disposed) return;
     let touched = false;
     for (const mutation of mutations) {
       if (recordMutation(mutation)) touched = true;
@@ -302,16 +278,66 @@ export function mountTimelineTrace({ signal }: PluginContentScriptContext) {
     if (touched) schedule();
   });
 
-  const rootObserver = new MutationObserver(() => {
-    const active = isMonokaiActive();
-    if (active !== wasActive) {
-      fullScanPending = true;
-      schedule();
+  const setBodyObserved = (shouldObserve: boolean) => {
+    if (shouldObserve === bodyObserved) return;
+    if (shouldObserve) {
+      bodyObserver.observe(document.body, { childList: true, subtree: true });
+    } else {
+      bodyObserver.disconnect();
     }
+    bodyObserved = shouldObserve;
+  };
+
+  const flush = () => {
+    frame = null;
+    if (disposed) return;
+
+    if (themeCheckPending || !wasActive) {
+      themeCheckPending = false;
+      const active = isMonokaiActive();
+      if (!active) {
+        setBodyObserved(false);
+        if (wasActive || rowTags.size > 0) clearAll();
+        else dirtyRows.clear();
+        wasActive = false;
+        fullScanPending = false;
+        return;
+      }
+      if (!wasActive) {
+        wasActive = true;
+        fullScanPending = true;
+        setBodyObserved(true);
+      }
+    }
+
+    if (fullScanPending) {
+      fullScanPending = false;
+      dirtyRows.clear();
+      const seen = new Set<Element>();
+      for (const list of document.querySelectorAll("[data-timeline-row-list]")) {
+        for (const row of list.querySelectorAll(ROW_SELECTOR)) {
+          seen.add(row);
+          reconcileRow(row);
+        }
+      }
+      for (const row of rowTags.keys()) {
+        if (!seen.has(row)) clearRow(row);
+      }
+      return;
+    }
+
+    for (const row of dirtyRows) reconcileRow(row);
+    dirtyRows.clear();
+  };
+
+  const rootObserver = new MutationObserver((mutations) => {
+    if (disposed) return;
+    if (!mutations.some(isThemeMutation)) return;
+    themeCheckPending = true;
+    schedule();
   });
 
   flush();
-  bodyObserver.observe(document.body, { childList: true, subtree: true });
   rootObserver.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ["class", "style"],
@@ -326,7 +352,7 @@ export function mountTimelineTrace({ signal }: PluginContentScriptContext) {
     if (disposed) return;
     disposed = true;
     if (frame !== null) cancelAnimationFrame(frame);
-    bodyObserver.disconnect();
+    setBodyObserved(false);
     rootObserver.disconnect();
     clearAll();
     for (const attr of TRACE_ATTRS) {

@@ -263,26 +263,42 @@ function attachFiberRow(el: Element, row: Record<string, unknown>): void {
   };
 }
 
+async function flushObserverAndFrame(frames: FrameRequestCallback[]): Promise<void> {
+  // MutationObserver callbacks run as microtasks in happy-dom / browsers.
+  await Promise.resolve();
+  await Promise.resolve();
+  const pending = frames.splice(0, frames.length);
+  for (const cb of pending) cb(16);
+}
+
 describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
-  test("timeline-trace tags every error row shape, rail alignment, static rows, and cleans up on theme switch or disposal", () => {
+  test("timeline-trace tags error rows and multi-intent static headers, handles late-mount/re-render, defers rootObserver, and stays inert when inactive", async () => {
     installDom();
+    const origRaf = globalThis.requestAnimationFrame;
+    const origCancelRaf = globalThis.cancelAnimationFrame;
+    const origGetComputedStyle = globalThis.getComputedStyle;
+    const frames: FrameRequestCallback[] = [];
+    let rafId = 0;
+    let computedStyleCalls = 0;
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return ++rafId;
+    };
+    globalThis.cancelAnimationFrame = () => {
+      frames.length = 0;
+    };
+    globalThis.getComputedStyle = ((el: Element, pseudo?: string | null) => {
+      computedStyleCalls++;
+      return origGetComputedStyle(el, pseudo);
+    }) as typeof getComputedStyle;
+
     try {
       document.documentElement.className = "dark";
       document.documentElement.style.setProperty("--bb-monokai-active", "1");
       document.body.innerHTML = `
-        <div data-timeline-row-list="top-level">
+        <div data-timeline-row-list="top-level" id="tl-root">
           <div data-timeline-row-id="t:user:1">
             <div data-message-column=""></div>
-          </div>
-          <div data-timeline-row-id="t:op:thread-provisioning:1">
-            <div class="rounded-md text-muted-foreground w-full">
-              <div class="group/timeline-row">
-                <button type="button" aria-expanded="true" class="px-2">
-                  <span><span class="inline-flex"><svg data-icon-root=""></svg><span>Provisioned</span></span></span>
-                </button>
-              </div>
-              <div aria-hidden="false"><div class="overflow-hidden"><div class="pb-1 pt-0.5"></div></div></div>
-            </div>
           </div>
           <div data-timeline-row-id="t:error:1">
             <div class="rounded-md text-muted-foreground w-full">
@@ -291,22 +307,12 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
                   <span><span class="inline-flex"><span>Provider error</span></span></span>
                 </button>
               </div>
-              <div aria-hidden="false"><div class="overflow-hidden"><div class="pb-1 pt-0.5"></div></div></div>
+              <div aria-hidden="false"><div class="overflow-hidden"><div class="px-2 pb-1 pt-0.5"></div></div></div>
             </div>
           </div>
           <div data-timeline-row-id="t:error:2">
             <div class="w-full rounded-md text-muted-foreground opacity-40">
               <span><span class="inline-flex"><span>Static provider error</span></span></span>
-            </div>
-          </div>
-          <div data-timeline-row-id="t:delegation:d1">
-            <div class="rounded-md text-muted-foreground w-full">
-              <div class="group/timeline-row">
-                <button type="button" aria-expanded="true" class="px-2">
-                  <span><span class="inline-flex"><svg data-icon-root=""></svg><span>Subagent</span></span></span>
-                </button>
-              </div>
-              <div aria-hidden="false"><div class="overflow-hidden"><div class="pb-1 pt-0.5"></div></div></div>
             </div>
           </div>
           <div data-timeline-row-id="t:turn-1:turn">
@@ -316,7 +322,7 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
                   <span><span class="inline-flex"><span>Worked for 19ms</span></span></span>
                 </button>
               </div>
-              <div aria-hidden="false"><div class="overflow-hidden"><div class="pb-1 pt-0.5">
+              <div aria-hidden="false"><div class="overflow-hidden"><div class="px-2 pb-1 pt-0.5">
                 <div data-timeline-row-list="bundle">
                   <div data-timeline-row-id="t:turn-1:work-summary:c1">
                     <div class="rounded-md text-muted-foreground w-full">
@@ -325,7 +331,7 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
                           <span><span class="inline-flex"><span>Explored 1 file</span></span></span>
                         </button>
                       </div>
-                      <div aria-hidden="false"><div class="overflow-hidden"><div class="pb-1 pt-0.5"></div></div></div>
+                      <div aria-hidden="false"><div class="overflow-hidden"><div class="px-0 pb-1 pt-0.5"></div></div></div>
                     </div>
                   </div>
                   <div data-timeline-row-id="t:command:c-err">
@@ -335,7 +341,7 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
                           <span><span class="inline-flex opacity-40"><svg data-icon-root=""></svg><span>Ran pnpm seed</span></span></span>
                         </button>
                       </div>
-                      <div aria-hidden="false"><div class="overflow-hidden"><div class="pb-1 pt-0.5"></div></div></div>
+                      <div aria-hidden="false"><div class="overflow-hidden"><div class="px-0 pb-1 pt-0.5"></div></div></div>
                     </div>
                   </div>
                   <div data-timeline-row-id="t:tool:t-err">
@@ -345,22 +351,15 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
                           <span><span class="inline-flex opacity-40"><svg data-icon-root=""></svg><span>Ran tool seed</span></span></span>
                         </button>
                       </div>
-                      <div aria-hidden="false"><div class="overflow-hidden"><div class="pb-1 pt-0.5"></div></div></div>
+                      <div aria-hidden="false"><div class="overflow-hidden"><div class="px-0 pb-1 pt-0.5"></div></div></div>
                     </div>
                   </div>
-                  <div data-timeline-row-id="t:op:reasoning:r1">
-                    <div class="rounded-md text-muted-foreground w-full">
-                      <div class="group/timeline-row">
-                        <button type="button" aria-expanded="true" class="px-0">
-                          <span><span class="inline-flex opacity-40"><svg data-icon-root=""></svg><span>Thought</span></span></span>
-                        </button>
-                      </div>
-                      <div aria-hidden="false"><div class="overflow-hidden"><div class="pb-1 pt-0.5"></div></div></div>
+                  <div data-timeline-row-id="t:multi-intent:1">
+                    <div class="w-full rounded-md text-muted-foreground opacity-40" id="intent-1">
+                      <span><span class="inline-flex"><svg data-icon-root=""></svg><span>Read a.ts</span></span></span>
                     </div>
-                  </div>
-                  <div data-timeline-row-id="t:web-fetch:wf1">
-                    <div class="w-full rounded-md text-muted-foreground opacity-40">
-                      <span><span class="inline-flex"><svg data-icon-root=""></svg><span>Fetched page</span></span></span>
+                    <div class="w-full rounded-md text-muted-foreground opacity-40" id="intent-2">
+                      <span><span class="inline-flex"><svg data-icon-root=""></svg><span>Read b.ts</span></span></span>
                     </div>
                   </div>
                 </div>
@@ -375,7 +374,6 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
         </div>
       `;
 
-      // Attach React fibers mirroring bb's MemoizedTimelineRowView props.
       const cmdErr = document.querySelector('[data-timeline-row-id="t:command:c-err"]')!;
       attachFiberRow(cmdErr, { kind: "work", workKind: "command", status: "error" });
       const toolErr = document.querySelector('[data-timeline-row-id="t:tool:t-err"]')!;
@@ -384,12 +382,10 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
       attachFiberRow(provErr, { kind: "system", systemKind: "error", status: "error" });
       const staticErr = document.querySelector('[data-timeline-row-id="t:error:2"]')!;
       attachFiberRow(staticErr, { kind: "system", systemKind: "error", status: "error" });
-      const del = document.querySelector('[data-timeline-row-id="t:delegation:d1"]')!;
-      attachFiberRow(del, { kind: "work", workKind: "delegation", status: "completed" });
-      const turn = document.querySelector('[data-timeline-row-id="t:turn-1:turn"]')!;
-      attachFiberRow(turn, { kind: "turn", status: "completed" });
       const summary = document.querySelector('[data-timeline-row-id="t:turn-1:work-summary:c1"]')!;
       attachFiberRow(summary, { kind: "step-summary", status: "error" });
+      const multiIntent = document.querySelector('[data-timeline-row-id="t:multi-intent:1"]')!;
+      attachFiberRow(multiIntent, { kind: "work", workKind: "command", status: "error" });
 
       expect(readTimelineRowMeta(cmdErr)).toEqual({
         kind: "work",
@@ -406,19 +402,20 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
         signal: ac.signal,
       });
 
-      // Conversation rows and plugin roots are untouched.
+      // Conversation rows and plugin roots are untouched; layout rails are pure CSS (no rail/group/reasoning tags).
       expect(document.querySelector('[data-timeline-row-id="t:user:1"]')!.attributes.length).toBe(
         1,
       );
       expect(
         document
           .querySelector('[data-timeline-row-id="t:command:inside-plugin"]')!
-          .hasAttribute("data-monokai-trace-rail"),
+          .hasAttribute("data-monokai-trace-status"),
       ).toBe(false);
+      expect(document.querySelectorAll("[data-monokai-trace-rail]").length).toBe(0);
+      expect(document.querySelectorAll("[data-monokai-trace-group]").length).toBe(0);
 
-      // Every actual error row shape receives data-monokai-trace-status="error",
-      // while a summary container with errors receives data-monokai-trace-has-error
-      // so passing children inside the summary never bleed red.
+      // Every error row shape receives data-monokai-trace-status="error", while
+      // summaries receive data-monokai-trace-has-error.
       expect(cmdErr.getAttribute("data-monokai-trace-status")).toBe("error");
       expect(summary.hasAttribute("data-monokai-trace-status")).toBe(false);
       expect(summary.hasAttribute("data-monokai-trace-has-error")).toBe(true);
@@ -426,40 +423,101 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
       expect(provErr.getAttribute("data-monokai-trace-status")).toBe("error");
       expect(staticErr.getAttribute("data-monokai-trace-status")).toBe("error");
 
-      // Rail variants align to header padding and leading icon presence; turn/delegation use group instead.
-      expect(
-        document
-          .querySelector('[data-timeline-row-id="t:op:thread-provisioning:1"]')!
-          .getAttribute("data-monokai-trace-rail"),
-      ).toBe("inset");
-      expect(provErr.getAttribute("data-monokai-trace-rail")).toBe("inset-text");
-      expect(cmdErr.getAttribute("data-monokai-trace-rail")).toBe("flush");
-      expect(summary.getAttribute("data-monokai-trace-rail")).toBe("flush-text");
-      expect(del.hasAttribute("data-monokai-trace-rail")).toBe(false);
-      expect(del.getAttribute("data-monokai-trace-group")).toBe("icon");
-      expect(turn.hasAttribute("data-monokai-trace-rail")).toBe(false);
-      expect(turn.getAttribute("data-monokai-trace-group")).toBe("text");
+      // Multi-intent static row tags EVERY sibling TimelineStaticRowHeader, not only the first.
+      expect(multiIntent.getAttribute("data-monokai-trace-status")).toBe("error");
+      expect(document.getElementById("intent-1")!.hasAttribute("data-monokai-trace-static")).toBe(
+        true,
+      );
+      expect(document.getElementById("intent-2")!.hasAttribute("data-monokai-trace-static")).toBe(
+        true,
+      );
 
-      // Reasoning and static trace rows (including web-fetch) are tagged cleanly.
-      expect(
-        document
-          .querySelector('[data-timeline-row-id="t:op:reasoning:r1"]')!
-          .hasAttribute("data-monokai-trace-reasoning"),
-      ).toBe(true);
-      expect(
-        document
-          .querySelector('[data-timeline-row-id="t:web-fetch:wf1"] > .w-full.rounded-md')!
-          .hasAttribute("data-monokai-trace-static"),
-      ).toBe(true);
+      // Late-mount via bodyObserver: appending a new failed row & multi-intent row tags them on rAF.
+      const tlRoot = document.getElementById("tl-root")!;
+      const lateRow = document.createElement("div");
+      lateRow.setAttribute("data-timeline-row-id", "t:command:late");
+      lateRow.innerHTML = `
+        <div class="rounded-md text-muted-foreground w-full">
+          <div class="group/timeline-row"><button type="button" aria-expanded="false" class="px-2"><span>Late cmd</span></button></div>
+        </div>
+      `;
+      attachFiberRow(lateRow, { kind: "work", workKind: "command", status: "completed" });
+      tlRoot.appendChild(lateRow);
+      await flushObserverAndFrame(frames);
+      expect(lateRow.hasAttribute("data-monokai-trace-status")).toBe(false);
+
+      // Re-render: row transitions completed -> error, then error -> completed on DOM update.
+      attachFiberRow(lateRow, { kind: "work", workKind: "command", status: "error" });
+      lateRow.querySelector("button")!.appendChild(document.createElement("span"));
+      await flushObserverAndFrame(frames);
+      expect(lateRow.getAttribute("data-monokai-trace-status")).toBe("error");
+
+      attachFiberRow(lateRow, { kind: "work", workKind: "command", status: "completed" });
+      lateRow.querySelector("button")!.lastElementChild!.remove();
+      await flushObserverAndFrame(frames);
+      expect(lateRow.hasAttribute("data-monokai-trace-status")).toBe(false);
+
+      // rootObserver ignores irrelevant <head> mutations (e.g. <meta>, <title>) with zero getComputedStyle calls.
+      computedStyleCalls = 0;
+      const metaEl = document.createElement("meta");
+      metaEl.setAttribute("name", "viewport");
+      document.head.appendChild(metaEl);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(computedStyleCalls).toBe(0);
+      expect(frames.length).toBe(0);
+
+      // rootObserver defers and coalesces a burst of theme mutations into ONE rAF getComputedStyle check
+      // (zero synchronous getComputedStyle inside MutationObserver) and clears all tags when inactive.
+      computedStyleCalls = 0;
+      document.documentElement.style.removeProperty("--bb-monokai-active");
+      const styleA = document.createElement("style");
+      styleA.textContent = ".x{}";
+      const styleB = document.createElement("style");
+      styleB.textContent = ".y{}";
+      document.head.append(styleA, styleB);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(computedStyleCalls).toBe(0);
+      expect(frames.length).toBe(1);
+      await flushObserverAndFrame(frames);
+      expect(computedStyleCalls).toBe(1);
+      expect(document.querySelectorAll("[data-monokai-trace-status]").length).toBe(0);
+      expect(document.querySelectorAll("[data-monokai-trace-has-error]").length).toBe(0);
+      expect(document.querySelectorAll("[data-monokai-trace-static]").length).toBe(0);
+
+      // While inactive, appending new error rows schedules ZERO frames and leaves ZERO tags.
+      const inactiveRow = document.createElement("div");
+      inactiveRow.setAttribute("data-timeline-row-id", "t:command:while-inactive");
+      inactiveRow.innerHTML = `
+        <div class="rounded-md text-muted-foreground w-full">
+          <div class="group/timeline-row"><button type="button" aria-expanded="false" class="px-2"><span>Inactive</span></button></div>
+        </div>
+      `;
+      attachFiberRow(inactiveRow, { kind: "work", workKind: "command", status: "error" });
+      tlRoot.appendChild(inactiveRow);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(frames.length).toBe(0);
+      expect(inactiveRow.hasAttribute("data-monokai-trace-status")).toBe(false);
+
+      // Toggling Monokai back on re-scans and tags rows mounted while inactive.
+      document.documentElement.style.setProperty("--bb-monokai-active", "1");
+      await flushObserverAndFrame(frames);
+      expect(inactiveRow.getAttribute("data-monokai-trace-status")).toBe("error");
+      expect(cmdErr.getAttribute("data-monokai-trace-status")).toBe("error");
 
       // Disposal removes every attribute added by the content script.
       dispose();
       expect(document.querySelectorAll("[data-monokai-trace-status]").length).toBe(0);
-      expect(document.querySelectorAll("[data-monokai-trace-rail]").length).toBe(0);
-      expect(document.querySelectorAll("[data-monokai-trace-group]").length).toBe(0);
+      expect(document.querySelectorAll("[data-monokai-trace-has-error]").length).toBe(0);
       expect(document.querySelectorAll("[data-monokai-trace-static]").length).toBe(0);
     } finally {
+      globalThis.requestAnimationFrame = origRaf;
+      globalThis.cancelAnimationFrame = origCancelRaf;
+      globalThis.getComputedStyle = origGetComputedStyle;
       document.body.innerHTML = "";
+      document.head.innerHTML = "";
       document.documentElement.className = "";
       document.documentElement.style.removeProperty("--bb-monokai-active");
     }
@@ -519,7 +577,7 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
             </div>
           </div>
 
-          <div data-timeline-row-id="t:cmd:ok" data-monokai-trace-rail="inset">
+          <div data-timeline-row-id="t:cmd:ok">
             <div class="rounded-md text-muted-foreground w-full">
               <div class="group/timeline-row">
                 <button type="button" aria-expanded="true" id="ok-cmd-btn" class="px-2">
@@ -535,7 +593,7 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
                   <svg data-icon-root="" class="size-3" id="ok-chevron"></svg>
                 </button>
               </div>
-              <div aria-hidden="false"><div class="overflow-hidden"><div class="pb-1 pt-0.5" id="ok-rail-inner">
+              <div aria-hidden="false"><div class="overflow-hidden"><div class="px-2 pb-1 pt-0.5" id="ok-rail-inner">
                 <div class="overflow-hidden rounded-lg border border-border bg-card" id="ok-card">
                   <div class="px-4 py-3 font-mono text-xs leading-tight text-foreground opacity-70" id="ok-out">done</div>
                 </div>
@@ -543,16 +601,38 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
             </div>
           </div>
 
-          <div data-timeline-row-id="t:cmd:collapsed" data-monokai-trace-rail="flush">
+          <div data-timeline-row-id="t:turn-1:turn">
+            <div class="rounded-md text-muted-foreground w-full">
+              <div class="group/timeline-row">
+                <button type="button" aria-expanded="true" id="turn-btn" class="px-2"><span>Worked for 14ms</span></button>
+              </div>
+              <div aria-hidden="false"><div class="overflow-hidden"><div class="px-2 pb-1 pt-0.5" id="turn-rail-inner">
+                <div class="relative my-1 pl-3 pr-2 before:bg-border-seam" id="turn-nested-group">
+                  <div data-timeline-row-list="bundle">
+                    <div data-timeline-row-id="t:cmd:flush-open">
+                      <div class="rounded-md text-muted-foreground w-full">
+                        <div class="group/timeline-row">
+                          <button type="button" aria-expanded="true" class="px-0"></button>
+                        </div>
+                        <div aria-hidden="false"><div class="overflow-hidden"><div class="px-0 pb-1 pt-0.5" id="flush-rail-inner"></div></div></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div></div></div>
+            </div>
+          </div>
+
+          <div data-timeline-row-id="t:cmd:collapsed">
             <div class="rounded-md text-muted-foreground w-full">
               <div class="group/timeline-row">
                 <button type="button" aria-expanded="false" class="px-0"></button>
               </div>
-              <div aria-hidden="true"><div class="overflow-hidden"><div class="pb-1 pt-0.5" id="collapsed-rail-inner"></div></div></div>
+              <div aria-hidden="true"><div class="overflow-hidden"><div class="px-0 pb-1 pt-0.5" id="collapsed-rail-inner"></div></div></div>
             </div>
           </div>
 
-          <div data-timeline-row-id="t:error:exp" data-monokai-trace-status="error" data-monokai-trace-rail="inset-text">
+          <div data-timeline-row-id="t:error:exp" data-monokai-trace-status="error">
             <div class="rounded-md text-muted-foreground w-full">
               <div class="group/timeline-row">
                 <button type="button" aria-expanded="true" id="err-exp-btn" class="px-2">
@@ -562,7 +642,7 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
                   <svg data-icon-root="" class="size-3" id="err-exp-chevron"></svg>
                 </button>
               </div>
-              <div aria-hidden="false"><div class="overflow-hidden"><div class="pb-1 pt-0.5" id="err-rail-inner">
+              <div aria-hidden="false"><div class="overflow-hidden"><div class="px-2 pb-1 pt-0.5" id="err-rail-inner">
                 <div class="overflow-hidden rounded-lg border border-border bg-card" id="err-card">
                   <div class="px-4 py-3 font-mono text-xs leading-tight text-foreground opacity-70">
                     <div data-detail-scroll-area="base" class="text-muted-foreground" id="err-scroll">at seed.ts:27</div>
@@ -573,15 +653,15 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
             </div>
           </div>
 
-          <div data-timeline-row-id="t:step-summary:mixed" data-monokai-trace-has-error="" data-monokai-trace-rail="inset-text">
+          <div data-timeline-row-id="t:step-summary:mixed" data-monokai-trace-has-error="">
             <div class="rounded-md text-muted-foreground w-full">
               <div class="group/timeline-row">
                 <button type="button" aria-expanded="true" id="mixed-sum-btn" class="px-2">
                   <span><span class="inline-flex"><span class="text-subtle-foreground">Ran 2 commands</span><span class="font-mono text-xs text-subtle-foreground" id="mixed-sum-badge">1 error</span></span></span>
                 </button>
               </div>
-              <div aria-hidden="false"><div class="overflow-hidden"><div class="pb-1 pt-0.5">
-                <div data-timeline-row-id="t:cmd:nested-ok" data-monokai-trace-rail="flush">
+              <div aria-hidden="false"><div class="overflow-hidden"><div class="px-2 pb-1 pt-0.5">
+                <div data-timeline-row-id="t:cmd:nested-ok">
                   <div class="rounded-md text-muted-foreground w-full">
                     <div class="group/timeline-row">
                       <button type="button" aria-expanded="false" id="nested-ok-btn" class="px-0"><span>Ran bun test</span></button>
@@ -592,21 +672,31 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
             </div>
           </div>
 
+          <div data-timeline-row-id="t:static:pure">
+            <div class="w-full rounded-md text-muted-foreground opacity-40" id="pure-static-wrap">
+              <span class="text-muted-foreground">Fetched page</span>
+            </div>
+          </div>
+
           <div data-timeline-row-id="t:error:static" data-monokai-trace-status="error">
             <div class="w-full rounded-md text-muted-foreground opacity-40" data-monokai-trace-static="" id="err-static-wrap">
               <span class="text-muted-foreground" id="err-static-text">Connection lost</span>
             </div>
+            <div class="w-full rounded-md text-muted-foreground opacity-40" data-monokai-trace-static="" id="err-static-wrap-2">
+              <span class="text-muted-foreground">Second intent failed</span>
+            </div>
           </div>
 
-          <div data-timeline-row-id="t:file-edit:err" data-monokai-trace-status="error" data-monokai-trace-rail="flush">
+          <div data-timeline-row-id="t:file-edit:err" data-monokai-trace-status="error">
             <div class="rounded-md text-muted-foreground w-full">
-              <div aria-hidden="false"><div class="overflow-hidden"><div class="pb-1 pt-0.5">
+              <div class="group/timeline-row"></div>
+              <div aria-hidden="false"><div class="overflow-hidden"><div class="px-0 pb-1 pt-0.5">
                 <pre id="danger-ecb" class="whitespace-pre-wrap break-words rounded-md px-2 py-1.5 font-mono text-xs leading-tight text-destructive">patch failed</pre>
               </div></div></div>
             </div>
           </div>
 
-          <div data-timeline-row-id="t:plan:1" data-monokai-trace-rail="flush">
+          <div data-timeline-row-id="t:plan:1">
             <ul class="space-y-1" data-testid="plan-steps-body" id="plan-list">
               <li class="px-2 py-1 flex min-w-0 items-center gap-2 text-xs" id="plan-active">Active step</li>
               <li class="flex min-w-0 items-center gap-2 text-xs" id="plan-next">Next step</li>
@@ -617,16 +707,33 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
             <span>New</span><span class="h-px flex-1" id="unread-rule"></span>
           </div>
         </div>
+        <div class="mt-4">
+          <div class="rounded-md text-muted-foreground w-full">
+            <div class="group/timeline-row">
+              <button type="button" aria-expanded="true" id="working-btn" class="px-2 min-h-7 items-center">
+                <span><span class="inline-flex gap-1.5">
+                  <span class="text-sm leading-5" id="working-label"><span class="text-subtle-foreground" id="working-text">Thinking…</span></span>
+                </span></span>
+                <svg data-icon-root="" class="size-3" id="working-chevron"></svg>
+              </button>
+            </div>
+            <div aria-hidden="false"><div class="overflow-hidden"><div class="px-2 pb-1 pt-0.5" id="working-rail-inner">
+              <div class="max-h-80 overflow-auto whitespace-pre-wrap break-words ms-1.5 border-l border-border-seam pl-3 text-sm leading-relaxed text-muted-foreground" id="working-reasoning-detail">Streaming reasoning details</div>
+            </div></div></div>
+          </div>
+        </div>
         <button type="button" aria-label="Scroll to latest event" id="scroll-btn" class="size-8 rounded-full border border-border bg-background"></button>
       `;
 
-      // 1. User Bubble: borderless rounded-3xl pill on --muted.
+      // 1. User Bubble: shared 6% user surface (--agent-surface-background) per CONTRACT.md, borderless 24px pill.
       const bubble = document.querySelector(
         ".rounded-xl.border.border-border-seam.bg-surface-recessed",
       )!;
       expect(resolvedProp(bubble, "border-radius", DESKTOP)).toBe("24px");
       expect(resolvedProp(bubble, "border-color", DESKTOP)).toBe("transparent");
-      expect(resolvedProp(bubble, "background-color", DESKTOP)).toBe("var(--muted)");
+      expect(resolvedProp(bubble, "background-color", DESKTOP)).toBe(
+        "var(--agent-surface-background)",
+      );
       expect(resolvedProp(bubble, "padding", DESKTOP)).toBe("10px 14px");
 
       // 2. CodeBlock (both assistant & user messages) + non-overlapping 44x44 phone buttons.
@@ -697,13 +804,23 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
         "var(--readback-foreground)",
       );
 
-      // 6. Trace rails: open rows align by variant, collapsed rows do not match.
+      // 6. Pure-CSS trace rails & static opacity (zero script tags needed on first paint):
+      // px-2 -> 15px, px-0 -> 7px, :turn & TimelineWorkingIndicator -> 9px, collapsed -> none.
       expect(
         resolvedProp(document.getElementById("ok-rail-inner")!, "margin-inline-start", DESKTOP),
       ).toBe("15px");
       expect(
-        resolvedProp(document.getElementById("err-rail-inner")!, "margin-inline-start", DESKTOP),
+        resolvedProp(document.getElementById("flush-rail-inner")!, "margin-inline-start", DESKTOP),
+      ).toBe("7px");
+      expect(
+        resolvedProp(document.getElementById("turn-rail-inner")!, "margin-inline-start", DESKTOP),
       ).toBe("9px");
+      expect(
+        resolvedProp(document.getElementById("turn-nested-group")!, "display", DESKTOP, "::before"),
+      ).toBe("none");
+      expect(resolvedProp(document.getElementById("pure-static-wrap")!, "opacity", DESKTOP)).toBe(
+        "1",
+      );
       expect(
         resolvedProp(
           document.getElementById("collapsed-rail-inner")!,
@@ -712,7 +829,46 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
         ),
       ).toBeUndefined();
 
-      // 7. Failures: expandable error, static error, danger EventCodeBlock all crisp full-opacity red; hover stays red; mixed summaries highlight their error badge without bleeding into passing children!
+      // 6b. TimelineWorkingIndicator (rendered outside [data-timeline-row-list]):
+      // gets fit-content trigger, chevron, subtle-foreground, hover, 44px phone target, 9px rail, and stripped inner reasoning border.
+      const workingBtn = document.getElementById("working-btn")!;
+      expect(resolvedProp(workingBtn, "width", DESKTOP)).toBe("fit-content");
+      expect(resolvedProp(workingBtn, "color", DESKTOP)).toBe("var(--muted-foreground)");
+      expect(resolvedProp(workingBtn, "color", { ...DESKTOP, hovered: workingBtn })).toBe(
+        "var(--foreground)",
+      );
+      expect(resolvedProp(workingBtn, "min-height", PHONE_3X)).toBe("44px");
+      expect(resolvedProp(document.getElementById("working-text")!, "color", DESKTOP)).toBe(
+        "inherit",
+      );
+      expect(resolvedProp(document.getElementById("working-label")!, "font-size", DESKTOP)).toBe(
+        "var(--agent-fluid-size)",
+      );
+      expect(resolvedProp(document.getElementById("working-chevron")!, "opacity", DESKTOP)).toBe(
+        "1",
+      );
+      expect(
+        resolvedProp(document.getElementById("working-chevron")!, "color", {
+          ...DESKTOP,
+          hovered: workingBtn,
+        }),
+      ).toBe("var(--foreground)");
+      expect(
+        resolvedProp(
+          document.getElementById("working-rail-inner")!,
+          "margin-inline-start",
+          DESKTOP,
+        ),
+      ).toBe("9px");
+      expect(
+        resolvedProp(
+          document.getElementById("working-reasoning-detail")!,
+          "border-inline-start-width",
+          DESKTOP,
+        ),
+      ).toBe("0");
+
+      // 7. Failures: expandable error, multi-intent static error, danger EventCodeBlock all crisp full-opacity red; hover stays red; mixed summaries highlight their error badge without bleeding into passing children!
       const errBtn = document.getElementById("err-exp-btn")!;
       expect(resolvedProp(errBtn, "color", DESKTOP)).toBe("var(--destructive-text)");
       expect(resolvedProp(document.getElementById("err-exp-inner")!, "opacity", DESKTOP)).toBe("1");
@@ -749,6 +905,9 @@ describe("bb Monokai shadcn Base UI AI Elements surfaces", () => {
         "var(--muted-foreground)",
       );
       expect(resolvedProp(document.getElementById("err-static-wrap")!, "color", DESKTOP)).toBe(
+        "var(--destructive-text)",
+      );
+      expect(resolvedProp(document.getElementById("err-static-wrap-2")!, "color", DESKTOP)).toBe(
         "var(--destructive-text)",
       );
       expect(resolvedProp(document.getElementById("err-static-wrap")!, "opacity", DESKTOP)).toBe(
