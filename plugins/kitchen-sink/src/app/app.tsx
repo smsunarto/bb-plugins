@@ -7,9 +7,15 @@ import "./rpiv-todo/style.css";
 import "./timeline-motion/timeline-motion.css";
 import { ThreadActivityProbe } from "./timeline-motion/thread-activity-probe.tsx";
 import { JUMP_TO_LATEST_COMMAND, jumpToLatestEvent } from "./timeline-motion/jump-to-latest.ts";
+import { HeaderStatusBar } from "./header-bar/status-bar.tsx";
 
 export default definePluginApp((app) => {
   app.slots.experimental_appOverlay({ id: "completion-sound", component: CompletionSound });
+  app.slots.experimental_threadHeaderRow({
+    id: "header-status-bar",
+    order: 10,
+    component: HeaderStatusBar,
+  });
   app.slots.experimental_threadHeaderRow({
     id: "thread-activity-probe",
     component: ThreadActivityProbe,
