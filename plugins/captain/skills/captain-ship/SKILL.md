@@ -22,7 +22,7 @@ This list is the only one. To add a repo, add a bullet to it.
 
 Classify at ship time, outside any crew checkout (so a mistaken bare `gh` call has no remotes to resolve from):
 
-1. Read `Repo: <owner>/<repo>` from the Captain's Drive file `repos/<KEY>.md`, where `<KEY>` is the task's Tasks project. **If that line is missing:** stop and add it to `repos/<KEY>.md` before shipping. Never fall back to git config, the brief, or `gh repo view` with no repository argument.
+1. Read `Repo: <owner>/<repo>` from the Captain's Drive file `repos/<KEY>.md`, where `<KEY>` is the task's Tasks project. **If zero `Repo:` lines or more than one `Repo:` line appear:** stop and ask the user for `<owner>/<repo>` (then save that one line to `repos/<KEY>.md`). Never derive it from a checkout, git config, the brief, or `gh repo view` with no repository argument.
 2. Run `gh repo view <owner>/<repo> --json nameWithOwner,isFork,parent`. **If `gh` fails:** ask the user.
 3. **If `isFork` is true:** the change ships by PR. Its PR opens against the parent, `<parent.owner.login>/<parent.name>`.
 4. Otherwise match `nameWithOwner` against the list above, without regard to case, and pass `nameWithOwner` explicitly to `<skill-dir>/scripts/direct-ship.mjs` and to every `gh run list -R <owner>/<repo>` call. The script builds `https://github.com/<owner>/<repo>.git` (or SSH with `--ssh`) from that argument; never read a URL from any checkout's git config.
@@ -66,20 +66,29 @@ The old Merge answer never covers a new head. Open ship asks only through `verdi
 
 The subagent runs the direct-ship git sequence through `<skill-dir>/scripts/direct-ship.mjs` in a new empty temp directory `<workdir>` (under `$BB_THREAD_STORAGE` or `$TMPDIR`) and reports each result to you. The script manages two fresh clones of the URL built from `<owner>/<repo>`:
 
-- `<workdir>/bare.git`: a bare blobless clone (`--bare --filter=blob:none`, never `--mirror`) used for refs, ancestry, the commit list, the push, and post-push confirmation.
-- `<workdir>/checks`: a second fresh clone with its own `.git` directory (never `worktree add`), checked out detached at `<sha>^{commit}`, used for running the brief's checks.
+- `<workdir>/bare.git`: bare blobless clone used for refs, ancestry, the commit list, the push, and landing confirmation.
+- `<workdir>/checks`: second fresh clone with its own `.git` directory, checked out detached at `<sha>`, used for running the brief's checks.
 
-- **Inputs and script guards:** `<skill-dir>/scripts/direct-ship.mjs` refuses `<target>` or `<crew-branch>` outside `^[A-Za-z0-9._/-]+$` and `<sha>` outside lowercase 40-hex. Every git call the script makes runs with `--no-replace-objects -c core.hooksPath=/dev/null` (plus `-c core.fsmonitor=false` for the checks clone), verifies that both `remote get-url --all origin` and `remote get-url --push --all origin` print exactly the URL built from `<owner>/<repo>` in both clones (catching URL rewrites as git resolves them), and matches `git ls-remote origin "refs/heads/<name>"` by exact second field (requiring one line).
-- **Stop rule:** any `ambiguous` warning, any `matches more than one` failure, any exit 128, any other unexpected exit, or an output that differs from what a step requires means run `cleanup`, report it, and ship nothing. Only `verify` exit codes `2` (crew branch missing) and `3` (not fast-forward) and `push` exit code `3` (not fast-forward) carry specific recovery steps.
-- **Cleanup on every exit path:** run `<skill-dir>/scripts/direct-ship.mjs cleanup --dir "<workdir>"` whenever the run ends — on stop, already landed, crew branch missing, New heads, rejected or refused push, and after `confirm`.
 - **Trust boundary:** fresh clones and `repos/<KEY>.md` remove repo-local state — replace refs, grafts, shallow, refspecs, local hooks, and `includeIf` config scoped to the worktree — and defend against crew git config. They do not remove `~/.gitconfig`, credentials, or files that crew running as the same OS user can reach directly.
+- **Completion rule:** a script step completes only when it exits `0` and prints its expected `status:` line from the table below. A failing subcommand removes the clones it created before exiting; run `cleanup` on every success or `already-landed` path.
+
+| Subcommand | Output `status:` line                             | Exit | Action                                                                                                      |
+| ---------- | ------------------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------------- |
+| `clone`    | `status: cloned`                                  | `0`  | Continue to `verify`                                                                                        |
+| `verify`   | `status: ready`                                   | `0`  | Inspect the commit list, run the brief's checks in `<workdir>/checks`, and run `gh run list -R`             |
+| `verify`   | `status: already-landed`                          | `0`  | Run `cleanup`, report it, then run Go live (unless post-landing CI failed) and Finish                       |
+| `verify`   | `status: crew-branch-missing`                     | `2`  | Have the implementer push `<crew-branch>` at the same head, then re-clone from scratch and rerun checks 1-4 |
+| `verify`   | `status: not-fast-forward`                        | `3`  | Follow New heads                                                                                            |
+| `push`     | `status: pushed`                                  | `0`  | Run `confirm`                                                                                               |
+| `push`     | `status: already-landed`                          | `0`  | Run `confirm`, then `cleanup`; continue to post-push CI and Finish                                          |
+| `push`     | `status: not-fast-forward`                        | `3`  | Follow New heads                                                                                            |
+| `push`     | `status: refused`                                 | `1`  | Stop and ask the user; open no PR in its place                                                              |
+| `confirm`  | `status: confirmed`                               | `0`  | Run `cleanup`, then poll post-push CI                                                                       |
+| `cleanup`  | `status: cleaned`                                 | `0`  | Clones removed                                                                                              |
+| Any        | Missing `status:` line or any other non-zero exit | any  | Stop, ensure `cleanup` ran if clones remain, report it, and ship nothing                                    |
 
 1. `<skill-dir>/scripts/direct-ship.mjs clone --repo "<owner>/<repo>" --dir "<workdir>"` (add `--ssh` for SSH).
-2. `<skill-dir>/scripts/direct-ship.mjs verify --repo "<owner>/<repo>" --dir "<workdir>" --target "<target>" --branch "<crew-branch>" --sha "<sha>"` (checks target ref against exact `ls-remote`, already-landed, crew branch against exact `ls-remote`, fast-forward, commit list, and prepares `<workdir>/checks` at `<sha>`).
-   - **`status: already-landed`:** run `cleanup`, report it, then run Go live if the repo reloads or deploys after landing (unless post-landing CI failed) and Finish.
-   - **`status: crew-branch-missing` (exit 2):** run `cleanup`, have the implementer push `<crew-branch>` again at the same head, then re-clone from scratch and rerun checks 1-4.
-   - **`status: not-fast-forward` (exit 3):** run `cleanup` and follow New heads.
-   - **Any other non-zero exit:** run `cleanup`, stop, and ship nothing.
+2. `<skill-dir>/scripts/direct-ship.mjs verify --repo "<owner>/<repo>" --dir "<workdir>" --target "<target>" --branch "<crew-branch>" --sha "<sha>"` — act on its `status:` line per the table above.
 3. Read the commit list `verify` printed: confirm it holds only this task's commits. They land as they are, with no squash.
 4. Checks are green at `<sha>`. Only checks you or your subagent ran in `<workdir>/checks` count; a crew report, Review's included, is a claim.
    - Run the brief's checks in `<workdir>/checks`. They are required whether or not CI ran.
@@ -94,12 +103,10 @@ The subagent runs the direct-ship git sequence through `<skill-dir>/scripts/dire
 ## Ship direct
 
 1. Give a subagent the verified `<owner>/<repo>` (from `gh repo view`'s `nameWithOwner`), the target branch, the crew branch, and the full reviewed head.
-2. The subagent runs the Shipping direct checks (`clone`, `verify`, reads the commit list, runs the brief's checks in `<workdir>/checks`, and reads `gh run list -R`), then pushes as a separate call: `<skill-dir>/scripts/direct-ship.mjs push --repo "<owner>/<repo>" --dir "<workdir>" --target "<target>" --sha "<sha>"`. The script uses no `--force`, `--force-with-lease`, or leading `+`, and pushes `<sha>^{commit}:refs/heads/<target>` so `^{commit}` resolves `<sha>` as an object rather than a ref name even if origin holds a branch named `<sha>`. Because the script sets `core.hooksPath=/dev/null` on its git calls, none of the git calls the skill makes run client-side hooks (including `pre-push`); Shipping direct check 4 already ran the brief's checks in `<workdir>/checks`.
-3. **If `push` reports `status: not-fast-forward` (exit 3):** run `cleanup`; the target moved — follow New heads.
-4. **If `push` fails for another reason,** such as a branch rule or an `ambiguous` / `matches more than one` error: run `cleanup`, stop, and ask the user. Open no PR in its place.
-5. Run `<skill-dir>/scripts/direct-ship.mjs confirm --repo "<owner>/<repo>" --dir "<workdir>" --target "<target>" --sha "<sha>"` (fetches `+refs/heads/<target>:refs/heads/<target>` into `bare.git`, verifies exact `ls-remote` match, and confirms `<sha>` is an ancestor of `refs/heads/<target>`), then run `<skill-dir>/scripts/direct-ship.mjs cleanup --dir "<workdir>"`. The target may already have moved past the head, so the tip need not equal it.
-6. Poll `gh run list -R "<owner>/<repo>" --commit "<sha>" --branch "<target>" --limit 100 --json status,conclusion,name` outside any crew checkout once a minute for up to 30 minutes, until every run is `completed`. Report "no runs" only after 5 minutes with none, since GitHub registers runs a little after the push. When the 30 minutes pass, report the runs still pending.
-7. The subagent reports the push, the `confirm` landing check, and the CI result to you. **If a run fails:** tell the user in your ship report, skip Go live, run Finish, and fix or revert only through a new task. Otherwise, **if the repo reloads or deploys after landing:** run Go live, then Finish; else run Finish.
+2. The subagent runs the Shipping direct checks (`clone`, `verify`, reads the commit list, runs the brief's checks in `<workdir>/checks`, and reads `gh run list -R`), then pushes as a separate call: `<skill-dir>/scripts/direct-ship.mjs push --repo "<owner>/<repo>" --dir "<workdir>" --target "<target>" --sha "<sha>"`. None of the git calls the script makes run client-side hooks (including `pre-push`), and Shipping direct check 4 already ran the brief's checks in `<workdir>/checks`. Act on `push`'s `status:` line per the table above.
+3. Run `<skill-dir>/scripts/direct-ship.mjs confirm --repo "<owner>/<repo>" --dir "<workdir>" --target "<target>" --sha "<sha>"`, then run `<skill-dir>/scripts/direct-ship.mjs cleanup --dir "<workdir>"`. The target may already have moved past the head, so the tip need not equal it.
+4. Poll `gh run list -R "<owner>/<repo>" --commit "<sha>" --branch "<target>" --limit 100 --json status,conclusion,name` outside any crew checkout once a minute for up to 30 minutes, until every run is `completed`. Report "no runs" only after 5 minutes with none, since GitHub registers runs a little after the push. When the 30 minutes pass, report the runs still pending.
+5. The subagent reports the push, the `confirm` landing check, and the CI result to you. **If a run fails:** tell the user in your ship report, skip Go live, run Finish, and fix or revert only through a new task. Otherwise, **if the repo reloads or deploys after landing:** run Go live, then Finish; else run Finish.
 
 ## Go live
 
@@ -115,7 +122,7 @@ When a repo reloads or deploys after landing, run Go live only after the change 
 
 The ship is done when all of these hold:
 
-- The change is on the target: its PR shows merged, or for a direct ship the post-push `confirm` check (Ship direct step 5) confirmed the head is an ancestor of `refs/heads/<target>`.
+- The change is on the target: its PR shows merged, or for a direct ship the post-push `confirm` check (Ship direct step 3) confirmed the head is an ancestor of `refs/heads/<target>`.
 - When the repo reloads or deploys after landing (and post-landing CI did not fail), Go live succeeded from its target-only checkout.
 - The task is `done`.
 - Its crew threads are archived.
