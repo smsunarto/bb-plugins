@@ -41,6 +41,7 @@
     "src/",
     "!src/**/*.test.ts",
     "skills/",
+    "README.md",
     "LICENSE"
   ],
   "dependencies": {
