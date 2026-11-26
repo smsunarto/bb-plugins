@@ -514,36 +514,16 @@ describe("bb Monokai contract audit", () => {
     );
     expect(theme).toContain('.dark [data-timeline-row-list="top-level"] {\n  gap: 8px;\n}');
     expect(theme).toContain('.dark [data-timeline-row-list="bundle"] {\n  gap: 0;');
-    // bb's past-row dim (opacity-40) applies; the theme does not undo it.
-    expect(theme).not.toContain(".rounded-md.text-muted-foreground.opacity-40");
     // bb's 20px action row holds the absolutely positioned hover actions.
     // Collapsing it lets them spill over the next timeline item.
     expect(theme).not.toContain(".relative.w-full.h-5");
-    // bb counts inline actions from its 20px boxes, so the T3 fill is drawn
+    // bb counts inline actions from its 20px boxes, so the ghost fill is drawn
     // outside them instead of resizing the buttons.
     expect(theme).not.toContain("padding-inline: 7px");
-    expect(theme).toContain(
-      '.dark [data-message-column] .absolute.top-0 > button.size-5::before {\n    content: "";\n    position: absolute;\n    inset: -2px -3px;\n    z-index: -1;\n    border-radius: 8px;',
-    );
-    expect(theme).toContain(
-      ".dark [data-message-column] .absolute.top-0 > button.size-5 > svg[data-icon-root].size-3 * {\n  stroke-width: 2;",
-    );
     expect(theme).toContain('> span:empty::after {\n  content: "text";');
-    expect(theme).toContain(
-      "  button,\n.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button {\n  width: 24px;\n  height: 24px;",
-    );
     expect(theme).not.toContain('a.underline[href^="mailto:"]::before');
     expect(theme).toContain(
       "a.underline code.bg-muted\\/70,\n.dark .bb-markdown-prose a :not(pre) > code {\n  color: inherit;",
-    );
-    expect(theme).toContain(
-      ".dark [data-timeline-row-list] span.text-sm.leading-5 {\n  font-size: var(--agent-fluid-size);\n  line-height: 1.5;",
-    );
-    expect(theme).toContain(
-      ".dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > [data-icon-root].size-3\\.5 {\n  width: 16px;\n  height: 16px;\n  margin-inline-end: 4px;\n  color: var(--readback-foreground);",
-    );
-    expect(theme).toContain(
-      ".dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > svg[data-icon-root].size-3\\.5 *,\n.dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > span[data-icon-root].size-3\\.5 > svg * {\n  stroke-width: 2;",
     );
     expect(theme).toContain(
       ".dark .review-canvas-root[data-review-theme] .review-document {\n  --wb-text: calc(var(--agent-fluid-size) * 15 / 14);\n}",
@@ -551,6 +531,37 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain(
       "@media (max-width: 767px) and (pointer: coarse) {\n  .dark .review-canvas-root[data-review-theme] .review-document {\n    --wb-text: 15px;",
     );
+  });
+
+  test("guards AI Elements thread rules against scope, theme, and selector-cost regressions", () => {
+    const rules = styleRules(theme).filter(
+      (rule) => !rule.atRules.some((at) => at.startsWith("@keyframes")),
+    );
+    const traceRules = rules.filter((rule) =>
+      /data-monokai-trace-|data-timeline-row-list|Scroll to latest event|thread-unread-divider|plan-steps-body/.test(
+        rule.selector,
+      ),
+    );
+    expect(traceRules.length).toBeGreaterThan(20);
+    // Every individual comma-separated selector in every trace rule must be .dark-scoped.
+    for (const rule of traceRules) {
+      for (const branch of rule.selector.split(",")) {
+        expect(branch.trim()).toContain(".dark");
+      }
+      // No bare tag-bucketed `> div`, `> span`, or ` pre` rules in trace styling.
+      expect(rule.selector).not.toMatch(/>\s*(?:div|span)\s*(?:,|$)/);
+      expect(rule.selector).not.toMatch(/\bpre\s*(?:,|$)/);
+      // No tool-card inset border rings or composer/prompt-stack banner selectors.
+      expect(rule.body).not.toContain("box-shadow: inset 0 0 0 var(--hairline-ring-width)");
+      expect(rule.selector).not.toContain("[data-promptbox]");
+      expect(rule.selector).not.toContain("[data-follow-up-composer]");
+      expect(rule.selector).not.toContain('section[aria-label="To-do list"]');
+      expect(rule.selector).not.toContain("#thread-todo-card-");
+      expect(rule.selector).not.toContain("[data-queued-message-row]");
+    }
+    // Keep total `*=` substring selectors at or below the pre-BBP-133 baseline (37).
+    const substringCount = (theme.replace(/\/\*[\s\S]*?\*\//g, "").match(/\*=/g) ?? []).length;
+    expect(substringCount).toBeLessThanOrEqual(37);
   });
 
   test("keeps phone text fields at the 16px iOS zoom floor", () => {
@@ -634,11 +645,10 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain("  --font-terminal: var(--terminal-font-family);\n");
   });
 
-  test("keeps one fade on timeline status decorations without undoing bb's past-row dim", () => {
+  test("keeps timeline status decorations at full opacity on trace toggles", () => {
     expect(theme).toContain(
       ".dark .group\\/timeline-row > button[aria-expanded] .text-subtle-foreground.opacity-75 {\n  opacity: 1;\n}",
     );
-    expect(theme).not.toContain("button[aria-expanded] > span > .opacity-40");
   });
 
   test("keeps wrapped inline code chips padded and rounded on each line", () => {

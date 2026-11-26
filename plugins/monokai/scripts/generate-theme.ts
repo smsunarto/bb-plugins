@@ -651,8 +651,10 @@ const requiredRules: Array<{
   {
     selector: ".dark .rounded-xl.border.border-border-seam.bg-surface-recessed",
     declarations: {
-      "background-color": "var(--agent-surface-background)",
-      "border-color": "var(--agent-surface-border)",
+      "background-color": "var(--muted)",
+      "border-color": "transparent",
+      "border-radius": "24px",
+      padding: "10px 14px",
     },
   },
   {
