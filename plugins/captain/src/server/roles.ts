@@ -107,7 +107,12 @@ export function parseVerdictField(value: string): VerdictField | null {
 }
 
 /** Review verdicts that make a task ready to ship. */
-export const SHIP_READY_REVIEWS: ReadonlySet<string> = new Set(["passed", "skipped"]);
+export type ShipVerdict = "passed" | "skipped";
+export const SHIP_READY_REVIEWS: ReadonlySet<string> = new Set<ShipVerdict>(["passed", "skipped"]);
+
+export function isShipVerdict(value: string): value is ShipVerdict {
+  return SHIP_READY_REVIEWS.has(value);
+}
 
 /** Parse a role name from the CLI or metadata, case-insensitively. */
 export function parseRole(value: unknown): Role | null {

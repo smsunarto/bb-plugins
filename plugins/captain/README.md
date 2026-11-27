@@ -47,7 +47,7 @@ Run `bb captain --help` for every option. Every command takes `--json`.
 - A crew thread is the child of a Captain in bb. Crew may run `drive read`, `drive write` and `ask show`, and nothing else that acts for a Captain.
 - Other threads, neither a Captain nor its crew, are refused by every command that acts for a Captain, `drive read` and `drive write` included. They may still run `ask show` and `bb captain new`. Crew may not run `new`, nor may any thread ever dispatched as crew.
 - `ask resolve` takes the user's terminal, the banner, or the ask's own Captain thread. The Captain may answer its own decision, access or improve asks, and may rerun any answer to retry its send. Only the user gives a ship ask its first answer.
-- Each ask records who answered it, `user` or `captain`, and `ask show` prints it. A superseded ship ask reads `captain`; asks answered before this was kept read `unknown`. `captain-ship` ships only on a Merge whose record says `user`.
+- Each ask records who answered it, `user` or `captain`, and each ship ask records its full 40-hex `head` and review `verdict`; `ask show` prints them. A superseded ship ask reads `captain`; asks answered before this was kept read `unknown`. `captain-ship` ships only on a Merge whose record says `user` and whose `head` is the full 40-hex reviewed head.
 - A review verdict supersedes the task's open ship asks from every Captain, not only the one recording it. Another Captain whose ask closes is sent its `Superseded` answer, as a resolved ask is.
 - Crew read the whole Drive and write only under `crew/`. `CAPTAIN.md`, `CREW.md`, `NOTES.md`, `skills/` and every other path are the Captain's. The check uses the real path, so a symlink cannot point a crew write elsewhere.
 

@@ -54,6 +54,8 @@ export type StatusRow = {
   thread: string | null;
   role: string | null;
   task: string | null;
+  /** Full commit id a ship ask or ready task names; null for other rows. */
+  head: string | null;
   note: string;
   /** Epoch ms the row's age counts from. */
   since: number | null;
@@ -106,6 +108,7 @@ export function deriveStatus(input: StatusInput): Status {
       thread: input.captain.id,
       role: null,
       task: null,
+      head: null,
       note: "Captain thread errored",
       since: input.captain.updatedAt,
       changedAt: null,
@@ -145,6 +148,7 @@ export function deriveStatus(input: StatusInput): Status {
       thread: null,
       role: null,
       task: row.task.key,
+      head: review.head,
       note: `review ${review.value}${review.head === null ? "" : ` @${review.head}`} · ${row.task.status}`,
       since: ms(review.writtenAt),
       changedAt: rowChangedAt(row),
@@ -170,17 +174,18 @@ export function deriveStatus(input: StatusInput): Status {
 }
 
 function askRow(ask: Ask): StatusRow {
-  const base = { id: ask.id, thread: null, role: null, task: ask.taskKey };
+  const base = { id: ask.id, thread: null, role: null, task: ask.taskKey, head: ask.head };
   const changedAt = Math.max(ask.askedAt, ask.answeredAt ?? 0);
+  const at = ask.head === null ? "" : ` @${ask.head}`;
   if (ask.answer === null) {
-    return { ...base, state: "ask", note: ask.text, since: ask.askedAt, changedAt };
+    return { ...base, state: "ask", note: `${ask.text}${at}`, since: ask.askedAt, changedAt };
   }
   const answer = JSON.stringify(ask.answer);
   if (ask.deliveryAttempts >= ANSWER_MAX_ATTEMPTS) {
     return {
       ...base,
       state: "health",
-      note: `answer ${answer} not delivered after ${ask.deliveryAttempts} sends; retry: bb captain ask resolve ${ask.id} --answer ${answer}`,
+      note: `answer ${answer} not delivered after ${ask.deliveryAttempts} sends${at}; retry: bb captain ask resolve ${ask.id} --answer ${answer}`,
       since: ask.answeredAt,
       changedAt,
     };
@@ -188,7 +193,7 @@ function askRow(ask: Ask): StatusRow {
   return {
     ...base,
     state: "undelivered",
-    note: `answer ${answer} not delivered · ${ask.text}`,
+    note: `answer ${answer} not delivered · ${ask.text}${at}`,
     since: ask.answeredAt,
     changedAt,
   };
@@ -298,6 +303,7 @@ function threadRow(
     thread: thread.id,
     role,
     task: row?.task.key ?? null,
+    head: null,
     note: parts.filter((part) => part !== "").join(" · "),
     since,
     changedAt: row === undefined ? thread.createdAt : rowChangedAt(row),

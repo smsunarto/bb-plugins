@@ -333,6 +333,8 @@ export async function captainHost(options: FakeOptions = {}) {
     delegateMode: "ok" as DelegateMode,
     /** Runs after the spawn, before Tasks answers: where bb builds the first session. */
     onSpawn: undefined as ((threadId: string) => Promise<void> | void) | undefined,
+    /** Runs after a comment is stored, before `createComment` returns. */
+    onComment: undefined as ((body: string) => Promise<void> | void) | undefined,
     down: options.tasksDown === true,
     /** Methods that fail while listed; `listTasks:<projectId>` fails one project's list. */
     failing: new Set<string>(),
@@ -707,6 +709,7 @@ export async function captainHost(options: FakeOptions = {}) {
           createdAt: iso(),
         };
         tasks.comments.push(comment);
+        await tasks.onComment?.(comment.body);
         return { comment: { id: comment.id } };
       }
       case "listComments":

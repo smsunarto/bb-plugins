@@ -11,7 +11,7 @@ import {
   type Schedule,
 } from "../contract/routines.ts";
 import { Refusal, type Blocker } from "./output.ts";
-import { parseRole, type Role } from "./roles.ts";
+import { parseRole, type Role, type ShipVerdict } from "./roles.ts";
 
 type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -205,6 +205,34 @@ export const MIGRATIONS: readonly string[] = [
     recorded_at INTEGER NOT NULL,
     PRIMARY KEY (captain_id, task_id)
   )`,
+  // A ship ask's pinned 40-hex head and review verdict (`passed` or `skipped`).
+  // Non-ship asks and rows opened before these columns without a full 40-hex
+  // `Review passed|skipped at <sha>.` prefix stay null.
+  "ALTER TABLE asks ADD COLUMN head TEXT",
+  "ALTER TABLE asks ADD COLUMN verdict TEXT CHECK (verdict IN ('passed', 'skipped'))",
+  `UPDATE asks
+   SET
+     head = lower(
+       CASE
+         WHEN substr(detail, 1, 17) = 'Review passed at ' THEN substr(detail, 18, 40)
+         ELSE substr(detail, 19, 40)
+       END
+     ),
+     verdict = CASE
+       WHEN substr(detail, 1, 17) = 'Review passed at ' THEN 'passed'
+       ELSE 'skipped'
+     END
+   WHERE kind = 'ship' AND head IS NULL AND verdict IS NULL AND (
+     (substr(detail, 1, 17) = 'Review passed at '
+       AND length(substr(detail, 18, 40)) = 40
+       AND substr(detail, 58, 1) = '.'
+       AND ltrim(substr(detail, 18, 40), '0123456789abcdefABCDEF') = '')
+     OR
+     (substr(detail, 1, 18) = 'Review skipped at '
+       AND length(substr(detail, 19, 40)) = 40
+       AND substr(detail, 59, 1) = '.'
+       AND ltrim(substr(detail, 19, 40), '0123456789abcdefABCDEF') = '')
+   )`,
 ];
 
 const ASK_ANSWERER_SLOT = MIGRATIONS.indexOf(ASK_ANSWERER_MIGRATION);
@@ -342,6 +370,10 @@ export type Ask = {
   captainId: string;
   taskKey: string | null;
   kind: AskKind;
+  /** Full 40-hex commit id a ship ask covers; null for other kinds and older rows. */
+  head: string | null;
+  /** Review verdict a ship ask covers; null for other kinds and older rows. */
+  verdict: ShipVerdict | null;
   text: string;
   detail: string;
   /** Rendered as buttons; the first is recommended. */
@@ -365,6 +397,8 @@ type AskRecord = {
   captain_id: string;
   task_key: string | null;
   kind: AskKind;
+  head: string | null;
+  verdict: ShipVerdict | null;
   text: string;
   detail: string;
   options: string | null;
@@ -585,6 +619,8 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     captainId: row.captain_id,
     taskKey: row.task_key,
     kind: row.kind,
+    head: row.head,
+    verdict: row.verdict,
     text: row.text,
     detail: row.detail,
     options: row.options === null ? [] : (JSON.parse(row.options) as string[]),
@@ -880,11 +916,29 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         .get(captainId, kind, taskKey, text);
       return row === undefined ? null : toAsk(row);
     },
+    /** The open ship ask for this task, head and review verdict, regardless of title changes. */
+    findOpenShipAsk(
+      captainId: string,
+      taskKey: string,
+      head: string,
+      verdict: ShipVerdict,
+    ): Ask | null {
+      const row = db
+        .prepare<[string, string, string, ShipVerdict], AskRecord>(
+          `SELECT * FROM asks
+           WHERE captain_id = ? AND kind = 'ship' AND task_key = ? AND head = ? AND verdict = ?
+             AND answer IS NULL ORDER BY rowid LIMIT 1`,
+        )
+        .get(captainId, taskKey, head, verdict);
+      return row === undefined ? null : toAsk(row);
+    },
     /** Insert an ask under the next short id, `a1`, `a2`, …. */
     openAsk(
       ask: Omit<
         Ask,
         | "id"
+        | "head"
+        | "verdict"
         | "answer"
         | "answeredAt"
         | "answeredBy"
@@ -892,7 +946,8 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         | "deliveryAttempts"
         | "nextDeliveryAt"
         | keyof Defer
-      >,
+      > &
+        Partial<Pick<Ask, "head" | "verdict">>,
     ): Ask {
       return db.transaction(() => {
         const { last } = db
@@ -902,13 +957,15 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
           .get() ?? { last: null };
         const id = `a${(last ?? 0) + 1}`;
         db.prepare(
-          `INSERT INTO asks (id, captain_id, task_key, kind, text, detail, options, asked_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO asks (id, captain_id, task_key, kind, head, verdict, text, detail, options, asked_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           id,
           ask.captainId,
           ask.taskKey,
           ask.kind,
+          ask.head ?? null,
+          ask.verdict ?? null,
           ask.text,
           ask.detail,
           ask.options.length === 0 ? null : JSON.stringify(ask.options),
@@ -917,11 +974,29 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         return toAsk(selectAsk.get(id) as AskRecord);
       })();
     },
-    /** Record an answer and who gave it once; a second answer leaves the first. */
-    answerAsk(id: string, answer: string, by: Answerer, at: number): void {
-      db.prepare(
-        "UPDATE asks SET answer = ?, answered_by = ?, answered_at = ? WHERE id = ? AND answer IS NULL",
-      ).run(answer, by, at, id);
+    /**
+     * Record an answer and who gave it once; returns true only when this call
+     * wrote the answer. With `delivered: true`, marks delivery in the same
+     * statement so a concurrent user answer is never stamped delivered.
+     */
+    answerAsk(
+      id: string,
+      answer: string,
+      by: Answerer,
+      at: number,
+      options?: { delivered?: boolean },
+    ): boolean {
+      const deliveredAt = options?.delivered === true ? at : null;
+      return (
+        db
+          .prepare(
+            `UPDATE asks
+             SET answer = ?, answered_by = ?, answered_at = ?,
+                 answer_delivered_at = COALESCE(answer_delivered_at, ?)
+             WHERE id = ? AND answer IS NULL`,
+          )
+          .run(answer, by, at, deliveredAt, id).changes === 1
+      );
     },
     markAnswerDelivered(id: string, at: number): void {
       db.prepare(
