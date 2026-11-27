@@ -77,7 +77,6 @@
     "react-dom": "^19.0.0",
     "sonner": "^1.7.4",
     "tailwind-merge": "^3.4.0",
-    "typescript-7": "npm:typescript@^7.0.2",
     "vitest": "^4.1.1",
     "@bb-plugins/header-bar": "workspace:*",
     "@bb-plugins/review-request": "workspace:*",
