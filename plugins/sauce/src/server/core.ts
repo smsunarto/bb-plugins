@@ -1175,8 +1175,11 @@ export function createDefaultsStore(bb: BbPluginApi): DefaultsStore {
 
 /** The core wired to the real Sauce browser and this bb's threads. */
 export function defaultCoreDeps(bb: BbPluginApi): SauceCoreDeps {
+  // Disposing the plugin kills any agent-browser call still running.
+  const lifetime = new AbortController();
+  bb.onDispose(() => lifetime.abort());
   return {
-    page: createSaucePage(createAgentBrowserRunner()),
+    page: createSaucePage(createAgentBrowserRunner(undefined, { signal: lifetime.signal })),
     store: createLeaseStore(bb),
     defaults: createDefaultsStore(bb),
     projectName: (projectId) =>

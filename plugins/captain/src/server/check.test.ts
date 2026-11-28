@@ -1,9 +1,11 @@
+import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, test } from "vitest";
 import { ANSWER_MAX_ATTEMPTS } from "./asks.ts";
-import { STALL_WAKE_AFTER_MS } from "./check.ts";
+import { REFUSED_MAX_ATTEMPTS, STALL_WAKE_AFTER_MS } from "./check.ts";
+import { fingerprint } from "./served.ts";
 import { COMMAND_ALLOWANCE_MS } from "./status.ts";
 import { NOTICE } from "./store.ts";
-import { captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
+import { captainHost, deferred, newCaptain, type CaptainHost } from "./test-host.ts";
 
 const MINUTE = 60_000;
 
@@ -366,5 +368,181 @@ describe("status health and ready rows", () => {
       "BBPLUGINS-1  ready  review passed @abc · in_review  0s",
     ]);
     expect(ready(done.stdout)).toEqual([]);
+  });
+});
+
+function mutateServed(host: CaptainHost, threadId: string) {
+  const [row] = host.server.store.servedOf([threadId]);
+  if (row === undefined) throw new Error(`no served row for ${threadId}`);
+  const text = `${row.text}\n(older)`;
+  host.server.store.swapServed(threadId, row.fingerprint, {
+    text,
+    fingerprint: fingerprint(text),
+    servedAt: row.servedAt,
+  });
+}
+
+describe("check service abort, 404/409 suppression and poke debounce", () => {
+  test("check.start(signal) aborts promptly mid-flight when a read hangs", async () => {
+    const { host } = await checkHost();
+    const hold = deferred();
+    host.threadHolds.list = hold.promise;
+
+    const service = host.harness.behavior.runService("check");
+    // Wait a microtask so `threads.list` is in flight.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const startedAbort = Date.now();
+    service.controller.abort();
+    await service.done;
+
+    expect(Date.now() - startedAbort).toBeLessThan(500);
+    hold.resolve();
+  });
+
+  test("404 for a missing captain or crew thread cleans up served_instructions and stops retrying", async () => {
+    const { host, captainId, idleCrew, passAt } = await checkHost();
+    const crewId = await idleCrew("BBPLUGINS-1");
+    await host.harness.behavior.resolveAgentConfiguration(
+      makePluginAgentConfigurationContext({
+        thread: { id: captainId },
+        pluginMetadata: { captain: { name: "Plugins" } },
+      }),
+    );
+    await host.harness.behavior.resolveAgentConfiguration(
+      makePluginAgentConfigurationContext({
+        thread: { id: crewId, parentThreadId: captainId },
+        project: { id: "proj_plugins" },
+      }),
+    );
+    mutateServed(host, captainId);
+    mutateServed(host, crewId);
+
+    // Captain thread vanished -> threads.get returns 404; crew send returns 404.
+    host.threads.delete(captainId);
+    host.threadFaults.send = Object.assign(new Error("Thread not found"), { status: 404 });
+
+    await passAt(MINUTE);
+    expect(host.server.store.servedOf([captainId, crewId])).toEqual([]);
+
+    // Next pass sends nothing and logs no further errors for them.
+    const logsBefore = host.logs().length;
+    host.threadFaults.send = null;
+    const second = await passAt(2 * MINUTE);
+    expect(second.woke).toEqual([]);
+    expect(host.logs().slice(logsBefore)).toEqual([]);
+  });
+
+  test("409 refusal backs off exponentially, caps retries, and re-arms on thread.active or configure", async () => {
+    const { host, captainId, idleCrew, passAt } = await checkHost();
+    const crewId = await idleCrew("BBPLUGINS-1");
+    await host.harness.behavior.resolveAgentConfiguration(
+      makePluginAgentConfigurationContext({
+        thread: { id: crewId, parentThreadId: captainId },
+        project: { id: "proj_plugins" },
+      }),
+    );
+    mutateServed(host, crewId);
+
+    host.threadFaults.send = Object.assign(new Error("Provider codex is disabled"), {
+      status: 409,
+    });
+    const refusalLogs = () =>
+      host
+        .logs()
+        .filter((entry) => entry.message.includes(`instruction change for ${crewId} refused`));
+
+    // Attempt 1 at t=0 -> nextAt = 1m
+    await passAt(0);
+    expect(refusalLogs()).toHaveLength(1);
+    // Before 1m: suppressed.
+    await passAt(30_000);
+    expect(refusalLogs()).toHaveLength(1);
+    // Attempt 2 at t=1m -> nextAt = 1m + 2m = 3m
+    await passAt(1 * MINUTE);
+    expect(refusalLogs()).toHaveLength(2);
+    // At t=2m: still suppressed.
+    await passAt(2 * MINUTE);
+    expect(refusalLogs()).toHaveLength(2);
+    // Drive through remaining attempts up to cap (3m, 7m, 15m, 31m -> attempts 3,4,5,6).
+    for (const minute of [3, 7, 15, 31]) {
+      await passAt(minute * MINUTE);
+    }
+    expect(refusalLogs()).toHaveLength(REFUSED_MAX_ATTEMPTS);
+
+    // Well after backoff, still capped.
+    await passAt(200 * MINUTE);
+    expect(refusalLogs()).toHaveLength(REFUSED_MAX_ATTEMPTS);
+
+    // Clear 409 and re-arm via thread.active -> sends on next pass.
+    host.threadFaults.send = null;
+    await host.harness.behavior.emitThreadEvent("thread.active", {
+      thread: host.threads.get(crewId) as never,
+    });
+    const beforeSend = host.sent.length;
+    await passAt(201 * MINUTE);
+    expect(
+      host.sent
+        .slice(beforeSend)
+        .filter((m) => m.threadId === crewId)
+        .map((m) => m.threadId),
+    ).toEqual([crewId]);
+
+    // Also verify configure re-arms a refused thread.
+    mutateServed(host, crewId);
+    host.threadFaults.send = Object.assign(new Error("Thread environment is unavailable"), {
+      status: 409,
+    });
+    await passAt(202 * MINUTE);
+    const countAfterOne = refusalLogs().length;
+    host.threadFaults.send = null;
+    await host.harness.behavior.resolveAgentConfiguration(
+      makePluginAgentConfigurationContext({
+        thread: { id: crewId, parentThreadId: captainId },
+        project: { id: "proj_plugins" },
+      }),
+    );
+    const beforeRearm = host.sent.length;
+    await passAt(202 * MINUTE + 1_000);
+    expect(refusalLogs()).toHaveLength(countAfterOne);
+    expect(
+      host.sent
+        .slice(beforeRearm)
+        .filter((m) => m.threadId === crewId)
+        .map((m) => m.threadId),
+    ).toEqual([crewId]);
+  });
+
+  test("poke() debounces a burst of crew thread events into one follow-up pass", async () => {
+    const host = await captainHost({ pokeDebounceMs: 40 });
+    const captainId = await newCaptain(host);
+    const service = host.harness.behavior.runService("check");
+    try {
+      // Wait for initial pass to settle into idle sleep.
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      const readsAfterStart = host.threadLists.length;
+
+      // Unrelated thread event does not poke.
+      const unrelated = host.addThread({ id: "thr_other", parentThreadId: null });
+      await host.harness.behavior.emitThreadEvent("thread.created", { thread: unrelated as never });
+      await new Promise((resolve) => setTimeout(resolve, 70));
+      expect(host.threadLists.length).toBe(readsAfterStart);
+
+      // Burst of 3 events for this Captain's crew coalesces into a single pass.
+      const child = host.addThread({ id: "thr_child", parentThreadId: captainId });
+      await host.harness.behavior.emitThreadEvent("thread.created", { thread: child as never });
+      await host.harness.behavior.emitThreadEvent("thread.failed", {
+        thread: child as never,
+        error: "boom",
+      } as never);
+      await host.harness.behavior.emitThreadEvent("experimental_thread.parentChanged", {
+        thread: child as never,
+      } as never);
+
+      await new Promise((resolve) => setTimeout(resolve, 90));
+      expect(host.threadLists.length - readsAfterStart).toBe(1);
+    } finally {
+      service.controller.abort();
+      await service.done;
+    }
   });
 });

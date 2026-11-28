@@ -15,6 +15,7 @@ import {
   sameManifest,
   sanitizeSlug,
   sha256Bytes,
+  throwIfAborted,
   WRITE_BATCH_BYTES,
   writeJsonAtomic,
   writeSyncFileAtomic,
@@ -40,6 +41,8 @@ type HostClient = ExperimentalHostClient<typeof hostContract, typeof hostSignals
 
 const HOST_CALL_TIMEOUT_MS = 30_000;
 const PERIODIC_RECONCILE_MS = 5 * 60_000;
+const WORKER_EXIT_BASE_DELAY_MS = 1_000;
+const WORKER_EXIT_MAX_DELAY_MS = 60_000;
 const MAX_CAS_RETRIES = 2;
 const MAX_DELETE_BATCH = 200;
 const MAX_WRITE_BATCH = 200;
@@ -56,13 +59,20 @@ function isSafeHostId(hostId: string): boolean {
  * Hosts reconcile independently (bounded to `MAX_CONCURRENT_HOSTS` in parallel)
  * so a slow or offline machine never blocks others.
  */
-export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; host: HostClient }) {
+export function openSyncManager(args: {
+  bb: BbPluginApi;
+  store: SourceStore;
+  host: HostClient;
+  workerExitBaseDelayMs?: number;
+}) {
   const { bb, store, host } = args;
+  const workerExitBaseDelayMs = args.workerExitBaseDelayMs ?? WORKER_EXIT_BASE_DELAY_MS;
   const syncStateDir = join(store.pluginDir, "sync-state");
 
   let primaryHostId: string | null | undefined;
   let started = false;
   let disposed = false;
+  let serviceSignal: AbortSignal | undefined;
 
   const mirrorDirs = new Map<string, string>();
   const hostNames = new Map<string, string>();
@@ -71,16 +81,72 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
   const pendingAgain = new Set<string>();
   const pendingWatch = new Set<string>();
   const hostPromises = new Map<string, Promise<void>>();
+  const workerExitAttempts = new Map<string, number>();
+  const workerExitTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function clearWorkerExitTimer(hostId: string): void {
+    const timer = workerExitTimers.get(hostId);
+    if (timer) {
+      clearTimeout(timer);
+      workerExitTimers.delete(hostId);
+    }
+  }
+
+  function clearAllWorkerExitTimers(): void {
+    for (const timer of workerExitTimers.values()) clearTimeout(timer);
+    workerExitTimers.clear();
+  }
+
+  function hostCallOptions(hostId: string, signal?: AbortSignal) {
+    return {
+      hostId,
+      timeoutMs: HOST_CALL_TIMEOUT_MS,
+      ...(signal ? { signal } : {}),
+    };
+  }
+
+  // Coalesce concurrent server disk reloads and skip them when the source watcher confirms disk is clean.
+  let inFlightReload: Promise<void> | null = null;
+  async function ensureFreshServerState(force: boolean): Promise<void> {
+    if (!force && store.isDiskClean()) return;
+    if (!inFlightReload) {
+      inFlightReload = store
+        .reloadFromDisk("disk")
+        .then(() => undefined)
+        .finally(() => {
+          inFlightReload = null;
+        });
+    }
+    await inFlightReload;
+  }
 
   // Bounded semaphore across distinct hosts to keep peak memory and I/O bounded.
   let activeSlots = 0;
   const slotWaiters: Array<() => void> = [];
-  async function withHostSlot<T>(task: () => Promise<T>): Promise<T> {
+  async function withHostSlot<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    throwIfAborted(signal);
     if (activeSlots >= MAX_CONCURRENT_HOSTS) {
-      await new Promise<void>((resolve) => slotWaiters.push(resolve));
+      await new Promise<void>((resolve, reject) => {
+        const wake = () => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve();
+        };
+        const onAbort = () => {
+          const idx = slotWaiters.indexOf(wake);
+          if (idx >= 0) slotWaiters.splice(idx, 1);
+          try {
+            throwIfAborted(signal);
+          } catch (error) {
+            reject(error);
+          }
+        };
+        if (signal) signal.addEventListener("abort", onAbort, { once: true });
+        slotWaiters.push(wake);
+      });
     }
     activeSlots++;
     try {
+      throwIfAborted(signal);
       return await task();
     } finally {
       activeSlots--;
@@ -117,6 +183,8 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     mirrorDirs.delete(hostId);
     hostNames.delete(hostId);
     hostStatus.delete(hostId);
+    workerExitAttempts.delete(hostId);
+    clearWorkerExitTimer(hostId);
   }
 
   async function resolvePrimaryHostId(): Promise<string | null> {
@@ -146,17 +214,19 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     hostId: string,
     paths: readonly string[],
     expectedDigests: SyncManifest,
+    signal?: AbortSignal,
   ): Promise<Map<string, { bytes: Buffer; executable: boolean; sha256: string }>> {
     const result = new Map<string, { bytes: Buffer; executable: boolean; sha256: string }>();
     let remaining = [...paths];
     let totalFetchedBytes = 0;
     while (remaining.length > 0) {
+      throwIfAborted(signal);
       const batch = remaining.slice(0, MAX_WRITE_BATCH);
       const batchSet = new Set(batch);
       const response = await host.call(
         "mirrorReadFiles",
         { paths: batch },
-        { hostId, timeoutMs: HOST_CALL_TIMEOUT_MS },
+        hostCallOptions(hostId, signal),
       );
       const handled = new Set<string>();
       for (const missingPath of response.missing) {
@@ -206,6 +276,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     hostId: string,
     writeSpecs: { path: string; expectedSha256: string | null }[],
     deletes: { path: string; expectedSha256: string }[],
+    signal?: AbortSignal,
   ): Promise<{ applied: Set<string>; conflicts: Set<string>; manifest: SyncManifest | null }> {
     const applied = new Set<string>();
     const conflicts = new Set<string>();
@@ -220,6 +291,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     // 2. Read write payloads lazily in bounded batches so we never pin an entire tree in RAM.
     const hasWrites = writeSpecs.length > 0;
     for (let i = 0; i < deleteBatches.length; i++) {
+      throwIfAborted(signal);
       const isLast = !hasWrites && i === deleteBatches.length - 1;
       const res = await host.call(
         "mirrorApplyOps",
@@ -228,7 +300,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
           deletes: deleteBatches[i]!,
           includeManifest: isLast,
         },
-        { hostId, timeoutMs: HOST_CALL_TIMEOUT_MS },
+        hostCallOptions(hostId, signal),
       );
       for (const p of res.applied) applied.add(p);
       for (const p of res.conflicts) conflicts.add(p);
@@ -246,6 +318,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
 
       const flushWrites = async (includeManifest: boolean) => {
         if (current.length === 0 && !includeManifest) return;
+        throwIfAborted(signal);
         const res = await host.call(
           "mirrorApplyOps",
           {
@@ -253,7 +326,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
             deletes: [],
             includeManifest,
           },
-          { hostId, timeoutMs: HOST_CALL_TIMEOUT_MS },
+          hostCallOptions(hostId, signal),
         );
         for (const p of res.applied) applied.add(p);
         for (const p of res.conflicts) conflicts.add(p);
@@ -263,6 +336,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
       };
 
       for (const spec of writeSpecs) {
+        throwIfAborted(signal);
         const read = await readSyncFile(store.sourceDir, spec.path);
         if (!read) continue;
         if (
@@ -293,8 +367,11 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     hostId: string,
     ensureWatchFirst: boolean,
     attempt: number,
+    signal?: AbortSignal,
+    skipDiskReload = false,
   ): Promise<void> {
     if (disposed) return;
+    throwIfAborted(signal);
     const blocked = store.migrationBlocked();
     if (blocked) {
       throw new Error(`Mirror sync blocked: ${blocked}`);
@@ -304,7 +381,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     const snapshot = await host.call(
       ensureWatchFirst ? "mirrorEnsureWatch" : "mirrorSnapshot",
       null,
-      { hostId, timeoutMs: HOST_CALL_TIMEOUT_MS },
+      hostCallOptions(hostId, signal),
     );
     mirrorDirs.set(hostId, snapshot.mirrorDir);
     if (snapshot.symlinks.length > 0)
@@ -323,8 +400,11 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
       );
     }
 
-    // Snapshot server state and base manifest.
-    await store.reloadFromDisk("disk");
+    // Snapshot server state and base manifest (skip disk walk when the source watcher confirms disk is clean).
+    if (!skipDiskReload) {
+      await ensureFreshServerState(false);
+    }
+    throwIfAborted(signal);
     const serverWalk = store.lastWalk();
     if (serverWalk.truncated) {
       throw new Error(
@@ -352,7 +432,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     const pathsToRead = [...plan.pullWrites, ...plan.conflicts.map((c) => c.path)];
     const fetched =
       pathsToRead.length > 0
-        ? await fetchHostFiles(hostId, pathsToRead, snapshot.manifest)
+        ? await fetchHostFiles(hostId, pathsToRead, snapshot.manifest, signal)
         : new Map();
 
     // Only acquire the server source lock when there are actual pulls or conflicts to write/delete.
@@ -500,7 +580,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
 
     const pushed =
       pushWriteSpecs.length > 0 || pushDeleteList.length > 0
-        ? await pushToHost(hostId, pushWriteSpecs, pushDeleteList)
+        ? await pushToHost(hostId, pushWriteSpecs, pushDeleteList, signal)
         : { applied: new Set<string>(), conflicts: new Set<string>(), manifest: snapshot.manifest };
 
     // Compute the new base manifest: only advance paths that actually converged,
@@ -535,10 +615,12 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
 
     // If the host raced with our push (CAS refusal), run one more reconcile to resolve cleanly.
     if (pushed.conflicts.size > 0 && attempt < MAX_CAS_RETRIES) {
-      await reconcileOnce(hostId, false, attempt + 1);
+      await reconcileOnce(hostId, false, attempt + 1, signal, false);
       return;
     }
 
+    workerExitAttempts.delete(hostId);
+    clearWorkerExitTimer(hostId);
     hostStatus.set(hostId, {
       hostId,
       hostName: hostNames.get(hostId) ?? hostId,
@@ -549,8 +631,13 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
   }
 
   /** Serializes reconciles per host: at most 1 active + 1 coalesced rerun, preserving ensureWatchFirst. */
-  function syncHost(hostId: string, ensureWatchFirst = false): Promise<void> {
-    if (disposed) return Promise.resolve();
+  function syncHost(
+    hostId: string,
+    ensureWatchFirst = false,
+    options: { signal?: AbortSignal; skipDiskReload?: boolean } = {},
+  ): Promise<void> {
+    const effectiveSignal = options.signal ?? serviceSignal;
+    if (disposed || effectiveSignal?.aborted) return Promise.resolve();
     if (inFlight.has(hostId)) {
       pendingAgain.add(hostId);
       if (ensureWatchFirst) pendingWatch.add(hostId);
@@ -559,14 +646,19 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     inFlight.add(hostId);
     const run = (async () => {
       let needWatch = ensureWatchFirst;
-      while (!disposed) {
+      let skipDiskReload = options.skipDiskReload ?? false;
+      while (!disposed && !effectiveSignal?.aborted) {
         pendingAgain.delete(hostId);
         if (pendingWatch.delete(hostId)) needWatch = true;
         try {
-          await withHostSlot(() => reconcileOnce(hostId, needWatch, 0));
+          await withHostSlot(
+            () => reconcileOnce(hostId, needWatch, 0, effectiveSignal, skipDiskReload),
+            effectiveSignal,
+          );
           needWatch = false;
+          skipDiskReload = false;
         } catch (error) {
-          if (disposed) break;
+          if (disposed || effectiveSignal?.aborted) break;
           const message = error instanceof Error ? error.message : String(error);
           hostStatus.set(hostId, {
             hostId,
@@ -591,16 +683,19 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     options: {
       excludeHostId?: string;
       ensureWatch?: boolean;
+      signal?: AbortSignal;
     } = {},
   ): Promise<void> {
-    if (disposed || !started || store.migrationBlocked() !== null) return;
+    const effectiveSignal = options.signal ?? serviceSignal;
+    if (disposed || !started || effectiveSignal?.aborted || store.migrationBlocked() !== null)
+      return;
     const primary = await resolvePrimaryHostId();
     const hosts = await bb.sdk.hosts.list().catch(() => []);
     for (const h of hosts) {
       hostNames.set(h.id, h.name);
       if (h.id === primary || h.id === options.excludeHostId) continue;
       if (h.status !== "connected" || h.lifecycle.phase !== "active") continue;
-      void syncHost(h.id, options.ensureWatch ?? false);
+      void syncHost(h.id, options.ensureWatch ?? false, { signal: effectiveSignal });
     }
   }
 
@@ -620,7 +715,10 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
         (targetHostId === undefined || h.id === targetHostId),
     );
     for (const h of targets) hostNames.set(h.id, h.name);
-    await Promise.all(targets.map((h) => syncHost(h.id, true)));
+    if (targets.length > 0) {
+      await ensureFreshServerState(true);
+    }
+    await Promise.all(targets.map((h) => syncHost(h.id, true, { skipDiskReload: true })));
     return targets.map(
       (h) =>
         hostStatus.get(h.id) ?? {
@@ -645,7 +743,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     }
     let mirrorDir = mirrorDirs.get(hostId);
     if (!mirrorDir) {
-      const info = await host.call("mirrorInfo", null, { hostId, timeoutMs: HOST_CALL_TIMEOUT_MS });
+      const info = await host.call("mirrorInfo", null, hostCallOptions(hostId, serviceSignal));
       mirrorDir = info.mirrorDir;
       mirrorDirs.set(hostId, mirrorDir);
     }
@@ -657,24 +755,50 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     async start(signal) {
       disposed = false;
       started = true;
-      await syncAllConnected({ ensureWatch: true });
+      serviceSignal = signal;
+      await syncAllConnected({ ensureWatch: true, signal });
 
       const unsubHosts = bb.sdk.subscribe({
         event: "host:changed",
         callback: (event) => {
           if (event.id && event.changes.includes("host-connected")) {
-            void refreshHostNames().then(() => syncHost(event.id!, true));
+            workerExitAttempts.delete(event.id);
+            clearWorkerExitTimer(event.id);
+            void refreshHostNames().then(() => syncHost(event.id!, true, { signal }));
           }
         },
       });
       const unsubSignals = host.experimental_onSignal("mirrorChanged", ({ hostId }) => {
-        void syncHost(hostId, false);
+        void syncHost(hostId, false, { signal });
       });
       const unsubExits = host.experimental_onWorkerExit(({ hostId }) => {
-        void syncHost(hostId, true);
+        if (disposed || signal.aborted || workerExitTimers.has(hostId)) return;
+        void (async () => {
+          if (disposed || signal.aborted || workerExitTimers.has(hostId)) return;
+          if ((await resolvePrimaryHostId()) === hostId) return;
+          const hosts = await bb.sdk.hosts.list().catch(() => []);
+          const target = hosts.find((h) => h.id === hostId);
+          if (!target || target.status !== "connected" || target.lifecycle.phase !== "active") {
+            return;
+          }
+          if (disposed || signal.aborted || workerExitTimers.has(hostId)) return;
+          const attempt = workerExitAttempts.get(hostId) ?? 0;
+          workerExitAttempts.set(hostId, attempt + 1);
+          const delayMs = Math.min(
+            WORKER_EXIT_MAX_DELAY_MS,
+            workerExitBaseDelayMs * 2 ** Math.min(attempt, 10),
+          );
+          const retryTimer = setTimeout(() => {
+            workerExitTimers.delete(hostId);
+            if (disposed || signal.aborted) return;
+            void syncHost(hostId, true, { signal });
+          }, delayMs);
+          retryTimer.unref?.();
+          workerExitTimers.set(hostId, retryTimer);
+        })();
       });
       const timer = setInterval(() => {
-        void syncAllConnected({ ensureWatch: false });
+        void syncAllConnected({ ensureWatch: false, signal });
       }, PERIODIC_RECONCILE_MS);
       timer.unref?.();
 
@@ -685,6 +809,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
       }
       disposed = true;
       clearInterval(timer);
+      clearAllWorkerExitTimers();
       unsubHosts();
       unsubSignals();
       unsubExits();
@@ -702,6 +827,7 @@ export function openSyncManager(args: { bb: BbPluginApi; store: SourceStore; hos
     editablePathForHost,
     dispose(): void {
       disposed = true;
+      clearAllWorkerExitTimers();
     },
   };
 }

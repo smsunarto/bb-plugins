@@ -334,3 +334,121 @@ it("plays for a swipe toward a right panel that mounted after the script", async
   assert.deepEqual([openings, plays], [1, 1]);
   panel.remove();
 });
+
+// The observers run only at compact width and watch the page and panel directly.
+const fakeCompactQuery = (matches: boolean) => {
+  const listeners = new Set<() => void>();
+  return {
+    matches,
+    addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+    listenerCount: () => listeners.size,
+    set(next: boolean) {
+      this.matches = next;
+      for (const listener of listeners) listener();
+    },
+  };
+};
+
+it("stays idle at desktop width and starts tracking once the viewport turns compact", async () => {
+  controller.abort();
+  const query = fakeCompactQuery(false);
+  const own = new AbortController();
+  let opened = 0;
+  mountPhoneDrawer(
+    document,
+    own.signal,
+    { opening: () => {}, opened: () => opened++ },
+    { compact: query as unknown as MediaQueryList },
+  );
+  await task(startSlide);
+  await task(() => {
+    shelf("open");
+    endSlide();
+  });
+  assert.equal(opened, 0);
+  await task(() => shelf("closed"));
+
+  query.set(true);
+  await task(startSlide);
+  await task(() => {
+    shelf("open");
+    endSlide();
+  });
+  assert.equal(opened, 1);
+
+  query.set(false);
+  await task(() => shelf("closed"));
+  await task(startSlide);
+  await task(() => {
+    shelf("open");
+    endSlide();
+  });
+  assert.equal(opened, 1);
+
+  own.abort();
+  assert.equal(query.listenerCount(), 0);
+});
+
+it("observes inline style only on the page itself, never document-wide", () => {
+  controller.abort();
+  const calls: { target: Node; options: MutationObserverInit | undefined }[] = [];
+  const original = MutationObserver.prototype.observe;
+  MutationObserver.prototype.observe = function (target, options) {
+    calls.push({ target, options });
+    return original.call(this, target, options);
+  };
+  const panel = mountPanel();
+  const own = new AbortController();
+  try {
+    mountPhoneDrawer(document, own.signal, { opening: () => {}, opened: () => {} });
+  } finally {
+    MutationObserver.prototype.observe = original;
+  }
+  for (const { target, options } of calls) {
+    if (options?.subtree === true) {
+      assert.equal(target, document.documentElement);
+      assert.deepEqual(options.attributeFilter, ["data-sidebar-shelf", "data-state"]);
+      assert.notEqual(options.childList, true);
+    }
+  }
+  const styleWatch = calls.find(({ options }) => options?.attributeFilter?.includes("style"));
+  assert.equal(styleWatch?.target, inset);
+  assert.notEqual(styleWatch?.options?.subtree, true);
+  const panelWatch = calls.find(
+    ({ target, options }) => target === panel && options?.attributeFilter?.includes("data-state"),
+  );
+  assert.equal(panelWatch?.target, panel);
+  assert.notEqual(panelWatch?.options?.subtree, true);
+  own.abort();
+  panel.remove();
+});
+
+it("ignores inline style changes on elements other than the page", async () => {
+  const other = document.createElement("div");
+  document.body.append(other);
+  await task(() => {
+    other.style.translate = "-200px";
+    other.style.transition = "translate 220ms ease";
+  });
+  assert.deepEqual([openings, plays], [0, 0]);
+  other.remove();
+});
+
+it("follows a page that replaces the observed one deep in the tree", async () => {
+  const shell = document.createElement("div");
+  document.body.append(shell);
+  inset.remove();
+  const late = document.createElement("main");
+  late.setAttribute("data-sidebar", "inset");
+  late.setAttribute("data-sidebar-shelf", "closed");
+  shell.append(late);
+  // A tapped open flips the new page's shelf, which is watched document-wide.
+  await task(() => late.setAttribute("data-sidebar-shelf", "open"));
+  assert.deepEqual([openings, plays], [1, 1]);
+  await task(() => late.setAttribute("data-sidebar-shelf", "closed"));
+  // From then on its own slide is observed.
+  await task(() => late.setAttribute("data-vaul-animate", "false"));
+  assert.equal(openings, 2);
+  shell.remove();
+});

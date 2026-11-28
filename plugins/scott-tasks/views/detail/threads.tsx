@@ -10,6 +10,7 @@ import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcMutation as useRpcMutation,
   useBbNavigate,
+  useRealtimeConnectionState,
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import type { DelegationRpcContract } from "../../delegate/contract.js";
@@ -146,38 +147,52 @@ function useThreadPullRequests(threads: readonly TaskThread[]) {
 }
 
 const OPEN_PULL_REQUEST_REFRESH_MS = 60_000;
+/** Minimum gap between window-focus PR refreshes so alt-tabbing does not burst Source Control. */
+export const OPEN_PULL_REQUEST_FOCUS_COOLDOWN_MS = 30_000;
 
 // Source Control reads a watched row once and keeps it live only while the
 // thread's own tab is open, so an open pull request could merge unseen here.
-// While this view is visible, ask it to read those threads again each minute
-// and when the window regains focus; its invalidations update the pills.
+// While this view is visible and connected, ask it to read those threads again
+// each minute and (with a cooldown) when the window regains focus; its
+// invalidations update the pills.
 function useRefreshOpenPullRequests(threadIds: readonly string[]) {
   const refresh = useRpcMutation({
     contract: sourceControlContract,
     pluginId: SOURCE_CONTROL_PLUGIN_ID,
     method: "refreshThread",
   });
+  const connectionState = useRealtimeConnectionState();
   const mutate = useRef(refresh.mutate);
+  const connectionRef = useRef(connectionState);
+  const lastRefreshAtRef = useRef(0);
   useEffect(() => {
     mutate.current = refresh.mutate;
+    connectionRef.current = connectionState;
   });
   const idsKey = threadIds.join("\n");
   useEffect(() => {
     if (idsKey === "") return undefined;
     const ids = idsKey.split("\n");
-    const run = () => {
-      if (document.hidden) return;
+    const run = (enforceCooldown: boolean) => {
+      if (document.hidden || connectionRef.current !== "connected") return;
+      const now = Date.now();
+      if (enforceCooldown && now - lastRefreshAtRef.current < OPEN_PULL_REQUEST_FOCUS_COOLDOWN_MS) {
+        return;
+      }
+      lastRefreshAtRef.current = now;
       for (const threadId of ids) {
         mutate.current({ threadId }).catch(() => {
           // The pill keeps its last row; Source Control being away shows on the next read.
         });
       }
     };
-    const timer = window.setInterval(run, OPEN_PULL_REQUEST_REFRESH_MS);
-    window.addEventListener("focus", run);
+    const onInterval = () => run(false);
+    const onFocus = () => run(true);
+    const timer = window.setInterval(onInterval, OPEN_PULL_REQUEST_REFRESH_MS);
+    window.addEventListener("focus", onFocus);
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener("focus", run);
+      window.removeEventListener("focus", onFocus);
     };
   }, [idsKey]);
 }

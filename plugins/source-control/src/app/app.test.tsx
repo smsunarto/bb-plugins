@@ -1201,6 +1201,7 @@ test("a workspace with no GitButler CLI offers to read again or read as plain gi
   expect((await slot.findByTestId("sc-failed")).textContent).toContain("no GitButler CLI");
   await act(async () => slot.getByRole("button", { name: "Try again" }).click());
   await waitFor(() => expect(of("refreshThread")).toHaveLength(1));
+  expect(of("refreshThread")[0]!.input).toEqual({ threadId: "thread-a", reprobe: true });
   await act(async () => slot.getByRole("button", { name: "Read as plain git" }).click());
   await waitFor(() => expect(of("setReadAs")).toHaveLength(1));
   expect(of("setReadAs")[0]!.input).toEqual({ threadId: "thread-a", readAs: "git" });

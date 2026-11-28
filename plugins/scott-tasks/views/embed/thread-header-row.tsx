@@ -277,10 +277,34 @@ function buildTaskThreadsSegment(
   };
 }
 
+function TasksSiblingThreadsPublisher({
+  threadId,
+  taskKey,
+  taskThreadLinks,
+  onOpenThread,
+}: {
+  threadId: string;
+  taskKey: string;
+  taskThreadLinks: readonly TaskThread[];
+  onOpenThread: (targetThreadId: string, options?: HeaderBarClickOptions) => void;
+}) {
+  const sidebar = experimental_useSidebarThreads();
+  const visibleTaskThreads = useMemo(
+    () => resolveSiblingThreads(taskThreadLinks, sidebar.status, sidebar.threads, threadId),
+    [taskThreadLinks, sidebar.status, sidebar.threads, threadId],
+  );
+  const segments = useMemo<readonly HeaderBarSegment[]>(() => {
+    const threadsSeg = buildTaskThreadsSegment(taskKey, visibleTaskThreads, onOpenThread);
+    return threadsSeg === null ? EMPTY_SEGMENTS : [threadsSeg];
+  }, [taskKey, visibleTaskThreads, onOpenThread]);
+
+  usePublishHeaderBarSegments(threadId, "scott-tasks", segments);
+  return null;
+}
+
 function TasksThreadHeaderRowContent({ threadId }: ExperimentalThreadHeaderRowProps) {
   const panel = experimental_useAppPanel();
   const navigate = useBbNavigate();
-  const sidebar = experimental_useSidebarThreads();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const tasks = useThreadLinkedTasks(threadId);
@@ -293,17 +317,6 @@ function TasksThreadHeaderRowContent({ threadId }: ExperimentalThreadHeaderRowPr
     primaryTaskId === null
       ? undefined
       : q.from({ link: taskThreadsCollection }).where(({ link }) => eq(link.taskId, primaryTaskId)),
-  );
-
-  const visibleTaskThreads = useMemo(
-    () =>
-      resolveSiblingThreads(
-        taskThreadLinks.isReady ? taskThreadLinks.data : undefined,
-        sidebar.status,
-        sidebar.threads,
-        threadId,
-      ),
-    [taskThreadLinks.isReady, taskThreadLinks.data, sidebar.status, sidebar.threads, threadId],
   );
 
   const openTask = useCallback(
@@ -348,13 +361,30 @@ function TasksThreadHeaderRowContent({ threadId }: ExperimentalThreadHeaderRowPr
     ];
     const meta = buildMetaSegment(primaryTask);
     if (meta !== null) result.push(meta);
-    const threadsSeg = buildTaskThreadsSegment(primaryTask.key, visibleTaskThreads, openThread);
-    if (threadsSeg !== null) result.push(threadsSeg);
     return result;
-  }, [primaryTask, tasks, visibleTaskThreads, openTask, selectTask, openThread]);
+  }, [primaryTask, tasks, openTask, selectTask]);
 
   usePublishHeaderBarSegments(threadId, "scott-tasks", segments);
-  return null;
+
+  // Only subscribe to sidebar threads when the primary task actually has sibling
+  // threads, so non-task and single-thread views never re-render on sidebar updates.
+  if (
+    primaryTask === undefined ||
+    !taskThreadLinks.isReady ||
+    taskThreadLinks.data === undefined ||
+    taskThreadLinks.data.length <= 1
+  ) {
+    return null;
+  }
+
+  return (
+    <TasksSiblingThreadsPublisher
+      threadId={threadId}
+      taskKey={primaryTask.key}
+      taskThreadLinks={taskThreadLinks.data}
+      onOpenThread={openThread}
+    />
+  );
 }
 
 export function TasksThreadHeaderRow(props: ExperimentalThreadHeaderRowProps) {

@@ -3,6 +3,7 @@ import {
   appendFile,
   mkdtemp,
   mkdir,
+  readdir,
   readFile,
   rename,
   rm,
@@ -438,4 +439,42 @@ test("adapter upgrades replace cached catalog titles with the actual user prompt
   await upgraded.scan();
   assert.equal(upgraded.sessions({}).items[0]!.title, "Fix checkout validation");
   assert.equal(await readFile(path, "utf8"), contents);
+});
+
+test("concurrent configureSources calls serialize atomic writes without temp-file races", async () => {
+  const { index, dataDir, root } = await setup("codex", fixtureJsonl("codex"));
+  const secondRoot = join(dataDir, "second-root");
+  await mkdir(secondRoot, { recursive: true });
+  // Start a scan so concurrent configureSources calls both contend on the async await.
+  const scanning = index.scan();
+  const updates = Array.from({ length: 12 }, (_, step) =>
+    index.configureSources({
+      roots: [
+        { provider: "codex", path: root, enabled: step % 2 === 0 },
+        { provider: "claude-code", path: secondRoot, enabled: step === 11 },
+      ],
+    }),
+  );
+  const statuses = await Promise.all(updates);
+  await scanning.catch(() => undefined);
+  const last = statuses.at(-1)!;
+  assert.deepEqual(
+    last.roots.map(({ provider, path, enabled }) => ({ provider, path, enabled })),
+    [
+      { provider: "codex", path: root, enabled: false },
+      { provider: "claude-code", path: secondRoot, enabled: true },
+    ],
+  );
+  const saved = JSON.parse(await readFile(join(dataDir, "sources.json"), "utf8")) as {
+    roots: { provider: string; path: string; enabled: boolean }[];
+  };
+  assert.deepEqual(saved.roots, [
+    { provider: "codex", path: root, enabled: false },
+    { provider: "claude-code", path: secondRoot, enabled: true },
+  ]);
+  const entries = await readdir(dataDir);
+  assert.equal(
+    entries.some((name) => name.endsWith(".tmp")),
+    false,
+  );
 });

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import {
   createClaudeWebReader,
+  fetchClaudeWeb,
   parseClaudeWeb,
   withClaudeWeb,
 } from "../src/server/lib/claude-web.ts";
@@ -368,4 +369,10 @@ test("pool source shares one web refresh and keeps a mismatched pooled account e
   } finally {
     await harness.lifecycle.dispose();
   }
+});
+
+test("servers that are not Macs skip the macOS-only CodexBar CLI", async () => {
+  // Spawning the missing binary would reject with ENOENT; the guard answers null first.
+  expect(await fetchClaudeWeb(signal, "linux")).toBeNull();
+  expect(await createClaudeWebReader((s) => fetchClaudeWeb(s, "linux"))(signal, true)).toBeNull();
 });

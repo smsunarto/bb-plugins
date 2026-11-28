@@ -28,7 +28,9 @@ import { Icon } from "../components/ui/icon.tsx";
 import { Separator } from "../components/ui/separator.tsx";
 import { cn } from "../lib/utils.ts";
 import { StatusBarGlyph, toneTextClass } from "./glyphs.tsx";
-import { buildKitchenSinkHeaderSegments } from "./lineage.ts";
+import { buildKitchenSinkLineageSegments, resolveKitchenSinkLineage } from "./lineage.ts";
+
+const EMPTY_SEGMENTS: readonly HeaderBarSegment[] = [];
 
 export const PHONE_VIEWPORT_QUERY = `${COMPACT_VIEWPORT_QUERY} and ${POINTER_COARSE_QUERY}`;
 
@@ -94,9 +96,17 @@ function HeaderStatusBarContent({ threadId }: ExperimentalThreadHeaderRowProps) 
     [navigate],
   );
 
+  const lineage = resolveKitchenSinkLineage(threadId, threads);
+  const parentId = lineage?.parentId ?? null;
+  const parentTitle = lineage?.parentTitle ?? null;
+  const isFork = lineage?.isFork ?? false;
+
   const ownSegments = useMemo(
-    () => buildKitchenSinkHeaderSegments({ threadId, threads, onOpenThread }),
-    [threadId, threads, onOpenThread],
+    () =>
+      parentId !== null && parentTitle !== null
+        ? buildKitchenSinkLineageSegments({ parentId, parentTitle, isFork, onOpenThread })
+        : EMPTY_SEGMENTS,
+    [parentId, parentTitle, isFork, onOpenThread],
   );
 
   usePublishHeaderBarSegments(threadId, "kitchen-sink", ownSegments);

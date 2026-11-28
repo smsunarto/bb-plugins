@@ -57,10 +57,6 @@ export type GitContext = Readonly<{ bb: BbPluginApi; git: DotfilesGit }>;
 
 export type DotfilesHostClient = Pick<ExperimentalHostClient<typeof dotfilesHostContract>, "call">;
 
-function quoteShell(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
 /** `target` when its machine is connected; throws naming the machine otherwise. */
 export function requireConnected(target: Target): ConnectedTarget {
   if (target.state === "offline") throw new Error(`${target.hostName} is not connected.`);
@@ -99,10 +95,18 @@ export function createDotfilesGit(
     return configured || (await bb.sdk.system.config()).primaryHostId;
   }
 
-  async function run(target: ConnectedTarget, command: string): Promise<TaskResult> {
+  /**
+   * `args` cross to the host as data. Only the host knows whether its login
+   * shell is sh or fish, which quote differently, so it does the quoting.
+   */
+  async function run(
+    target: ConnectedTarget,
+    command: string,
+    args?: readonly string[],
+  ): Promise<TaskResult> {
     return host.call(
       "run",
-      { repoPath: target.repoPath, command },
+      { repoPath: target.repoPath, command, ...(args ? { args: [...args] } : {}) },
       { hostId: target.hostId, timeoutMs: taskTimeoutMs },
     );
   }
@@ -184,10 +188,10 @@ export function createDotfilesGit(
         : { outcome: "conflict" };
     },
 
-    run,
+    run: (target, command) => run(target, command),
 
     removeSkill(repo, name) {
-      return run(repo, `npx -y skills remove ${quoteShell(name)} -g -y`);
+      return run(repo, "npx -y skills remove", [name, "-g", "-y"]);
     },
   };
 }

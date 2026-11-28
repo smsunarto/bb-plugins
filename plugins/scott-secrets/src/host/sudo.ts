@@ -77,6 +77,15 @@ class Capture {
   }
 }
 
+function abortError(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  if (reason instanceof Error) return reason;
+  return Object.assign(new Error("The sudo request was cancelled before it started."), {
+    name: "AbortError",
+    cause: reason,
+  });
+}
+
 function spawnSudo(
   binary: string,
   args: readonly string[],
@@ -89,6 +98,9 @@ function spawnSudo(
     rootDeadlineMs?: number;
   },
 ): Promise<SudoOutput> {
+  // A request cancelled before it starts must not hand the password to sudo:
+  // the abort listener below only fires for aborts that happen after spawn.
+  if (options.signal.aborted) return Promise.reject(abortError(options.signal));
   return new Promise((resolve, reject) => {
     // `-p ''` keeps sudo from printing a prompt into the captured stderr.
     const child = spawn(binary, ["-S", "-k", "-p", "", ...args], {

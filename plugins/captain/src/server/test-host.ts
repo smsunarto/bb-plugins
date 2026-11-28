@@ -113,6 +113,7 @@ export type FakeOptions = {
   tasksDeadlineMs?: number;
   /** How often a watched banner rechecks the crew. */
   crewPollMs?: number;
+  pokeDebounceMs?: number;
   /** How long one routine maintenance item runs before Captain warns. */
   maintenanceDeadlineMs?: number;
   /** How long a routine fire waits on one bb thread call. */
@@ -393,11 +394,18 @@ export async function captainHost(options: FakeOptions = {}) {
   const queued = new Map<string, QueuedRow[]>();
   /** Threads with a turn running: a `queue-if-active` send to one is queued. */
   const busy = new Set<string>();
-  /** While set, `threads.get` or `threads.send` waits for it, as a slow bb would. */
-  const threadHolds: { get: Promise<void> | null; send: Promise<void> | null } = {
+  /** While set, `threads.get`, `threads.send` or `threads.list` waits for it, as a slow bb would. */
+  const threadHolds: {
+    get: Promise<void> | null;
+    send: Promise<void> | null;
+    list: Promise<void> | null;
+  } = {
     get: null,
     send: null,
+    list: null,
   };
+  /** While set, `threads.list` and `threads.send` throw it, as bb does for a stale plugin context or a refusal. */
+  const threadFaults: { list: unknown; send: unknown } = { list: null, send: null };
   const automations = fakeAutomations(() => clock);
   /** Each send-now, with whether the thread was marked and registered by then. */
   const released: { threadId: string; marked: boolean; registered: boolean }[] = [];
@@ -837,6 +845,7 @@ export async function captainHost(options: FakeOptions = {}) {
           // Held before the write, as a slow bb is: the message lands when released.
           await threadHolds.send;
           if (sendFails.has(args.threadId)) throw new Error(`thread ${args.threadId} is busy`);
+          if (threadFaults.send !== null) throw threadFaults.send;
           const [part] = args.input;
           const text = part !== undefined && part.type === "text" ? part.text : "";
           sent.push({
@@ -868,6 +877,8 @@ export async function captainHost(options: FakeOptions = {}) {
           }) as never,
         list: async (args = {}) => {
           threadLists.push(args.parentThreadId ?? undefined);
+          await threadHolds.list;
+          if (threadFaults.list !== null) throw threadFaults.list;
           return [...threads.values()].filter(
             (thread) =>
               (args.parentThreadId === undefined ||
@@ -973,6 +984,7 @@ export async function captainHost(options: FakeOptions = {}) {
       ? {}
       : { threadDeadlineMs: options.threadDeadlineMs }),
     crewPollMs: options.crewPollMs ?? 20,
+    ...(options.pokeDebounceMs === undefined ? {} : { pokeDebounceMs: options.pokeDebounceMs }),
     driveScanMs: options.driveScanMs ?? 40,
     tasksPollMs: options.tasksPollMs ?? 40,
   };
@@ -1079,6 +1091,7 @@ export async function captainHost(options: FakeOptions = {}) {
     pushes,
     sent,
     sendFails,
+    threadFaults,
     permissionModes,
     interactions,
     pool,

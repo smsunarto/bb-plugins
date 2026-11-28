@@ -13,7 +13,12 @@ import type { BbContext, StoredAnnotation } from "./afs.ts";
 import { selectOrphans, withoutBundleSource } from "./annotation-hygiene.ts";
 import { changeConcernsSession, STREAM_RETRY_MS, STREAM_SILENCE_MS } from "./event-stream.ts";
 import { createRpcClient } from "./plugin-rpc.ts";
-import { labelForRoute, projectIdFromRoute, threadIdFromRoute } from "./route.ts";
+import {
+  labelForRoute,
+  projectIdFromRoute,
+  subscribeRouteChange,
+  threadIdFromRoute,
+} from "./route.ts";
 import { pluginUiSurfaceFor } from "./plugin-ui-surface.ts";
 import { seedAgentationThemeDefault } from "./theme.ts";
 import {
@@ -32,8 +37,6 @@ import {
 } from "./toolbar-sync.ts";
 import type { rpcContract } from "../server.ts";
 
-/** How often to re-read `location`; bb navigates without a full page load. */
-const ROUTE_POLL_MS = 400;
 /** Coalesce a burst of toolbar callbacks into one write. */
 const FLUSH_DEBOUNCE_MS = 250;
 /** Safety-net poll interval while the event stream is healthy. Every (re)open
@@ -195,6 +198,15 @@ function saveSynced(route: string, ids: Iterable<string>): void {
   }
 }
 
+/** Whether `route` already has local annotations persisted in browser storage. */
+export function hasLocalAnnotations(route: string): boolean {
+  try {
+    return loadAnnotations<Annotation>(route).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function startAnnotationToolbar(
   pluginId: string,
   publish: (view: ToolbarView) => void,
@@ -233,7 +245,7 @@ export function startAnnotationToolbar(
   const mutationQueue = createSerialTaskQueue();
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
-  let routeTimer: ReturnType<typeof setInterval> | null = null;
+  let stopWatchingRoute: (() => void) | null = null;
   let stream: EventSource | null = null;
   let streamWatchdog: ReturnType<typeof setTimeout> | null = null;
   let reopenTimer: ReturnType<typeof setTimeout> | null = null;
@@ -417,10 +429,10 @@ export function startAnnotationToolbar(
   }
 
   /** The session for one page, opened once and reused. */
-  async function sessionFor(
+  async function resolveSession(
     page: PageMeta,
     activationRevision: number | null = null,
-  ): Promise<string | null> {
+  ): Promise<{ id: string; freshSnapshot: boolean } | null> {
     if (disposed) return null;
     const known = sessionsByRoute.get(page.route);
     if (known) {
@@ -430,7 +442,7 @@ export function startAnnotationToolbar(
       ) {
         sessionId = known;
       }
-      return known;
+      return { id: known, freshSnapshot: false };
     }
 
     try {
@@ -453,6 +465,7 @@ export function startAnnotationToolbar(
       });
       if (disposed) return null;
 
+      let freshSnapshot = false;
       // Background writes may open a session, but only the activation that is
       // still current may change the toolbar. A route revision distinguishes
       // A -> B -> A from the original, now-obsolete A request.
@@ -466,21 +479,34 @@ export function startAnnotationToolbar(
           const outcome = reconcile(openedAnnotations, page.route);
           reconcileDeferred = outcome === "deferred";
           cursor.observe(openedCursor, !reconcileDeferred);
-        } else {
-          // This activation joined an open started by background work or an
-          // obsolete activation, so its owner's snapshot is not ours to use.
-          void pullQueue.request();
+          freshSnapshot = true;
         }
       }
-      return id;
+      return { id, freshSnapshot };
     } catch (error) {
       if (!disposed) report("Could not open an annotation session", error);
       return null;
     }
   }
 
+  async function sessionFor(page: PageMeta): Promise<string | null> {
+    return (await resolveSession(page, null))?.id ?? null;
+  }
+
   async function ensureSession(revision = routeRevision): Promise<string | null> {
-    return sessionFor(meta, revision);
+    const page = meta;
+    const resolved = await resolveSession(page, revision);
+    if (
+      !disposed &&
+      resolved &&
+      !resolved.freshSnapshot &&
+      isCurrentRouteRequest(page.route, revision, meta.route, routeRevision)
+    ) {
+      // Joined an open started by background work or an obsolete activation,
+      // or reused a cached session without a fresh snapshot.
+      void pullQueue.request();
+    }
+    return resolved?.id ?? null;
   }
 
   /**
@@ -769,18 +795,18 @@ export function startAnnotationToolbar(
   }
 
   function watchRoute(): void {
-    if (disposed) return;
-    routeTimer = setInterval(() => {
+    if (disposed || stopWatchingRoute !== null) return;
+    stopWatchingRoute = subscribeRouteChange(() => {
       if (disposed) return;
       if (window.location.pathname === meta.route) return;
       void switchRoute();
-    }, ROUTE_POLL_MS);
+    });
   }
 
   async function switchRoute(): Promise<void> {
     // Adopt the new page synchronously, before any await: the route watcher
     // compares against `meta`, and a slow session round trip would otherwise
-    // let the next tick start a second switch for the same navigation.
+    // let the next navigation event start a second switch for the same page.
     const page = pageMeta();
     const revision = routeRevision + 1;
     routeRevision = revision;
@@ -793,17 +819,19 @@ export function startAnnotationToolbar(
     // Queued work carries the page it belongs to, so it does not have to be
     // drained before the switch — it will still reach the right session.
     void flush();
-    const id = await sessionFor(page, revision);
+    const resolved = await resolveSession(page, revision);
     if (
       disposed ||
-      !id ||
+      !resolved ||
       !isCurrentRouteRequest(page.route, revision, meta.route, routeRevision)
     ) {
       return;
     }
-    // A cached session has no fresh snapshot attached. Pull now instead of
-    // leaving a revisited route stale until the safety-net timer fires.
-    await pullQueue.request();
+    // A fresh `openSession` already returned and reconciled the latest snapshot
+    // and cursor. Only a cached or joined session needs an immediate pull.
+    if (!resolved.freshSnapshot) {
+      await pullQueue.request();
+    }
   }
 
   function dispose(): void {
@@ -812,7 +840,8 @@ export function startAnnotationToolbar(
     lifetime.abort();
     if (flushTimer !== null) clearTimeout(flushTimer);
     if (pollTimer !== null) clearTimeout(pollTimer);
-    if (routeTimer !== null) clearInterval(routeTimer);
+    stopWatchingRoute?.();
+    stopWatchingRoute = null;
     if (reopenTimer !== null) clearTimeout(reopenTimer);
     closeStream();
   }
@@ -833,7 +862,9 @@ export function startAnnotationToolbar(
     document.addEventListener(
       "visibilitychange",
       () => {
-        if (!document.hidden) void pullQueue.request();
+        if (document.hidden) return;
+        if (window.location.pathname !== meta.route) void switchRoute();
+        else void pullQueue.request();
       },
       { signal: lifetime.signal },
     );

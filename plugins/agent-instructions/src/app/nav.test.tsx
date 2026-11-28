@@ -81,10 +81,26 @@ test("the title hook names a doc from the catalog the page already loaded", asyn
     const title = usePageTitle(props);
     return <output>{title?.breadcrumbs?.at(-1)?.label}</output>;
   }
-  const probe = render(<Probe subPath="global/docs/doc_shared" />);
-  expect(probe.container.textContent).toBe("Shared");
-  probe.unmount();
-  queryClient.clear();
+  const cache = queryClient.getQueryCache();
+  const realSubscribe = cache.subscribe.bind(cache);
+  let subscribeCalls = 0;
+  cache.subscribe = ((listener: Parameters<typeof cache.subscribe>[0]) => {
+    subscribeCalls++;
+    return realSubscribe(listener);
+  }) as typeof cache.subscribe;
+  try {
+    const probe = render(<Probe subPath="global/docs/doc_shared" />);
+    expect(probe.container.textContent).toBe("Shared");
+    const afterMount = subscribeCalls;
+    probe.rerender(<Probe subPath="global/docs/doc_other" />);
+    probe.rerender(<Probe subPath="global/docs/doc_shared" />);
+    // Memoized subscribe callback avoids unsubscribing and re-subscribing on every render.
+    expect(subscribeCalls).toBe(afterMount);
+    probe.unmount();
+  } finally {
+    cache.subscribe = realSubscribe;
+    queryClient.clear();
+  }
 });
 
 const realMatchMedia = window.matchMedia;

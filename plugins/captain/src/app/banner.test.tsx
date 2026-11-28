@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as rtlRender, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { DEFAULT_ICON_GLYPH } from "../contract/icon.ts";
 import type { QueueItem } from "../contract/queue.ts";
 import { asksTag, captainContract } from "../contract/rpc.ts";
+import { useNow } from "./banner.tsx";
 
 const app = await loadPluginApp(() => import("./app.tsx"));
 const banner = app.composerCustomizations.find((each) => each.id === "needs-you")!.banners![0]!;
@@ -1085,4 +1086,61 @@ test("clearing the final ask while crew is still loading leaves only an empty fr
   await act(async () => resolveCrew({ items: [] }));
   await slot.findByText("All clear");
   dispose();
+});
+
+test("useNow gates its 30s interval on document.visibilityState and active flag", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(1_000_000);
+  let visibility: DocumentVisibilityState = "visible";
+  const original = Object.getOwnPropertyDescriptor(document, "visibilityState");
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => visibility,
+  });
+  function Clock({ active }: { active: boolean }) {
+    const now = useNow([], active);
+    return <span data-testid="now">{now}</span>;
+  }
+  try {
+    const view = rtlRender(<Clock active={true} />);
+    const shown = () => Number(view.getByTestId("now").textContent);
+    expect(shown()).toBe(1_000_000);
+
+    // Visible + active: ticks every 30s.
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(shown()).toBe(1_030_000);
+
+    // Hidden: stops ticking while hidden.
+    visibility = "hidden";
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      vi.advanceTimersByTime(120_000);
+    });
+    expect(shown()).toBe(1_030_000);
+
+    // Becoming visible again refreshes immediately and resumes 30s interval.
+    visibility = "visible";
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(shown()).toBe(1_150_000);
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(shown()).toBe(1_180_000);
+
+    // Inactive surface: stops ticking even when document is visible.
+    view.rerender(<Clock active={false} />);
+    act(() => {
+      vi.advanceTimersByTime(120_000);
+    });
+    expect(shown()).toBe(1_180_000);
+    view.unmount();
+  } finally {
+    if (original) Object.defineProperty(document, "visibilityState", original);
+    else delete (document as { visibilityState?: unknown }).visibilityState;
+    vi.useRealTimers();
+  }
 });

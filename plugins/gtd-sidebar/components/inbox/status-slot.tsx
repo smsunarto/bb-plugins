@@ -20,7 +20,7 @@ import { useMinuteClock } from "../../hooks/use-minute-clock";
  * override the width to fit the content, keeping the chip 10px from the
  * time or glyph even as that content changes width.
  */
-export const STATUS_SLOT_CLASS = "flex w-7 shrink-0 items-center justify-end";
+export const STATUS_SLOT_CLASS = "gtd-status-slot flex w-7 shrink-0 items-center justify-end";
 
 /**
  * Status OR age, never both: the glyph already implies the row is current, and

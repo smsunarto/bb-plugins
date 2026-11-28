@@ -20,6 +20,8 @@ let route: () => Promise<Response> = async () => new Response(new Uint8Array([1,
 let mediaPlays = 0;
 /** Every AudioContext the page created. */
 let contexts: FakeAudioContext[] = [];
+/** Every AudioContext.resume() call, across contexts. */
+let resumeCalls = 0;
 const originalPlay = HTMLMediaElement.prototype.play;
 const originalFetch = globalThis.fetch;
 
@@ -54,6 +56,7 @@ class FakeAudioContext {
     contexts.push(this);
   }
   resume() {
+    resumeCalls += 1;
     // WebKit leaves resume() pending until a gesture has started the context.
     if (!mayStart(this)) return new Promise<void>(() => {});
     this.state = "running";
@@ -128,6 +131,7 @@ beforeEach(() => {
   fetched = [];
   mediaPlays = 0;
   contexts = [];
+  resumeCalls = 0;
   policy = "permissive";
   startedInGesture = new WeakSet();
   route = async () => new Response(new Uint8Array([1, 2, 3]));
@@ -299,5 +303,62 @@ test("a failed fetch chimes and fetches again on the next completion", async () 
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
   await waitFor(() => expect(played).toEqual([SOUND_PATH]));
   expect(fetched).toEqual([SOUND_PATH, SOUND_PATH]);
+  tab.unmount();
+});
+
+test("after the first gesture unlocks audio, later keystrokes never resume again and the listeners are gone", async () => {
+  policy = "webkit";
+  Object.defineProperty(navigator, "userActivation", {
+    configurable: true,
+    value: { hasBeenActive: false },
+  });
+  const added: string[] = [];
+  const removed: string[] = [];
+  const originalAdd = window.addEventListener.bind(window);
+  const originalRemove = window.removeEventListener.bind(window);
+  window.addEventListener = ((type: string, ...rest: never[]) => {
+    if (type === "click" || type === "keydown") added.push(type);
+    return originalAdd(type, ...(rest as [never]));
+  }) as typeof window.addEventListener;
+  window.removeEventListener = ((type: string, ...rest: never[]) => {
+    if (type === "click" || type === "keydown") removed.push(type);
+    return originalRemove(type, ...(rest as [never]));
+  }) as typeof window.removeEventListener;
+  try {
+    const tab = await openTab();
+    expect(added.sort()).toEqual(["click", "keydown"]);
+    for (let i = 0; i < 50; i++) {
+      gesture(() => fireEvent.keyDown(window, { key: "a" }));
+      await settle();
+    }
+    expect(resumeCalls).toBe(1);
+    expect(removed.sort()).toEqual(["click", "keydown"]);
+
+    await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
+    await waitFor(() => expect(played).toEqual([SOUND_PATH]));
+    tab.unmount();
+    expect(contexts.map(({ state }) => state)).toEqual(["closed"]);
+  } finally {
+    window.addEventListener = originalAdd;
+    window.removeEventListener = originalRemove;
+  }
+});
+
+test("a resume refused outside a real gesture keeps listening until a real gesture unlocks", async () => {
+  policy = "webkit";
+  const tab = await openTab();
+  // A synthetic click WebKit does not count leaves resume() pending.
+  fireEvent.click(window);
+  await settle();
+  expect(contexts.map(({ state }) => state)).toEqual(["suspended"]);
+  gesture(() => fireEvent.click(window));
+  await waitFor(() => expect(resumeCalls).toBe(2));
+  await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
+  await waitFor(() => expect(played).toEqual([SOUND_PATH]));
+  const before = resumeCalls;
+  for (let i = 0; i < 10; i++) gesture(() => fireEvent.click(window));
+  await settle();
+  // Plays resume the context themselves; gestures no longer do.
+  expect(resumeCalls).toBe(before);
   tab.unmount();
 });

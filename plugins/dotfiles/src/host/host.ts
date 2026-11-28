@@ -26,10 +26,49 @@ const gitMaxBuffer = 16 * 1024 * 1024;
 /** The fixed file list. Discovered skills exist by construction. */
 const fixedPaths = groupDefinitions([]).flatMap((group) => group.files.map((file) => file.path));
 
+/** Which quoting rules the login shell reads a command with. */
+export type ShellFamily = "posix" | "fish";
+
 interface LoginShell {
   readonly path: string;
   readonly args: readonly string[];
+  readonly family: ShellFamily;
 }
+
+/**
+ * `value` as one single-quoted word that `family` reads back verbatim. POSIX
+ * single quotes take every byte literally, so a quote closes, escapes, and
+ * reopens. fish reads `\'` and `\\` inside single quotes as escapes, so
+ * POSIX quoting would let a trailing backslash swallow the closing quote.
+ */
+export function quoteForShell(value: string, family: ShellFamily): string {
+  // Neither shell can receive NUL in an argument; spawn would reject the command.
+  if (value.includes("\0")) throw new Error("a shell argument cannot contain NUL");
+  return family === "fish"
+    ? `'${value.replaceAll(/[\\']/g, "\\$&")}'`
+    : `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/** `command` followed by each of `args` as a literal word for `family`. */
+export function shellCommand(
+  command: string,
+  args: readonly string[],
+  family: ShellFamily,
+): string {
+  return [command, ...args.map((arg) => quoteForShell(arg, family))].join(" ");
+}
+
+/** The timer calls a task makes, so tests can see what a settled task leaves behind. */
+export interface TaskTimers {
+  readonly set: (run: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  readonly clear: (timer: ReturnType<typeof setTimeout>) => void;
+}
+
+const systemTimers: TaskTimers = {
+  // Read the globals per call, so fake timers installed later still apply.
+  set: (run, ms) => setTimeout(run, ms),
+  clear: (timer) => clearTimeout(timer),
+};
 
 function expandHome(path: string): string {
   if (path === "~") return homedir();
@@ -45,10 +84,10 @@ function resolveLoginShell(): LoginShell {
   ];
   for (const candidate of candidates) {
     if (candidate?.endsWith("/fish") && existsSync(candidate)) {
-      return { path: candidate, args: ["-l", "-c"] };
+      return { path: candidate, args: ["-l", "-c"], family: "fish" };
     }
   }
-  return { path: "/bin/sh", args: ["-lc"] };
+  return { path: "/bin/sh", args: ["-lc"], family: "posix" };
 }
 
 /**
@@ -56,19 +95,31 @@ function resolveLoginShell(): LoginShell {
  * activates are on PATH. stdout and stderr are merged for display, so
  * nothing may parse this output: shell start-up noise lands in it too.
  *
+ * `args` follow `command` as literal words, quoted for whichever shell runs.
+ *
  * The shell leads its own process group, so a timeout or cancel stops
  * every process the task started, not the shell alone.
  */
-function runInLoginShell(command: string, cwd: string, signal: AbortSignal): Promise<TaskResult> {
+export function runInLoginShell(
+  command: string,
+  cwd: string,
+  signal: AbortSignal,
+  args: readonly string[] = [],
+  timers: TaskTimers = systemTimers,
+): Promise<TaskResult> {
   const loginShell = resolveLoginShell();
+  const script = shellCommand(command, args, loginShell.family);
   return new Promise((resolvePromise) => {
     // `detached` is setsid(2) on macOS and Linux: the shell's pid becomes the group id.
-    const child = spawn(loginShell.path, [...loginShell.args, command], { cwd, detached: true });
+    const child = spawn(loginShell.path, [...loginShell.args, script], { cwd, detached: true });
     let output = "";
     let truncated = false;
     let settled = false;
     /** Why the task was stopped, appended after its output. */
     let stopNotice = "";
+    /** A stop's SIGKILL, then its pipe drain. Each is pending only after a stop. */
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
+    let drainTimer: ReturnType<typeof setTimeout> | undefined;
 
     const append = (chunk: Buffer): void => {
       const text = chunk.toString("utf8");
@@ -84,8 +135,16 @@ function runInLoginShell(command: string, cwd: string, signal: AbortSignal): Pro
     const settle = (result: TaskResult): void => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      timers.clear(timer);
       signal.removeEventListener("abort", cancel);
+      // A settled task needs no drain. Its SIGKILL still matters while a member
+      // that ignores SIGTERM outlives the pipes, so it stays, but never keeps
+      // the host daemon alive; with the group gone it has nothing to do.
+      if (drainTimer !== undefined) timers.clear(drainTimer);
+      if (killTimer !== undefined) {
+        if (groupAlive()) killTimer.unref?.();
+        else timers.clear(killTimer);
+      }
       // `error`, `close`, and a stop's drain can all fire. The `settled`
       // guard makes this exact-once even though static promise lint cannot
       // prove it.
@@ -99,6 +158,15 @@ function runInLoginShell(command: string, cwd: string, signal: AbortSignal): Pro
       });
     };
 
+    const groupAlive = (): boolean => {
+      if (child.pid === undefined) return false;
+      try {
+        process.kill(-child.pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
     const killGroup = (killSignal: NodeJS.Signals): void => {
       // No pid means the spawn failed. `process.kill(-0)` would signal our own group.
       if (child.pid === undefined) return;
@@ -109,16 +177,17 @@ function runInLoginShell(command: string, cwd: string, signal: AbortSignal): Pro
       }
     };
 
-    // Neither timer is cleared on settle. A member that ignores SIGTERM can
-    // outlive the pipes, and the drain is a no-op once settled.
     const stop = (notice: string): void => {
       if (stopNotice) return;
       stopNotice = notice;
       killGroup("SIGTERM");
-      setTimeout(() => {
+      killTimer = timers.set(() => {
+        killTimer = undefined;
         killGroup("SIGKILL");
+        if (settled) return;
         // A process that left the group can hold the pipes open indefinitely.
-        setTimeout(() => {
+        drainTimer = timers.set(() => {
+          drainTimer = undefined;
           child.stdout.destroy();
           child.stderr.destroy();
           finish(child.exitCode);
@@ -129,7 +198,10 @@ function runInLoginShell(command: string, cwd: string, signal: AbortSignal): Pro
 
     child.stdout.on("data", append);
     child.stderr.on("data", append);
-    const timer = setTimeout(stop, taskTimeoutMs, `\n[timed out after ${taskTimeoutMs / 1000}s]`);
+    const timer = timers.set(
+      () => stop(`\n[timed out after ${taskTimeoutMs / 1000}s]`),
+      taskTimeoutMs,
+    );
     signal.addEventListener("abort", cancel, { once: true });
     if (signal.aborted) cancel();
     child.on("close", finish);
@@ -216,8 +288,8 @@ export default experimental_defineHostEntry({
       return { content: await git(expandHome(repoPath), ["show", `HEAD:${path}`], signal) };
     },
 
-    run({ repoPath, command }, { signal }) {
-      return runInLoginShell(command, expandHome(repoPath), signal);
+    run({ repoPath, command, args }, { signal }) {
+      return runInLoginShell(command, expandHome(repoPath), signal, args);
     },
   },
 });

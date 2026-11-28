@@ -29,7 +29,6 @@
   "dependencies": {
     "@bb-plugins/effect-bridge": "workspace:*",
     "@bb-plugins/instructions": "workspace:*",
-    "@bb-plugins/markdown-editor": "workspace:*",
     "@radix-ui/react-collapsible": "^1.2.1",
     "@radix-ui/react-label": "^2.1.17",
     "@radix-ui/react-slot": "^1.3.0",

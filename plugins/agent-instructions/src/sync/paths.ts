@@ -33,6 +33,61 @@ export const READ_BATCH_BYTES = 2 * 1024 * 1024;
 export const WRITE_BATCH_BYTES = 4 * 1024 * 1024;
 /** Maximum length of one relative sync path in bytes. */
 export const MAX_SYNC_PATH_BYTES = 512;
+/** Default bounded concurrency for local filesystem stat/hash/write/delete work. */
+export const DEFAULT_SYNC_IO_CONCURRENCY = 8;
+
+/** Throws an AbortError (or `signal.reason` when it is an Error) if `signal` is aborted. */
+export function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const reason: unknown = signal.reason;
+  if (reason instanceof Error) throw reason;
+  const error = new Error(typeof reason === "string" ? reason : "The operation was aborted");
+  error.name = "AbortError";
+  throw error;
+}
+
+/** Runs `worker` across `items` with at most `concurrency` in flight, stopping promptly on abort or error. */
+export async function runWithConcurrency<T>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>,
+  signal?: AbortSignal,
+): Promise<void> {
+  throwIfAborted(signal);
+  if (items.length === 0) return;
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  let nextIndex = 0;
+  let firstError: unknown;
+  let hasError = false;
+  const runners = Array.from({ length: limit }, async () => {
+    while (!hasError) {
+      if (signal?.aborted) {
+        try {
+          throwIfAborted(signal);
+        } catch (err) {
+          if (!hasError) {
+            hasError = true;
+            firstError = err;
+          }
+        }
+        return;
+      }
+      const idx = nextIndex++;
+      if (idx >= items.length) return;
+      try {
+        await worker(items[idx]!, idx);
+      } catch (err) {
+        if (!hasError) {
+          hasError = true;
+          firstError = err;
+        }
+        return;
+      }
+    }
+  });
+  await Promise.all(runners);
+  if (hasError) throw firstError;
+}
 
 export type FileDigest = {
   sha256: string;
@@ -271,7 +326,9 @@ export async function resolveSafeSyncPath(
 async function readRegularFileNoFollow(
   absPath: string,
   relPath: string,
+  signal?: AbortSignal,
 ): Promise<{ bytes: Buffer; executable: boolean; sha256: string } | null> {
+  throwIfAborted(signal);
   const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
   let handle;
   try {
@@ -291,6 +348,7 @@ async function readRegularFileNoFollow(
     let total = 0;
     const scratch = Buffer.allocUnsafe(Math.min(Math.max(st.size, 4096), READ_CHUNK_BYTES));
     while (true) {
+      throwIfAborted(signal);
       const { bytesRead } = await handle.read(scratch, 0, scratch.length, null);
       if (bytesRead === 0) break;
       total += bytesRead;
@@ -311,16 +369,20 @@ async function readRegularFileNoFollow(
 /**
  * Walks `root` across the synced folders without following symlinks.
  * Supports an optional per-path stat cache to avoid re-hashing unchanged files,
- * and enforces file count (`MAX_SYNC_FILES`) and total byte (`MAX_SYNC_TOTAL_BYTES`) budgets.
+ * bounded-parallel stat/hash I/O, abort cancellation, and enforces file count
+ * (`MAX_SYNC_FILES`) and total byte (`MAX_SYNC_TOTAL_BYTES`) budgets.
  */
 export async function walkSyncTree(
   root: string,
-  options: { statCache?: WalkStatCache } = {},
+  options: { statCache?: WalkStatCache; signal?: AbortSignal; concurrency?: number } = {},
 ): Promise<WalkResult> {
+  const { statCache, signal } = options;
+  const concurrency = Math.max(1, options.concurrency ?? DEFAULT_SYNC_IO_CONCURRENCY);
+  throwIfAborted(signal);
+
   const manifest: SyncManifest = Object.create(null) as SyncManifest;
   const symlinks: string[] = [];
   const tooLarge: string[] = [];
-  const statCache = options.statCache;
   const seenCacheKeys = statCache ? new Set<string>() : null;
   let count = 0;
   let totalBytes = 0;
@@ -337,7 +399,72 @@ export async function walkSyncTree(
     throw error;
   }
 
+  type FileProbe =
+    | { kind: "skip" }
+    | { kind: "symlink"; rel: string }
+    | { kind: "tooLarge"; rel: string }
+    | { kind: "ok"; rel: string; digest: FileDigest; cacheEntry?: WalkStatCacheEntry };
+
+  async function probeFile(abs: string, rel: string): Promise<FileProbe> {
+    throwIfAborted(signal);
+    let st;
+    try {
+      st = await lstat(abs);
+    } catch (error) {
+      if (isMissingOrNotDir(error)) return { kind: "skip" };
+      throw error;
+    }
+    if (st.isSymbolicLink()) return { kind: "symlink", rel };
+    if (!st.isFile()) return { kind: "skip" };
+    if (st.size > MAX_SYNC_FILE_BYTES) return { kind: "tooLarge", rel };
+
+    const cached = statCache?.get(rel);
+    if (
+      cached &&
+      cached.ino === st.ino &&
+      cached.size === st.size &&
+      cached.mtimeMs === st.mtimeMs &&
+      cached.ctimeMs === st.ctimeMs &&
+      cached.mode === st.mode
+    ) {
+      return { kind: "ok", rel, digest: cached.digest };
+    }
+
+    let read;
+    try {
+      read = await readRegularFileNoFollow(abs, rel, signal);
+    } catch (error) {
+      if (error instanceof SymlinkRefusedError) return { kind: "symlink", rel };
+      if (error instanceof FileTooLargeError) return { kind: "tooLarge", rel };
+      throw error;
+    }
+    if (read === null) return { kind: "skip" };
+    const digest: FileDigest = {
+      sha256: read.sha256,
+      executable: read.executable,
+      size: read.bytes.length,
+    };
+    return {
+      kind: "ok",
+      rel,
+      digest,
+      ...(statCache
+        ? {
+            cacheEntry: {
+              ino: st.ino,
+              size: st.size,
+              mtimeMs: st.mtimeMs,
+              ctimeMs: st.ctimeMs,
+              mode: st.mode,
+              digest,
+            },
+          }
+        : {}),
+    };
+  }
+
   async function walk(absDir: string, relPrefix: string): Promise<void> {
+    throwIfAborted(signal);
     if (truncated) return;
     if (Buffer.byteLength(relPrefix, "utf8") >= MAX_SYNC_PATH_BYTES) return;
     let entries;
@@ -348,8 +475,10 @@ export async function walkSyncTree(
       throw error;
     }
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
+    const subDirs: Array<{ abs: string; rel: string }> = [];
+    const fileEntries: Array<{ abs: string; rel: string }> = [];
     for (const entry of entries) {
-      if (truncated) return;
       if (isIgnoredEntryName(entry.name)) continue;
       const rel = `${relPrefix}/${entry.name}`;
       const abs = join(absDir, entry.name);
@@ -359,91 +488,62 @@ export async function walkSyncTree(
       }
       if (entry.isDirectory()) {
         if (Buffer.byteLength(rel, "utf8") < MAX_SYNC_PATH_BYTES) {
-          await walk(abs, rel);
+          subDirs.push({ abs, rel });
         }
         continue;
       }
       if (!entry.isFile()) continue;
       if (!isSafeSyncPath(rel)) continue;
-      let st;
-      try {
-        st = await lstat(abs);
-      } catch (error) {
-        if (isMissingOrNotDir(error)) continue;
-        throw error;
-      }
-      if (st.isSymbolicLink()) {
-        symlinks.push(rel);
-        continue;
-      }
-      if (!st.isFile()) continue;
-      if (st.size > MAX_SYNC_FILE_BYTES) {
-        tooLarge.push(rel);
-        continue;
-      }
-      if (count >= MAX_SYNC_FILES || totalBytes + st.size > MAX_SYNC_TOTAL_BYTES) {
-        truncated = true;
-        return;
-      }
+      fileEntries.push({ abs, rel });
+    }
 
-      const cached = statCache?.get(rel);
-      if (
-        cached &&
-        cached.ino === st.ino &&
-        cached.size === st.size &&
-        cached.mtimeMs === st.mtimeMs &&
-        cached.ctimeMs === st.ctimeMs &&
-        cached.mode === st.mode
-      ) {
-        manifest[rel] = cached.digest;
-        seenCacheKeys?.add(rel);
+    const chunkSize = concurrency * 4;
+    for (let offset = 0; offset < fileEntries.length; offset += chunkSize) {
+      throwIfAborted(signal);
+      if (truncated) return;
+      const chunk = fileEntries.slice(offset, offset + chunkSize);
+      const probed = Array.from<FileProbe | undefined>({ length: chunk.length });
+      await runWithConcurrency(
+        chunk,
+        concurrency,
+        async (item, idx) => {
+          probed[idx] = await probeFile(item.abs, item.rel);
+        },
+        signal,
+      );
+      for (const outcome of probed) {
+        if (!outcome || outcome.kind === "skip") continue;
+        if (outcome.kind === "symlink") {
+          symlinks.push(outcome.rel);
+          continue;
+        }
+        if (outcome.kind === "tooLarge") {
+          tooLarge.push(outcome.rel);
+          continue;
+        }
+        if (count >= MAX_SYNC_FILES || totalBytes + outcome.digest.size > MAX_SYNC_TOTAL_BYTES) {
+          truncated = true;
+          return;
+        }
+        manifest[outcome.rel] = outcome.digest;
+        if (statCache) {
+          if (outcome.cacheEntry) statCache.set(outcome.rel, outcome.cacheEntry);
+          seenCacheKeys?.add(outcome.rel);
+        }
         count++;
-        totalBytes += cached.digest.size;
-        continue;
+        totalBytes += outcome.digest.size;
       }
+    }
 
-      let read;
-      try {
-        read = await readRegularFileNoFollow(abs, rel);
-      } catch (error) {
-        if (error instanceof SymlinkRefusedError) {
-          symlinks.push(rel);
-          continue;
-        }
-        if (error instanceof FileTooLargeError) {
-          tooLarge.push(rel);
-          continue;
-        }
-        throw error;
-      }
-      if (read === null) continue;
-      if (totalBytes + read.bytes.length > MAX_SYNC_TOTAL_BYTES) {
-        truncated = true;
-        return;
-      }
-      const digest: FileDigest = {
-        sha256: read.sha256,
-        executable: read.executable,
-        size: read.bytes.length,
-      };
-      manifest[rel] = digest;
-      if (statCache) {
-        statCache.set(rel, {
-          ino: st.ino,
-          size: st.size,
-          mtimeMs: st.mtimeMs,
-          ctimeMs: st.ctimeMs,
-          mode: st.mode,
-          digest,
-        });
-        seenCacheKeys?.add(rel);
-      }
-      count++;
-      totalBytes += digest.size;
+    for (const subDir of subDirs) {
+      throwIfAborted(signal);
+      if (truncated) return;
+      await walk(subDir.abs, subDir.rel);
     }
   }
 
   for (const top of SYNC_ROOTS) {
+    throwIfAborted(signal);
     if (truncated) break;
     const absTop = join(realRoot, top);
     let st;

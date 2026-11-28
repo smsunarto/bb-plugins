@@ -15,6 +15,8 @@ const BB_BUNDLE_ID = "dev.bb.desktop";
 const LOCKED_EXIT = 3;
 /** Wait before starting the helper again after it exits or fails to build. */
 const RETRY_MS = 30_000;
+/** How long dispose waits after SIGTERM before it sends SIGKILL. */
+const KILL_GRACE_MS = 2_000;
 
 /** Messages the helper writes to stdout, one JSON object per line. */
 const helperMessageSchema = z.discriminatedUnion("type", [
@@ -25,6 +27,16 @@ const helperMessageSchema = z.discriminatedUnion("type", [
 ]);
 
 type Context = ExperimentalHostRpcContext<typeof menuHostSignals>;
+/** Seams for tests; production uses the real build and process spawn. */
+export type MenuHostDeps = {
+  build?: typeof buildHelper;
+  spawnHelper?: (
+    binary: string,
+    args: string[],
+    signal: AbortSignal,
+  ) => ChildProcessWithoutNullStreams;
+  killGraceMs?: number;
+};
 type Helper = {
   child: ChildProcessWithoutNullStreams;
   /** Last line written per message type, so an unchanged menu is not redrawn. */
@@ -34,20 +46,53 @@ type Helper = {
 /**
  * Own this Mac's menu bar helper. The worker holds it for its whole lifetime: the
  * server pushes each menu through `render`, and the helper's commands come back
- * as signals. Quit from the menu hides the items until the worker restarts, when
- * bb restarts or the plugin reloads.
+ * as signals. Quit from the menu stops the helper and releases the worker lease,
+ * so the items stay hidden until the worker restarts. Disposing the worker stops
+ * the helper too: SIGTERM, then SIGKILL after a grace period.
  */
-export function createMenuHost(platform: NodeJS.Platform = process.platform) {
+export function createMenuHost(
+  platform: NodeJS.Platform = process.platform,
+  deps: MenuHostDeps = {},
+) {
+  const build = deps.build ?? buildHelper;
+  const spawnHelper =
+    deps.spawnHelper ??
+    ((binary: string, args: string[], signal: AbortSignal) =>
+      spawn(binary, args, { stdio: "pipe", signal }));
+  const killGraceMs = deps.killGraceMs ?? KILL_GRACE_MS;
   let helper: Helper | null = null;
   let starting: Promise<void> | null = null;
   let retryAt = 0;
   let quit = false;
   let needsConfiguration: string | null = null;
   let lease: ExperimentalHostWorkerLease | null = null;
+  let disposed = false;
+
+  function releaseLease(): Promise<void> {
+    const current = lease;
+    lease = null;
+    return current ? current.dispose().catch(() => {}) : Promise.resolve();
+  }
+
+  /** SIGTERM, then SIGKILL if the helper is still running after the grace period. */
+  function stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {
+    if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+      }, killGraceMs);
+      child.once("close", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      child.kill("SIGTERM");
+    });
+  }
 
   async function start(context: Context): Promise<void> {
-    const { binary, dir } = await buildHelper(context.lifecycle.signal);
-    const child = spawn(binary, [dir], { stdio: "pipe", signal: context.lifecycle.signal });
+    const { binary, dir } = await build(context.lifecycle.signal);
+    if (disposed) return;
+    const child = spawnHelper(binary, [dir], context.lifecycle.signal);
     const current: Helper = { child, written: new Map() };
     // `close` always follows a spawn error, and a write after exit raises EPIPE.
     child.on("error", () => {});
@@ -77,6 +122,7 @@ export function createMenuHost(platform: NodeJS.Platform = process.platform) {
         case "quit":
           quit = true;
           child.kill();
+          void releaseLease();
           break;
       }
     });
@@ -103,12 +149,13 @@ export function createMenuHost(platform: NodeJS.Platform = process.platform) {
     handlers: {
       async render({ snapshot, refreshing }, context) {
         if (platform !== "darwin") return { status: "unsupported" as const };
+        if (quit || disposed) return { status: "ok" as const };
         // The helper outlives each call, so keep the worker for as long as bb runs.
         lease ??= context.experimental_retainWorker();
         if (needsConfiguration !== null) {
           return { status: "needs-configuration" as const, message: needsConfiguration };
         }
-        if (helper === null && !quit && Date.now() >= retryAt) {
+        if (helper === null && Date.now() >= retryAt) {
           starting ??= start(context).finally(() => {
             starting = null;
           });
@@ -129,6 +176,14 @@ export function createMenuHost(platform: NodeJS.Platform = process.platform) {
         }
         return { status: "ok" as const };
       },
+    },
+    async dispose() {
+      disposed = true;
+      await starting?.catch(() => {});
+      const current = helper;
+      helper = null;
+      if (current) await stopChild(current.child);
+      await releaseLease();
     },
   });
 }

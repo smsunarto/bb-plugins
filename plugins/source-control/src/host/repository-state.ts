@@ -46,6 +46,14 @@ const MAX_IGNORED_DIRECTORIES = 1_000;
 /** Most paths one working-tree event is checked against `git check-ignore` for. */
 const MAX_CHECKED_PATHS = 1_000;
 const MAX_SIGNAL_PATHS = 1_000;
+/**
+ * Build output and dependency directories at the top of a working tree,
+ * which the watcher skips even before git says they are ignored, unless git
+ * tracks files in them.
+ */
+const BUILD_DIRECTORIES = ["dist", "target", "node_modules", ".next", ".turbo", "build"];
+/** How long disposal waits for one watch to stop, so a stuck one cannot hold the host. */
+const DISPOSE_TIMEOUT_MS = 5_000;
 
 /** Each key is a path's state. Shared keys are bare; a checkout's own are `name\0file`. */
 type Snapshot = Map<string, string>;
@@ -70,6 +78,8 @@ type Tree = {
   subscription: Promise<ExperimentalHostWatchSubscription>;
   queue: Promise<void>;
   context: WatchContext;
+  /** The `ignoredPaths` the live subscription was started with. */
+  ignored: readonly string[];
 };
 
 const watches = new Map<string, Watch>();
@@ -92,13 +102,20 @@ function volatile(key: string): boolean {
 const ours = new Map<string, number>();
 const realPaths = new Map<string, Promise<string | null>>();
 
-function realPathOf(cwd: string): Promise<string | null> {
-  let found = realPaths.get(cwd);
-  if (!found) {
-    if (realPaths.size >= 2_048) realPaths.clear();
-    found = realpath(cwd).catch(() => null);
-    realPaths.set(cwd, found);
-  }
+/**
+ * `cwd`'s real path, or null when it cannot be resolved. Only answers are
+ * kept: a failure, such as a directory not created yet or briefly missing,
+ * is asked again next time.
+ */
+export function realPathOf(cwd: string): Promise<string | null> {
+  const known = realPaths.get(cwd);
+  if (known) return known;
+  if (realPaths.size >= 2_048) realPaths.clear();
+  const found: Promise<string | null> = realpath(cwd).catch(() => {
+    if (realPaths.get(cwd) === found) realPaths.delete(cwd);
+    return null;
+  });
+  realPaths.set(cwd, found);
   return found;
 }
 
@@ -217,22 +234,35 @@ function enqueue(watch: { queue: Promise<void> }, task: () => Promise<void>): Pr
   return watch.queue;
 }
 
-function dispose(subscription: Promise<ExperimentalHostWatchSubscription>): void {
-  void subscription.then((live) => live.dispose()).catch(() => undefined);
+/** Stops a subscription, settling once it has stopped or DISPOSE_TIMEOUT_MS passed. */
+function dispose(subscription: Promise<ExperimentalHostWatchSubscription>): Promise<void> {
+  const stopped = subscription.then((live) => live.dispose()).catch(() => undefined);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, DISPOSE_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  return Promise.race([stopped, bound]).finally(() => clearTimeout(timer));
+}
+
+/** Forgets a watch and stops its subscription, leaving its working trees to the caller. */
+function halt(commonDir: string, watch: Watch): Promise<void> {
+  if (watches.get(commonDir) !== watch) return Promise.resolve();
+  watches.delete(commonDir);
+  if (watch.timer) clearTimeout(watch.timer);
+  return dispose(watch.subscription);
 }
 
 function stop(commonDir: string, watch: Watch): void {
   if (watches.get(commonDir) !== watch) return;
-  watches.delete(commonDir);
-  if (watch.timer) clearTimeout(watch.timer);
-  dispose(watch.subscription);
+  void halt(commonDir, watch);
   pruneTrees();
 }
 
-function stopTree(real: string, tree: Tree): void {
-  if (trees.get(real) !== tree) return;
+function stopTree(real: string, tree: Tree): Promise<void> {
+  if (trees.get(real) !== tree) return Promise.resolve();
   trees.delete(real);
-  dispose(tree.subscription);
+  return dispose(tree.subscription);
 }
 
 /** Working trees no live viewer reaches any more. */
@@ -240,7 +270,7 @@ function pruneTrees(): void {
   const wanted = new Set(
     [...watches.values()].flatMap((watch) => [...watch.viewers.values()].map((v) => v.real)),
   );
-  for (const [real, tree] of trees) if (!wanted.has(real)) stopTree(real, tree);
+  for (const [real, tree] of trees) if (!wanted.has(real)) void stopTree(real, tree);
 }
 
 /** Drops the viewers whose lease ran out, and the watch with the last of them. */
@@ -360,11 +390,79 @@ async function ignoredDirectories(real: string, signal: AbortSignal): Promise<st
     .slice(0, MAX_IGNORED_DIRECTORIES);
 }
 
+/** The {@link BUILD_DIRECTORIES} git tracks files in, or null when git cannot say. */
+async function trackedBuildDirectories(
+  real: string,
+  signal: AbortSignal,
+): Promise<Set<string> | null> {
+  const result = await runGitCommand(
+    real,
+    ["ls-files", "-z", "--", ...BUILD_DIRECTORIES.map((name) => `:(top,literal)${name}`)],
+    signal,
+    { own: false },
+  ).catch(() => null);
+  if (result?.code !== 0) return null;
+  return new Set(result.stdout.split("\0").map((path) => path.split("/")[0]!));
+}
+
+/** What the working-tree watch skips: the Git directory, build output, and ignored directories. */
+async function treeIgnores(real: string, signal: AbortSignal): Promise<string[]> {
+  const [ignored, tracked] = await Promise.all([
+    ignoredDirectories(real, signal),
+    trackedBuildDirectories(real, signal),
+  ]);
+  // Without knowing what git tracks, skipping build directories could hide a real edit.
+  const builds = tracked === null ? [] : BUILD_DIRECTORIES.filter((name) => !tracked.has(name));
+  // A linked worktree's `.git` is a file naming its Git directory; the main one's is the directory.
+  return [...new Set([".git", ...builds, ...ignored])];
+}
+
+function subscribeTree(real: string, tree: Tree): Promise<ExperimentalHostWatchSubscription> {
+  return tree.context.experimental_watch(
+    {
+      rootPath: real,
+      ignoredPaths: tree.ignored,
+      debounceMs: DEBOUNCE_MS,
+      maxWaitMs: MAX_WAIT_MS,
+    },
+    listenTree(real, tree),
+  );
+}
+
+/**
+ * A rescan means the watcher lost track, often because directories came or
+ * went. Ignored directories are read again, and the watch restarts when they
+ * changed, so a new build directory stops costing the watcher.
+ */
+async function refreshIgnores(real: string, tree: Tree): Promise<void> {
+  const ignored = await treeIgnores(real, AbortSignal.timeout(10_000));
+  if (trees.get(real) !== tree) return;
+  if (
+    ignored.length === tree.ignored.length &&
+    ignored.every((path, i) => tree.ignored[i] === path)
+  )
+    return;
+  const previous = tree.subscription;
+  tree.ignored = ignored;
+  try {
+    tree.subscription = subscribeTree(real, tree);
+  } catch {
+    tree.subscription = previous;
+    return void stopTree(real, tree);
+  }
+  const next = tree.subscription;
+  next.catch(() => {
+    if (tree.subscription === next) void stopTree(real, tree);
+  });
+  void dispose(previous);
+}
+
 function listenTree(real: string, tree: Tree) {
   return (event: ExperimentalHostWatchEvent) => {
     if (trees.get(real) !== tree) return;
-    if (event.kind === "watch-error") return stopTree(real, tree);
+    if (event.kind === "watch-error") return void stopTree(real, tree);
     return enqueue(tree, async () => {
+      if (event.kind === "rescan-required") await refreshIgnores(real, tree);
       if (event.kind === "changed") {
         const paths = treePaths(real, event);
         if (paths.length === 0) return;
@@ -383,26 +481,22 @@ async function watchTree(real: string, context: WatchContext): Promise<void> {
     subscription: Promise.resolve({ dispose: async () => undefined }),
     queue: Promise.resolve(),
     context,
+    ignored: [".git"],
   };
   trees.set(real, tree);
-  const ignored = await ignoredDirectories(real, AbortSignal.timeout(10_000));
+  const ignored = await treeIgnores(real, AbortSignal.timeout(10_000));
   if (trees.get(real) !== tree) return;
+  tree.ignored = ignored;
   try {
-    tree.subscription = context.experimental_watch(
-      {
-        rootPath: real,
-        // A linked worktree's `.git` is a file naming its Git directory; the main one's is the directory.
-        ignoredPaths: [".git", ...ignored],
-        debounceMs: DEBOUNCE_MS,
-        maxWaitMs: MAX_WAIT_MS,
-      },
-      listenTree(real, tree),
-    );
+    tree.subscription = subscribeTree(real, tree);
   } catch (error) {
-    stopTree(real, tree);
+    void stopTree(real, tree);
     throw error;
   }
-  tree.subscription.catch(() => stopTree(real, tree));
+  const started = tree.subscription;
+  started.catch(() => {
+    if (tree.subscription === started) void stopTree(real, tree);
+  });
 }
 
 /** A checkout as the watch needs it: the server's name for it and its directories. */
@@ -475,8 +569,10 @@ export function renew(name: string): boolean {
   return false;
 }
 
-/** Stops every watch, for the entry's disposal. */
-export function stopAll(): void {
-  for (const [commonDir, watch] of watches) stop(commonDir, watch);
-  for (const [real, tree] of trees) stopTree(real, tree);
+/** Stops every watch, for the entry's disposal, settling once each has stopped. */
+export async function stopAll(): Promise<void> {
+  const stopping: Promise<void>[] = [];
+  for (const [commonDir, watch] of watches) stopping.push(halt(commonDir, watch));
+  for (const [real, tree] of trees) stopping.push(stopTree(real, tree));
+  await Promise.allSettled(stopping);
 }

@@ -17,6 +17,7 @@ import { fakeBut } from "../../test/fake-but.ts";
 import { isolate } from "../../test/isolate.ts";
 import { buildRepos, git, type Repos } from "../../test/repos.ts";
 import hostEntry from "./host.ts";
+import { realPathOf } from "./repository-state.ts";
 
 const env = await isolate("source-control-watch");
 let repos: Repos;
@@ -293,4 +294,85 @@ test("a read that writes GitButler's state never wakes the server, even while it
   } finally {
     await restore();
   }
+});
+
+/** A plain Git checkout of its own, so a test can change its files freely. */
+async function freshRepo(name: string, files: Record<string, string>): Promise<string> {
+  const repo = join(env.root, name);
+  git(env.root, "init", "--quiet", "--initial-branch=main", repo);
+  for (const [file, content] of Object.entries(files)) {
+    await mkdir(join(repo, file, ".."), { recursive: true });
+    await writeFile(join(repo, file), content);
+  }
+  git(repo, "add", "--all");
+  git(repo, "commit", "--quiet", "-m", "chore: base");
+  return repo;
+}
+
+test("disposing the host waits until every watch has stopped", async () => {
+  let stopped = 0;
+  const host = experimental_createHostEntryHarness(hostEntry, {
+    experimental_watch: () => ({
+      dispose: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        stopped += 1;
+      },
+    }),
+  });
+  const read = await host.experimental_call("workspace", { path: repos.plain, readAs: "auto" });
+  expect(read.ok).toBe(true);
+  await settled();
+  await host.experimental_dispose();
+  // The Git directory's watch and the working tree's.
+  expect(stopped).toBe(2);
+});
+
+test("the working tree watch skips build directories git does not track", async () => {
+  const repo = await freshRepo("tracked-build", { "dist/keep.txt": "kept\n", "one.txt": "one\n" });
+  const { host, watches } = watchedHost();
+  hosts.push(host);
+  await host.experimental_call("workspace", { path: repo, readAs: "auto" });
+  const tree = watches.find(({ options }) => options.rootPath === repo)!;
+  expect(tree.options.ignoredPaths).toEqual(
+    expect.arrayContaining([".git", "node_modules", "target", ".next", ".turbo", "build"]),
+  );
+  // Tracked files live there, so its edits must still be seen.
+  expect(tree.options.ignoredPaths).not.toContain("dist");
+});
+
+test("a rescan reads ignored directories again and restarts the tree watch with them", async () => {
+  const repo = await freshRepo("rescanned", { "one.txt": "one\n" });
+  const { host, watches, at, disposed } = watchedHost();
+  hosts.push(host);
+  await host.experimental_call("workspace", { path: repo, readAs: "auto" });
+  const before = watches.filter(({ options }) => options.rootPath === repo);
+  expect(before).toHaveLength(1);
+  expect(before[0]!.options.ignoredPaths).not.toContain("generated");
+
+  await writeFile(join(repo, ".gitignore"), "generated/\n");
+  await mkdir(join(repo, "generated"), { recursive: true });
+  await writeFile(join(repo, "generated", "out.txt"), "out\n");
+  await at(repo)({ kind: "rescan-required" });
+  await settled();
+
+  const after = watches.filter(({ options }) => options.rootPath === repo);
+  expect(after).toHaveLength(2);
+  expect(after[1]!.options.ignoredPaths).toContain("generated");
+  expect(disposed()).toBe(1);
+  // Dropped events may have hidden a change, so it still says so.
+  expect(host.experimental_getSignals()).toEqual([
+    { signal: "checkoutChanged", payload: { paths: [repo] } },
+  ]);
+
+  // Nothing new to skip on the next rescan: the watch stays as it is.
+  await at(repo)({ kind: "rescan-required" });
+  await settled();
+  expect(watches.filter(({ options }) => options.rootPath === repo)).toHaveLength(2);
+});
+
+test("a real path that failed to resolve is asked again", async () => {
+  const later = join(env.root, "created-later");
+  expect(await realPathOf(later)).toBeNull();
+  await mkdir(later);
+  expect(await realPathOf(later)).toBe(later);
 });

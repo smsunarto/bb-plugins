@@ -355,9 +355,29 @@ export default async function plugin(bb: BbPluginApi) {
   // toggled from the panel and the CLI mid-session, and plugin settings are
   // read-only from a handler. So it lives in kv, where a handler can write it.
   const TOOLBAR_KEY = "toolbar-enabled";
+  // Every open toolbar polls pullSession, so the flag is read from kv once and
+  // kept here; this plugin is its only writer, through setToolbarEnabled.
+  let toolbarEnabled: boolean | null = null;
+  let toolbarLoad: Promise<boolean> | null = null;
 
   async function isToolbarEnabled(): Promise<boolean> {
-    return (await bb.storage.kv.get<boolean>(TOOLBAR_KEY)) ?? true;
+    if (toolbarEnabled !== null) return toolbarEnabled;
+    toolbarLoad ??= bb.storage.kv
+      .get<boolean>(TOOLBAR_KEY)
+      .then((stored) => {
+        // A write that landed while kv was being read wins.
+        toolbarEnabled ??= stored ?? true;
+        return toolbarEnabled;
+      })
+      .finally(() => {
+        toolbarLoad = null;
+      });
+    return toolbarLoad;
+  }
+
+  async function storeToolbarEnabled(enabled: boolean): Promise<void> {
+    await bb.storage.kv.set(TOOLBAR_KEY, enabled);
+    toolbarEnabled = enabled;
   }
 
   async function readConfig(): Promise<z.infer<typeof configSchema>> {
@@ -562,7 +582,22 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
+  /** Whether a turn end on `threadId` has anything to re-stage; a cheap indexed read. */
+  function hasTurnAssignments(threadId: string, includeAwaitingStart: boolean): boolean {
+    const phaseClause = includeAwaitingStart ? "" : "AND phase = 'awaiting-finish'";
+    return (
+      db
+        .prepare(
+          `SELECT 1 FROM annotation_turn_assignments WHERE thread_id = ? ${phaseClause} LIMIT 1`,
+        )
+        // better-sqlite3 returns undefined for no row; bun:sqlite returns null.
+        .get(threadId) != null
+    );
+  }
+
   async function restageAfterTurn(threadId: string, includeAwaitingStart: boolean): Promise<void> {
+    // Most turns end on threads holding no annotations; skip the bb reads then.
+    if (disposed || !hasTurnAssignments(threadId, includeAwaitingStart)) return;
     if (await resumesAfterRestart(threadId)) {
       bb.log.info(`kept annotations assigned to ${threadId} while bb resumes its interrupted turn`);
       return;
@@ -923,7 +958,7 @@ export default async function plugin(bb: BbPluginApi) {
       },
 
       async setToolbarEnabled(input) {
-        await bb.storage.kv.set(TOOLBAR_KEY, input.enabled);
+        await storeToolbarEnabled(input.enabled);
         broadcast({ type: "config", sessionId: null });
         return { toolbarEnabled: input.enabled };
       },
@@ -1567,7 +1602,7 @@ export default async function plugin(bb: BbPluginApi) {
                 hint: "usage: bb agentation toolbar [on|off]",
               });
             }
-            await bb.storage.kv.set(TOOLBAR_KEY, desired === "on");
+            await storeToolbarEnabled(desired === "on");
             broadcast({ type: "config", sessionId: null });
             return ok(`toolbar ${desired}`);
           },

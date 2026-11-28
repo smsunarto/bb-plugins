@@ -9,16 +9,8 @@ import { liveStatusFromThread } from "./live-status";
 const TERMINAL_LIVE_STATUSES = new Set<TaskThreadLiveStatus>(["completed"]);
 export const THREAD_STATUS_RECONCILE_INTERVAL_MS = 5 * 60_000;
 export const THREAD_STATUS_IDLE_INTERVAL_MS = 60_000;
-
-function trackedThreads(store: TasksApiStore): TaskThread[] {
-  const tracked: TaskThread[] = [];
-  for (const task of store.tasks.listTasks()) {
-    for (const thread of store.tasks.listTaskThreads(task.id)) {
-      tracked.push(thread);
-    }
-  }
-  return tracked;
-}
+/** Thread reads one sweep keeps in flight; a sleeping host holds one slot, not the sweep. */
+export const THREAD_STATUS_RECONCILE_CONCURRENCY = 4;
 
 function statusCommentBody(
   thread: TaskThread,
@@ -65,6 +57,17 @@ function transitionTrackedThread(
   }
 }
 
+/** An event may have moved or removed the row while bb answered; act on what is stored now. */
+function transitionCurrentRow(
+  bb: BbPluginApi,
+  store: TasksApiStore,
+  trackedThread: TaskThread,
+  liveStatus: TaskThreadLiveStatus,
+): void {
+  const current = store.tasks.getTaskThread(trackedThread.id);
+  if (current !== undefined) transitionThread(bb, store, current, liveStatus);
+}
+
 async function reconcileTrackedThread(
   bb: BbPluginApi,
   store: TasksApiStore,
@@ -74,10 +77,10 @@ async function reconcileTrackedThread(
     const thread = await bb.sdk.threads.get({
       threadId: trackedThread.threadId,
     });
-    transitionThread(bb, store, trackedThread, liveStatusFromThread(thread));
+    transitionCurrentRow(bb, store, trackedThread, liveStatusFromThread(thread));
   } catch (error) {
     if (sdkErrorCode(error) === "thread_not_found") {
-      transitionThread(bb, store, trackedThread, "completed");
+      transitionCurrentRow(bb, store, trackedThread, "completed");
       return;
     }
     bb.log.warn(
@@ -86,21 +89,34 @@ async function reconcileTrackedThread(
   }
 }
 
-async function reconcileTrackedThreads(bb: BbPluginApi, store: TasksApiStore): Promise<void> {
-  const nonTerminalThreads = trackedThreads(store).filter(
-    (thread) => !TERMINAL_LIVE_STATUSES.has(thread.liveStatus),
+/**
+ * Re-read every row bb may have moved without our hearing it, a few at a time.
+ * One indexed query names them; archived, failed, and completed rows change
+ * only through thread events. An aborted signal stops starting new reads.
+ */
+export async function reconcileTrackedThreads(
+  bb: BbPluginApi,
+  store: TasksApiStore,
+  signal: AbortSignal,
+): Promise<void> {
+  if (signal.aborted) return;
+  const queue = store.tasks.listReconcilableTaskThreads();
+  const next = async (): Promise<void> => {
+    for (let tracked = queue.shift(); tracked !== undefined; tracked = queue.shift()) {
+      if (signal.aborted) return;
+      await reconcileTrackedThread(bb, store, tracked);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(THREAD_STATUS_RECONCILE_CONCURRENCY, queue.length) }, next),
   );
-
-  for (const trackedThread of nonTerminalThreads) {
-    await reconcileTrackedThread(bb, store, trackedThread);
-  }
 }
 
-function hasNonTerminalTrackedThreads(store: TasksApiStore): boolean {
-  return trackedThreads(store).some((thread) => !TERMINAL_LIVE_STATUSES.has(thread.liveStatus));
-}
-
-export async function registerLifecycle(bb: BbPluginApi, store: TasksApiStore): Promise<void> {
+/**
+ * Thread events keep task threads current. A background service reconciles
+ * rows on start and every few minutes after, so plugin load never waits on bb.
+ */
+export function registerLifecycle(bb: BbPluginApi, store: TasksApiStore): void {
   bb.events.on("thread.created", ({ thread }) => {
     transitionTrackedThread(bb, store, thread.id, liveStatusFromThread(thread));
   });
@@ -119,24 +135,23 @@ export async function registerLifecycle(bb: BbPluginApi, store: TasksApiStore): 
   bb.events.on("thread.archived", ({ thread }) => {
     transitionTrackedThread(bb, store, thread.id, "archived");
   });
-  // Archived rows stay non-terminal, so the reconcile also repairs a missed unarchive.
+  // The reconcile skips archived rows, so unarchiving relies on this event.
   bb.events.on("thread.unarchived", ({ thread }) => {
     transitionTrackedThread(bb, store, thread.id, liveStatusFromThread(thread));
   });
 
   bb.background.service("thread-status-reconcile", {
     async start(signal) {
+      // The startup sweep runs here, off plugin load, so RPCs serve at once.
+      await reconcileTrackedThreads(bb, store, signal);
       while (!signal.aborted) {
-        if (!hasNonTerminalTrackedThreads(store)) {
+        if (!store.tasks.hasReconcilableTaskThreads()) {
           await sleepUnlessAborted(signal, THREAD_STATUS_IDLE_INTERVAL_MS);
           continue;
         }
         await sleepUnlessAborted(signal, THREAD_STATUS_RECONCILE_INTERVAL_MS);
-        if (signal.aborted) break;
-        await reconcileTrackedThreads(bb, store);
+        await reconcileTrackedThreads(bb, store, signal);
       }
     },
   });
-
-  await reconcileTrackedThreads(bb, store);
 }

@@ -327,7 +327,7 @@ export function Entity({ props }: { props: Props }) {
                   />
                 </button>
               ) : null}
-              <DialogHeader className="min-w-0 gap-1 space-y-0 pr-6">
+              <DialogHeader className="min-w-0 gap-1 pr-6">
                 {KIND_LABEL[kind] === "" ? null : (
                   <span className="flex items-center gap-1 text-xs leading-5 text-muted-foreground">
                     <KindGlyph kind={kind} className="size-3.5 shrink-0" />

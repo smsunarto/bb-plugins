@@ -15,7 +15,7 @@ import { queryClient as promptsQueryClient } from "../prompts/app/query.ts";
 import type { Plugin } from "../prompts/shared/schema.ts";
 import type { RulesState } from "../shared/rules.ts";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { useSidebarColumnFill } from "@bb-plugins/ui/sidebar-fill";
 import { Button } from "../../components/ui/button.tsx";
 import { useIsCompactViewport } from "../../components/ui/hooks/use-compact-viewport.tsx";
@@ -279,23 +279,30 @@ function AgentInstructionsSidebar({ subPath }: PluginNavPanelProps) {
   );
 }
 
+const CATALOG_KEY = queryKey("catalog");
+const RULES_KEY = queryKey("rules");
+const DOCUMENT_SOURCES_KEY = queryKey("documentSources");
+const PLUGINS_KEY = queryKey("plugins");
+
 /**
  * Data a page already loaded, read from the cache. It adds no query observer, so it never
  * fetches and never replaces the fetcher the page's own query registered.
  */
 function useCached<T>(client: QueryClient, key: QueryKey): T | undefined {
-  return useSyncExternalStore(
-    (notify) => client.getQueryCache().subscribe(notify),
-    () => client.getQueryData<T>(key),
+  const subscribe = useCallback(
+    (notify: () => void) => client.getQueryCache().subscribe(notify),
+    [client],
   );
+  const getSnapshot = useCallback(() => client.getQueryData<T>(key), [client, key]);
+  return useSyncExternalStore(subscribe, getSnapshot);
 }
 
 /** The trail to `subPath`, named from data the page already loaded. */
 function useTrail(subPath: string): Crumb[] {
-  const catalog = useCached<CatalogListing>(queryClient, queryKey("catalog"));
-  const rules = useCached<RulesState>(queryClient, queryKey("rules"));
-  const sources = useCached<DocumentMetadata>(queryClient, queryKey("documentSources"));
-  const plugins = useCached<{ plugins: Plugin[] }>(promptsQueryClient, queryKey("plugins"));
+  const catalog = useCached<CatalogListing>(queryClient, CATALOG_KEY);
+  const rules = useCached<RulesState>(queryClient, RULES_KEY);
+  const sources = useCached<DocumentMetadata>(queryClient, DOCUMENT_SOURCES_KEY);
+  const plugins = useCached<{ plugins: Plugin[] }>(promptsQueryClient, PLUGINS_KEY);
   return pageTrail(subPath, {
     doc: (id) => catalog?.docs.find((doc) => doc.id === id)?.name,
     rule: (id) => rules?.rules.find((rule) => rule.id === id)?.name,

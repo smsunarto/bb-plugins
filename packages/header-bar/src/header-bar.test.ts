@@ -118,4 +118,58 @@ describe("@bb-plugins/header-bar registry", () => {
     clearHeaderBarSegments("thr_split", "tasks:pane2");
     expect(getResolvedHeaderBar("thr_split").isEmpty).toBe(true);
   });
+
+  test("skips cache invalidation and notifications when setHeaderBarSegments receives structurally equal segments", () => {
+    let notifications = 0;
+    const unsub = subscribeHeaderBar("thr_eq", () => {
+      notifications += 1;
+    });
+
+    const onClick = () => {};
+    const onSelect = () => {};
+    const makeSegments = (): HeaderBarSegment[] => [
+      seg({
+        owner: "scott-tasks",
+        slot: "task",
+        priority: 10,
+        keyText: "BBP-99",
+        label: "Stable task",
+        glyph: { kind: "task-status", status: "in_progress" },
+        tagGlyph: { kind: "task-priority", priority: "high" },
+        onClick,
+        secondaryMenu: {
+          triggerLabel: "+1",
+          ariaLabel: "More tasks",
+          glyph: { kind: "icon", name: "List", tone: "muted" },
+          items: [
+            {
+              id: "t2",
+              label: "Other",
+              glyph: { kind: "dot", tone: "accent", pulse: false },
+              onSelect,
+            },
+          ],
+        },
+      }),
+    ];
+
+    setHeaderBarSegments("thr_eq", "tasks:1", "scott-tasks", makeSegments());
+    const firstSnapshot = getResolvedHeaderBar("thr_eq");
+    expect(notifications).toBe(1);
+
+    // Identical structure in fresh arrays/objects: no cache clear, no notification.
+    setHeaderBarSegments("thr_eq", "tasks:1", "scott-tasks", makeSegments());
+    expect(notifications).toBe(1);
+    expect(getResolvedHeaderBar("thr_eq")).toBe(firstSnapshot);
+
+    // Changing a nested field invalidates and notifies.
+    const changed = makeSegments();
+    changed[0] = { ...changed[0]!, label: "Renamed task" };
+    setHeaderBarSegments("thr_eq", "tasks:1", "scott-tasks", changed);
+    expect(notifications).toBe(2);
+    expect(getResolvedHeaderBar("thr_eq")).not.toBe(firstSnapshot);
+    expect(getResolvedHeaderBar("thr_eq").slots.task?.label).toBe("Renamed task");
+
+    unsub();
+  });
 });

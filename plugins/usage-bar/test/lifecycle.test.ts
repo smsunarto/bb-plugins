@@ -1,6 +1,7 @@
 import { expect, jest, test } from "bun:test";
-import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -43,7 +44,10 @@ async function startMenu(
  * Shadow xcode-select by default: the SDK can also discover system tools even
  * when a service's PATH is empty, including a real Xcode install on macOS.
  */
-async function buildWith(tools: Record<string, string>) {
+async function buildWith(
+  tools: Record<string, string>,
+  { options = {}, builds = 1 }: { options?: { swiftcTimeoutMs?: number }; builds?: number } = {},
+) {
   const home = await mkdtemp(join(tmpdir(), "usage-bar-build-"));
   const bin = join(home, "bin");
   try {
@@ -57,11 +61,16 @@ async function buildWith(tools: Record<string, string>) {
       [
         "-e",
         `const { buildHelper } = await import(${JSON.stringify(helper)});
+        const { readdir } = await import("node:fs/promises");
+        const cache = () => readdir(process.env.HOME + "/Library/Caches/bb-usage-bar").catch(() => []);
+        const build = () => buildHelper(new AbortController().signal, ${JSON.stringify(options)});
         try {
-          await buildHelper(new AbortController().signal);
+          const built = await Promise.all(Array.from({ length: ${builds} }, build));
+          const files = (await readdir(built[0].dir)).sort();
+          console.log(JSON.stringify({ built: new Set(built.map((b) => b.binary)).size, files, cache: await cache() }));
         } catch (error) {
           const { name, message, cause } = error;
-          console.log(JSON.stringify({ name, message, stderr: cause?.stderr ?? null }));
+          console.log(JSON.stringify({ name, message, stderr: cause?.stderr ?? null, cache: await cache() }));
         }`,
       ],
       { env: { HOME: home, PATH: bin }, encoding: "utf8" },
@@ -78,6 +87,7 @@ test("without the Xcode command line tools, the helper build asks for configurat
     message:
       "Usage Bar needs the Xcode command line tools. Run xcode-select --install, then reload the plugin.",
     stderr: "",
+    cache: [],
   });
 });
 
@@ -92,6 +102,8 @@ test("a failed compile asks for configuration with the first compiler lines", as
     message:
       "Usage Bar could not compile its menu bar helper. Update the Xcode command line tools (xcode-select --install), then reload the plugin.\none\ntwo\nthree\nfour",
     stderr: "one\ntwo\nthree\nfour\nfive\nsix\n",
+    // The failed build's staging directory is gone.
+    cache: [],
   });
 });
 
@@ -100,7 +112,38 @@ test("a killed compiler stays a plain failure so bb retries the service", async 
     name: "Error",
     message: "usage-bar: swiftc failed",
     stderr: "",
+    cache: [],
   });
+});
+
+test("a compiler that hangs past the timeout is killed and retried as a plain failure", async () => {
+  expect(
+    await buildWith(
+      { "xcode-select": "exit 0", swiftc: "exec sleep 30" },
+      { options: { swiftcTimeoutMs: 200 } },
+    ),
+  ).toEqual({ name: "Error", message: "usage-bar: swiftc failed", stderr: "", cache: [] });
+});
+
+/** A fake swiftc that writes a binary to the path after `-o`. */
+const FAKE_SWIFTC = 'while [ "$1" != -o ]; do shift; done; printf bin > "$2"';
+
+test("concurrent builds stage separately and leave one complete helper directory", async () => {
+  const result = (await buildWith(
+    { "xcode-select": "exit 0", swiftc: FAKE_SWIFTC },
+    { builds: 3 },
+  )) as { built: number; files: string[]; cache: string[] };
+  expect(result.built).toBe(1);
+  expect(result.files).toEqual([
+    "UsageBar",
+    "UsageBar.swift",
+    "antigravity.svg",
+    "claude.svg",
+    "codex.svg",
+  ]);
+  // Only the hash directory remains: every staging directory was removed.
+  expect(result.cache).toHaveLength(1);
+  expect(result.cache[0]).toMatch(/^[0-9a-f]{16}$/);
 });
 
 test("the service stops when the source RPC never resolves", async () => {
@@ -206,6 +249,85 @@ test("hosts that are not Macs answer unsupported without keeping their worker", 
     expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(0);
   } finally {
     await host.experimental_dispose();
+  }
+});
+
+/** A helper stand-in that ignores SIGTERM, so only SIGKILL stops it. */
+async function stubbornHelper() {
+  const dir = await mkdtemp(join(tmpdir(), "usage-bar-helper-"));
+  const binary = join(dir, "UsageBar");
+  await writeFile(
+    binary,
+    `#!/bin/sh\ntrap '' TERM\necho $$ > "$1/pid"\nwhile :; do sleep 0.05; done\n`,
+    { mode: 0o755 },
+  );
+  return { dir, binary };
+}
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+test("disposing the Mac host stops the helper with SIGKILL after the grace period and drops the lease", async () => {
+  const stub = await stubbornHelper();
+  const host = experimental_createHostEntryHarness(
+    createMenuHost("darwin", {
+      build: async () => stub,
+      // No abort signal: dispose alone must stop the helper.
+      spawnHelper: (binary, args) => spawn(binary, args, { stdio: "pipe" }),
+      killGraceMs: 100,
+    }),
+  );
+  try {
+    expect(
+      await host.experimental_call("render", {
+        snapshot: { error: null, providers: [] },
+        refreshing: false,
+      }),
+    ).toEqual({ status: "ok" });
+    expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(1);
+    await waitFor(() => existsSync(join(stub.dir, "pid")));
+    const pid = Number((await readFile(join(stub.dir, "pid"), "utf8")).trim());
+    expect(alive(pid)).toBe(true);
+    await host.experimental_dispose();
+    expect(alive(pid)).toBe(false);
+    expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(0);
+  } finally {
+    await host.experimental_dispose();
+    await rm(stub.dir, { recursive: true, force: true });
+  }
+});
+
+test("Quit from the menu stops the helper and releases the worker lease", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "usage-bar-helper-"));
+  const binary = join(dir, "UsageBar");
+  // Asks to quit at once, then waits for the host to stop it.
+  await writeFile(binary, `#!/bin/sh\necho '{"type":"quit"}'\nexec sleep 30\n`, { mode: 0o755 });
+  const host = experimental_createHostEntryHarness(
+    createMenuHost("darwin", {
+      build: async () => ({ binary, dir }),
+      spawnHelper: (file, args) => spawn(file, args, { stdio: "pipe" }),
+    }),
+  );
+  const render = () =>
+    host.experimental_call("render", {
+      snapshot: { error: null, providers: [] },
+      refreshing: false,
+    });
+  try {
+    expect(await render()).toEqual({ status: "ok" });
+    await waitFor(() => host.experimental_getRetainedWorkerLeaseCount() === 0);
+    // Later renders neither restart the helper nor retain the worker again.
+    expect(await render()).toEqual({ status: "ok" });
+    expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(0);
+  } finally {
+    await host.experimental_dispose();
+    await rm(dir, { recursive: true, force: true });
   }
 });
 

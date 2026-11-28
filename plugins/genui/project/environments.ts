@@ -22,6 +22,7 @@ import { RUNNING, THREAD_ID, type EnvironmentsResult, type ProjectFailure, type 
 import { environmentPull, type ThreadStatus } from "../core/sourceControl";
 import { checkoutStatus as readCheckoutStatus, threadStatuses, type CheckoutProblem, type CheckoutRead } from "./checkout";
 import { branchOf } from "./source";
+import { LruMap, THREAD_CACHE } from "./lru";
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -268,7 +269,7 @@ interface CheckoutDetail {
 }
 
 export function createEnvironmentsSource(sdk: Sdk): EnvironmentsSource {
-  const projects = new Map<string, { at: number; projectId: string; environmentId: string | null }>();
+  const projects = new LruMap<string, { at: number; projectId: string; environmentId: string | null }>(THREAD_CACHE);
 
   /** The thread's project and environment, or why there is none. */
   async function ownThread(threadId: string) {

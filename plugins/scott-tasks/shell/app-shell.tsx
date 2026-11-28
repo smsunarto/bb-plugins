@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { isNonImeKey } from "@/lib/ime-keyboard";
 import { TasksDataRoot } from "./data-root.js";
+import { useTasksPageFrame } from "./page-frame.js";
 import { useTasksUi } from "./ui-store.js";
 import { hasOpenOverlay } from "./keyboard.js";
 
@@ -73,6 +74,8 @@ function resolveRoute(route: TasksRoute): ResolvedTasksRoute {
 }
 
 function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  useTasksPageFrame(pageRef);
   const route = resolveRoute(parseTasksRoute(subPath));
   const tasksNavigation = useTasksNavigation();
   const navigation = useMemo<TasksNavigation>(
@@ -169,6 +172,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
 
   return (
     <div
+      ref={pageRef}
       data-bb-plugin="scott-tasks"
       data-scott-tasks-page=""
       className="relative flex h-full min-h-0 bg-background text-foreground"

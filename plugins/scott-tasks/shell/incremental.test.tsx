@@ -2,7 +2,7 @@
 import { cleanup, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { makeTask } from "../test-fixtures.js";
+import { makeTask, rpcInput } from "../test-fixtures.js";
 import type { Task } from "../shared/contract.js";
 
 if (!window.matchMedia) {
@@ -315,5 +315,79 @@ describe("incremental board updates", () => {
     await new Promise((resolve) => setTimeout(resolve, 120));
     expect(calls.listTasks).toBe(settledList);
     expect(calls.getTask).toEqual([]);
+  });
+
+  it("scopes threads:changed invalidation to affected task thread queries", async () => {
+    const taskA = task("TSK-1", "todo", 1);
+    const taskB = task("TSK-2", "todo", 2);
+    const listTaskThreadsCalls: string[] = [];
+    const listTaskThreadsByThreadCalls: string[] = [];
+    const linkA = {
+      id: "01HZZZZZZZZZZZZZZZZZZZZZH1",
+      taskId: taskA.id,
+      threadId: "thr_for_a",
+      presetName: "Default",
+      title: "Worker A",
+      liveStatus: "working" as const,
+      attachedAt: "2026-07-15T00:00:00.000Z",
+      updatedAt: "2026-07-15T00:00:00.000Z",
+    };
+    const linkB = {
+      id: "01HZZZZZZZZZZZZZZZZZZZZZH2",
+      taskId: taskB.id,
+      threadId: "thr_for_b",
+      presetName: "Default",
+      title: "Worker B",
+      liveStatus: "working" as const,
+      attachedAt: "2026-07-15T00:00:00.000Z",
+      updatedAt: "2026-07-15T00:00:00.000Z",
+    };
+
+    const headerSlot = app.threadHeaderRows.find((entry) => entry.id === "linked-task")!;
+    const rpc = {
+      listTasks: () => ({ tasks: [taskA, taskB] }),
+      listTaskThreads: (input: unknown) => {
+        const { taskId } = rpcInput(input);
+        listTaskThreadsCalls.push(String(taskId));
+        return { taskThreads: taskId === taskA.id ? [linkA] : [linkB] };
+      },
+      listTaskThreadsByThread: (input: unknown) => {
+        const { threadId } = rpcInput(input);
+        listTaskThreadsByThreadCalls.push(String(threadId));
+        return { taskThreads: threadId === "thr_for_a" ? [linkA] : [linkB] };
+      },
+      sidebarSummary: () => ({ projects: [] }),
+    };
+
+    const slotA = renderSlot(
+      headerSlot,
+      { threadId: "thr_for_a", projectId: "proj_1", environment: null },
+      { rpc },
+    );
+    const slotB = renderSlot(
+      headerSlot,
+      { threadId: "thr_for_b", projectId: "proj_1", environment: null },
+      { rpc },
+    );
+
+    await waitFor(() => {
+      expect(listTaskThreadsCalls).toContain(taskA.id);
+      expect(listTaskThreadsCalls).toContain(taskB.id);
+    });
+    listTaskThreadsCalls.length = 0;
+    listTaskThreadsByThreadCalls.length = 0;
+
+    await slotA.emitRealtime("threads:changed", { taskId: taskA.id });
+
+    await waitFor(() => {
+      expect(listTaskThreadsCalls).toEqual([taskA.id]);
+      expect(listTaskThreadsByThreadCalls).toEqual(["thr_for_a"]);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(listTaskThreadsCalls).toEqual([taskA.id]);
+    expect(listTaskThreadsByThreadCalls).toEqual(["thr_for_a"]);
+
+    slotA.unmount();
+    slotB.unmount();
   });
 });

@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import { mkdirSync, readFileSync, renameSync, writeFileSync, type Stats } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, type Stats } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
@@ -97,6 +98,7 @@ export class TraceIndex {
   private roots: SourceStatus[];
   private scanPromise: Promise<void> | null = null;
   private scanAbort: AbortController | null = null;
+  private configureChain: Promise<unknown> = Promise.resolve();
   private readonly lifetime = new AbortController();
   private lastScanAt: number | null = null;
   private lastError: string | null = null;
@@ -272,19 +274,30 @@ export class TraceIndex {
     };
   }
 
-  async configureSources(input: unknown): Promise<TraceStatus> {
+  configureSources(input: unknown): Promise<TraceStatus> {
+    const next = this.configureChain.then(() => this.applyConfigureSources(input));
+    this.configureChain = next.catch(() => undefined);
+    return next;
+  }
+
+  private async applyConfigureSources(input: unknown): Promise<TraceStatus> {
     const roots = this.sourceStatuses(configureInputSchema.parse(input).roots);
     this.scanAbort?.abort();
     if (this.scanPromise) await this.scanPromise.catch(() => undefined);
-    const temporary = `${this.configPath}.tmp`;
-    writeFileSync(
-      temporary,
-      JSON.stringify({
-        roots: roots.map(({ provider, path, enabled }) => ({ provider, path, enabled })),
-      }),
-      { mode: 0o600 },
-    );
-    renameSync(temporary, this.configPath);
+    const temporary = `${this.configPath}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync(
+        temporary,
+        JSON.stringify({
+          roots: roots.map(({ provider, path, enabled }) => ({ provider, path, enabled })),
+        }),
+        { mode: 0o600 },
+      );
+      renameSync(temporary, this.configPath);
+    } catch (error) {
+      rmSync(temporary, { force: true });
+      throw error;
+    }
     this.roots = roots;
     this.transaction(() => {
       const configured = new Set(roots.map((root) => `${root.provider}\0${root.path}`));

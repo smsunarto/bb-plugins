@@ -13,6 +13,15 @@
     "noEmit": true,
     "skipLibCheck": false
   },
-  "include": ["server.ts", "app.tsx", "components", "lib", "hooks", "*.d.ts", "vitest.config.ts"],
+  "include": [
+    "server.ts",
+    "host.ts",
+    "app.tsx",
+    "components",
+    "lib",
+    "hooks",
+    "*.d.ts",
+    "vitest.config.ts"
+  ],
   "exclude": ["**/*.test.ts"]
 }

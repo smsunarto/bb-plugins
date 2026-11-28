@@ -21,12 +21,12 @@ import { Button } from "../components/ui/button.tsx";
 import { Item } from "../components/ui/item.tsx";
 import { Spinner } from "../components/ui/spinner.tsx";
 import { CheckIcon, ChevronDownIcon, ListTodoIcon, SquareIcon } from "./icons.tsx";
+import { createRefreshScheduler, type RefreshScheduler } from "./refresh-scheduler.ts";
 import type { TodoItem } from "../../shared/rpiv-todo-types.ts";
 
 const STATUS_ORDER = { in_progress: 0, pending: 1, completed: 2 } as const;
-const POLL_MS = 1200;
+/** Idle threads with no visible tasks stop retrying a failed load after this many tries. */
 const MAX_EMPTY_RETRIES = 4;
-const MAX_RETRY_DELAY_MS = 10_000;
 
 /** Side chats are `ThreadChat` composers, which report their own thread. */
 function threadIdFromScope(scope: PluginComposerScope): string | null {
@@ -102,7 +102,9 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
   useEffect(() => {
     rpcRef.current = rpc;
   }, [rpc]);
-  const [revision, refresh] = useState(0);
+  const runningRef = useRef(running);
+  const schedulerRef = useRef<RefreshScheduler | null>(null);
+  const refresh = (throttle = false) => schedulerRef.current?.request({ throttle });
   const [pageVisible, setVisible] = useState(() => document.visibilityState !== "hidden");
   const id = useId();
   const toggleId = `${id}-toggle`;
@@ -121,7 +123,7 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
 
   useRealtime(RPIV_TODO_CHANNEL, (payload) => {
     const signal = todoSignalSchema.safeParse(payload);
-    if (signal.success && signal.data.threadId === threadId) refresh((value) => value + 1);
+    if (signal.success && signal.data.threadId === threadId) refresh();
   });
 
   useEffect(() => {
@@ -130,63 +132,78 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
       event: "thread:changed",
       threadId,
       callback: (event) => {
+        const eventTypes = event.metadata?.eventTypes;
         if (
           event.changes.includes("history-rewritten") ||
-          event.metadata?.eventTypes?.includes("system/operation")
+          eventTypes?.includes("system/operation")
         ) {
-          refresh((value) => value + 1);
+          schedulerRef.current?.request();
+        } else if (
+          eventTypes
+            ? eventTypes.includes("item/completed")
+            : event.changes.includes("events-appended")
+        ) {
+          // A completed tool call may be a `todo` call: this is how a thread
+          // with no tasks yet notices new ones without polling. Throttled,
+          // because a busy turn completes many tool calls.
+          schedulerRef.current?.request({ throttle: true });
         }
       },
     });
   }, [sdk, threadId, connection, pageVisible]);
 
+  /**
+   * One single-flight loader per visible, connected thread. Polls only while
+   * tasks are visible on a running thread (or history is still paging);
+   * an empty thread waits for realtime/`thread:changed` signals instead.
+   */
   useEffect(() => {
     if (connection !== "connected" || !pageVisible) return;
     let disposed = false;
-    let pending = false;
-    let failedAttempts = 0;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const load = async () => {
-      if (pending || disposed) return;
-      pending = true;
-      let nextDelayMs: number | null = null;
-      try {
-        const result = await rpcRef.current.call("getRpivTodos", { threadId });
-        if (disposed) return;
-        failedAttempts = 0;
-        snapshots.delete(threadId);
-        snapshots.set(threadId, result);
-        if (snapshots.size > 64) {
-          const oldest = snapshots.keys().next().value;
-          if (oldest) snapshots.delete(oldest);
-        }
-        setSnapshot(result);
-        setError(false);
-        if (running || result.truncated) nextDelayMs = POLL_MS;
-      } catch {
-        if (!disposed) {
+    const scheduler = createRefreshScheduler({
+      load: async ({ failures }) => {
+        try {
+          const result = await rpcRef.current.call("getRpivTodos", { threadId });
+          if (disposed) return { ok: true, keepPolling: false };
+          snapshots.delete(threadId);
+          snapshots.set(threadId, result);
+          if (snapshots.size > 64) {
+            const oldest = snapshots.keys().next().value;
+            if (oldest) snapshots.delete(oldest);
+          }
+          setSnapshot(result);
+          setError(false);
+          return {
+            ok: true,
+            keepPolling: result.truncated || (runningRef.current && result.items.length > 0),
+          };
+        } catch {
+          if (disposed) return { ok: false, keepRetrying: false };
           setError(true);
           const hasVisibleTasks = (snapshots.get(threadId)?.items.length ?? 0) > 0;
-          if (running) {
-            nextDelayMs = POLL_MS;
-          } else if (!hasVisibleTasks && failedAttempts < MAX_EMPTY_RETRIES) {
-            failedAttempts += 1;
-            nextDelayMs = Math.min(POLL_MS * 2 ** (failedAttempts - 1), MAX_RETRY_DELAY_MS);
-          }
+          return {
+            ok: false,
+            keepRetrying: runningRef.current || (!hasVisibleTasks && failures < MAX_EMPTY_RETRIES),
+          };
         }
-      } finally {
-        pending = false;
-        if (!disposed && nextDelayMs !== null) {
-          timer = setTimeout(() => void load(), nextDelayMs);
-        }
-      }
-    };
-    void load();
+      },
+    });
+    schedulerRef.current = scheduler;
+    scheduler.request();
     return () => {
       disposed = true;
-      clearTimeout(timer);
+      scheduler.dispose();
+      if (schedulerRef.current === scheduler) schedulerRef.current = null;
     };
-  }, [threadId, connection, pageVisible, running, revision]);
+  }, [threadId, connection, pageVisible]);
+
+  // A turn starting or settling may add or finish tasks: refresh once, without
+  // tearing down the loader.
+  useEffect(() => {
+    if (runningRef.current === running) return;
+    runningRef.current = running;
+    schedulerRef.current?.request();
+  }, [running]);
 
   const sorted = [...items].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
 
@@ -244,7 +261,7 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
                 size="sm"
                 className="h-auto p-0 text-xs"
                 {...KEEP_COMPOSER_FOCUS}
-                onClick={() => refresh((value) => value + 1)}
+                onClick={() => refresh()}
               >
                 Retry
               </Button>

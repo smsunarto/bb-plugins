@@ -164,14 +164,17 @@ export function ExecutionSettings({
 
   const projectName = projects.find((item) => item.id === value.projectId)?.name ?? value.projectId;
   return (
-    <section className="min-w-0 space-y-3 border-t border-border pt-4" aria-label="Agent settings">
+    <section
+      className="flex min-w-0 flex-col gap-3 border-t border-border pt-4"
+      aria-label="Agent settings"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Agent settings</h3>
         <Button type="button" variant="outline" size="sm" onClick={() => setEditing(!editing)}>
           {editing ? "Close agent settings" : "Change agent settings"}
         </Button>
       </div>
-      <div className="space-y-1 text-xs text-muted-foreground">
+      <div className="flex flex-col gap-1 text-xs text-muted-foreground">
         <p className="break-words">
           {value.model
             ? `${value.providerId} · ${value.model} · ${String(value.reasoningLevel ?? "default")} reasoning`
@@ -180,7 +183,7 @@ export function ExecutionSettings({
         <p className="break-all">{targetLabel}</p>
       </div>
       {editing ? (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
             <div className="flex min-w-0 flex-col gap-1">
               <Label htmlFor={`${fieldId}-project`} className="text-xs font-medium">
@@ -252,7 +255,7 @@ export function ExecutionSettings({
             each review.
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="min-w-0 space-y-1">
+            <div className="flex min-w-0 flex-col gap-1">
               <p className="text-xs font-medium">Model &amp; reasoning</p>
               <ProviderModelPicker
                 disabled={loadingDefaults || !value.projectId || !routing}
@@ -284,7 +287,7 @@ export function ExecutionSettings({
                 }
               />
             </div>
-            <div className="space-y-1">
+            <div className="flex flex-col gap-1">
               <p className="text-xs font-medium">Permissions</p>
               <PermissionModePicker
                 routing={routing}

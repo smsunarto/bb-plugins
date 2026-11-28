@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { act, useState } from "react";
+import { act, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type * as PluginSdkApp from "@get-bb/plugin-sdk/app";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SnippetShown } from "../../core/data";
 import { UiRuntimeContext, type UiRuntime } from "../runtime";
-import { Snippet, SourceView } from "./code";
+import { Snippet, SourceView, useDrawnHeight } from "./code";
 
 // BB's viewer, numbered as it mounts, so a new viewer is told from the old one.
 const viewers = vi.hoisted(() => ({ mounted: 0 }));
@@ -144,5 +144,72 @@ describe("Snippet", () => {
   it("says why it cannot show the file, with nothing to copy", () => {
     expect(snippet({ status: "error", error: "file not found" })).toMatchObject({ caption: "src/app.tsL3–5", code: null, copy: false });
     expect(container.textContent).toContain("Couldn't show src/app.ts L3–5: file not found");
+  });
+});
+
+describe("a diagram's held height", () => {
+  /** A box held by useDrawnHeight while BB's placeholder shows. */
+  function Drawing({ source }: { source: string }) {
+    const box = useRef<HTMLDivElement>(null);
+    useDrawnHeight(box, false, source);
+    return (
+      <div ref={box} data-testid="drawing">
+        <p>Rendering diagram...</p>
+      </div>
+    );
+  }
+
+  let frames: Map<number, FrameRequestCallback>;
+  let reads: ReturnType<typeof vi.fn<() => number>>;
+  beforeEach(() => {
+    frames = new Map();
+    let next = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(++next, callback);
+      return next;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+    reads = vi.fn<() => number>(() => 200);
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(reads);
+  });
+
+  /** BB's drawing replacing the placeholder, and its mutation records delivered. */
+  async function draw(): Promise<HTMLElement> {
+    const box = container.querySelector<HTMLElement>('[data-testid="drawing"]')!;
+    await act(async () => {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("aria-roledescription", "flowchart-v2");
+      box.replaceChildren(svg);
+    });
+    return box;
+  }
+
+  function stored(): [string, number][] {
+    return JSON.parse(localStorage.getItem("bb.genui.drawnHeights") ?? "[]") as [string, number][];
+  }
+
+  it("releases the box when it draws and measures it a frame later, never inside the mutation callback", async () => {
+    act(() => root.render(<Drawing source="graph TD; A-->B" />));
+    reads.mockClear();
+    const box = await draw();
+    expect(box.style.minHeight).toBe("");
+    expect(reads).not.toHaveBeenCalled();
+    expect(frames.size).toBe(1);
+    // A later mutation in the same frame asks for no second measurement.
+    await act(async () => box.append(document.createElement("span")));
+    expect(frames.size).toBe(1);
+    act(() => [...frames.values()].forEach((callback) => callback(0)));
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(stored()).toContainEqual([expect.stringMatching(/^l:0:/), 200]);
+  });
+
+  it("cancels the pending measurement when it unmounts", async () => {
+    act(() => root.render(<Drawing source="graph TD; C-->D" />));
+    await draw();
+    expect(frames.size).toBe(1);
+    reads.mockClear();
+    act(() => root.render(<></>));
+    expect(frames.size).toBe(0);
+    expect(reads).not.toHaveBeenCalled();
   });
 });

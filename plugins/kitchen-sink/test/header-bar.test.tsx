@@ -3,7 +3,8 @@ import { installDom } from "@bb-plugins/testing";
 
 installDom();
 
-const { resetHeaderBarRegistry, setHeaderBarSegments } = await import("@bb-plugins/header-bar");
+const { resetHeaderBarRegistry, setHeaderBarSegments, subscribeHeaderBar } =
+  await import("@bb-plugins/header-bar");
 const { act, cleanup, fireEvent } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { COMPACT_VIEWPORT_QUERY } =
@@ -486,5 +487,67 @@ describe("HeaderStatusBar unified host", () => {
       );
     }
     expect(media.callCount).toBe(callsAfterMount);
+  });
+
+  test("keeps useHeaderBarSnapshot subscribed once across re-renders and ignores unrelated sidebar thread updates", () => {
+    const parent = makeThread({ id: "thr_parent", displayTitle: "Parent", createdAt: 1 });
+    const child = makeThread({
+      id: "thr_child",
+      displayTitle: "Child",
+      parentThreadId: "thr_parent",
+      createdAt: 2,
+    });
+    const other = makeThread({ id: "thr_other", displayTitle: "Other", createdAt: 3 });
+
+    const sidebarThreads = { threads: [parent, child, other] };
+    const SlotComponent = statusBarSlot.component;
+    const rendered = renderSlot(
+      statusBarSlot,
+      { threadId: "thr_child", projectId: "proj_1", environment: null },
+      { sidebarThreads },
+    );
+
+    // Track registry notifications after initial mount.
+    let notifications = 0;
+    const unsub = subscribeHeaderBar("thr_child", () => {
+      notifications += 1;
+    });
+
+    // Spy on listener Set additions for thr_child via global registry symbol.
+    const reg = (
+      globalThis as Record<symbol, { listenersByThread: Map<string, Set<() => void>> } | undefined>
+    )[Symbol.for("bb-plugins.header-bar.registry.v1")];
+    const listeners = reg?.listenersByThread.get("thr_child");
+    if (!listeners) throw new Error("expected thr_child listeners");
+    let adds = 0;
+    const origAdd = listeners.add.bind(listeners);
+    listeners.add = ((fn: () => void) => {
+      adds += 1;
+      return origAdd(fn);
+    }) as typeof listeners.add;
+
+    try {
+      for (let i = 0; i < 20; i += 1) {
+        rendered.rerender(
+          <SlotComponent threadId="thr_child" projectId="proj_1" environment={null} />,
+        );
+      }
+      // useHeaderBarSnapshot must not unsubscribe/resubscribe on re-renders.
+      expect(adds).toBe(0);
+
+      // Updating an unrelated sidebar thread (new array ref) must not republish or notify thr_child.
+      sidebarThreads.threads = [
+        parent,
+        child,
+        makeThread({ id: "thr_other", displayTitle: "Other (updated)", createdAt: 3 }),
+      ];
+      rendered.rerender(
+        <SlotComponent threadId="thr_child" projectId="proj_1" environment={null} />,
+      );
+      expect(notifications).toBe(0);
+    } finally {
+      listeners.add = origAdd;
+      unsub();
+    }
   });
 });

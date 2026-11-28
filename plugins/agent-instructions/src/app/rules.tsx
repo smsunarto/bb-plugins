@@ -306,7 +306,7 @@ function RulesEditor({
   const addRule = useAddRule(draft, setDraft);
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       {draft.length === 0 && (
         <EmptyState message="No rules yet. A rule with no scope applies to every agent." />
       )}
@@ -372,7 +372,7 @@ export function RulesPage({ selected }: { selected: string | null }) {
   return (
     <QueryClientProvider client={queryClient}>
       <div className="h-full min-h-0 overflow-y-auto p-4 md:p-5">
-        <div className="mx-auto w-full max-w-3xl space-y-4">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
           <p className="text-sm text-muted-foreground">
             Rules appended to agent instructions. Scope a rule to a machine, provider, model, or
             project. Changes apply when a thread's agent session next starts.

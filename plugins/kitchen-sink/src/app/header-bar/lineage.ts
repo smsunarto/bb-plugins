@@ -8,6 +8,68 @@ function isVisibleThread(thread: PluginSidebarThread): boolean {
   return !thread.isArchived && !thread.isHidden;
 }
 
+export interface KitchenSinkLineage {
+  readonly parentId: string;
+  readonly parentTitle: string;
+  readonly isFork: boolean;
+}
+
+/**
+ * Find the minimal primitive lineage info for `threadId` in a single pass
+ * without building an intermediate Map over all sidebar threads.
+ */
+export function resolveKitchenSinkLineage(
+  threadId: string,
+  threads: readonly PluginSidebarThread[],
+): KitchenSinkLineage | null {
+  let current: PluginSidebarThread | undefined;
+  for (const thread of threads) {
+    if (thread.id === threadId) {
+      if (isVisibleThread(thread)) current = thread;
+      break;
+    }
+  }
+  if (current === undefined) return null;
+
+  const isFork = current.originKind === "fork" && current.sourceThreadId !== null;
+  const parentId = isFork ? current.sourceThreadId : current.parentThreadId;
+  if (parentId === null || parentId === threadId) return null;
+
+  for (const thread of threads) {
+    if (thread.id === parentId) {
+      if (!isVisibleThread(thread)) return null;
+      return { parentId: thread.id, parentTitle: thread.displayTitle, isFork };
+    }
+  }
+  return null;
+}
+
+export function buildKitchenSinkLineageSegments(args: {
+  readonly parentId: string;
+  readonly parentTitle: string;
+  readonly isFork: boolean;
+  readonly onOpenThread: (threadId: string, options?: HeaderBarClickOptions) => void;
+}): readonly HeaderBarSegment[] {
+  const { parentId, parentTitle, isFork, onOpenThread } = args;
+  const prefix = isFork ? "Forked from" : "Parent";
+  return [
+    {
+      owner: "kitchen-sink",
+      slot: "lineage",
+      priority: KITCHEN_SINK_LINEAGE_PRIORITY,
+      prefixIcon: isFork ? "GitBranch" : "ArrowLeft",
+      label: parentTitle,
+      tag: isFork ? "Fork" : undefined,
+      tone: "muted",
+      shrink: true,
+      ariaLabel: `${prefix}: ${parentTitle}`,
+      title: `${prefix}: ${parentTitle}`,
+      testId: "ks-hb-lineage",
+      onClick: (options) => onOpenThread(parentId, options),
+    },
+  ];
+}
+
 /**
  * Resolve Kitchen Sink's fallback header-bar segment for a thread:
  * - `lineage` (priority 20): parent or fork jump link when `parentThreadId` or
@@ -21,35 +83,10 @@ export function buildKitchenSinkHeaderSegments(args: {
   readonly threads: readonly PluginSidebarThread[];
   readonly onOpenThread: (threadId: string, options?: HeaderBarClickOptions) => void;
 }): readonly HeaderBarSegment[] {
-  const { threadId, threads, onOpenThread } = args;
-  const visible = threads.filter(isVisibleThread);
-  const byId = new Map<string, PluginSidebarThread>();
-  for (const thread of visible) byId.set(thread.id, thread);
-
-  const current = byId.get(threadId);
-  if (current === undefined) return [];
-
-  const isFork = current.originKind === "fork" && current.sourceThreadId !== null;
-  const parentId = isFork ? current.sourceThreadId : current.parentThreadId;
-  const parentThread =
-    parentId !== null && parentId !== threadId ? (byId.get(parentId) ?? null) : null;
-  if (parentThread === null) return [];
-
-  const prefix = isFork ? "Forked from" : "Parent";
-  return [
-    {
-      owner: "kitchen-sink",
-      slot: "lineage",
-      priority: KITCHEN_SINK_LINEAGE_PRIORITY,
-      prefixIcon: isFork ? "GitBranch" : "ArrowLeft",
-      label: parentThread.displayTitle,
-      tag: isFork ? "Fork" : undefined,
-      tone: "muted",
-      shrink: true,
-      ariaLabel: `${prefix}: ${parentThread.displayTitle}`,
-      title: `${prefix}: ${parentThread.displayTitle}`,
-      testId: "ks-hb-lineage",
-      onClick: (options) => onOpenThread(parentThread.id, options),
-    },
-  ];
+  const lineage = resolveKitchenSinkLineage(args.threadId, args.threads);
+  if (lineage === null) return [];
+  return buildKitchenSinkLineageSegments({
+    ...lineage,
+    onOpenThread: args.onOpenThread,
+  });
 }

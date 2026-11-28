@@ -239,24 +239,29 @@ function sdkErrorCode(error: unknown): string | null {
     : null;
 }
 
-/** The newest error a thread's event log recorded, as `type: message`. */
-function latestErrorDetail(result: { events?: unknown[] }): string | null {
-  const events = Array.isArray(result.events) ? result.events : [];
-  for (const raw of [...events].reverse()) {
-    const event = raw as {
-      type?: unknown;
-      message?: unknown;
-      error?: unknown;
-    };
+/** Error events `describeThreadFailure` reads, newest first, at most this many. */
+export const FAILURE_EVENT_TYPES = ["provider/error", "system/error"] as const;
+export const FAILURE_EVENT_LIMIT = 10;
+
+/**
+ * The newest error among `events`, as `type: message`. `events` is newest
+ * first, as `threads.events.list({ order: "desc" })` returns it; a row keeps
+ * the event's fields under `data`.
+ */
+export function latestErrorDetail(events: readonly unknown[]): string | null {
+  for (const raw of events) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const event = raw as { type?: unknown; data?: unknown; message?: unknown; error?: unknown };
     const type = typeof event.type === "string" ? event.type : "";
     if (!type.includes("error")) continue;
-    const message =
-      typeof event.message === "string"
-        ? event.message
-        : typeof event.error === "string"
-          ? event.error
-          : JSON.stringify(event).slice(0, 400);
-    if (message.length > 0) return `${type}: ${message}`;
+    const data =
+      typeof event.data === "object" && event.data !== null
+        ? (event.data as { message?: unknown; error?: unknown })
+        : {};
+    const message = [data.message, data.error, event.message, event.error].find(
+      (value): value is string => typeof value === "string" && value.length > 0,
+    );
+    return `${type}: ${message ?? JSON.stringify(raw).slice(0, 400)}`;
   }
   return null;
 }
@@ -1193,11 +1198,17 @@ function createServices(
     reported: string | null,
   ) {
     if (reported !== null && reported.trim().length > 0) return reported;
-    const detail = yield* Effect.promise(
-      async () =>
-        (await bb.sdk.threads.events.list({ threadId } as never)) as { events?: unknown[] },
+    // Only the newest few error events: a long review's full log is thousands of rows.
+    const detail = yield* Effect.promise(async (signal) =>
+      bb.sdk.threads.events.list({
+        threadId,
+        order: "desc",
+        limit: String(FAILURE_EVENT_LIMIT),
+        types: FAILURE_EVENT_TYPES,
+        signal,
+      }),
     ).pipe(
-      Effect.map(latestErrorDetail),
+      Effect.map((events) => latestErrorDetail(Array.isArray(events) ? events : [])),
       recover((error) =>
         Effect.as(
           Effect.logWarning(`could not read failure detail for ${threadId}: ${messageOf(error)}`),
@@ -1209,6 +1220,8 @@ function createServices(
   });
 
   bb.events.on("thread.failed", ({ thread, error }) => {
+    // Most failed threads are not reviews; skip reading their event logs.
+    if (store.findRunByThread(thread.id) === null) return;
     finishInBackground(
       thread.id,
       describeThreadFailure(thread.id, error).pipe(

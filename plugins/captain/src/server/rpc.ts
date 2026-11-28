@@ -188,10 +188,15 @@ export function registerRpc(
   });
 
   const captainOf = (read: object) => captainOfRead(deps.registry, read);
+  // Every watch loop ends with the plugin instance, even one bb never tells to stop.
+  const lifetime = new AbortController();
+  bb.onDispose(() => lifetime.abort());
+  const within = (signal: AbortSignal) => AbortSignal.any([signal, lifetime.signal]);
   registerCrewWatch(
     deps,
     captainOf,
-    createCrewWatch(deps, crewPollMs, crewReads.changed),
+    within,
+    createCrewWatch(deps, crewPollMs, crewReads.changed, lifetime),
     (captainId, signal) =>
       watchTasks(deps, captainId, signal, tasksPollMs, {
         crewReads,
@@ -200,7 +205,7 @@ export function registerRpc(
         owners,
       }),
   );
-  registerDriveScan(deps, captainOf, driveScanMs);
+  registerDriveScan(deps, captainOf, within, driveScanMs);
 
   registerEvents(deps, crewReads.changed);
   return { ownersReady };
@@ -215,13 +220,15 @@ export function registerRpc(
 function registerCrewWatch(
   deps: CommandDeps,
   captainOf: (read: object) => string | null,
+  within: (signal: AbortSignal) => AbortSignal,
   crewWatch: (captainId: string, signal: AbortSignal) => Promise<void>,
   tasksWatch: (captainId: string, signal: AbortSignal) => Promise<void>,
 ): void {
   for (const method of ["crew", "crewRoster", "tasks"] as const) {
-    deps.bb.rpc.experimental_whileWatched(method, async (read, signal) => {
+    deps.bb.rpc.experimental_whileWatched(method, async (read, watched) => {
       const captainId = captainOf(read);
       if (captainId === null) return;
+      const signal = within(watched);
       if (method === "tasks") {
         await Promise.all([crewWatch(captainId, signal), tasksWatch(captainId, signal)]);
         return;
@@ -301,12 +308,14 @@ function tasksMoved(
 function registerDriveScan(
   deps: CommandDeps,
   captainOf: (read: object) => string | null,
+  within: (signal: AbortSignal) => AbortSignal,
   driveScanMs: number | undefined,
 ): void {
   const { bb } = deps;
-  bb.rpc.experimental_whileWatched("drive", (read, signal) => {
+  bb.rpc.experimental_whileWatched("drive", (read, watched) => {
     const captainId = captainOf(read);
     if (captainId === null) return Promise.resolve();
+    const signal = within(watched);
     return watchDrive({
       scan: () => driveSignature(deps, captainId),
       baseline: () => deps.registry.driveBaseline(captainId),
@@ -328,21 +337,33 @@ function captainOfRead(registry: CommandDeps["registry"], read: object): string 
 /**
  * One crew poll per Captain however many of its reads are watched: the first
  * watcher starts it, the last one to leave stops it. Resolves for each
- * watcher when its own `signal` aborts.
+ * watcher when its own `signal` aborts. A read that finds the plugin context
+ * gone (a reload or disable) ends `lifetime`, which stops every loop at once
+ * instead of failing on every tick.
  */
 function createCrewWatch(
   deps: CommandDeps,
   crewPollMs: number,
   changed: (captainId: string) => void,
+  lifetime: AbortController,
 ) {
   const { bb } = deps;
   const loops = new Map<string, { watchers: number; stop: AbortController }>();
+  lifetime.signal.addEventListener(
+    "abort",
+    () => {
+      for (const loop of loops.values()) loop.stop.abort();
+      loops.clear();
+    },
+    { once: true },
+  );
 
   async function poll(captainId: string, signal: AbortSignal): Promise<void> {
     let last: string | null = null;
     while (!signal.aborted) {
       try {
         const threads = await listChildren(bb, captainId, false, signal);
+        if (signal.aborted) return;
         const shape = threads
           .map(
             (thread) =>
@@ -356,7 +377,16 @@ function createCrewWatch(
         last = shape;
       } catch (error) {
         if (signal.aborted) return;
-        bb.log.warn(`crew watch for ${captainId}: ${(error as Error).message}`);
+        if (isContextGone(error)) {
+          lifetime.abort();
+          return;
+        }
+        try {
+          bb.log.warn(`crew watch for ${captainId}: ${(error as Error).message}`);
+        } catch {
+          lifetime.abort();
+          return;
+        }
       }
       await sleep(crewPollMs, signal);
     }
@@ -364,7 +394,7 @@ function createCrewWatch(
 
   return (captainId: string, signal: AbortSignal): Promise<void> =>
     new Promise((resolve) => {
-      if (signal.aborted) return resolve();
+      if (signal.aborted || lifetime.signal.aborted) return resolve();
       let loop = loops.get(captainId);
       if (loop === undefined) {
         loop = { watchers: 0, stop: new AbortController() };
@@ -651,6 +681,19 @@ function changes(before: Routine, draft: RoutineDraft): Partial<RoutineFields> {
     ...(draft.instruction.trim() === before.instruction ? {} : { instruction: draft.instruction }),
     ...(sameSchedule ? {} : { schedule: draft.schedule }),
   };
+}
+
+/**
+ * An error that no retry of the same call can fix, because this plugin
+ * instance is finished: bb's stale-context error after a reload or disable,
+ * or its closed database.
+ */
+export function isContextGone(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.name === "PluginContextStaleError" ||
+    /database connection is not open|database is closed/iu.test(error.message)
+  );
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {

@@ -17,9 +17,8 @@ async function tree() {
     { component: DocumentTree },
     { paths, selectedPath: "AGENTS.md", filtering: false, onOpen },
   );
-  const host = slot.container.querySelector("file-tree-container")!;
   const row = (path: string) =>
-    host.shadowRoot?.querySelector<HTMLElement>(`[data-item-path="${path}"]`);
+    slot.container.querySelector<HTMLElement>(`[data-item-path="${path}"]`);
   await waitFor(() => expect(row("AGENTS.md")).toBeTruthy());
   const update = (selectedPath: string, filtering = false, files = paths) =>
     slot.lifecycle.rerender(
@@ -115,6 +114,42 @@ test("browsing a folder uses native tree selection without opening a file", asyn
     fireEvent.click(row(folder)!);
     await waitFor(() => expect(row(folder)?.getAttribute("aria-selected")).toBe("true"));
     expect(calls).toEqual([]);
+  } finally {
+    slot.unmount();
+  }
+});
+
+test("keyboard navigation moves focus and expands or collapses folders", async () => {
+  const { slot, row } = await tree();
+  try {
+    const folder = ".agents/skills/review/";
+    const skill = paths[1]!;
+    const refs = ".agents/skills/review/references/";
+    const refFile = paths[2]!;
+    const treeEl = slot.getByRole("tree", { name: "Instruction and skill file tree" });
+
+    row("AGENTS.md")!.focus();
+    fireEvent.keyDown(treeEl, { key: "Home" });
+    expect(document.activeElement).toBe(row(folder));
+    expect(row(folder)?.getAttribute("aria-expanded")).toBe("true");
+
+    // ArrowLeft collapses an open folder; ArrowRight re-expands it; second ArrowRight enters child.
+    fireEvent.keyDown(treeEl, { key: "ArrowLeft" });
+    await waitFor(() => expect(row(folder)?.getAttribute("aria-expanded")).toBe("false"));
+    fireEvent.keyDown(treeEl, { key: "ArrowRight" });
+    await waitFor(() => expect(row(folder)?.getAttribute("aria-expanded")).toBe("true"));
+    fireEvent.keyDown(treeEl, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(row(refs));
+
+    // ArrowDown -> refFile, ArrowLeft from file -> parent folder, End -> last row, ArrowUp -> previous.
+    fireEvent.keyDown(treeEl, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(row(refFile));
+    fireEvent.keyDown(treeEl, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(row(refs));
+    fireEvent.keyDown(treeEl, { key: "End" });
+    expect(document.activeElement).toBe(row("AGENTS.md"));
+    fireEvent.keyDown(treeEl, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(row(skill));
   } finally {
     slot.unmount();
   }

@@ -5,12 +5,23 @@ import {
   LOCAL_SERVER_ARGS,
   type LocalServerChild,
   type LocalServerDeps,
+  type LocalServerSignal,
 } from "../lib/local-server.ts";
 
-type FakeChild = LocalServerChild & { exit(): void; killed: boolean };
+type FakeChild = LocalServerChild & {
+  exit(): void;
+  killed: boolean;
+  signals: LocalServerSignal[];
+};
 
 function harness(
-  options: { busy?: boolean; binary?: string | null; recorded?: number | null } = {},
+  options: {
+    busy?: boolean;
+    binary?: string | null;
+    recorded?: number | null;
+    /** Processes ignore SIGTERM, as a hung server does. */
+    ignoreTerm?: boolean;
+  } = {},
 ) {
   let busy = options.busy ?? false;
   let clock = 0;
@@ -18,6 +29,7 @@ function harness(
   const children: FakeChild[] = [];
   const commands = new Map<number, string>();
   const killedPids: number[] = [];
+  const pidSignals: Array<[number, LocalServerSignal]> = [];
   let recorded: number | null = options.recorded ?? null;
   let leases = 0;
   let nextPid = 100;
@@ -34,7 +46,10 @@ function harness(
         pid,
         exited,
         killed: false,
-        kill() {
+        signals: [],
+        kill(signal = "SIGTERM") {
+          child.signals.push(signal);
+          if (signal === "SIGTERM" && options.ignoreTerm) return;
           child.killed = true;
           child.exit();
         },
@@ -55,7 +70,9 @@ function harness(
       recorded = pid;
     },
     commandOf: async (pid) => commands.get(pid) ?? null,
-    killPid(pid) {
+    killPid(pid, signal = "SIGTERM") {
+      pidSignals.push([pid, signal]);
+      if (signal === "SIGTERM" && options.ignoreTerm) return;
       killedPids.push(pid);
       commands.delete(pid);
       busy = false;
@@ -88,6 +105,8 @@ function harness(
     children,
     commands,
     killedPids,
+    pidSignals,
+    clock: () => clock,
     leases: () => leases,
     recorded: () => recorded,
     setBusy: (value: boolean) => (busy = value),
@@ -166,6 +185,57 @@ describe("shared Agentation server supervisor", () => {
     expect(h.children[0]?.killed).toBe(true);
     expect(h.leases()).toBe(0);
     expect(h.recorded()).toBeNull();
+  });
+
+  test("stopping a server that ignores SIGTERM escalates to SIGKILL within the grace period", async () => {
+    const h = harness({ ignoreTerm: true });
+    await h.supervisor.ensure(true, h.retain);
+    const before = h.clock();
+    const result = await h.supervisor.ensure(false, h.retain);
+    expect(result.state).toBe("stopped");
+    expect(h.children[0]?.signals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(h.clock() - before).toBeGreaterThanOrEqual(2000);
+    expect(h.clock() - before).toBeLessThan(3000);
+    expect(h.recorded()).toBeNull();
+    expect(h.leases()).toBe(0);
+  });
+
+  test("a server that survives SIGKILL does not stall the stop", async () => {
+    const h = harness({ ignoreTerm: true });
+    await h.supervisor.ensure(true, h.retain);
+    const child = h.children[0]!;
+    child.kill = (signal = "SIGTERM") => void child.signals.push(signal);
+    const before = h.clock();
+    expect((await h.supervisor.ensure(false, h.retain)).state).toBe("stopped");
+    expect(child.signals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(h.clock() - before).toBeLessThanOrEqual(3100);
+  });
+
+  test("a clean exit on SIGTERM is not killed", async () => {
+    const h = harness();
+    await h.supervisor.ensure(true, h.retain);
+    await h.supervisor.ensure(false, h.retain);
+    expect(h.children[0]?.signals).toEqual(["SIGTERM"]);
+  });
+
+  test("an adopted server that ignores SIGTERM is killed by PID", async () => {
+    const h = harness({ busy: true, recorded: 77, ignoreTerm: true });
+    h.commands.set(77, `node /bin/agentation-mcp ${LOCAL_SERVER_ARGS.join(" ")}`);
+    expect((await h.supervisor.ensure(true, h.retain)).pid).toBe(77);
+    await h.supervisor.ensure(false, h.retain);
+    expect(h.pidSignals).toEqual([
+      [77, "SIGTERM"],
+      [77, "SIGKILL"],
+    ]);
+  });
+
+  test("disposing the worker escalates and settles", async () => {
+    const h = harness({ ignoreTerm: true });
+    await h.supervisor.ensure(true, h.retain);
+    await h.supervisor.dispose();
+    expect(h.children[0]?.signals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(h.recorded()).toBeNull();
+    expect(h.leases()).toBe(0);
   });
 
   test("adopts the server an earlier worker started, and can stop it", async () => {

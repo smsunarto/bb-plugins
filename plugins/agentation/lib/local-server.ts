@@ -11,6 +11,8 @@
  *   recorded, and the next worker adopts it after confirming its command line.
  * - A crash restarts the server with a growing delay, at most five times in
  *   ten minutes; after that it stays down until the next ensure call.
+ * - Stopping sends SIGTERM, waits up to two seconds, then sends SIGKILL and
+ *   waits a further second at most, so a hung server cannot stall a stop.
  */
 import { LOCAL_SERVER_PORT, type LocalServerState } from "./local-server-contract.ts";
 
@@ -27,12 +29,18 @@ const READY_POLL_MS = 200;
 const RECHECK_MS = 60_000;
 const CRASH_WINDOW_MS = 10 * 60_000;
 const MAX_CRASHES = 5;
+const STOP_GRACE_MS = 2000;
+const KILL_WAIT_MS = 1000;
+const STOP_POLL_MS = 100;
+
+export type LocalServerSignal = "SIGTERM" | "SIGKILL";
 
 export interface LocalServerChild {
   readonly pid: number;
   /** Settles once when the process exits. */
   readonly exited: Promise<void>;
-  kill(): void;
+  /** Signal the process, SIGTERM by default; a no-op once it has exited. */
+  kill(signal?: LocalServerSignal): void;
 }
 
 export interface LocalServerLease {
@@ -51,7 +59,7 @@ export interface LocalServerDeps {
   recordPid(pid: number | null): Promise<void>;
   /** The command line of a live process, or null when it is gone. */
   commandOf(pid: number): Promise<string | null>;
-  killPid(pid: number): void;
+  killPid(pid: number, signal?: LocalServerSignal): void;
   now(): number;
   sleep(ms: number): Promise<void>;
   setTimer(callback: () => void, ms: number): () => void;
@@ -168,6 +176,59 @@ export function createLocalServerSupervisor(deps: LocalServerDeps) {
     }, delay);
   }
 
+  /** Poll `gone` until it holds or `ms` pass; wakes early when `exited` settles. */
+  async function waitUntilGone(
+    gone: () => boolean | Promise<boolean>,
+    ms: number,
+    exited?: Promise<void>,
+  ): Promise<boolean> {
+    const deadline = deps.now() + ms;
+    for (;;) {
+      if (await gone()) return true;
+      if (deps.now() >= deadline) return false;
+      const pause = deps.sleep(STOP_POLL_MS);
+      await (exited ? Promise.race([exited, pause]) : pause);
+    }
+  }
+
+  /** SIGTERM, then SIGKILL after the grace period; never waits unboundedly. */
+  async function terminateChild(running: LocalServerChild): Promise<void> {
+    let exited = false;
+    void running.exited.then(() => {
+      exited = true;
+    });
+    running.kill("SIGTERM");
+    if (await waitUntilGone(() => exited, STOP_GRACE_MS, running.exited)) return;
+    deps.log(`agentation server (pid ${running.pid}) ignored SIGTERM; sending SIGKILL`);
+    running.kill("SIGKILL");
+    if (!(await waitUntilGone(() => exited, KILL_WAIT_MS, running.exited))) {
+      deps.log(`agentation server (pid ${running.pid}) did not exit after SIGKILL`);
+    }
+  }
+
+  /** The same escalation for a server an earlier worker started, watched by PID. */
+  async function terminatePid(pid: number): Promise<void> {
+    // A PID whose command is no longer the server has exited, even if reused.
+    const gone = async () => {
+      const command = await deps.commandOf(pid);
+      return command === null || !isLocalServerCommand(command);
+    };
+    deps.killPid(pid, "SIGTERM");
+    if (await waitUntilGone(gone, STOP_GRACE_MS)) return;
+    deps.log(`agentation server (pid ${pid}) ignored SIGTERM; sending SIGKILL`);
+    deps.killPid(pid, "SIGKILL");
+    if (!(await waitUntilGone(gone, KILL_WAIT_MS))) {
+      deps.log(`agentation server (pid ${pid}) did not exit after SIGKILL`);
+    }
+  }
+
+  function terminate(running: LocalServerChild | null, pid: number | null): Promise<unknown> {
+    return Promise.all([
+      running ? terminateChild(running) : undefined,
+      pid !== null ? terminatePid(pid) : undefined,
+    ]);
+  }
+
   async function start(): Promise<LocalServerState> {
     if (child) return set(state("running", child.pid));
     if (adopted !== null) {
@@ -232,13 +293,10 @@ export function createLocalServerSupervisor(deps: LocalServerDeps) {
     clearRecheck();
     crashes = [];
     const running = child;
+    const pid = adopted;
     child = null;
-    running?.kill();
-    if (adopted !== null) {
-      deps.killPid(adopted);
-      adopted = null;
-    }
-    if (running) await running.exited;
+    adopted = null;
+    await terminate(running, pid);
     await deps.recordPid(null);
     release();
     return set(state("stopped"));
@@ -254,16 +312,21 @@ export function createLocalServerSupervisor(deps: LocalServerDeps) {
       return run(start);
     },
     current: () => current,
-    /** Stop a server this worker started. Called when the worker is disposed. */
-    dispose(): void {
+    /**
+     * Stop a server this worker started. Called when the worker is disposed;
+     * settles once the server exits, within the bounded stop escalation.
+     */
+    async dispose(): Promise<void> {
       enabled = false;
       clearRecheck();
-      child?.kill();
+      const running = child;
+      const pid = adopted;
       child = null;
-      if (adopted !== null) deps.killPid(adopted);
       adopted = null;
+      const stopped = terminate(running, pid);
       void deps.recordPid(null);
       release();
+      await stopped;
     },
   };
 }

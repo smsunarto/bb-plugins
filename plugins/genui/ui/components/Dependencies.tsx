@@ -416,7 +416,7 @@ function Group({ group, defaultOpen }: { group: OutdatedGroup; defaultOpen: bool
           </span>
         </CollapsibleTrigger>
         <CollapsibleContent id={`${id}-packages`} role="region" aria-labelledby={`${id}-group`} className="flex min-w-0 flex-col">
-            <ul className="m-0 flex min-w-0 list-none flex-col divide-y divide-border/50 p-0">
+            <ul className="m-0 flex min-w-0 list-none flex-col p-0 [&>li+li]:border-t [&>li+li]:border-border">
               {group.packages.slice(0, shown).map((item, index) => (
                 <OutdatedRow key={index} item={item} tone={tone} />
               ))}

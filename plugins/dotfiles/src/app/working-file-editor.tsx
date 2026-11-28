@@ -1,10 +1,22 @@
-import { MarkdownEditor } from "@bb-plugins/markdown-editor";
 import { useEffect, useLayoutEffect, useRef, type ReactElement } from "react";
-import { basicSetup } from "codemirror";
+import { minimalSetup } from "codemirror";
 import { Annotation, EditorState, StateEffect } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import {
+  EditorView,
+  dropCursor,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  keymap,
+  lineNumbers,
+} from "@codemirror/view";
 import { tags } from "@lezer/highlight";
-import { HighlightStyle, syntaxHighlighting, LanguageDescription } from "@codemirror/language";
+import {
+  HighlightStyle,
+  LanguageDescription,
+  bracketMatching,
+  indentOnInput,
+  syntaxHighlighting,
+} from "@codemirror/language";
 import { languages } from "./editor-languages.ts";
 import type { RepoPath } from "./route.ts";
 
@@ -16,6 +28,20 @@ export interface WorkingFileEditorProps {
 }
 
 const externalChange = Annotation.define<boolean>();
+/**
+ * What a dotfile editor needs, without `basicSetup`'s autocompletion, lint,
+ * folding, and search panels. `minimalSetup` brings undo history, the default
+ * and history keymaps, drawn selections, and special-character highlighting.
+ */
+const editingSetup = [
+  minimalSetup,
+  lineNumbers(),
+  highlightActiveLine(),
+  highlightActiveLineGutter(),
+  dropCursor(),
+  indentOnInput(),
+  bracketMatching(),
+];
 const editorTheme = EditorView.theme({
   "&": { height: "100%", backgroundColor: "var(--background)", color: "var(--foreground)" },
   ".cm-scroller": { overflow: "auto", fontFamily: "var(--font-mono, monospace)", fontSize: "12px" },
@@ -33,19 +59,23 @@ const editorTheme = EditorView.theme({
   },
 });
 
-function SourceEditor({
+/**
+ * Source editing for every file, Markdown included: Markdown gets CodeMirror's
+ * Markdown language rather than a rich-text editor, which kept ~600 KB of
+ * TipTap in the startup bundle.
+ */
+export function WorkingFileEditor({
   path,
   value,
   onChange,
   onSave,
-  onBlur = onSave,
-}: WorkingFileEditorProps & { onBlur?: () => void }): ReactElement {
+}: WorkingFileEditorProps): ReactElement {
   const container = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const callbacks = useRef({ value, onChange, onSave, onBlur });
+  const callbacks = useRef({ value, onChange, onSave });
   useLayoutEffect(() => {
-    callbacks.current = { value, onChange, onSave, onBlur };
-  }, [value, onChange, onSave, onBlur]);
+    callbacks.current = { value, onChange, onSave };
+  }, [value, onChange, onSave]);
 
   useEffect(() => {
     if (!container.current) return;
@@ -54,7 +84,7 @@ function SourceEditor({
       state: EditorState.create({
         doc: callbacks.current.value,
         extensions: [
-          basicSetup,
+          editingSetup,
           EditorState.lineSeparator.of(callbacks.current.value.includes("\r\n") ? "\r\n" : "\n"),
           editorTheme,
           syntaxHighlighting(
@@ -80,7 +110,7 @@ function SourceEditor({
           ]),
           EditorView.domEventHandlers({
             blur: () => {
-              callbacks.current.onBlur();
+              callbacks.current.onSave();
             },
           }),
           EditorView.updateListener.of((update) => {
@@ -119,20 +149,4 @@ function SourceEditor({
     }
   }, [value]);
   return <div ref={container} className="min-h-0 flex-1 overflow-hidden" />;
-}
-
-export function WorkingFileEditor(props: WorkingFileEditorProps): ReactElement {
-  if (!/\.(md|markdown)$/i.test(props.path)) return <SourceEditor {...props} />;
-  return (
-    <MarkdownEditor
-      key={props.path}
-      aria-label={`Edit ${props.path}`}
-      value={props.value}
-      onChange={props.onChange}
-      onSave={props.onSave}
-      onBlur={props.onSave}
-      className="min-h-0 flex-1 overflow-hidden"
-      renderSource={(source) => <SourceEditor path={props.path} {...source} onBlur={() => {}} />}
-    />
-  );
 }

@@ -58,8 +58,6 @@ export function createLanded(deps: {
   store: Store;
   watcher: PrWatcher;
   read: Read;
-  /** The closing reply of the thread's last turn, or null. */
-  lastReply: (threadId: string) => Promise<string | null>;
   now: () => number;
   standingDown: () => boolean;
 }) {
@@ -211,13 +209,12 @@ export function createLanded(deps: {
 
     /**
      * The thread's turn ended. A landed directive its agent wrote by hand in
-     * the closing reply is registered as the tool would: GitHub decides what
+     * the closing reply (bb's `thread.idle` text) is registered as the tool would: GitHub decides what
      * landed, never the reply. A list already registered is not read again.
      */
-    async replied(threadId: string): Promise<void> {
+    async replied(threadId: string, reply: string | null): Promise<void> {
       if (deps.standingDown()) return;
       try {
-        const reply = await deps.lastReply(threadId);
         const listed = reply ? handWrittenLanded(reply) : null;
         if (!listed) return;
         const signature = JSON.stringify(listed);

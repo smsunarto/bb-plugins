@@ -25,20 +25,46 @@ async function readCursorSound(bb: BbPluginApi): Promise<Uint8Array<ArrayBuffer>
 }
 
 /**
+ * How long a miss is remembered. Fleets without Cursor (Linux, or Macs without
+ * it) would otherwise list every host and read from each on every page load.
+ */
+export const COMPLETION_SOUND_MISS_TTL_MS = 10 * 60_000;
+
+export interface CompletionSoundOptions {
+  readonly missTtlMs?: number;
+  readonly now?: () => number;
+}
+
+/**
  * Serve the completion sound to the browser, which plays it: the bb server may
  * run on another machine than the user's speakers. The bytes come from any
  * connected host with Cursor installed and stay in memory once found. A 404
- * tells the app to synthesize its own chime.
+ * tells the app to synthesize its own chime; a miss is cached for
+ * {@link COMPLETION_SOUND_MISS_TTL_MS} before hosts are asked again.
  */
-export function registerCompletionSound(bb: BbPluginApi): void {
+export function registerCompletionSound(
+  bb: BbPluginApi,
+  options: CompletionSoundOptions = {},
+): void {
+  const missTtlMs = options.missTtlMs ?? COMPLETION_SOUND_MISS_TTL_MS;
+  const now = options.now ?? Date.now;
   let sound: Promise<Uint8Array<ArrayBuffer> | null> | null = null;
+  let missedAt: number | null = null;
   bb.http.route("GET", COMPLETION_SOUND_PATH, async () => {
-    sound ??= readCursorSound(bb).catch(() => null);
-    const bytes = await sound;
-    if (bytes === null) {
-      sound = null;
+    if (missedAt !== null && now() - missedAt < missTtlMs) {
       return new Response(null, { status: 404 });
     }
+    sound ??= readCursorSound(bb).catch(() => null);
+    const pending = sound;
+    const bytes = await pending;
+    if (bytes === null) {
+      if (sound === pending) {
+        sound = null;
+        missedAt = now();
+      }
+      return new Response(null, { status: 404 });
+    }
+    missedAt = null;
     return new Response(bytes, {
       headers: { "content-type": "audio/mpeg", "cache-control": "private, max-age=86400" },
     });

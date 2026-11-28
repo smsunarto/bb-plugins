@@ -4228,3 +4228,73 @@ test("a newer failure stays with the host that made the request", async () => {
     "thread-b": { pullRequest: { number: 482 }, forge: { state: "failed" } },
   });
 });
+
+describe("refresh, signal, and idle efficiency", () => {
+  test("background refreshThread keeps the forge account probe cache; reprobe: true resets it", async () => {
+    const world = twoHosts();
+    world.serverAccounts = [];
+    // Initially no gh account on host-a, so the empty probe result is cached.
+    world.hosts["host-a"]!.ghAccounts = [];
+    const { harness, checkout, hostCalls } = await start(world);
+
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(hostCalls("forgeAccounts")).toHaveLength(1);
+    expect((await checkout("thread-a")).forge.problem).toMatchObject({ kind: "no-site" });
+
+    // User signs in on host-a. Background refresh (default reprobe=false) keeps the cached probe.
+    world.hosts["host-a"]!.ghAccounts = ["smsunarto"];
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(hostCalls("forgeAccounts")).toHaveLength(1);
+
+    // Explicit user retry (reprobe: true) resets the probe cache, re-probes host-a, and succeeds.
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a", reprobe: true });
+    expect(hostCalls("forgeAccounts")).toHaveLength(2);
+    expect((await checkout("thread-a")).forge.problem).toBeNull();
+  });
+
+  test("refreshThread aborts promptly when the caller's signal aborts", async () => {
+    const world = twoHosts();
+    world.hosts["host-a"]!.hung = true;
+    const { harness } = await start(world, { hostDeadlineMs: 30_000 });
+    const controller = new AbortController();
+    const call = harness.behavior.callRpc(
+      "refreshThread",
+      { threadId: "thread-a" },
+      { signal: controller.signal },
+    );
+    const reason = new Error("caller timed out");
+    controller.abort(reason);
+    await expect(call).rejects.toThrow("caller timed out");
+  });
+
+  test("thread.idle and thread.failed do not call events.list, and thread.idle uses lastAssistantText", async () => {
+    const world = twoHosts();
+    // Place thread-a on a git checkout (not GitButler, which only inspects events when branch is ambiguous).
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+
+    let eventListCalls = 0;
+    const eventsProxy = new Proxy(
+      {} as Record<string, { seq: number; createdAt: number; data: unknown }[]>,
+      {
+        get(_target, prop) {
+          if (typeof prop === "string") eventListCalls += 1;
+          return [];
+        },
+      },
+    );
+    world.events = eventsProxy;
+
+    await harness.behavior.emitThreadEvent("thread.idle", {
+      thread: makeThreadResponse({ id: "thread-a" }),
+      lastAssistantText: "All done.",
+    } as never);
+    await harness.behavior.emitThreadEvent("thread.failed", {
+      thread: makeThreadResponse({ id: "thread-a" }),
+      error: "boom",
+    } as never);
+    // Allow microtasks from fire-and-forget handlers to flush.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(eventListCalls).toBe(0);
+  });
+});
