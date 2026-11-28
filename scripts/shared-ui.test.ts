@@ -65,6 +65,11 @@ test("shared selectors match their content fingerprint", () => {
   expect(darkRule, "dark banner-hover rule").toBeDefined();
   expect(lightRule!.body).toContain(`--bb-banner-hover-bg: ${BANNER_HOVER.lightBg};`);
   expect(lightRule!.body).toContain(`--bb-banner-hover-shadow: ${BANNER_HOVER.lightShadow};`);
+  expect(lightRule!.body).toContain(`--bb-banner-hover-border: ${BANNER_HOVER.lightBorder};`);
+  expect(lightRule!.body).toContain(
+    `--bb-banner-hover-primary-bg: ${BANNER_HOVER.lightPrimaryBg};`,
+  );
   expect(darkRule!.body).toContain(`--bb-banner-hover-bg: ${BANNER_HOVER.darkBg};`);
   expect(darkRule!.body).toContain(`--bb-banner-hover-shadow: ${BANNER_HOVER.darkShadow};`);
+  expect(darkRule!.body).toContain(`--bb-banner-hover-primary-bg: ${BANNER_HOVER.darkPrimaryBg};`);
 });

@@ -844,11 +844,9 @@ export function ActionButton({
       className={cn(
         TAP,
         bannerKind
-          ? cn(MOBILE_ANSWER, !action.primary && surface.bannerHover, "max-sm:min-w-0")
+          ? cn(MOBILE_ANSWER, surface.bannerHover, "max-sm:min-w-0")
           : "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal",
-        bannerKind &&
-          action.primary &&
-          "bg-(--foreground) text-background hover:bg-(--foreground)/90",
+        bannerKind && action.primary && "bg-(--foreground) text-background",
         className,
       )}
       aria-keyshortcuts={shortcuts && index < 9 ? String(index + 1) : undefined}

@@ -9,4 +9,7 @@ export const BANNER_HOVER = {
   lightShadow:
     "inset 0 0 0 var(--t3-composer-ring-width, var(--hairline-width, 1px)) var(--border)",
   darkShadow: "none",
+  lightBorder: "var(--input)",
+  lightPrimaryBg: "color-mix(in oklab, var(--foreground) 88%, var(--background))",
+  darkPrimaryBg: "color-mix(in oklab, var(--foreground) 55%, white)",
 } as const;
