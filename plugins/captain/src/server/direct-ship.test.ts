@@ -4,7 +4,6 @@ import type { AddressInfo } from "node:net";
 import {
   chmodSync,
   existsSync,
-  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -14,10 +13,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, test } from "vitest";
-import { buildRepoUrl } from "../../skills/captain-ship/scripts/direct-ship.mjs";
+import {
+  buildRepoUrl,
+  escapeControlChars,
+  TEST_BASE_URL_ENV,
+} from "../../skills/captain-ship/scripts/direct-ship.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = resolve(HERE, "../../skills/captain-ship/scripts/direct-ship.mjs");
@@ -35,14 +38,19 @@ afterAll(() => {
 type RunResult = { status: number; stdout: string; stderr: string };
 
 /** Clean environment for git and script subprocesses: strip inherited GIT_* hook vars and isolate global config. */
-function cleanEnv(globalConfig: string): NodeJS.ProcessEnv {
+function cleanEnv(globalConfig: string, baseUrl?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (!key.startsWith("GIT_")) env[key] = value;
+    if (!key.startsWith("GIT_") && key !== TEST_BASE_URL_ENV && key !== "BB_THREAD_STORAGE") {
+      env[key] = value;
+    }
   }
   env["GIT_CONFIG_GLOBAL"] = globalConfig;
   env["GIT_CONFIG_NOSYSTEM"] = "1";
   env["GIT_TERMINAL_PROMPT"] = "0";
+  if (baseUrl !== undefined) {
+    env[TEST_BASE_URL_ENV] = baseUrl;
+  }
   return env;
 }
 
@@ -132,6 +140,38 @@ function runScriptAsync(
   });
 }
 
+function findRealGit(): string {
+  const res = spawnSync("which", ["git"], { encoding: "utf8" });
+  if (res.error || res.status !== 0 || !res.stdout.trim()) {
+    throw new Error("could not locate real git binary");
+  }
+  return res.stdout.trim();
+}
+
+/** Create an executable `git` shim directory prepended to `PATH` for simulating rare git failures. */
+function makeGitShimEnv(
+  root: string,
+  name: string,
+  env: NodeJS.ProcessEnv,
+  body: string,
+): NodeJS.ProcessEnv {
+  const shimDir = join(root, `shim-${name}`);
+  mkdirSync(shimDir, { recursive: true });
+  const shimPath = join(shimDir, "git");
+  writeFileSync(shimPath, `#!/bin/sh\nREAL_GIT=${JSON.stringify(findRealGit())}\n${body}\n`);
+  chmodSync(shimPath, 0o755);
+  return {
+    ...env,
+    PATH: `${shimDir}${delimiter}${env["PATH"] ?? ""}`,
+  };
+}
+
+function parseField(stdout: string, key: string): string {
+  const line = stdout.split("\n").find((l) => l.startsWith(`${key}: `));
+  if (!line) throw new Error(`missing ${key}: in output:\n${stdout}`);
+  return line.slice(`${key}: `.length);
+}
+
 /** Create a bare origin served over `file://` (with partial-clone filtering enabled) and a crew clone with one base commit. */
 function setupScratchRepo() {
   // Resolve symlinks on the temp root so `$PWD` logged by local hooks matches `originDir`.
@@ -139,13 +179,13 @@ function setupScratchRepo() {
   roots.push(root);
   const globalConfig = join(root, "global.gitconfig");
   writeFileSync(globalConfig, "[user]\n\tname = Test\n\temail = test@example.com\n");
-  const env = cleanEnv(globalConfig);
 
   const remotesRoot = join(root, "remotes");
   const originDir = join(remotesRoot, `${REPO_SLUG}.git`);
   mkdirSync(dirname(originDir), { recursive: true });
   const baseUrl = `file://${remotesRoot}`;
   const originUrl = `${baseUrl}/${REPO_SLUG}.git`;
+  const env = cleanEnv(globalConfig, baseUrl);
   const crewDir = join(root, "crew");
 
   runGit(["init", "--bare", "-b", "main", originDir], { env });
@@ -162,18 +202,183 @@ function setupScratchRepo() {
 }
 
 describe("captain-ship direct-ship script", () => {
-  test("SKILL.md references the script and buildRepoUrl constructs GitHub URLs from --repo alone", () => {
-    expect(readFileSync(SKILL_PATH, "utf8")).toContain("<skill-dir>/scripts/direct-ship.mjs");
+  test("SKILL.md documents script, status table, caveats, and buildRepoUrl constructs GitHub URLs from --repo alone", () => {
+    const skill = readFileSync(SKILL_PATH, "utf8");
+    expect(skill).toContain("<skill-dir>/scripts/direct-ship.mjs");
+    expect(skill).toContain("status: target-moved");
+    expect(skill).toContain("status: landing-uncertain");
+    expect(skill).toContain("replacing any existing `Repo:` lines");
+    expect(skill).toContain("machine git credentials");
+    expect(skill).toContain("stop after `status: ready`");
+
     expect(buildRepoUrl("smsunarto/bb-plugins")).toBe(
       "https://github.com/smsunarto/bb-plugins.git",
     );
+    expect(buildRepoUrl("smsunarto/.github")).toBe("https://github.com/smsunarto/.github.git");
     expect(buildRepoUrl("smsunarto/bb-plugins", { ssh: true })).toBe(
       "git@github.com:smsunarto/bb-plugins.git",
     );
   });
 
+  test("CLI rejects --base-url, omits it from --help, and enforces tightened --repo and ref validation", () => {
+    const { root, env } = setupScratchRepo();
+
+    const help = runScript(["--help"], { env });
+    expect(help.stdout).not.toContain("--base-url");
+
+    const baseUrlFlag = runScript(
+      ["clone", "--repo", REPO_SLUG, "--base-url", "file:///tmp", "--dir", join(root, "w")],
+      { env, allowFailure: true },
+    );
+    expect(baseUrlFlag.status).not.toBe(0);
+    expect(baseUrlFlag.stderr).toContain("--base-url");
+
+    for (const badRepo of [
+      "../demo",
+      "smsunarto/..",
+      "smsunarto/a..b",
+      "./demo",
+      "smsunarto/.",
+      "smsunarto/demo.git",
+      "smsunarto/demo.GIT",
+      "smsunarto/.git",
+    ]) {
+      const res = runScript(["clone", "--repo", badRepo, "--dir", join(root, "bad-repo")], {
+        env,
+        allowFailure: true,
+      });
+      expect(res.status, `expected ${badRepo} to be rejected`).not.toBe(0);
+      expect(res.stderr).toContain("invalid --repo");
+    }
+
+    const validSha = "a".repeat(40);
+    for (const badRef of [
+      "a//b",
+      "x.lock",
+      "a/x.lock/b",
+      ".hidden",
+      "a/.hidden",
+      "trailing.",
+      "-leading",
+      "a..b",
+      "/leading",
+      "trailing/",
+    ]) {
+      const res = runScript(
+        [
+          "verify",
+          "--repo",
+          REPO_SLUG,
+          "--dir",
+          join(root, "nonexistent"),
+          `--target=${badRef}`,
+          "--branch",
+          "crew",
+          "--sha",
+          validSha,
+        ],
+        { env, allowFailure: true },
+      );
+      expect(res.status, `expected ref ${badRef} to be rejected`).not.toBe(0);
+      expect(res.stderr).toContain("invalid --target");
+    }
+  });
+
+  test("clone creates a temp workdir via mkdtemp when --dir is omitted, refuses existing dirs, and cleanup only touches script-created dirs", () => {
+    const { root, env, crewDir } = setupScratchRepo();
+
+    runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
+    writeFileSync(join(crewDir, "m.txt"), "ok\n");
+    runGit(["add", "m.txt"], { cwd: crewDir, env });
+    runGit(["commit", "-m", "task: mkdtemp"], { cwd: crewDir, env });
+    const sha = runGit(["rev-parse", "HEAD"], { cwd: crewDir, env }).stdout;
+    runGit(["push", "-u", "origin", "crew"], { cwd: crewDir, env });
+
+    // Omitting --dir creates a fresh directory under BB_THREAD_STORAGE and prints `dir: <workdir>`.
+    const storageRoot = join(root, "thread-storage");
+    mkdirSync(storageRoot);
+    const storageEnv: NodeJS.ProcessEnv = { ...env, BB_THREAD_STORAGE: storageRoot };
+    const cloned = runScript(["clone", "--repo", REPO_SLUG], { env: storageEnv });
+    expect(cloned.stdout).toContain("status: cloned");
+    const autoDir = parseField(cloned.stdout, "dir");
+    expect(autoDir.startsWith(storageRoot)).toBe(true);
+    expect(existsSync(join(autoDir, "bare.git"))).toBe(true);
+
+    runScript(
+      [
+        "verify",
+        "--repo",
+        REPO_SLUG,
+        "--dir",
+        autoDir,
+        "--target",
+        "main",
+        "--branch",
+        "crew",
+        "--sha",
+        sha,
+      ],
+      { env: storageEnv },
+    );
+    runScript(["cleanup", "--dir", autoDir], { env: storageEnv });
+    expect(existsSync(autoDir)).toBe(false);
+    // Idempotent cleanup on an already-removed dir succeeds without error.
+    expect(runScript(["cleanup", "--dir", autoDir], { env: storageEnv }).stdout).toContain(
+      "status: cleaned",
+    );
+
+    // Pre-existing empty dir is refused by clone and untouched by cleanup.
+    const existingEmpty = join(root, "preexisting-empty");
+    mkdirSync(existingEmpty);
+    const cloneExisting = runScript(["clone", "--repo", REPO_SLUG, "--dir", existingEmpty], {
+      env,
+      allowFailure: true,
+    });
+    expect(cloneExisting.status).not.toBe(0);
+    expect(cloneExisting.stderr).toContain("already exists");
+    expect(existsSync(existingEmpty)).toBe(true);
+
+    const cleanupEmpty = runScript(["cleanup", "--dir", existingEmpty], {
+      env,
+      allowFailure: true,
+    });
+    expect(cleanupEmpty.status).not.toBe(0);
+    expect(cleanupEmpty.stderr).toContain("was not created by direct-ship.mjs");
+    expect(existsSync(existingEmpty)).toBe(true);
+
+    // Pre-existing dir with a planted verified.json or unrelated `checks/` is refused by both clone and cleanup.
+    const foreignDir = join(root, "foreign-project");
+    mkdirSync(join(foreignDir, "checks"), { recursive: true });
+    writeFileSync(join(foreignDir, "checks", "keep.txt"), "important\n");
+    writeFileSync(
+      join(foreignDir, "verified.json"),
+      JSON.stringify({ repo: REPO_SLUG, sha, target: "main", target_sha: sha }),
+    );
+    expect(
+      runScript(["clone", "--repo", REPO_SLUG, "--dir", foreignDir], { env, allowFailure: true })
+        .status,
+    ).not.toBe(0);
+    const cleanupForeign = runScript(["cleanup", "--dir", foreignDir], { env, allowFailure: true });
+    expect(cleanupForeign.status).not.toBe(0);
+    expect(existsSync(join(foreignDir, "checks", "keep.txt"))).toBe(true);
+
+    // A symlink pointing at a real script workdir is also refused by cleanup.
+    const realWorkdir = join(root, "real-workdir");
+    runScript(["clone", "--repo", REPO_SLUG, "--dir", realWorkdir], { env });
+    const symlinkWorkdir = join(root, "symlink-workdir");
+    symlinkSync(realWorkdir, symlinkWorkdir);
+    const cleanupLink = runScript(["cleanup", "--dir", symlinkWorkdir], {
+      env,
+      allowFailure: true,
+    });
+    expect(cleanupLink.status).not.toBe(0);
+    expect(existsSync(join(realWorkdir, "bare.git"))).toBe(true);
+    runScript(["cleanup", "--dir", realWorkdir], { env });
+    expect(existsSync(realWorkdir)).toBe(false);
+  });
+
   test("the script's bare blobless clone excludes refs/replace while --mirror imports it", () => {
-    const { root, env, baseUrl, originDir, originUrl, crewDir, base } = setupScratchRepo();
+    const { root, env, originDir, originUrl, crewDir, base } = setupScratchRepo();
 
     runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
     writeFileSync(join(crewDir, "feature.ts"), "export const ok = 1;\n");
@@ -193,7 +398,7 @@ describe("captain-ship direct-ship script", () => {
     ).toContain(`refs/replace/${sha}`);
 
     const workdir = join(root, "ship-run");
-    runScript(["clone", "--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", workdir], { env });
+    runScript(["clone", "--repo", REPO_SLUG, "--dir", workdir], { env });
     const bareDir = join(workdir, "bare.git");
 
     // Confirm the blobless clone actually omitted blobs from its pack.
@@ -228,7 +433,7 @@ describe("captain-ship direct-ship script", () => {
   });
 
   test("rewritten crew fetch refspec and annotated tag replace ref cannot hijack direct ship end to end", () => {
-    const { root, env, baseUrl, originDir, crewDir, base } = setupScratchRepo();
+    const { root, env, originDir, crewDir, base } = setupScratchRepo();
 
     runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
     writeFileSync(join(crewDir, "feature.ts"), "export const ok = 1;\n");
@@ -257,7 +462,7 @@ describe("captain-ship direct-ship script", () => {
 
     // Run every subcommand of direct-ship.mjs end to end.
     const workdir = join(root, "ship-h1");
-    const common = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", workdir];
+    const common = ["--repo", REPO_SLUG, "--dir", workdir];
     runScript(["clone", ...common], { env });
     const verified = runScript(
       ["verify", ...common, "--target", "main", "--branch", "crew", "--sha", sha],
@@ -288,7 +493,7 @@ describe("captain-ship direct-ship script", () => {
   });
 
   test("a remote branch literally named <sha> stops on ambiguous warning, and ^{commit} still lands <sha> if warnings are off", () => {
-    const { root, globalConfig, env, baseUrl, originDir, crewDir, base } = setupScratchRepo();
+    const { root, globalConfig, env, originDir, crewDir, base } = setupScratchRepo();
 
     runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
     writeFileSync(join(crewDir, "ok.txt"), "ok\n");
@@ -305,7 +510,7 @@ describe("captain-ship direct-ship script", () => {
 
     // Default config: git emits an `ambiguous` warning and the script stops before pushing.
     const workdir1 = join(root, "ship-ambig");
-    const common1 = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", workdir1];
+    const common1 = ["--repo", REPO_SLUG, "--dir", workdir1];
     runScript(["clone", ...common1], { env });
     const stopped = runScript(
       ["verify", ...common1, "--target", "main", "--branch", "crew", "--sha", sha],
@@ -321,7 +526,7 @@ describe("captain-ship direct-ship script", () => {
       "[user]\n\tname = Test\n\temail = test@example.com\n[core]\n\twarnAmbiguousRefs = false\n[advice]\n\tobjectNameWarning = false\n",
     );
     const workdir2 = join(root, "ship-peel");
-    const common2 = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", workdir2];
+    const common2 = ["--repo", REPO_SLUG, "--dir", workdir2];
     runScript(["clone", ...common2], { env });
     runScript(["verify", ...common2, "--target", "main", "--branch", "crew", "--sha", sha], {
       env,
@@ -351,7 +556,7 @@ describe("captain-ship direct-ship script", () => {
   });
 
   test("a shallow file in the crew repo cannot hide a side-branch commit from verify's commit list", () => {
-    const { root, env, baseUrl, crewDir, base } = setupScratchRepo();
+    const { root, env, crewDir, base } = setupScratchRepo();
 
     runGit(["checkout", "-b", "side", base], { cwd: crewDir, env });
     writeFileSync(join(crewDir, "e1.txt"), "hidden\n");
@@ -384,7 +589,7 @@ describe("captain-ship direct-ship script", () => {
 
     // direct-ship.mjs verify lists all four commits including E1.
     const workdir = join(root, "ship-shallow");
-    const common = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", workdir];
+    const common = ["--repo", REPO_SLUG, "--dir", workdir];
     runScript(["clone", ...common], { env });
     const verified = runScript(
       ["verify", ...common, "--target", "main", "--branch", "crew", "--sha", mergeSha],
@@ -396,8 +601,39 @@ describe("captain-ship direct-ship script", () => {
     runScript(["cleanup", "--dir", workdir], { env });
   });
 
+  test("commit subjects escape control bytes below 0x20 and 0x7f", () => {
+    expect(escapeControlChars("ok\t\r\n\x00\x07\x1b[31m\x7f")).toBe(
+      "ok\\t\\r\\n\\x00\\x07\\x1b[31m\\x7f",
+    );
+
+    const { root, env, crewDir } = setupScratchRepo();
+    runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
+    writeFileSync(join(crewDir, "ctrl.txt"), "ctrl\n");
+    runGit(["add", "ctrl.txt"], { cwd: crewDir, env });
+    const msgFile = join(root, "ctrl-msg.txt");
+    writeFileSync(msgFile, "hidden unreviewed\rtask commit \x1b[31m\x07\x7f");
+    runGit(["commit", "--cleanup=verbatim", "-F", msgFile], { cwd: crewDir, env });
+    const sha = runGit(["rev-parse", "HEAD"], { cwd: crewDir, env }).stdout;
+    runGit(["push", "-u", "origin", "crew"], { cwd: crewDir, env });
+
+    const workdir = join(root, "ship-ctrl");
+    const common = ["--repo", REPO_SLUG, "--dir", workdir];
+    runScript(["clone", ...common], { env });
+    const verified = runScript(
+      ["verify", ...common, "--target", "main", "--branch", "crew", "--sha", sha],
+      { env },
+    );
+    expect(verified.stdout).toContain("hidden unreviewed\\rtask commit \\x1b[31m\\x07\\x7f");
+    const hasRawControl = Array.from(verified.stdout).some((ch) => {
+      const code = ch.charCodeAt(0);
+      return (code < 0x20 && code !== 0x0a) || code === 0x7f;
+    });
+    expect(hasRawControl).toBe(false);
+    runScript(["cleanup", "--dir", workdir], { env });
+  });
+
   test("exact ls-remote matching defeats a decoy a/refs/heads/main branch before and after push", () => {
-    const { root, env, baseUrl, originUrl, crewDir } = setupScratchRepo();
+    const { root, env, originUrl, crewDir } = setupScratchRepo();
 
     runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
     writeFileSync(join(crewDir, "work.txt"), "work\n");
@@ -413,7 +649,7 @@ describe("captain-ship direct-ship script", () => {
     ).toHaveLength(2);
 
     const workdir = join(root, "ship-ls-remote");
-    const common = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", workdir];
+    const common = ["--repo", REPO_SLUG, "--dir", workdir];
     runScript(["clone", ...common], { env });
     expect(
       runScript(["verify", ...common, "--target", "main", "--branch", "crew", "--sha", sha], {
@@ -427,9 +663,8 @@ describe("captain-ship direct-ship script", () => {
     runScript(["cleanup", "--dir", workdir], { env });
   });
 
-  test("global core.hooksPath and core.fsmonitor scripts do not fire during script runs, while controls fire both, and checks clone has its own .git at <sha>^{tree}", () => {
-    const { root, globalConfig, env, baseUrl, originDir, originUrl, crewDir, base } =
-      setupScratchRepo();
+  test("global core.hooksPath and core.fsmonitor scripts do not fire during script runs, while controls fire both", () => {
+    const { root, globalConfig, env, originDir, originUrl, crewDir, base } = setupScratchRepo();
 
     runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
     writeFileSync(join(crewDir, "a.txt"), "a\n");
@@ -471,41 +706,11 @@ describe("captain-ship direct-ship script", () => {
     );
 
     const workdir = join(root, "ship-hooks");
-    const common = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", workdir];
+    const common = ["--repo", REPO_SLUG, "--dir", workdir];
     runScript(["clone", ...common], { env });
     runScript(["verify", ...common, "--target", "main", "--branch", "crew", "--sha", sha], { env });
 
     const bareDir = join(workdir, "bare.git");
-    const checksDir = join(workdir, "checks");
-    // Checks clone owns its own `.git` directory (never a worktree `.git` file) and matches `<sha>^{tree}`.
-    expect(lstatSync(join(checksDir, ".git")).isDirectory()).toBe(true);
-    const checksTree = runGit(
-      [
-        "--no-replace-objects",
-        "-c",
-        "core.hooksPath=/dev/null",
-        "-c",
-        "core.fsmonitor=false",
-        "-C",
-        checksDir,
-        "rev-parse",
-        "HEAD^{tree}",
-      ],
-      { env },
-    ).stdout;
-    const bareTree = runGit(
-      [
-        "--no-replace-objects",
-        "-c",
-        "core.hooksPath=/dev/null",
-        "-C",
-        bareDir,
-        "rev-parse",
-        `${sha}^{tree}`,
-      ],
-      { env },
-    ).stdout;
-    expect(checksTree).toBe(bareTree);
 
     runScript(["push", ...common, "--target", "main", "--sha", sha], { env });
     runScript(["confirm", ...common, "--target", "main", "--sha", sha], { env });
@@ -545,8 +750,8 @@ describe("captain-ship direct-ship script", () => {
     runScript(["cleanup", "--dir", workdir], { env });
   });
 
-  test("crew repo includeIf pushurl and repo-local transport config are ignored; global insteadOf with identity pushInsteadOf is refused", () => {
-    const { root, globalConfig, env, baseUrl, originDir, originUrl, crewDir } = setupScratchRepo();
+  test("crew repo includeIf pushurl is ignored; global insteadOf, pushInsteadOf, multi-line push URLs, and post-verify push URL changes are refused", () => {
+    const { root, globalConfig, env, originDir, originUrl, crewDir, base } = setupScratchRepo();
 
     runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
     writeFileSync(join(crewDir, "item.txt"), "item\n");
@@ -565,9 +770,6 @@ describe("captain-ship direct-ship script", () => {
       cwd: crewDir,
       env,
     });
-    runGit(["config", "core.sshCommand", "sh -c 'exit 99'"], { cwd: crewDir, env });
-    runGit(["config", "credential.helper", "!sh -c 'exit 99'"], { cwd: crewDir, env });
-    runGit(["config", "http.proxy", "http://127.0.0.1:1"], { cwd: crewDir, env });
 
     // Confirm a linked worktree under `worktrees/` actually inherits the redirected pushurl.
     const worktreesParent = join(root, "worktrees");
@@ -580,7 +782,7 @@ describe("captain-ship direct-ship script", () => {
 
     // Running the script even from inside the poisoned crew repo ignores its config and lands on real origin.
     const workdir = join(root, "ship-isolated");
-    const common = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", workdir];
+    const common = ["--repo", REPO_SLUG, "--dir", workdir];
     runScript(["clone", ...common], { cwd: linkedWt, env });
     runScript(["verify", ...common, "--target", "main", "--branch", "crew", "--sha", sha], {
       cwd: linkedWt,
@@ -600,8 +802,10 @@ describe("captain-ship direct-ship script", () => {
       }).status,
     ).not.toBe(0);
 
-    // Global `insteadOf` paired with identity `pushInsteadOf`: get-url --push --all prints originUrl,
-    // while get-url --all prints evilOriginDir. The script checks both and refuses it.
+    // Reset main for URL guard checks.
+    runGit(["--git-dir", originDir, "update-ref", "refs/heads/main", base], { env });
+
+    // 1. Global `insteadOf` paired with identity `pushInsteadOf`: fails `get-url --all`.
     writeFileSync(
       globalConfig,
       [
@@ -616,32 +820,145 @@ describe("captain-ship direct-ship script", () => {
       ].join("\n"),
     );
     const workdirRewritten = join(root, "ship-rewritten");
-    const rejected = runScript(
-      ["clone", "--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", workdirRewritten],
-      { env, allowFailure: true },
-    );
+    const rejected = runScript(["clone", "--repo", REPO_SLUG, "--dir", workdirRewritten], {
+      env,
+      allowFailure: true,
+    });
     expect(rejected.status).not.toBe(0);
     expect(rejected.stderr).toContain("remote get-url --all origin");
-    // Failing clone cleans up the bare clone it created before exiting.
-    expect(existsSync(join(workdirRewritten, "bare.git"))).toBe(false);
     expect(existsSync(workdirRewritten)).toBe(false);
+
+    // 2. Global `pushInsteadOf` alone (fetch URL still matches originUrl): fails `get-url --push --all`.
+    writeFileSync(
+      globalConfig,
+      [
+        "[user]",
+        "\tname = Test",
+        "\temail = test@example.com",
+        `[url "file://${evilOriginDir}"]`,
+        `\tpushInsteadOf = ${originUrl}`,
+        "",
+      ].join("\n"),
+    );
+    const workdirPushRewrite = join(root, "ship-push-rewritten");
+    const rejectedPushUrl = runScript(["clone", "--repo", REPO_SLUG, "--dir", workdirPushRewrite], {
+      env,
+      allowFailure: true,
+    });
+    expect(rejectedPushUrl.status).not.toBe(0);
+    expect(rejectedPushUrl.stderr).toContain("remote get-url --push --all origin");
+    expect(existsSync(workdirPushRewrite)).toBe(false);
+
+    // Restore clean global config for multi-line push URL and push-time URL re-check tests.
+    writeFileSync(globalConfig, "[user]\n\tname = Test\n\temail = test@example.com\n");
+
+    // 3. Multi-line `get-url --push --all` where line 0 still equals originUrl: fails the one-line rule.
+    const workdirMultiUrl = join(root, "ship-multi-url");
+    runScript(["clone", "--repo", REPO_SLUG, "--dir", workdirMultiUrl], { env });
+    runGit(
+      [
+        "-C",
+        join(workdirMultiUrl, "bare.git"),
+        "remote",
+        "set-url",
+        "--add",
+        "--push",
+        "origin",
+        originUrl,
+      ],
+      { env },
+    );
+    runGit(
+      [
+        "-C",
+        join(workdirMultiUrl, "bare.git"),
+        "remote",
+        "set-url",
+        "--add",
+        "--push",
+        "origin",
+        `file://${evilOriginDir}`,
+      ],
+      { env },
+    );
+    const rejectedMulti = runScript(
+      [
+        "verify",
+        "--repo",
+        REPO_SLUG,
+        "--dir",
+        workdirMultiUrl,
+        "--target",
+        "main",
+        "--branch",
+        "crew",
+        "--sha",
+        sha,
+      ],
+      { env, allowFailure: true },
+    );
+    expect(rejectedMulti.status).not.toBe(0);
+    expect(rejectedMulti.stderr).toContain("remote get-url --push --all origin");
+    expect(existsSync(workdirMultiUrl)).toBe(false);
+
+    // 4. Push re-checks origin URLs even after verify succeeded.
+    const workdirPushCheck = join(root, "ship-push-recheck");
+    const commonPushCheck = ["--repo", REPO_SLUG, "--dir", workdirPushCheck];
+    runScript(["clone", ...commonPushCheck], { env });
+    runScript(
+      ["verify", ...commonPushCheck, "--target", "main", "--branch", "crew", "--sha", sha],
+      {
+        env,
+      },
+    );
+    runGit(
+      [
+        "-C",
+        join(workdirPushCheck, "bare.git"),
+        "remote",
+        "set-url",
+        "--push",
+        "origin",
+        `file://${evilOriginDir}`,
+      ],
+      { env },
+    );
+    const rejectedAtPush = runScript(
+      ["push", ...commonPushCheck, "--target", "main", "--sha", sha],
+      {
+        env,
+        allowFailure: true,
+      },
+    );
+    expect(rejectedAtPush.status).not.toBe(0);
+    expect(rejectedAtPush.stderr).toContain("remote get-url --push --all origin");
+    expect(existsSync(workdirPushCheck)).toBe(false);
+    expect(runGit(["--git-dir", originDir, "rev-parse", "refs/heads/main"], { env }).stdout).toBe(
+      base,
+    );
+    expect(
+      runGit(["--git-dir", evilOriginDir, "rev-parse", "--verify", "refs/heads/main"], {
+        env,
+        allowFailure: true,
+      }).status,
+    ).not.toBe(0);
   });
 
   test("running the script through a symlinked directory with spaces and percent-encoding invokes the CLI", () => {
-    const { root, env, baseUrl } = setupScratchRepo();
+    const { root, env } = setupScratchRepo();
     const linkDir = join(root, "linked scripts %20 dir");
     symlinkSync(dirname(SCRIPT_PATH), linkDir);
     const viaSymlink = join(linkDir, "direct-ship.mjs");
     const workdir = join(root, "ship-symlink");
 
-    const cloned = runScript(
-      ["clone", "--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", workdir],
-      { env, scriptPath: viaSymlink },
-    );
+    const cloned = runScript(["clone", "--repo", REPO_SLUG, "--dir", workdir], {
+      env,
+      scriptPath: viaSymlink,
+    });
     expect(cloned.stdout).toContain("status: cloned");
     expect(existsSync(join(workdir, "bare.git"))).toBe(true);
 
-    const bad = runScript(["clone", "--repo", "not-a-repo", "--dir", workdir], {
+    const bad = runScript(["clone", "--repo", "not-a-repo", "--dir", join(root, "unused")], {
       env,
       scriptPath: viaSymlink,
       allowFailure: true,
@@ -654,8 +971,8 @@ describe("captain-ship direct-ship script", () => {
     expect(existsSync(workdir)).toBe(false);
   });
 
-  test("a commit subject and workdir path containing 'ambiguous' do not stop a valid ship", () => {
-    const { root, env, baseUrl, originDir, crewDir } = setupScratchRepo();
+  test("a commit subject, workdir path, and post-receive hook message containing 'ambiguous' do not stop a valid ship", () => {
+    const { root, env, originDir, crewDir } = setupScratchRepo();
 
     runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
     writeFileSync(join(crewDir, "note.txt"), "clarify\n");
@@ -667,8 +984,17 @@ describe("captain-ship direct-ship script", () => {
     const sha = runGit(["rev-parse", "HEAD"], { cwd: crewDir, env }).stdout;
     runGit(["push", "-u", "origin", "crew"], { cwd: crewDir, env });
 
+    // A remote post-receive hook printing an ambiguity-looking line (git prefixes it with `remote: `)
+    // must not trigger the anchored AMBIGUOUS_LINE_RE stop after push lands.
+    const postReceive = join(originDir, "hooks", "post-receive");
+    writeFileSync(
+      postReceive,
+      "#!/bin/sh\necho \"warning: refname 'main' is ambiguous\" >&2\nexit 0\n",
+    );
+    chmodSync(postReceive, 0o755);
+
     const workdir = join(root, "ambiguous-workdir");
-    const common = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", workdir];
+    const common = ["--repo", REPO_SLUG, "--dir", workdir];
     runScript(["clone", ...common], { env });
     const verified = runScript(
       ["verify", ...common, "--target", "main", "--branch", "crew", "--sha", sha],
@@ -676,9 +1002,8 @@ describe("captain-ship direct-ship script", () => {
     );
     expect(verified.stdout).toContain("status: ready");
     expect(verified.stdout).toContain("ambiguous wording");
-    expect(
-      runScript(["push", ...common, "--target", "main", "--sha", sha], { env }).stdout,
-    ).toContain("status: pushed");
+    const pushed = runScript(["push", ...common, "--target", "main", "--sha", sha], { env });
+    expect(pushed.stdout).toContain("status: pushed");
     expect(
       runScript(["confirm", ...common, "--target", "main", "--sha", sha], { env }).stdout,
     ).toContain("status: confirmed");
@@ -689,7 +1014,7 @@ describe("captain-ship direct-ship script", () => {
   });
 
   test("cleanEnv preserves GIT_CONFIG_COUNT credential helpers while stripping repo-pointing GIT_* vars", async () => {
-    const { root, env, baseUrl } = setupScratchRepo();
+    const { root, env } = setupScratchRepo();
     // Stripped repo-pointing GIT_* vars cannot hijack a valid clone.
     const fileWorkdir = join(root, "ship-stripped-env");
     const strippedEnv: NodeJS.ProcessEnv = {
@@ -697,10 +1022,9 @@ describe("captain-ship direct-ship script", () => {
       GIT_DIR: join(root, "bogus.git"),
       GIT_WORK_TREE: join(root, "bogus-wt"),
     };
-    const fileClone = runScript(
-      ["clone", "--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", fileWorkdir],
-      { env: strippedEnv },
-    );
+    const fileClone = runScript(["clone", "--repo", REPO_SLUG, "--dir", fileWorkdir], {
+      env: strippedEnv,
+    });
     expect(fileClone.stdout).toContain("status: cloned");
     runScript(["cleanup", "--dir", fileWorkdir], { env });
 
@@ -715,15 +1039,16 @@ describe("captain-ship direct-ship script", () => {
       const workdir = join(root, "ship-cred");
       const credEnv: NodeJS.ProcessEnv = {
         ...env,
+        [TEST_BASE_URL_ENV]: `http://127.0.0.1:${port}`,
         GIT_DIR: join(root, "bogus.git"),
         GIT_CONFIG_COUNT: "1",
         GIT_CONFIG_KEY_0: "credential.helper",
         GIT_CONFIG_VALUE_0: `!sh -c 'echo invoked >> "${helperLog}"'`,
       };
-      const res = await runScriptAsync(
-        ["clone", "--repo", REPO_SLUG, "--base-url", `http://127.0.0.1:${port}`, "--dir", workdir],
-        { env: credEnv, allowFailure: true },
-      );
+      const res = await runScriptAsync(["clone", "--repo", REPO_SLUG, "--dir", workdir], {
+        env: credEnv,
+        allowFailure: true,
+      });
       expect(res.status).not.toBe(0);
       expect(existsSync(helperLog)).toBe(true);
       expect(readFileSync(helperLog, "utf8")).toContain("invoked");
@@ -734,8 +1059,8 @@ describe("captain-ship direct-ship script", () => {
     }
   });
 
-  test("push enforces the verified sha, target, and target_sha, and reports already-landed when rerun after a landed push", () => {
-    const { root, env, baseUrl, originDir, crewDir, base } = setupScratchRepo();
+  test("push enforces verified repo/sha/target without deleting on typo, distinguishes target-moved (5) vs not-fast-forward (3), reports refused (1), and reports already-landed on rerun", () => {
+    const { root, env, originDir, crewDir, base } = setupScratchRepo();
 
     // Two commits on crew: base -> c1 -> c2.
     runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
@@ -749,9 +1074,9 @@ describe("captain-ship direct-ship script", () => {
     const c2 = runGit(["rev-parse", "HEAD"], { cwd: crewDir, env }).stdout;
     runGit(["push", "-u", "origin", "crew"], { cwd: crewDir, env });
 
-    // 1. push before verify is refused.
+    // 1. push before verify is refused without deleting bare.git.
     const wdUnverified = join(root, "ship-unverified");
-    const commonUnverified = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", wdUnverified];
+    const commonUnverified = ["--repo", REPO_SLUG, "--dir", wdUnverified];
     runScript(["clone", ...commonUnverified], { env });
     const unverified = runScript(["push", ...commonUnverified, "--target", "main", "--sha", c2], {
       env,
@@ -759,15 +1084,35 @@ describe("captain-ship direct-ship script", () => {
     });
     expect(unverified.status).toBe(1);
     expect(unverified.stderr).toContain("verified.json");
+    expect(existsSync(join(wdUnverified, "bare.git"))).toBe(true);
     runScript(["cleanup", "--dir", wdUnverified], { env });
 
-    // 2. push with differing --sha or differing --target is refused.
+    // 2. push with mistyped --repo, --sha, or --target fails without destroying the verified workdir.
     const wdMismatch = join(root, "ship-mismatch");
-    const commonMismatch = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", wdMismatch];
+    const commonMismatch = ["--repo", REPO_SLUG, "--dir", wdMismatch];
     runScript(["clone", ...commonMismatch], { env });
     runScript(["verify", ...commonMismatch, "--target", "main", "--branch", "crew", "--sha", c2], {
       env,
     });
+    const wrongRepo = runScript(
+      [
+        "push",
+        "--repo",
+        "smsunarto/other-repo",
+        "--dir",
+        wdMismatch,
+        "--target",
+        "main",
+        "--sha",
+        c2,
+      ],
+      { env, allowFailure: true },
+    );
+    expect(wrongRepo.status).toBe(1);
+    expect(wrongRepo.stderr).toContain("does not match verified");
+    expect(existsSync(join(wdMismatch, "bare.git"))).toBe(true);
+    expect(existsSync(join(wdMismatch, "checks"))).toBe(true);
+
     const wrongSha = runScript(["push", ...commonMismatch, "--target", "main", "--sha", c1], {
       env,
       allowFailure: true,
@@ -780,31 +1125,83 @@ describe("captain-ship direct-ship script", () => {
     });
     expect(wrongTarget.status).toBe(1);
     expect(wrongTarget.stderr).toContain("does not match verified");
+    expect(existsSync(join(wdMismatch, "verified.json"))).toBe(true);
     runScript(["cleanup", "--dir", wdMismatch], { env });
 
-    // 3. Target advances to c1 after verify recorded target_sha=base: push refuses even though c1..c2 would fast-forward.
-    const wdMoved = join(root, "ship-moved");
-    const commonMoved = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", wdMoved];
-    runScript(["clone", ...commonMoved], { env });
-    runScript(["verify", ...commonMoved, "--target", "main", "--branch", "crew", "--sha", c2], {
-      env,
-    });
+    // 3a. Target advances to c1 (an ancestor of c2) after verify recorded target_sha=base:
+    // push refuses with exit 5 (`status: target-moved` on stdout) so the caller re-verifies the same head.
+    const wdMovedAncestor = join(root, "ship-moved-ancestor");
+    const commonMovedAncestor = ["--repo", REPO_SLUG, "--dir", wdMovedAncestor];
+    runScript(["clone", ...commonMovedAncestor], { env });
+    runScript(
+      ["verify", ...commonMovedAncestor, "--target", "main", "--branch", "crew", "--sha", c2],
+      { env },
+    );
     runGit(["--git-dir", originDir, "update-ref", "refs/heads/main", c1], { env });
-    const moved = runScript(["push", ...commonMoved, "--target", "main", "--sha", c2], {
-      env,
-      allowFailure: true,
-    });
-    expect(moved.status).toBe(3);
-    expect(moved.stderr).toContain("status: not-fast-forward");
-    expect(existsSync(wdMoved)).toBe(false);
+    const movedAncestor = runScript(
+      ["push", ...commonMovedAncestor, "--target", "main", "--sha", c2],
+      { env, allowFailure: true },
+    );
+    expect(movedAncestor.status).toBe(5);
+    expect(movedAncestor.stdout).toContain("status: target-moved");
+    expect(movedAncestor.stdout).toContain(`target_sha: ${c1}`);
+    expect(movedAncestor.stdout).toContain(`verified_target_sha: ${base}`);
+    expect(movedAncestor.stderr).toBe("");
+    expect(existsSync(wdMovedAncestor)).toBe(false);
     expect(runGit(["--git-dir", originDir, "rev-parse", "refs/heads/main"], { env }).stdout).toBe(
       c1,
     );
 
-    // 4. Lost-response rerun: push lands c2, then rerunning push (and even after another commit lands on top) reports already-landed (exit 0).
+    // 3b. Target moves to a diverging commit (NOT an ancestor of c2): push exits 3 (`status: not-fast-forward` on stdout).
     runGit(["--git-dir", originDir, "update-ref", "refs/heads/main", base], { env });
+    runGit(["checkout", "-b", "diverge", base], { cwd: crewDir, env });
+    writeFileSync(join(crewDir, "diverge.txt"), "d\n");
+    runGit(["add", "diverge.txt"], { cwd: crewDir, env });
+    runGit(["commit", "-m", "diverging commit"], { cwd: crewDir, env });
+    const divergeSha = runGit(["rev-parse", "HEAD"], { cwd: crewDir, env }).stdout;
+    runGit(["checkout", "crew"], { cwd: crewDir, env });
+
+    const wdMovedDiverge = join(root, "ship-moved-diverge");
+    const commonMovedDiverge = ["--repo", REPO_SLUG, "--dir", wdMovedDiverge];
+    runScript(["clone", ...commonMovedDiverge], { env });
+    runScript(
+      ["verify", ...commonMovedDiverge, "--target", "main", "--branch", "crew", "--sha", c2],
+      { env },
+    );
+    runGit(["push", "origin", `${divergeSha}:refs/heads/main`], { cwd: crewDir, env });
+    const movedDiverge = runScript(
+      ["push", ...commonMovedDiverge, "--target", "main", "--sha", c2],
+      { env, allowFailure: true },
+    );
+    expect(movedDiverge.status).toBe(3);
+    expect(movedDiverge.stdout).toContain("status: not-fast-forward");
+    expect(movedDiverge.stderr).toBe("");
+    expect(existsSync(wdMovedDiverge)).toBe(false);
+
+    // 3c. Remote pre-receive hook rejects push: exits 1 with `status: refused` on stdout.
+    runGit(["--git-dir", originDir, "update-ref", "refs/heads/main", base], { env });
+    const preReceive = join(originDir, "hooks", "pre-receive");
+    writeFileSync(preReceive, "#!/bin/sh\necho 'protected branch rule' >&2\nexit 1\n");
+    chmodSync(preReceive, 0o755);
+    const wdRefused = join(root, "ship-refused");
+    const commonRefused = ["--repo", REPO_SLUG, "--dir", wdRefused];
+    runScript(["clone", ...commonRefused], { env });
+    runScript(["verify", ...commonRefused, "--target", "main", "--branch", "crew", "--sha", c2], {
+      env,
+    });
+    const refused = runScript(["push", ...commonRefused, "--target", "main", "--sha", c2], {
+      env,
+      allowFailure: true,
+    });
+    expect(refused.status).toBe(1);
+    expect(refused.stdout).toContain("status: refused");
+    expect(refused.stderr).toBe("");
+    expect(existsSync(wdRefused)).toBe(false);
+    rmSync(preReceive);
+
+    // 4. Lost-response rerun: push lands c2, then rerunning push (and even after another commit lands on top) reports already-landed (exit 0).
     const wdRerun = join(root, "ship-rerun");
-    const commonRerun = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", wdRerun];
+    const commonRerun = ["--repo", REPO_SLUG, "--dir", wdRerun];
     runScript(["clone", ...commonRerun], { env });
     runScript(["verify", ...commonRerun, "--target", "main", "--branch", "crew", "--sha", c2], {
       env,
@@ -834,8 +1231,8 @@ describe("captain-ship direct-ship script", () => {
     expect(existsSync(wdRerun)).toBe(false);
   });
 
-  test("verify reports crew-branch-missing, not-fast-forward, and already-landed cleanly, and re-cloning after a push succeeds", () => {
-    const { root, env, baseUrl, crewDir, base } = setupScratchRepo();
+  test("verify reports crew-branch-missing, stale bare clone, wrong crew sha, target mismatch, not-fast-forward, and already-landed cleanly, and cleans up after checks/ exists", () => {
+    const { root, env, originDir, crewDir, base } = setupScratchRepo();
 
     runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
     writeFileSync(join(crewDir, "one.txt"), "1\n");
@@ -843,33 +1240,125 @@ describe("captain-ship direct-ship script", () => {
     runGit(["commit", "-m", "task: one"], { cwd: crewDir, env });
     const sha = runGit(["rev-parse", "HEAD"], { cwd: crewDir, env }).stdout;
 
-    // 1. Crew branch not pushed yet: verify exits 2 with crew-branch-missing; cleanup + push + re-clone succeeds.
+    // 1. Crew branch not pushed yet: verify exits 2 with status: crew-branch-missing on stdout.
     const workdir = join(root, "ship-lifecycle");
-    const common = ["--repo", REPO_SLUG, "--base-url", baseUrl, "--dir", workdir];
+    const common = ["--repo", REPO_SLUG, "--dir", workdir];
     runScript(["clone", ...common], { env });
     const missing = runScript(
       ["verify", ...common, "--target", "main", "--branch", "crew", "--sha", sha],
       { env, allowFailure: true },
     );
     expect(missing.status).toBe(2);
-    expect(missing.stderr).toContain("status: crew-branch-missing");
-    // Failing verify cleans up clones before exiting.
-    expect(existsSync(join(workdir, "bare.git"))).toBe(false);
+    expect(missing.stdout).toContain("status: crew-branch-missing");
+    expect(missing.stderr).toBe("");
     expect(existsSync(workdir)).toBe(false);
 
+    // 1b. Crew branch pushed AFTER clone: verify exits 1 (stale bare clone), NOT exit 2 crew-branch-missing.
+    const wdPushedAfter = join(root, "ship-pushed-after-clone");
+    const commonAfter = ["--repo", REPO_SLUG, "--dir", wdPushedAfter];
+    runScript(["clone", ...commonAfter], { env });
     runGit(["push", "-u", "origin", "crew"], { cwd: crewDir, env });
+    const staleClone = runScript(
+      ["verify", ...commonAfter, "--target", "main", "--branch", "crew", "--sha", sha],
+      { env, allowFailure: true },
+    );
+    expect(staleClone.status).toBe(1);
+    expect(staleClone.stdout).not.toContain("crew-branch-missing");
+    expect(staleClone.stderr).toContain("missing from bare clone");
+    expect(existsSync(wdPushedAfter)).toBe(false);
+
+    // 1c. Crew branch exists at a different SHA than --sha: verify refuses.
+    writeFileSync(join(crewDir, "two.txt"), "2\n");
+    runGit(["add", "two.txt"], { cwd: crewDir, env });
+    runGit(["commit", "-m", "task: two"], { cwd: crewDir, env });
+    const sha2 = runGit(["rev-parse", "HEAD"], { cwd: crewDir, env }).stdout;
+    runGit(["push", "origin", "crew"], { cwd: crewDir, env });
+
+    const wdWrongCrewSha = join(root, "ship-wrong-crew-sha");
+    const commonWrongCrew = ["--repo", REPO_SLUG, "--dir", wdWrongCrewSha];
+    runScript(["clone", ...commonWrongCrew], { env });
+    const wrongCrew = runScript(
+      ["verify", ...commonWrongCrew, "--target", "main", "--branch", "crew", "--sha", sha],
+      { env, allowFailure: true },
+    );
+    expect(wrongCrew.status).toBe(1);
+    expect(wrongCrew.stderr).toContain(`is not at ${sha}`);
+    expect(existsSync(wdWrongCrewSha)).toBe(false);
+
+    // Restore crew to sha, then test remote crew advancing after clone while bare clone still has sha.
+    runGit(["push", "--force", "origin", `${sha}:refs/heads/crew`], { cwd: crewDir, env });
+    const wdRemoteCrewMoved = join(root, "ship-remote-crew-moved");
+    const commonRemoteMoved = ["--repo", REPO_SLUG, "--dir", wdRemoteCrewMoved];
+    runScript(["clone", ...commonRemoteMoved], { env });
+    runGit(["push", "origin", `${sha2}:refs/heads/crew`], { cwd: crewDir, env });
+    const remoteMoved = runScript(
+      ["verify", ...commonRemoteMoved, "--target", "main", "--branch", "crew", "--sha", sha],
+      { env, allowFailure: true },
+    );
+    expect(remoteMoved.status).toBe(1);
+    expect(remoteMoved.stderr).toContain(`is not at ${sha}`);
+    expect(existsSync(wdRemoteCrewMoved)).toBe(false);
+
+    // Restore crew to sha.
+    runGit(["push", "--force", "origin", `${sha}:refs/heads/crew`], { cwd: crewDir, env });
+
+    // 1d. Target moves on origin after clone before verify: verify fails local-vs-ls-remote target comparison.
+    const wdTargetMismatch = join(root, "ship-target-mismatch");
+    const commonTargetMismatch = ["--repo", REPO_SLUG, "--dir", wdTargetMismatch];
+    runScript(["clone", ...commonTargetMismatch], { env });
+    runGit(["--git-dir", originDir, "update-ref", "refs/heads/main", sha2], { env });
+    const targetMismatch = runScript(
+      ["verify", ...commonTargetMismatch, "--target", "main", "--branch", "crew", "--sha", sha],
+      { env, allowFailure: true },
+    );
+    expect(targetMismatch.status).toBe(1);
+    expect(targetMismatch.stderr).toContain("mismatch");
+    expect(existsSync(wdTargetMismatch)).toBe(false);
+    runGit(["--git-dir", originDir, "update-ref", "refs/heads/main", base], { env });
+
+    // 1e. Verify failing AFTER `checks/` was created removes `checks/`, `bare.git`, and `<workdir>`.
+    const wdAfterChecks = join(root, "ship-fail-after-checks");
+    const commonAfterChecks = ["--repo", REPO_SLUG, "--dir", wdAfterChecks];
+    runScript(["clone", ...commonAfterChecks], { env });
+    const failCheckoutEnv = makeGitShimEnv(
+      root,
+      "fail-checkout",
+      env,
+      'for arg in "$@"; do if [ "$arg" = "checkout" ]; then echo "simulated checkout failure" >&2; exit 1; fi; done\nexec "$REAL_GIT" "$@"',
+    );
+    const failedAfterChecks = runScript(
+      ["verify", ...commonAfterChecks, "--target", "main", "--branch", "crew", "--sha", sha],
+      { env: failCheckoutEnv, allowFailure: true },
+    );
+    expect(failedAfterChecks.status).toBe(1);
+    expect(failedAfterChecks.stderr).toContain("simulated checkout failure");
+    expect(existsSync(join(wdAfterChecks, "checks"))).toBe(false);
+    expect(existsSync(join(wdAfterChecks, "bare.git"))).toBe(false);
+    expect(existsSync(wdAfterChecks)).toBe(false);
+
+    // 2. Confirm before push fails ancestor check without reporting confirmed.
     runScript(["clone", ...common], { env });
+    const notLandedConfirm = runScript(["confirm", ...common, "--target", "main", "--sha", sha], {
+      env,
+      allowFailure: true,
+    });
+    expect(notLandedConfirm.status).toBe(1);
+    expect(notLandedConfirm.stderr).toContain("is not an ancestor");
+    expect(notLandedConfirm.stdout).not.toContain("status: confirmed");
+    // Confirm never rolls back the workdir.
+    expect(existsSync(join(workdir, "bare.git"))).toBe(true);
+
+    // Full verify -> push -> confirm -> cleanup succeeds.
     expect(
       runScript(["verify", ...common, "--target", "main", "--branch", "crew", "--sha", sha], {
         env,
       }).stdout,
     ).toContain("status: ready");
-
-    // 2. Push lands `<sha>`, then a fresh clone's verify reports already-landed without creating `checks`.
     runScript(["push", ...common, "--target", "main", "--sha", sha], { env });
     runScript(["confirm", ...common, "--target", "main", "--sha", sha], { env });
     runScript(["cleanup", "--dir", workdir], { env });
 
+    // Fresh clone's verify reports already-landed without creating `checks`.
     runScript(["clone", ...common], { env });
     const landed = runScript(
       ["verify", ...common, "--target", "main", "--branch", "crew", "--sha", sha],
@@ -879,7 +1368,7 @@ describe("captain-ship direct-ship script", () => {
     expect(existsSync(join(workdir, "checks"))).toBe(false);
     runScript(["cleanup", "--dir", workdir], { env });
 
-    // 3. A crew branch behind moved main gets status: not-fast-forward (exit 3) without creating `checks`.
+    // 3. A crew branch behind moved main gets status: not-fast-forward (exit 3) on stdout without creating `checks`.
     runGit(["checkout", "-b", "stale-crew", base], { cwd: crewDir, env });
     writeFileSync(join(crewDir, "stale.txt"), "stale\n");
     runGit(["add", "stale.txt"], { cwd: crewDir, env });
@@ -893,10 +1382,162 @@ describe("captain-ship direct-ship script", () => {
       { env, allowFailure: true },
     );
     expect(notFf.status).toBe(3);
-    expect(notFf.stderr).toContain("status: not-fast-forward");
-    // Failing verify cleans up clones before exiting.
-    expect(existsSync(join(workdir, "checks"))).toBe(false);
-    expect(existsSync(join(workdir, "bare.git"))).toBe(false);
+    expect(notFf.stdout).toContain("status: not-fast-forward");
+    expect(notFf.stderr).toBe("");
     expect(existsSync(workdir)).toBe(false);
+  });
+
+  test("grafts, shallow, and alternates planted in bare.git during checks cannot fake already-landed or confirmed", () => {
+    const { root, env, originDir, crewDir, base } = setupScratchRepo();
+
+    runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
+    writeFileSync(join(crewDir, "feat.txt"), "feat\n");
+    runGit(["add", "feat.txt"], { cwd: crewDir, env });
+    runGit(["commit", "-m", "task: feat"], { cwd: crewDir, env });
+    const sha = runGit(["rev-parse", "HEAD"], { cwd: crewDir, env }).stdout;
+    runGit(["push", "-u", "origin", "crew"], { cwd: crewDir, env });
+
+    // 1. Repro of round-4 item 1: plant bare.git/info/grafts + forge verified.json target_sha.
+    const wdGraft = join(root, "ship-graft");
+    const commonGraft = ["--repo", REPO_SLUG, "--dir", wdGraft];
+    runScript(["clone", ...commonGraft], { env });
+    runScript(["verify", ...commonGraft, "--target", "main", "--branch", "crew", "--sha", sha], {
+      env,
+    });
+    writeFileSync(join(wdGraft, "bare.git", "info", "grafts"), `${base} ${sha}\n`);
+    writeFileSync(
+      join(wdGraft, "verified.json"),
+      `${JSON.stringify({ repo: REPO_SLUG, sha, target: "main", target_sha: "0".repeat(40) }, null, 2)}\n`,
+    );
+
+    const pushGraft = runScript(["push", ...commonGraft, "--target", "main", "--sha", sha], {
+      env,
+      allowFailure: true,
+    });
+    expect(pushGraft.status).not.toBe(0);
+    expect(pushGraft.stdout).not.toContain("status: already-landed");
+    expect(pushGraft.stderr).toContain("info/grafts");
+    expect(runGit(["--git-dir", originDir, "rev-parse", "refs/heads/main"], { env }).stdout).toBe(
+      base,
+    );
+
+    // 2. Plant shallow and alternates in bare.git: both push and confirm refuse them.
+    for (const rel of ["shallow", "objects/info/alternates"]) {
+      const wd = join(root, `ship-${rel.replaceAll("/", "-")}`);
+      const common = ["--repo", REPO_SLUG, "--dir", wd];
+      runScript(["clone", ...common], { env });
+      runScript(["verify", ...common, "--target", "main", "--branch", "crew", "--sha", sha], {
+        env,
+      });
+      const targetPath = join(wd, "bare.git", rel);
+      mkdirSync(dirname(targetPath), { recursive: true });
+      writeFileSync(targetPath, `${base}\n`);
+
+      const confirmBad = runScript(["confirm", ...common, "--target", "main", "--sha", sha], {
+        env,
+        allowFailure: true,
+      });
+      expect(confirmBad.status).not.toBe(0);
+      expect(confirmBad.stdout).not.toContain("status: confirmed");
+      expect(confirmBad.stderr).toContain(rel);
+
+      const pushBad = runScript(["push", ...common, "--target", "main", "--sha", sha], {
+        env,
+        allowFailure: true,
+      });
+      expect(pushBad.status).not.toBe(0);
+      expect(pushBad.stderr).toContain(rel);
+      expect(existsSync(wd)).toBe(false);
+    }
+  });
+
+  test("post-push fetch failures emit status: landing-uncertain (exit 4) without rolling back the workdir, and confirm catches post-fetch ls-remote mismatch", () => {
+    const { root, env, originDir, crewDir, base } = setupScratchRepo();
+
+    runGit(["checkout", "-b", "crew"], { cwd: crewDir, env });
+    writeFileSync(join(crewDir, "ship.txt"), "ship\n");
+    runGit(["add", "ship.txt"], { cwd: crewDir, env });
+    runGit(["commit", "-m", "task: ship"], { cwd: crewDir, env });
+    const sha = runGit(["rev-parse", "HEAD"], { cwd: crewDir, env }).stdout;
+    runGit(["push", "-u", "origin", "crew"], { cwd: crewDir, env });
+
+    // 1. Lost push response (push lands on origin then exits 128) + follow-up fetch fails:
+    // push exits 4 (`status: landing-uncertain` on stdout) and preserves workdir so confirm can recover.
+    const wdLost = join(root, "ship-lost-push");
+    const commonLost = ["--repo", REPO_SLUG, "--dir", wdLost];
+    runScript(["clone", ...commonLost], { env });
+    runScript(["verify", ...commonLost, "--target", "main", "--branch", "crew", "--sha", sha], {
+      env,
+    });
+
+    const lostPushEnv = makeGitShimEnv(
+      root,
+      "lost-push-fetch-fail",
+      env,
+      [
+        'for arg in "$@"; do',
+        '  if [ "$arg" = "push" ]; then "$REAL_GIT" "$@"; echo "connection reset after push" >&2; exit 128; fi',
+        '  if [ "$arg" = "fetch" ]; then echo "network unreachable on fetch" >&2; exit 128; fi',
+        "done",
+        'exec "$REAL_GIT" "$@"',
+      ].join("\n"),
+    );
+    const uncertainPush = runScript(["push", ...commonLost, "--target", "main", "--sha", sha], {
+      env: lostPushEnv,
+      allowFailure: true,
+    });
+    expect(uncertainPush.status).toBe(4);
+    expect(uncertainPush.stdout).toContain("status: landing-uncertain");
+    expect(uncertainPush.stderr).toBe("");
+    // Workdir is preserved, and origin actually has `<sha>`.
+    expect(existsSync(join(wdLost, "bare.git"))).toBe(true);
+    expect(existsSync(join(wdLost, "verified.json"))).toBe(true);
+    expect(runGit(["--git-dir", originDir, "rev-parse", "refs/heads/main"], { env }).stdout).toBe(
+      sha,
+    );
+
+    // 2. Confirm when follow-up fetch fails: exits 4 (`status: landing-uncertain`) and preserves workdir.
+    const failFetchEnv = makeGitShimEnv(
+      root,
+      "confirm-fetch-fail",
+      env,
+      'for arg in "$@"; do if [ "$arg" = "fetch" ]; then echo "transient fetch error" >&2; exit 128; fi; done\nexec "$REAL_GIT" "$@"',
+    );
+    const uncertainConfirm = runScript(
+      ["confirm", ...commonLost, "--target", "main", "--sha", sha],
+      { env: failFetchEnv, allowFailure: true },
+    );
+    expect(uncertainConfirm.status).toBe(4);
+    expect(uncertainConfirm.stdout).toContain("status: landing-uncertain");
+    expect(uncertainConfirm.stderr).toBe("");
+    expect(existsSync(join(wdLost, "bare.git"))).toBe(true);
+
+    // 3. Confirm when origin target moves between `fetch` and `ls-remote` (tests fetchAndCheckLanded local-vs-ls-remote comparison).
+    const raceEnv = makeGitShimEnv(
+      root,
+      "confirm-fetch-race",
+      env,
+      [
+        'for arg in "$@"; do',
+        `  if [ "$arg" = "fetch" ]; then "$REAL_GIT" "$@"; rc=$?; "$REAL_GIT" --git-dir ${JSON.stringify(originDir)} update-ref refs/heads/main ${JSON.stringify(base)}; exit $rc; fi`,
+        "done",
+        'exec "$REAL_GIT" "$@"',
+      ].join("\n"),
+    );
+    const racedConfirm = runScript(["confirm", ...commonLost, "--target", "main", "--sha", sha], {
+      env: raceEnv,
+      allowFailure: true,
+    });
+    expect(racedConfirm.status).toBe(4);
+    expect(racedConfirm.stdout).toContain("status: landing-uncertain");
+    expect(racedConfirm.stdout).toContain("mismatch after fetch");
+
+    // Restore origin/main to sha and verify recovery with plain confirm + cleanup works cleanly.
+    runGit(["--git-dir", originDir, "update-ref", "refs/heads/main", sha], { env });
+    expect(
+      runScript(["confirm", ...commonLost, "--target", "main", "--sha", sha], { env }).stdout,
+    ).toContain("status: confirmed");
+    runScript(["cleanup", "--dir", wdLost], { env });
+    expect(existsSync(wdLost)).toBe(false);
   });
 });
