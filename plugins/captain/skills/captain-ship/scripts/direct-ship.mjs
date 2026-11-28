@@ -30,6 +30,9 @@ const NON_FF_RE = /non-fast-forward|fetch first/iu;
 const VERIFIED_FILE = "verified.json";
 const WORKDIR_MARKER = ".captain-direct-ship-workdir";
 const WORKDIR_MARKER_KIND = "captain-direct-ship";
+// Defense-in-depth checks on bare clones. `push` and `confirm` create brand-new ephemeral bare
+// clones outside `<workdir>` so checks cannot tamper with them; these checks and the
+// GIT_GRAFT_FILE / GIT_SHALLOW_FILE env pins remain as cheap defense in depth.
 const FORBIDDEN_BARE_PATHS = ["info/grafts", "shallow", "objects/info/alternates"];
 const NONEXISTENT_GRAFT_FILE = "/dev/null/direct-ship-no-grafts";
 const NONEXISTENT_SHALLOW_FILE = "/dev/null/direct-ship-no-shallow";
@@ -58,7 +61,9 @@ const STRIPPED_GIT_ENV = new Set([
 
 /** @typedef {{ status: number; stdout: string; stderr: string }} GitResult */
 
-/** @typedef {{ repo: string; sha: string; target: string; target_sha: string }} VerifiedState */
+/** @typedef {{ repo: string; ssh: boolean }} WorkdirMarker */
+
+/** @typedef {{ repo: string; ssh: boolean; sha: string; target: string; target_sha: string }} VerifiedState */
 
 /**
  * @typedef {
@@ -70,9 +75,11 @@ const STRIPPED_GIT_ENV = new Set([
 /** Paths registered by the running subcommand to remove if `fail()` stops before completion. */
 /** @type {string | null} */
 let rollbackWorkdir = null;
-let rollbackOwnsWorkdir = false;
 /** @type {Set<string>} */
 const rollbackPaths = new Set();
+/** Fresh mkdtemp dir created by `push` or `confirm`, removed on every exit except `landing-uncertain`. */
+/** @type {string | null} */
+let ephemeralDirToClean = null;
 
 /**
  * @param {string} path
@@ -88,41 +95,58 @@ function pathExistsIncludingSymlink(path) {
 }
 
 /**
+ * Read and validate `.captain-direct-ship-workdir` inside a non-symlink directory.
  * @param {string} dir
- * @returns {boolean}
+ * @returns {WorkdirMarker | null}
  */
-function isScriptWorkdir(dir) {
+function readWorkdirMarker(dir) {
   try {
-    if (!lstatSync(dir).isDirectory()) return false;
+    if (!lstatSync(dir).isDirectory()) return null;
     const markerPath = join(dir, WORKDIR_MARKER);
-    if (!lstatSync(markerPath).isFile()) return false;
+    if (!lstatSync(markerPath).isFile()) return null;
     const parsed = /** @type {unknown} */ (JSON.parse(readFileSync(markerPath, "utf8")));
-    return (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "kind" in parsed &&
-      parsed.kind === WORKDIR_MARKER_KIND
-    );
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("kind" in parsed) ||
+      parsed.kind !== WORKDIR_MARKER_KIND ||
+      !("repo" in parsed) ||
+      !isValidRepo(parsed.repo) ||
+      !("ssh" in parsed) ||
+      typeof parsed.ssh !== "boolean"
+    ) {
+      return null;
+    }
+    return { repo: parsed.repo, ssh: parsed.ssh };
   } catch {
-    return false;
+    return null;
   }
 }
 
 /**
+ * Register paths inside a verified script-owned workdir for rollback on failure.
+ * Never registers paths for a directory lacking a valid `WORKDIR_MARKER`.
  * @param {string} dir
- * @param {boolean} ownsWorkdir
  * @param {...string} paths
  */
-function registerRollback(dir, ownsWorkdir, ...paths) {
+function registerRollback(dir, ...paths) {
+  if (readWorkdirMarker(dir) === null) {
+    fail(`stop: ${dir} was not created by direct-ship.mjs; refusing to modify it`);
+  }
   rollbackWorkdir = dir;
-  rollbackOwnsWorkdir = ownsWorkdir;
   for (const path of paths) rollbackPaths.add(path);
 }
 
 function clearRollback() {
   rollbackPaths.clear();
   rollbackWorkdir = null;
-  rollbackOwnsWorkdir = false;
+}
+
+function cleanupEphemeralDir() {
+  if (ephemeralDirToClean !== null) {
+    rmSync(ephemeralDirToClean, { recursive: true, force: true });
+    ephemeralDirToClean = null;
+  }
 }
 
 function runRollback() {
@@ -130,15 +154,18 @@ function runRollback() {
     rmSync(path, { recursive: true, force: true });
   }
   rollbackPaths.clear();
-  if (rollbackOwnsWorkdir && rollbackWorkdir !== null && existsSync(rollbackWorkdir)) {
+  if (rollbackWorkdir !== null && existsSync(rollbackWorkdir)) {
     try {
-      if (readdirSync(rollbackWorkdir).length === 0) rmdirSync(rollbackWorkdir);
+      const remaining = readdirSync(rollbackWorkdir).filter((entry) => entry !== WORKDIR_MARKER);
+      if (remaining.length === 0) {
+        rmSync(join(rollbackWorkdir, WORKDIR_MARKER), { force: true });
+        rmdirSync(rollbackWorkdir);
+      }
     } catch {
       // Best-effort removal of an empty temp directory created by this script.
     }
   }
   rollbackWorkdir = null;
-  rollbackOwnsWorkdir = false;
 }
 
 /**
@@ -147,6 +174,7 @@ function runRollback() {
  * @returns {never}
  */
 function fail(message, code = 1) {
+  cleanupEphemeralDir();
   runRollback();
   process.stderr.write(`${message}\n`);
   process.exit(code);
@@ -156,14 +184,23 @@ function fail(message, code = 1) {
  * Emit a structured `status:` block on stdout, optionally roll back, and exit.
  * @param {string} body
  * @param {number} code
- * @param {{ rollback?: boolean }} [options]
+ * @param {{ rollback?: boolean; keepEphemeral?: boolean }} [options]
  * @returns {never}
  */
-function exitStatus(body, code, { rollback = true } = {}) {
+function exitStatus(body, code, { rollback = true, keepEphemeral = false } = {}) {
+  if (!keepEphemeral) cleanupEphemeralDir();
   if (rollback) runRollback();
   else clearRollback();
   process.stdout.write(`${body}\n`);
   process.exit(code);
+}
+
+/**
+ * @param {string} targetSha
+ * @returns {never}
+ */
+function exitAlreadyLanded(targetSha) {
+  exitStatus(`status: already-landed\ntarget_sha: ${targetSha}`, 0, { rollback: false });
 }
 
 /**
@@ -172,12 +209,12 @@ function exitStatus(body, code, { rollback = true } = {}) {
  */
 function isValidRepo(repo) {
   if (typeof repo !== "string" || !REPO_RE.test(repo)) return false;
-  const [owner, name] = repo.split("/");
-  if (!owner || !name) return false;
-  if (owner === "." || owner === ".." || owner.includes("..")) return false;
-  if (name === "." || name === ".." || name.includes("..")) return false;
-  if (/\.git$/iu.test(name)) return false;
-  return true;
+  const slash = repo.indexOf("/");
+  const owner = repo.slice(0, slash);
+  const name = repo.slice(slash + 1);
+  if (owner === "." || owner.includes("..")) return false;
+  if (name === "." || name.includes("..")) return false;
+  return !/\.git$/iu.test(name);
 }
 
 /**
@@ -212,7 +249,8 @@ export function buildRepoUrl(repo, { ssh = false, baseUrl } = {}) {
 }
 
 /**
- * Escape bytes below 0x20 and 0x7f so control characters cannot disguise commit subjects.
+ * Escape C0/C1 control characters (< 0x20, 0x7f, 0x80-0x9f) and Unicode bidi overrides/isolates
+ * (U+202A-U+202E, U+2066-U+2069) so commit subjects cannot disguise terminal output.
  * @param {string} text
  * @returns {string}
  */
@@ -223,8 +261,13 @@ export function escapeControlChars(text) {
     if (code === 0x09) out += "\\t";
     else if (code === 0x0a) out += "\\n";
     else if (code === 0x0d) out += "\\r";
-    else if (code < 0x20 || code === 0x7f) out += `\\x${code.toString(16).padStart(2, "0")}`;
-    else out += text.charAt(i);
+    else if (code < 0x20 || code === 0x7f || (code >= 0x80 && code <= 0x9f)) {
+      out += `\\x${code.toString(16).padStart(2, "0")}`;
+    } else if ((code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069)) {
+      out += `\\u${code.toString(16).padStart(4, "0")}`;
+    } else {
+      out += text.charAt(i);
+    }
   }
   return out;
 }
@@ -235,20 +278,10 @@ export function escapeControlChars(text) {
  * @returns {string}
  */
 function assertRef(name, flag) {
-  if (
-    typeof name !== "string" ||
-    !REF_RE.test(name) ||
-    name.startsWith("/") ||
-    name.endsWith("/") ||
-    name.startsWith("-") ||
-    name.endsWith(".") ||
-    name.includes("//") ||
-    name.includes("..") ||
-    name.split("/").some((part) => part.startsWith(".") || part.endsWith(".lock"))
-  ) {
+  if (typeof name !== "string" || !REF_RE.test(name) || name.startsWith("-")) {
     fail(`invalid ${flag} ${JSON.stringify(name)}: invalid git branch ref name`);
   }
-  const check = spawnGitSync(["check-ref-format", `refs/heads/${name}`], undefined);
+  const check = spawnGitSync(["check-ref-format", `refs/heads/${name}`]);
   if (check.status !== 0) {
     fail(`invalid ${flag} ${JSON.stringify(name)}: rejected by git check-ref-format`);
   }
@@ -278,8 +311,8 @@ function assertDir(dir) {
 }
 
 /**
- * Strip only repo-pointing git env vars and disable grafts/shallow via nonexistent paths;
- * preserve GIT_CONFIG_COUNT/KEY_n/VALUE_n for machine git credentials.
+ * Strip only repo-pointing git env vars and pin GIT_GRAFT_FILE / GIT_SHALLOW_FILE to nonexistent
+ * paths as defense in depth; preserve GIT_CONFIG_COUNT/KEY_n/VALUE_n for machine git credentials.
  * @returns {NodeJS.ProcessEnv}
  */
 function cleanEnv() {
@@ -296,13 +329,11 @@ function cleanEnv() {
 
 /**
  * @param {string[]} args
- * @param {string | undefined} cwd
  * @param {{ trimStdout?: boolean }} [options]
  * @returns {GitResult}
  */
-function spawnGitSync(args, cwd, { trimStdout = true } = {}) {
+function spawnGitSync(args, { trimStdout = true } = {}) {
   const res = spawnSync("git", args, {
-    cwd,
     env: cleanEnv(),
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -319,22 +350,65 @@ function spawnGitSync(args, cwd, { trimStdout = true } = {}) {
 }
 
 /**
- * Run git while capturing stderr even on exit 0 so git ambiguity lines stop the ship.
+ * Run git while checking stderr even on exit 0 so git ambiguity lines stop the ship.
  * @param {readonly string[]} flags
  * @param {readonly string[]} args
- * @param {{ cwd?: string; allowExit1?: boolean; trimStdout?: boolean }} [options]
- * @returns {GitResult}
+ * @param {{ allowExit1?: boolean; trimStdout?: boolean }} [options]
+ * @returns {{ ok: true; result: GitResult } | { ok: false; error: string }}
  */
-function runGitChecked(flags, args, { cwd, allowExit1 = false, trimStdout = true } = {}) {
-  const fullArgs = [...flags, ...args];
-  const result = spawnGitSync(fullArgs, cwd, { trimStdout });
+function tryRunGitChecked(flags, args, { allowExit1 = false, trimStdout = true } = {}) {
+  const result = spawnGitSync([...flags, ...args], { trimStdout });
   if (AMBIGUOUS_LINE_RE.test(result.stderr)) {
-    fail(`stop: git reported ambiguous ref on ${args.join(" ")}: ${result.stderr}`);
+    return {
+      ok: false,
+      error: `stop: git reported ambiguous ref on ${args.join(" ")}: ${result.stderr}`,
+    };
   }
   if (result.status === 0 || (allowExit1 && result.status === 1)) {
-    return result;
+    return { ok: true, result };
   }
-  fail(`git ${args.join(" ")} failed (exit ${result.status}): ${result.stderr || result.stdout}`);
+  return {
+    ok: false,
+    error: `git ${args.join(" ")} failed (exit ${result.status}): ${result.stderr || result.stdout}`,
+  };
+}
+
+/**
+ * @param {readonly string[]} flags
+ * @param {readonly string[]} args
+ * @param {{ allowExit1?: boolean; trimStdout?: boolean }} [options]
+ * @returns {GitResult}
+ */
+function runGitChecked(flags, args, options) {
+  const res = tryRunGitChecked(flags, args, options);
+  if (!res.ok) fail(res.error);
+  return res.result;
+}
+
+/**
+ * Resolve `rev` inside `bareDir`, returning `null` if absent and an error if git emits an
+ * ambiguity warning.
+ * @param {string} bareDir
+ * @param {string} rev
+ * @returns {{ ok: true; sha: string | null } | { ok: false; error: string }}
+ */
+function tryRevParse(bareDir, rev) {
+  const res = spawnGitSync([...BARE_FLAGS, "-C", bareDir, "rev-parse", "--verify", "--quiet", rev]);
+  if (AMBIGUOUS_LINE_RE.test(res.stderr)) {
+    return { ok: false, error: `stop: git warned about ambiguous ref on ${rev}: ${res.stderr}` };
+  }
+  return { ok: true, sha: res.status === 0 ? res.stdout : null };
+}
+
+/**
+ * @param {string} bareDir
+ * @param {string} rev
+ * @returns {string | null}
+ */
+function revParseOptional(bareDir, rev) {
+  const res = tryRevParse(bareDir, rev);
+  if (!res.ok) fail(res.error);
+  return res.sha;
 }
 
 /**
@@ -361,20 +435,34 @@ function assertBareRepoClean(bareDir) {
  * @param {string} repoDir
  * @param {string} expectedUrl
  * @param {readonly string[]} flags
+ * @returns {{ ok: true } | { ok: false; error: string }}
  */
-function verifyOriginUrls(repoDir, expectedUrl, flags) {
+function tryVerifyOriginUrls(repoDir, expectedUrl, flags) {
   for (const args of [
     ["-C", repoDir, "remote", "get-url", "--all", "origin"],
     ["-C", repoDir, "remote", "get-url", "--push", "--all", "origin"],
   ]) {
-    const { stdout } = runGitChecked(flags, args);
-    const lines = stdout === "" ? [] : stdout.split("\n");
+    const res = tryRunGitChecked(flags, args);
+    if (!res.ok) return res;
+    const lines = res.result.stdout === "" ? [] : res.result.stdout.split("\n");
     if (lines.length !== 1 || lines[0] !== expectedUrl) {
-      fail(
-        `stop: ${args.slice(2).join(" ")} in ${repoDir} returned ${JSON.stringify(lines)}, expected [${JSON.stringify(expectedUrl)}]`,
-      );
+      return {
+        ok: false,
+        error: `stop: ${args.slice(2).join(" ")} in ${repoDir} returned ${JSON.stringify(lines)}, expected [${JSON.stringify(expectedUrl)}]`,
+      };
     }
   }
+  return { ok: true };
+}
+
+/**
+ * @param {string} repoDir
+ * @param {string} expectedUrl
+ * @param {readonly string[]} flags
+ */
+function verifyOriginUrls(repoDir, expectedUrl, flags) {
+  const res = tryVerifyOriginUrls(repoDir, expectedUrl, flags);
+  if (!res.ok) fail(res.error);
 }
 
 /**
@@ -409,52 +497,32 @@ function exactLsRemote(bareDir, ref) {
 }
 
 /**
- * Non-throwing variant of `runGitChecked` for post-push / confirm checks.
- * @param {readonly string[]} flags
- * @param {readonly string[]} args
- * @param {{ allowExit1?: boolean }} [options]
- * @returns {{ ok: true; result: GitResult } | { ok: false; error: string }}
- */
-function tryRunGitChecked(flags, args, { allowExit1 = false } = {}) {
-  const result = spawnGitSync([...flags, ...args], undefined);
-  if (AMBIGUOUS_LINE_RE.test(result.stderr)) {
-    return {
-      ok: false,
-      error: `git reported ambiguous ref on ${args.join(" ")}: ${result.stderr}`,
-    };
-  }
-  if (result.status === 0 || (allowExit1 && result.status === 1)) {
-    return { ok: true, result };
-  }
-  return {
-    ok: false,
-    error: `git ${args.join(" ")} failed (exit ${result.status}): ${result.stderr || result.stdout}`,
-  };
-}
-
-/**
- * Fetch target fresh into `bare.git` and return whether `<sha>` is already on it without exiting.
+ * Check `targetRef` in `bareDir` against exact `ls-remote` and whether `<sha>` is an ancestor of
+ * it, optionally fetching `targetRef` first. Returns without exiting so post-push/confirm callers
+ * can emit `status: landing-uncertain` without rolling back.
  * @param {string} bareDir
  * @param {string} targetRef
  * @param {string} sha
+ * @param {{ fetchFirst: boolean }} options
  * @returns {LandedCheckResult}
  */
-function tryFetchAndCheckLanded(bareDir, targetRef, sha) {
+function tryCheckTargetAndLanded(bareDir, targetRef, sha, { fetchFirst }) {
   const bareProblem = findForbiddenBareState(bareDir);
   if (bareProblem !== null) return { ok: false, error: bareProblem };
 
-  const fetchRes = tryRunGitChecked(BARE_FLAGS, [
-    "-C",
-    bareDir,
-    "fetch",
-    "-q",
-    "origin",
-    `+${targetRef}:${targetRef}`,
-  ]);
-  if (!fetchRes.ok) return fetchRes;
-
-  const postFetchProblem = findForbiddenBareState(bareDir);
-  if (postFetchProblem !== null) return { ok: false, error: postFetchProblem };
+  if (fetchFirst) {
+    const fetchRes = tryRunGitChecked(BARE_FLAGS, [
+      "-C",
+      bareDir,
+      "fetch",
+      "-q",
+      "origin",
+      `+${targetRef}:${targetRef}`,
+    ]);
+    if (!fetchRes.ok) return fetchRes;
+    const postFetchProblem = findForbiddenBareState(bareDir);
+    if (postFetchProblem !== null) return { ok: false, error: postFetchProblem };
+  }
 
   const localRes = tryRunGitChecked(BARE_FLAGS, [
     "-C",
@@ -477,6 +545,12 @@ function tryFetchAndCheckLanded(bareDir, targetRef, sha) {
     };
   }
 
+  const hasCommit = tryRevParse(bareDir, `${sha}^{commit}`);
+  if (!hasCommit.ok) return hasCommit;
+  if (hasCommit.sha === null) {
+    return { ok: true, landed: false, targetSha: localTarget };
+  }
+
   const landed = tryRunGitChecked(
     BARE_FLAGS,
     ["-C", bareDir, "merge-base", "--is-ancestor", sha, targetRef],
@@ -486,22 +560,27 @@ function tryFetchAndCheckLanded(bareDir, targetRef, sha) {
   return { ok: true, landed: landed.result.status === 0, targetSha: localTarget };
 }
 
+/** @returns {string} */
+function defaultTempParent() {
+  const storage = process.env.BB_THREAD_STORAGE;
+  return typeof storage === "string" && storage.trim() !== "" && existsSync(storage)
+    ? storage
+    : tmpdir();
+}
+
 /**
  * Create a brand-new workdir (via mkdtemp when `--dir` is omitted, or exclusive mkdir when provided)
- * and stamp it with `WORKDIR_MARKER`.
+ * and stamp it with `WORKDIR_MARKER` recording `{ repo, ssh }`.
  * @param {string | undefined} requestedDir
+ * @param {string} repo
+ * @param {boolean} ssh
  * @returns {{ dir: string; markerPath: string }}
  */
-function createScriptWorkdir(requestedDir) {
+function createScriptWorkdir(requestedDir, repo, ssh) {
   /** @type {string} */
   let dir;
   if (requestedDir === undefined) {
-    const storage = process.env.BB_THREAD_STORAGE;
-    const parent =
-      typeof storage === "string" && storage.trim() !== "" && existsSync(storage)
-        ? storage
-        : tmpdir();
-    dir = realpathSync(mkdtempSync(join(parent, "captain-direct-ship-")));
+    dir = realpathSync(mkdtempSync(join(defaultTempParent(), "captain-direct-ship-")));
   } else {
     dir = assertDir(requestedDir);
     if (pathExistsIncludingSymlink(dir)) {
@@ -515,33 +594,74 @@ function createScriptWorkdir(requestedDir) {
     }
   }
   const markerPath = join(dir, WORKDIR_MARKER);
-  registerRollback(dir, true, markerPath);
   try {
-    writeFileSync(markerPath, `${JSON.stringify({ kind: WORKDIR_MARKER_KIND, version: 1 })}\n`, {
-      flag: "wx",
-    });
+    writeFileSync(
+      markerPath,
+      `${JSON.stringify({ kind: WORKDIR_MARKER_KIND, version: 1, repo, ssh })}\n`,
+      { flag: "wx" },
+    );
   } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
     const msg = error instanceof Error ? error.message : String(error);
     fail(`stop: could not write workdir marker in ${dir}: ${msg}`);
   }
+  registerRollback(dir);
   return { dir, markerPath };
+}
+
+/**
+ * Create a brand-new bare blobless clone in a fresh mkdtemp directory outside `<workdir>`,
+ * never touching `<workdir>/bare.git` or `<workdir>/checks`.
+ * @param {string} repo
+ * @param {string} url
+ * @param {boolean} ssh
+ * @returns {{ ok: true; dir: string; bareDir: string } | { ok: false; dir: string; error: string }}
+ */
+function tryCreateEphemeralBareClone(repo, url, ssh) {
+  const dir = realpathSync(
+    mkdtempSync(join(defaultTempParent(), "captain-direct-ship-ephemeral-")),
+  );
+  ephemeralDirToClean = dir;
+  const markerPath = join(dir, WORKDIR_MARKER);
+  writeFileSync(
+    markerPath,
+    `${JSON.stringify({ kind: WORKDIR_MARKER_KIND, version: 1, repo, ssh })}\n`,
+    { flag: "wx" },
+  );
+  const bareDir = join(dir, "bare.git");
+  const cloneRes = tryRunGitChecked(BARE_FLAGS, [
+    "clone",
+    "-q",
+    "--bare",
+    "--filter=blob:none",
+    url,
+    bareDir,
+  ]);
+  if (!cloneRes.ok) return { ok: false, dir, error: cloneRes.error };
+  const bareProblem = findForbiddenBareState(bareDir);
+  if (bareProblem !== null) return { ok: false, dir, error: bareProblem };
+  const urlRes = tryVerifyOriginUrls(bareDir, url, BARE_FLAGS);
+  if (!urlRes.ok) return { ok: false, dir, error: urlRes.error };
+  return { ok: true, dir, bareDir };
 }
 
 /** @param {CliOptions} opts */
 function cmdClone(opts) {
   const repo = assertRepo(opts.repo);
-  const url = buildRepoUrl(repo, { ssh: opts.ssh, baseUrl: readTestBaseUrl() });
-  const { dir, markerPath } = createScriptWorkdir(opts.dir);
+  const ssh = Boolean(opts.ssh);
+  const url = buildRepoUrl(repo, { ssh, baseUrl: readTestBaseUrl() });
+  const { dir } = createScriptWorkdir(opts.dir, repo, ssh);
   const bareDir = join(dir, "bare.git");
-  registerRollback(dir, true, bareDir, markerPath);
+  registerRollback(dir, bareDir);
   runGitChecked(BARE_FLAGS, ["clone", "-q", "--bare", "--filter=blob:none", url, bareDir]);
   assertBareRepoClean(bareDir);
   verifyOriginUrls(bareDir, url, BARE_FLAGS);
+  clearRollback();
   process.stdout.write(`status: cloned\ndir: ${dir}\nurl: ${url}\nbare: ${bareDir}\n`);
 }
 
 /**
- * Format `git log -z --format=%h %s` output with control characters escaped.
+ * Format `git log -z --format=%h %s` output with control/bidi characters escaped.
  * @param {string} rawStdout
  * @returns {string}
  */
@@ -556,7 +676,8 @@ function formatEscapedCommitLog(rawStdout) {
 function cmdVerify(opts) {
   const dir = assertDir(opts.dir);
   const repo = assertRepo(opts.repo);
-  const url = buildRepoUrl(repo, { ssh: opts.ssh, baseUrl: readTestBaseUrl() });
+  const ssh = Boolean(opts.ssh);
+  const url = buildRepoUrl(repo, { ssh, baseUrl: readTestBaseUrl() });
   const target = assertRef(opts.target, "--target");
   const branch = assertRef(opts.branch, "--branch");
   const sha = assertSha(opts.sha);
@@ -564,26 +685,35 @@ function cmdVerify(opts) {
   const bareDir = join(dir, "bare.git");
   const checksDir = join(dir, "checks");
   const verifiedPath = join(dir, VERIFIED_FILE);
-  const markerPath = join(dir, WORKDIR_MARKER);
   if (!existsSync(bareDir)) fail(`stop: missing bare clone at ${bareDir}; run clone first`);
   if (existsSync(checksDir)) {
     fail(`stop: ${checksDir} already exists; run cleanup and re-clone from scratch`);
   }
-  registerRollback(dir, isScriptWorkdir(dir), checksDir, verifiedPath, bareDir, markerPath);
-  assertBareRepoClean(bareDir);
-  verifyOriginUrls(bareDir, url, BARE_FLAGS);
+
+  // Validate workdir ownership, --repo/--ssh against clone, and --target existence BEFORE
+  // registering rollback so argument mistakes never delete the workdir.
+  const marker = readWorkdirMarker(dir);
+  if (marker === null) {
+    fail(`stop: ${dir} was not created by direct-ship.mjs; refusing verify`);
+  }
+  if (marker.repo !== repo || marker.ssh !== ssh) {
+    fail(
+      `stop: verify (${repo}, ssh=${ssh}) does not match cloned workdir (${marker.repo}, ssh=${marker.ssh})`,
+    );
+  }
 
   const targetRef = `refs/heads/${target}`;
   const crewRef = `refs/heads/${branch}`;
+  const localTarget = revParseOptional(bareDir, targetRef);
+  if (localTarget === null) {
+    fail(`stop: target branch ${targetRef} does not exist in ${bareDir}`);
+  }
 
-  // Check 1: target ref exists locally in bare clone and matches exact ls-remote.
-  const localTarget = runGitChecked(BARE_FLAGS, [
-    "-C",
-    bareDir,
-    "rev-parse",
-    "--verify",
-    targetRef,
-  ]).stdout;
+  registerRollback(dir, checksDir, verifiedPath, bareDir);
+  assertBareRepoClean(bareDir);
+  verifyOriginUrls(bareDir, url, BARE_FLAGS);
+
+  // Check 1: target ref in bare clone matches exact ls-remote.
   const remoteTarget = exactLsRemote(bareDir, targetRef);
   if (remoteTarget === null || remoteTarget !== localTarget) {
     fail(
@@ -593,23 +723,15 @@ function cmdVerify(opts) {
 
   // Check 2: already landed. Only run when `<sha>` exists in the bare clone; if the crew branch
   // was not pushed yet (and `<sha>` is not on target), Check 3 reports `crew-branch-missing`.
-  const hasCommit = spawnGitSync(
-    [...BARE_FLAGS, "-C", bareDir, "rev-parse", "--verify", "--quiet", `${sha}^{commit}`],
-    undefined,
-  );
-  if (AMBIGUOUS_LINE_RE.test(hasCommit.stderr)) {
-    fail(`stop: git warned about ambiguous ref on ${sha}: ${hasCommit.stderr}`);
-  }
-  if (hasCommit.status === 0) {
+  const hasCommit = revParseOptional(bareDir, `${sha}^{commit}`);
+  if (hasCommit !== null) {
     const alreadyLanded = runGitChecked(
       BARE_FLAGS,
       ["-C", bareDir, "merge-base", "--is-ancestor", sha, targetRef],
       { allowExit1: true },
     );
     if (alreadyLanded.status === 0) {
-      clearRollback();
-      process.stdout.write(`status: already-landed\ntarget_sha: ${localTarget}\n`);
-      return;
+      exitAlreadyLanded(localTarget);
     }
   }
 
@@ -618,22 +740,15 @@ function cmdVerify(opts) {
   if (remoteCrew === null) {
     exitStatus(`status: crew-branch-missing\nref: ${crewRef}`, 2);
   }
-  const localCrewRes = spawnGitSync(
-    [...BARE_FLAGS, "-C", bareDir, "rev-parse", "--verify", crewRef],
-    undefined,
-  );
-  if (AMBIGUOUS_LINE_RE.test(localCrewRes.stderr)) {
-    fail(`stop: git warned about ambiguous ref on ${crewRef}: ${localCrewRes.stderr}`);
+  const localCrew = revParseOptional(bareDir, crewRef);
+  if (localCrew === null) {
+    exitStatus(`status: stale-clone\nref: ${crewRef}\nremote_sha: ${remoteCrew}`, 6);
   }
-  if (localCrewRes.status !== 0) {
-    fail(
-      `stop: ${crewRef} exists on origin (${remoteCrew}) but is missing from bare clone; re-clone from scratch`,
-    );
-  }
-  if (localCrewRes.stdout !== sha || remoteCrew !== sha) {
-    fail(
-      `stop: ${crewRef} is not at ${sha} (bare=${localCrewRes.stdout}, ls-remote=${remoteCrew})`,
-    );
+  if (localCrew !== sha || remoteCrew !== sha) {
+    // If bare and origin agree on the crew tip, the clone is fresh and --sha was mistyped:
+    // preserve the workdir so the caller can fix --sha or run cleanup.
+    if (localCrew === remoteCrew) clearRollback();
+    fail(`stop: ${crewRef} is not at ${sha} (bare=${localCrew}, ls-remote=${remoteCrew})`);
   }
 
   // Check 4: fast-forward.
@@ -646,7 +761,7 @@ function cmdVerify(opts) {
     exitStatus(`status: not-fast-forward\ntarget_sha: ${localTarget}`, 3);
   }
 
-  // Check 5: commit list with control characters escaped.
+  // Check 5: commit list with control and bidi characters escaped.
   const rawLog = runGitChecked(
     BARE_FLAGS,
     ["-C", bareDir, "log", "-z", "--format=%h %s", `${targetRef}..${sha}`],
@@ -661,7 +776,7 @@ function cmdVerify(opts) {
 
   writeFileSync(
     verifiedPath,
-    `${JSON.stringify({ repo, sha, target, target_sha: localTarget }, null, 2)}\n`,
+    `${JSON.stringify({ repo, ssh, sha, target, target_sha: localTarget }, null, 2)}\n`,
   );
 
   clearRollback();
@@ -691,10 +806,12 @@ function readVerifiedState(dir) {
     typeof parsed !== "object" ||
     parsed === null ||
     !("repo" in parsed) ||
+    !("ssh" in parsed) ||
     !("sha" in parsed) ||
     !("target" in parsed) ||
     !("target_sha" in parsed) ||
     !isValidRepo(parsed.repo) ||
+    typeof parsed.ssh !== "boolean" ||
     typeof parsed.sha !== "string" ||
     typeof parsed.target !== "string" ||
     typeof parsed.target_sha !== "string" ||
@@ -705,6 +822,7 @@ function readVerifiedState(dir) {
   }
   return {
     repo: parsed.repo,
+    ssh: parsed.ssh,
     sha: parsed.sha,
     target: parsed.target,
     target_sha: parsed.target_sha,
@@ -723,16 +841,19 @@ function readVerifiedState(dir) {
  * @returns {never}
  */
 function exitTargetMovedOrNotFf(bareDir, targetRef, sha, currentTargetSha, verifiedTargetSha) {
-  const stillFf = runGitChecked(
-    BARE_FLAGS,
-    ["-C", bareDir, "merge-base", "--is-ancestor", targetRef, sha],
-    { allowExit1: true },
-  );
-  if (stillFf.status === 0) {
-    exitStatus(
-      `status: target-moved\ntarget_sha: ${currentTargetSha}\nverified_target_sha: ${verifiedTargetSha}`,
-      5,
+  const hasCommit = revParseOptional(bareDir, `${sha}^{commit}`);
+  if (hasCommit !== null) {
+    const stillFf = runGitChecked(
+      BARE_FLAGS,
+      ["-C", bareDir, "merge-base", "--is-ancestor", targetRef, sha],
+      { allowExit1: true },
     );
+    if (stillFf.status === 0) {
+      exitStatus(
+        `status: target-moved\ntarget_sha: ${currentTargetSha}\nverified_target_sha: ${verifiedTargetSha}`,
+        5,
+      );
+    }
   }
   exitStatus(
     `status: not-fast-forward\ntarget_sha: ${currentTargetSha}\nverified_target_sha: ${verifiedTargetSha}`,
@@ -740,106 +861,143 @@ function exitTargetMovedOrNotFf(bareDir, targetRef, sha, currentTargetSha, verif
   );
 }
 
+/**
+ * Validate workdir marker and `verified.json` before registering rollback or cloning, so
+ * argument mistakes (`--repo`/`--ssh`/`--sha`/`--target`) or foreign directories stay untouched.
+ * `verified.json` is an agent guardrail only: a mismatch stops, a match proves nothing about origin.
+ * @param {string} dir
+ * @param {string} repo
+ * @param {boolean} ssh
+ * @param {string} target
+ * @param {string} sha
+ * @returns {VerifiedState}
+ */
+function assertPushMatchesVerified(dir, repo, ssh, target, sha) {
+  const bareDir = join(dir, "bare.git");
+  if (!existsSync(bareDir)) fail(`stop: missing bare clone at ${bareDir}; run clone first`);
+  const marker = readWorkdirMarker(dir);
+  if (marker === null) {
+    fail(`stop: ${dir} was not created by direct-ship.mjs; refusing push`);
+  }
+  const verified = readVerifiedState(dir);
+  const mismatch =
+    marker.repo !== repo ||
+    marker.ssh !== ssh ||
+    verified.repo !== repo ||
+    verified.ssh !== ssh ||
+    verified.sha !== sha ||
+    verified.target !== target;
+  if (mismatch) {
+    fail(
+      `stop: push (${repo}, ssh=${ssh}, ${target} @ ${sha}) does not match verified (${verified.repo}, ssh=${verified.ssh}, ${verified.target} @ ${verified.sha})`,
+    );
+  }
+  return verified;
+}
+
 /** @param {CliOptions} opts */
 function cmdPush(opts) {
   const dir = assertDir(opts.dir);
   const repo = assertRepo(opts.repo);
-  const url = buildRepoUrl(repo, { ssh: opts.ssh, baseUrl: readTestBaseUrl() });
+  const ssh = Boolean(opts.ssh);
+  const url = buildRepoUrl(repo, { ssh, baseUrl: readTestBaseUrl() });
   const target = assertRef(opts.target, "--target");
   const sha = assertSha(opts.sha);
 
-  const bareDir = join(dir, "bare.git");
-  const checksDir = join(dir, "checks");
-  const verifiedPath = join(dir, VERIFIED_FILE);
-  const markerPath = join(dir, WORKDIR_MARKER);
-  if (!existsSync(bareDir)) fail(`stop: missing bare clone at ${bareDir}; run clone first`);
+  const verified = assertPushMatchesVerified(dir, repo, ssh, target, sha);
+  registerRollback(dir, join(dir, "checks"), join(dir, VERIFIED_FILE), join(dir, "bare.git"));
 
-  // Check verified state before registering rollback so a mistyped --repo/--sha/--target
-  // never destroys a verified workdir.
-  const verified = readVerifiedState(dir);
-  if (verified.repo !== repo || verified.sha !== sha || verified.target !== target) {
-    fail(
-      `stop: push (${repo} ${target} @ ${sha}) does not match verified (${verified.repo} ${verified.target} @ ${verified.sha})`,
-    );
-  }
-
-  registerRollback(dir, isScriptWorkdir(dir), checksDir, verifiedPath, bareDir, markerPath);
-  assertBareRepoClean(bareDir);
-  verifyOriginUrls(bareDir, url, BARE_FLAGS);
+  // Create a brand-new bare clone outside `<workdir>`. Never read `<workdir>/bare.git` or
+  // `<workdir>/checks` after checks ran.
+  const fresh = tryCreateEphemeralBareClone(repo, url, ssh);
+  if (!fresh.ok) fail(fresh.error);
+  const freshBareDir = fresh.bareDir;
 
   const targetRef = `refs/heads/${target}`;
-  const currentRemoteTarget = exactLsRemote(bareDir, targetRef);
-  if (currentRemoteTarget === null) {
-    fail(`stop: target ${targetRef} no longer exists on origin`);
+  const prePush = tryCheckTargetAndLanded(freshBareDir, targetRef, sha, { fetchFirst: false });
+  if (!prePush.ok) {
+    // We have not pushed yet; any failure here is a non-landing stop, never landing-uncertain.
+    fail(prePush.error);
   }
-  if (currentRemoteTarget !== verified.target_sha) {
-    const check = tryFetchAndCheckLanded(bareDir, targetRef, sha);
-    if (!check.ok) {
-      exitStatus(`status: landing-uncertain\nreason: ${check.error}`, 4, { rollback: false });
+  if (prePush.targetSha !== verified.target_sha) {
+    if (prePush.landed) {
+      exitAlreadyLanded(prePush.targetSha);
     }
-    if (check.landed) {
-      clearRollback();
-      process.stdout.write(`status: already-landed\ntarget_sha: ${check.targetSha}\n`);
-      return;
-    }
-    exitTargetMovedOrNotFf(bareDir, targetRef, sha, check.targetSha, verified.target_sha);
+    exitTargetMovedOrNotFf(freshBareDir, targetRef, sha, prePush.targetSha, verified.target_sha);
   }
 
-  const res = spawnGitSync(
-    [...BARE_FLAGS, "-C", bareDir, "push", "origin", `${sha}^{commit}:refs/heads/${target}`],
-    undefined,
-  );
+  const res = spawnGitSync([
+    ...BARE_FLAGS,
+    "-C",
+    freshBareDir,
+    "push",
+    "origin",
+    `${sha}^{commit}:refs/heads/${target}`,
+  ]);
   if (res.status !== 0) {
-    const check = tryFetchAndCheckLanded(bareDir, targetRef, sha);
+    const check = tryCheckTargetAndLanded(freshBareDir, targetRef, sha, { fetchFirst: true });
     if (!check.ok) {
-      exitStatus(`status: landing-uncertain\nreason: ${check.error}`, 4, { rollback: false });
+      exitStatus(
+        `status: landing-uncertain\nreason: ${check.error}\nephemeral_dir: ${fresh.dir}`,
+        4,
+        { rollback: false, keepEphemeral: true },
+      );
     }
     if (check.landed) {
-      clearRollback();
-      process.stdout.write(`status: already-landed\ntarget_sha: ${check.targetSha}\n`);
-      return;
+      exitAlreadyLanded(check.targetSha);
     }
     if (AMBIGUOUS_LINE_RE.test(res.stderr)) {
       fail(`stop: push failed with ambiguous ref: ${res.stderr}`);
     }
     if (NON_FF_RE.test(res.stderr)) {
-      exitTargetMovedOrNotFf(bareDir, targetRef, sha, check.targetSha, verified.target_sha);
+      exitTargetMovedOrNotFf(freshBareDir, targetRef, sha, check.targetSha, verified.target_sha);
     }
     exitStatus(`status: refused\n${res.stderr || res.stdout}`, 1);
   }
   if (AMBIGUOUS_LINE_RE.test(res.stderr)) {
     exitStatus(
-      `status: landing-uncertain\nreason: push exited 0 with ambiguous ref warning: ${res.stderr}`,
+      `status: landing-uncertain\nreason: push exited 0 with ambiguous ref warning: ${res.stderr}\nephemeral_dir: ${fresh.dir}`,
       4,
-      { rollback: false },
+      { rollback: false, keepEphemeral: true },
     );
   }
+  cleanupEphemeralDir();
   clearRollback();
   process.stdout.write(`status: pushed\nsha: ${sha}\ntarget: ${target}\n`);
 }
 
 /** @param {CliOptions} opts */
 function cmdConfirm(opts) {
-  const dir = assertDir(opts.dir);
   const repo = assertRepo(opts.repo);
-  const url = buildRepoUrl(repo, { ssh: opts.ssh, baseUrl: readTestBaseUrl() });
+  const ssh = Boolean(opts.ssh);
+  const url = buildRepoUrl(repo, { ssh, baseUrl: readTestBaseUrl() });
   const target = assertRef(opts.target, "--target");
   const sha = assertSha(opts.sha);
 
-  const bareDir = join(dir, "bare.git");
-  if (!existsSync(bareDir)) fail(`stop: missing bare clone at ${bareDir}; run clone first`);
-  // Never roll back inside confirm: a push may already have landed on origin.
-  assertBareRepoClean(bareDir);
-  verifyOriginUrls(bareDir, url, BARE_FLAGS);
+  // Confirm never reads `<workdir>/bare.git` and never rolls back `<workdir>`: a push may already
+  // have landed on origin. Every decision uses a brand-new bare clone outside `<workdir>`.
+  const fresh = tryCreateEphemeralBareClone(repo, url, ssh);
+  if (!fresh.ok) {
+    exitStatus(
+      `status: landing-uncertain\nreason: ${fresh.error}\nephemeral_dir: ${fresh.dir}`,
+      4,
+      { rollback: false, keepEphemeral: true },
+    );
+  }
 
   const targetRef = `refs/heads/${target}`;
-  const check = tryFetchAndCheckLanded(bareDir, targetRef, sha);
+  const check = tryCheckTargetAndLanded(fresh.bareDir, targetRef, sha, { fetchFirst: false });
   if (!check.ok) {
-    exitStatus(`status: landing-uncertain\nreason: ${check.error}`, 4, { rollback: false });
+    exitStatus(
+      `status: landing-uncertain\nreason: ${check.error}\nephemeral_dir: ${fresh.dir}`,
+      4,
+      { rollback: false, keepEphemeral: true },
+    );
   }
   if (!check.landed) {
     fail(`stop: ${sha} is not an ancestor of ${targetRef} (${check.targetSha})`);
   }
+  cleanupEphemeralDir();
   process.stdout.write(`status: confirmed\ntarget_sha: ${check.targetSha}\n`);
 }
 
@@ -850,16 +1008,25 @@ function cmdCleanup(opts) {
     process.stdout.write(`status: cleaned\ndir: ${dir}\n`);
     return;
   }
-  if (!isScriptWorkdir(dir)) {
+  if (readWorkdirMarker(dir) === null) {
     fail(`stop: ${dir} was not created by direct-ship.mjs; refusing cleanup`);
   }
   rmSync(join(dir, "bare.git"), { recursive: true, force: true });
   rmSync(join(dir, "checks"), { recursive: true, force: true });
   rmSync(join(dir, VERIFIED_FILE), { force: true });
-  rmSync(join(dir, WORKDIR_MARKER), { force: true });
-  if (existsSync(dir) && readdirSync(dir).length === 0) {
-    rmdirSync(dir);
+
+  const remaining = readdirSync(dir)
+    .filter((entry) => entry !== WORKDIR_MARKER)
+    .sort();
+  if (remaining.length > 0) {
+    // Keep WORKDIR_MARKER so cleanup can be rerun after the extra entries are removed.
+    process.stdout.write(
+      `status: partially-cleaned\ndir: ${dir}\nremaining:\n${remaining.join("\n")}\n`,
+    );
+    return;
   }
+  rmSync(join(dir, WORKDIR_MARKER), { force: true });
+  rmdirSync(dir);
   process.stdout.write(`status: cleaned\ndir: ${dir}\n`);
 }
 
@@ -872,7 +1039,7 @@ function main(argv) {
         "  clone   --repo <owner>/<repo> [--dir <new-workdir>] [--ssh]\n" +
         "  verify  --repo <owner>/<repo> --dir <workdir> --target <branch> --branch <crew> --sha <40-hex> [--ssh]\n" +
         "  push    --repo <owner>/<repo> --dir <workdir> --target <branch> --sha <40-hex> [--ssh]\n" +
-        "  confirm --repo <owner>/<repo> --dir <workdir> --target <branch> --sha <40-hex> [--ssh]\n" +
+        "  confirm --repo <owner>/<repo> [--dir <workdir>] --target <branch> --sha <40-hex> [--ssh]\n" +
         "  cleanup --dir <workdir>\n",
     );
     return;
