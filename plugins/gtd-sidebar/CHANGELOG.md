@@ -260,6 +260,63 @@
   time this version loads. Provider names and marks now come from bb's own cached
   roster instead of a plugin round trip.
 
+## [0.7.0](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.6.0...gtd-sidebar/v0.7.0) (2026-11-28)
+
+
+### Features
+
+* **bots,gtd-sidebar:** one main chat per bot with routine and work subthreads ([584049d](https://github.com/smsunarto/bb-plugins/commit/584049d1676079c792758cb6d35ec85635787c1c))
+* **bots:** delete bots from the bot menu and bb bots delete ([2ac3e1e](https://github.com/smsunarto/bb-plugins/commit/2ac3e1e56fb350a37f8c53199d4d5f7d40151856))
+* **bots:** give each bot its own skills in its home project ([c2523f1](https://github.com/smsunarto/bb-plugins/commit/c2523f15fe1da97b2381815c53e1471bf2fa744e))
+* **captain:** Captain icon in the sidebar, and titles without the Captain suffix (BBP-44) ([#199](https://github.com/smsunarto/bb-plugins/issues/199)) ([194e98b](https://github.com/smsunarto/bb-plugins/commit/194e98be56bdeec08d039891e31f37fb50d33cd8))
+* **gtd-sidebar,source-control:** Captain threads can't be settled or snoozed (BBP-80) ([#223](https://github.com/smsunarto/bb-plugins/issues/223)) ([1e2d8ac](https://github.com/smsunarto/bb-plugins/commit/1e2d8ac3f1fae3cdb4655771c4befc5736882b43))
+* **gtd-sidebar:** Capy-style list navigation ([266f1d5](https://github.com/smsunarto/bb-plugins/commit/266f1d5756e7ae2519a844ba1aebafe61d02c936))
+* **gtd-sidebar:** ChatGPT-style phone top navigation ([#216](https://github.com/smsunarto/bb-plugins/issues/216)) ([6838032](https://github.com/smsunarto/bb-plugins/commit/683803258953838e2454122c8fc11fbce2a13d95))
+* **gtd-sidebar:** draw thread row metadata on the title line ([40403de](https://github.com/smsunarto/bb-plugins/commit/40403de95a70f8f21d95aff079a1b80ec54cc1e4))
+* **gtd-sidebar:** expose bb navigation item ids on list rows ([006784b](https://github.com/smsunarto/bb-plugins/commit/006784bea7e59081ef34c2a1b402f8b1838c607f))
+* **gtd-sidebar:** fire the row long press at iOS's Fast Haptic Touch speed ([c53befc](https://github.com/smsunarto/bb-plugins/commit/c53befccf465c08fc6722367e87e0bfbff56fcfb))
+* **gtd-sidebar:** give Captains their own shelf and a New Captain nav row (BBP-149) ([#275](https://github.com/smsunarto/bb-plugins/issues/275)) ([09797e6](https://github.com/smsunarto/bb-plugins/commit/09797e692ae0e936728bb11d021e4f6e24de5e8b))
+* **gtd-sidebar:** let the thread's agent rename it in one call ([4ccbfc6](https://github.com/smsunarto/bb-plugins/commit/4ccbfc61c60f6b6a669efa700f583232f24fe177))
+* **gtd-sidebar:** New Captain action and Needs you counts on Captain rows ([#252](https://github.com/smsunarto/bb-plugins/issues/252)) ([03bafe8](https://github.com/smsunarto/bb-plugins/commit/03bafe89c381259f53649db294ac3b29a5506f24))
+* **gtd-sidebar:** remove the machine visibility picker ([#253](https://github.com/smsunarto/bb-plugins/issues/253)) ([0c5824d](https://github.com/smsunarto/bb-plugins/commit/0c5824d7568da0eea3d2e0326f1ac9354ed4c783))
+* **gtd-sidebar:** Search back as a navigation row ([#211](https://github.com/smsunarto/bb-plugins/issues/211)) ([bfa303f](https://github.com/smsunarto/bb-plugins/commit/bfa303fd394e7a0ff29b1a00f45fdedfa5b31ef4))
+* **gtd-sidebar:** settle from the thread header on phones ([144135d](https://github.com/smsunarto/bb-plugins/commit/144135d160835fa7e2e7eaeb447cba24644e64c7))
+* **gtd-sidebar:** share one row menu across the list and rework the touch sheet ([38759ce](https://github.com/smsunarto/bb-plugins/commit/38759ce41d7132150dd7377727d2e75c26d8ae79))
+* **gtd-sidebar:** slide subthread families open and shut like project groups ([9052af6](https://github.com/smsunarto/bb-plugins/commit/9052af630acc09bfb08d532773ba2493b6b28ee0))
+* **gtd-sidebar:** trim the touch sheet to its core actions ([d8afc72](https://github.com/smsunarto/bb-plugins/commit/d8afc727b3685fedacecba7bcc181887f8871f9e))
+* **mobile:** float the phone thread header over the stream ([#169](https://github.com/smsunarto/bb-plugins/issues/169)) ([6524391](https://github.com/smsunarto/bb-plugins/commit/6524391a33570dce62bbfd99542e599b015455e2))
+* **monokai:** right panel opens on a new tab; bb search fields as shadcn inputs ([#179](https://github.com/smsunarto/bb-plugins/issues/179)) ([df951bb](https://github.com/smsunarto/bb-plugins/commit/df951bb775d32edeac23b38802312936c7d202e8))
+* **ui:** publish the kit as the [@bb-plugins](https://github.com/bb-plugins) shadcn registry and migrate plugins to it ([#256](https://github.com/smsunarto/bb-plugins/issues/256)) ([6d3e671](https://github.com/smsunarto/bb-plugins/commit/6d3e671193b5aaea5406c22bdd1a8afb02249c2f))
+
+
+### Bug Fixes
+
+* **agentation:** acknowledged annotations stop reappearing after a turn ([#208](https://github.com/smsunarto/bb-plugins/issues/208)) ([b3a843f](https://github.com/smsunarto/bb-plugins/commit/b3a843fcd84eee627bfbeb561b845cc282cf4aed))
+* **ci:** green main's Build and Test jobs ([#174](https://github.com/smsunarto/bb-plugins/issues/174)) ([3cb2e5d](https://github.com/smsunarto/bb-plugins/commit/3cb2e5dfd25fbf7ee5b62b8f34b0d6cb038f7289))
+* **gtd-sidebar:** compact phone navigation rows ([#220](https://github.com/smsunarto/bb-plugins/issues/220)) ([e011b87](https://github.com/smsunarto/bb-plugins/commit/e011b874d95b822fd909aee8bce6f415070f9c36))
+* **gtd-sidebar:** dim a naming title under reduced motion ([39845e2](https://github.com/smsunarto/bb-plugins/commit/39845e266b9ebb3d7cda827702d22010fa5bcf06))
+* **gtd-sidebar:** hide hover Snooze and Settle on Captain threads (BBP-106) ([8f46fef](https://github.com/smsunarto/bb-plugins/commit/8f46fef88a02419fb9ea0b6f87856d8e13d0e08b))
+* **gtd-sidebar:** keep render free of ref reads and reset effects ([f8d7aee](https://github.com/smsunarto/bb-plugins/commit/f8d7aee00e98d9ab6d16f5b07063dd9e9ea451b8))
+* **gtd-sidebar:** prevent nav row labels from clipping descenders (BBP-153) ([#280](https://github.com/smsunarto/bb-plugins/issues/280)) ([9bb0ae2](https://github.com/smsunarto/bb-plugins/commit/9bb0ae29ce8779ade0683402252956b74b503ff2))
+* **gtd-sidebar:** put title rules before tagged thread data ([e4d2cf4](https://github.com/smsunarto/bb-plugins/commit/e4d2cf47c46e5340690f19f261ed7d509a717738))
+* **gtd-sidebar:** remove bb wordmark from phone navigation header (BBP-147) ([#271](https://github.com/smsunarto/bb-plugins/issues/271)) ([2becaab](https://github.com/smsunarto/bb-plugins/commit/2becaab4341553cb4170a948a46c75efb1be20fe))
+* **gtd-sidebar:** remove the phone nav scroll tints ([#224](https://github.com/smsunarto/bb-plugins/issues/224)) ([3869b92](https://github.com/smsunarto/bb-plugins/commit/3869b92eda0ec20ae972fa4ee6be6430da2b83a3))
+* **gtd-sidebar:** remove the thread row hover card (BBP-137) ([#264](https://github.com/smsunarto/bb-plugins/issues/264)) ([c153a62](https://github.com/smsunarto/bb-plugins/commit/c153a62c6b8916c0d9d289687052d766e51ad514))
+* **gtd-sidebar:** smooth the sidebar scroll fades ([#222](https://github.com/smsunarto/bb-plugins/issues/222)) ([502231b](https://github.com/smsunarto/bb-plugins/commit/502231b5cc4dcc69d71480b11c46ba05d20f00bf))
+* **gtd-sidebar:** stop background agents renaming threads ([#183](https://github.com/smsunarto/bb-plugins/issues/183)) ([2d3e1ae](https://github.com/smsunarto/bb-plugins/commit/2d3e1ae7af558c55a36fcb4a346312a4d2f8da3d))
+* **monokai,ui:** phone drawer depth and even control hairlines at 3x ([#171](https://github.com/smsunarto/bb-plugins/issues/171)) ([bd3be99](https://github.com/smsunarto/bb-plugins/commit/bd3be99be076d94727a632a822cc61060c5db3c7))
+* **monokai:** panel tab switch without the expanding artifact ([#210](https://github.com/smsunarto/bb-plugins/issues/210)) ([dfb0139](https://github.com/smsunarto/bb-plugins/commit/dfb0139dbfb3dea21420d3dd22e590ca0d288365))
+* **plugins:** stamp bb's plugin-scope attribute on self-labeled plugin UI ([#190](https://github.com/smsunarto/bb-plugins/issues/190)) ([60268f6](https://github.com/smsunarto/bb-plugins/commit/60268f6423114bcae8c8f488209fe6575c428ece))
+* **source-control,gtd-sidebar:** sidebar polish from UI feedback (BBP-130) ([#261](https://github.com/smsunarto/bb-plugins/issues/261)) ([371f964](https://github.com/smsunarto/bb-plugins/commit/371f964be43904466baa52c9bf70334d8d81dbc5))
+* **ui:** keep useMediaQuery subscription stable per query ([#284](https://github.com/smsunarto/bb-plugins/issues/284)) ([0a8e140](https://github.com/smsunarto/bb-plugins/commit/0a8e140fb895697122ff76a320e04b739200365e))
+
+
+### Performance Improvements
+
+* **gtd-sidebar:** keep drag sensors stable so list renders skip the rows ([fcb4545](https://github.com/smsunarto/bb-plugins/commit/fcb4545f26ac19292d1f358b6b50db86d3b6436a))
+* **gtd-sidebar:** open the long-press sheet without Radix's modal body styles ([ce4f05d](https://github.com/smsunarto/bb-plugins/commit/ce4f05d01238d7089fc5ce0da127493b108cc4b7))
+* **gtd-sidebar:** run the naming shimmer on the compositor ([f85857a](https://github.com/smsunarto/bb-plugins/commit/f85857aed0d4fbbf26d720c5885c8ebcea24f3d1))
+
 ## [0.6.0](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.5.1...gtd-sidebar/v0.6.0) (2026-10-21)
 
 ### Features
