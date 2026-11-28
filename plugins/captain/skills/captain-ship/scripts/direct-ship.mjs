@@ -672,6 +672,33 @@ function formatEscapedCommitLog(rawStdout) {
   return entries.map((entry) => escapeControlChars(entry)).join("\n");
 }
 
+/**
+ * Decide `already-landed` from a brand-new ephemeral bare clone outside `<workdir>` using the
+ * same `tryCheckTargetAndLanded` path `confirm` uses. No landed decision reads `<workdir>/bare.git`.
+ * @param {string} repo
+ * @param {string} url
+ * @param {boolean} ssh
+ * @param {string} targetRef
+ * @param {string} sha
+ * @param {string} localTarget
+ */
+function checkAlreadyLandedFresh(repo, url, ssh, targetRef, sha, localTarget) {
+  try {
+    const fresh = tryCreateEphemeralBareClone(repo, url, ssh);
+    if (!fresh.ok) fail(fresh.error);
+    const check = tryCheckTargetAndLanded(fresh.bareDir, targetRef, sha, { fetchFirst: false });
+    if (!check.ok) fail(check.error);
+    if (check.targetSha !== localTarget) {
+      fail(`stop: target ${targetRef} mismatch (bare=${localTarget}, fresh=${check.targetSha})`);
+    }
+    if (check.landed) {
+      exitAlreadyLanded(check.targetSha);
+    }
+  } finally {
+    cleanupEphemeralDir();
+  }
+}
+
 /** @param {CliOptions} opts */
 function cmdVerify(opts) {
   const dir = assertDir(opts.dir);
@@ -721,19 +748,8 @@ function cmdVerify(opts) {
     );
   }
 
-  // Check 2: already landed. Only run when `<sha>` exists in the bare clone; if the crew branch
-  // was not pushed yet (and `<sha>` is not on target), Check 3 reports `crew-branch-missing`.
-  const hasCommit = revParseOptional(bareDir, `${sha}^{commit}`);
-  if (hasCommit !== null) {
-    const alreadyLanded = runGitChecked(
-      BARE_FLAGS,
-      ["-C", bareDir, "merge-base", "--is-ancestor", sha, targetRef],
-      { allowExit1: true },
-    );
-    if (alreadyLanded.status === 0) {
-      exitAlreadyLanded(localTarget);
-    }
-  }
+  // Check 2: already landed. Checked in a fresh ephemeral clone (never `<workdir>/bare.git`).
+  checkAlreadyLandedFresh(repo, url, ssh, targetRef, sha, localTarget);
 
   // Check 3: crew branch exists on origin and in bare clone at exact `<sha>`.
   const remoteCrew = exactLsRemote(bareDir, crewRef);
@@ -792,7 +808,7 @@ function cmdVerify(opts) {
 function readVerifiedState(dir) {
   const verifiedPath = join(dir, VERIFIED_FILE);
   if (!existsSync(verifiedPath)) {
-    fail(`stop: missing ${VERIFIED_FILE} in ${dir}; run verify before push`);
+    fail(`stop: missing ${VERIFIED_FILE} in ${dir}; run cleanup, then clone and verify again`);
   }
   /** @type {unknown} */
   let parsed;
@@ -800,7 +816,7 @@ function readVerifiedState(dir) {
     parsed = JSON.parse(readFileSync(verifiedPath, "utf8"));
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    fail(`stop: unreadable ${VERIFIED_FILE}: ${msg}`);
+    fail(`stop: unreadable ${VERIFIED_FILE} (${msg}); run cleanup, then clone and verify again`);
   }
   if (
     typeof parsed !== "object" ||
@@ -818,7 +834,7 @@ function readVerifiedState(dir) {
     !SHA_RE.test(parsed.sha) ||
     !SHA_RE.test(parsed.target_sha)
   ) {
-    fail(`stop: invalid ${VERIFIED_FILE} in ${dir}`);
+    fail(`stop: invalid ${VERIFIED_FILE} in ${dir}; run cleanup, then clone and verify again`);
   }
   return {
     repo: parsed.repo,
@@ -907,63 +923,69 @@ function cmdPush(opts) {
   const verified = assertPushMatchesVerified(dir, repo, ssh, target, sha);
   registerRollback(dir, join(dir, "checks"), join(dir, VERIFIED_FILE), join(dir, "bare.git"));
 
-  // Create a brand-new bare clone outside `<workdir>`. Never read `<workdir>/bare.git` or
-  // `<workdir>/checks` after checks ran.
-  const fresh = tryCreateEphemeralBareClone(repo, url, ssh);
-  if (!fresh.ok) fail(fresh.error);
-  const freshBareDir = fresh.bareDir;
+  let keepEphemeral = false;
+  try {
+    // Create a brand-new bare clone outside `<workdir>`. Never read `<workdir>/bare.git` or
+    // `<workdir>/checks` after checks ran.
+    const fresh = tryCreateEphemeralBareClone(repo, url, ssh);
+    if (!fresh.ok) fail(fresh.error);
+    const freshBareDir = fresh.bareDir;
 
-  const targetRef = `refs/heads/${target}`;
-  const prePush = tryCheckTargetAndLanded(freshBareDir, targetRef, sha, { fetchFirst: false });
-  if (!prePush.ok) {
-    // We have not pushed yet; any failure here is a non-landing stop, never landing-uncertain.
-    fail(prePush.error);
-  }
-  if (prePush.targetSha !== verified.target_sha) {
-    if (prePush.landed) {
-      exitAlreadyLanded(prePush.targetSha);
+    const targetRef = `refs/heads/${target}`;
+    const prePush = tryCheckTargetAndLanded(freshBareDir, targetRef, sha, { fetchFirst: false });
+    if (!prePush.ok) {
+      // We have not pushed yet; any failure here is a non-landing stop, never landing-uncertain.
+      fail(prePush.error);
     }
-    exitTargetMovedOrNotFf(freshBareDir, targetRef, sha, prePush.targetSha, verified.target_sha);
-  }
+    if (prePush.targetSha !== verified.target_sha) {
+      if (prePush.landed) {
+        exitAlreadyLanded(prePush.targetSha);
+      }
+      exitTargetMovedOrNotFf(freshBareDir, targetRef, sha, prePush.targetSha, verified.target_sha);
+    }
 
-  const res = spawnGitSync([
-    ...BARE_FLAGS,
-    "-C",
-    freshBareDir,
-    "push",
-    "origin",
-    `${sha}^{commit}:refs/heads/${target}`,
-  ]);
-  if (res.status !== 0) {
-    const check = tryCheckTargetAndLanded(freshBareDir, targetRef, sha, { fetchFirst: true });
-    if (!check.ok) {
+    const res = spawnGitSync([
+      ...BARE_FLAGS,
+      "-C",
+      freshBareDir,
+      "push",
+      "origin",
+      `${sha}^{commit}:refs/heads/${target}`,
+    ]);
+    if (res.status !== 0) {
+      const check = tryCheckTargetAndLanded(freshBareDir, targetRef, sha, { fetchFirst: true });
+      if (!check.ok) {
+        keepEphemeral = true;
+        exitStatus(
+          `status: landing-uncertain\nreason: ${check.error}\nephemeral_dir: ${fresh.dir}`,
+          4,
+          { rollback: false, keepEphemeral: true },
+        );
+      }
+      if (check.landed) {
+        exitAlreadyLanded(check.targetSha);
+      }
+      if (AMBIGUOUS_LINE_RE.test(res.stderr)) {
+        fail(`stop: push failed with ambiguous ref: ${res.stderr}`);
+      }
+      if (NON_FF_RE.test(res.stderr)) {
+        exitTargetMovedOrNotFf(freshBareDir, targetRef, sha, check.targetSha, verified.target_sha);
+      }
+      exitStatus(`status: refused\n${res.stderr || res.stdout}`, 1);
+    }
+    if (AMBIGUOUS_LINE_RE.test(res.stderr)) {
+      keepEphemeral = true;
       exitStatus(
-        `status: landing-uncertain\nreason: ${check.error}\nephemeral_dir: ${fresh.dir}`,
+        `status: landing-uncertain\nreason: push exited 0 with ambiguous ref warning: ${res.stderr}\nephemeral_dir: ${fresh.dir}`,
         4,
         { rollback: false, keepEphemeral: true },
       );
     }
-    if (check.landed) {
-      exitAlreadyLanded(check.targetSha);
-    }
-    if (AMBIGUOUS_LINE_RE.test(res.stderr)) {
-      fail(`stop: push failed with ambiguous ref: ${res.stderr}`);
-    }
-    if (NON_FF_RE.test(res.stderr)) {
-      exitTargetMovedOrNotFf(freshBareDir, targetRef, sha, check.targetSha, verified.target_sha);
-    }
-    exitStatus(`status: refused\n${res.stderr || res.stdout}`, 1);
+    clearRollback();
+    process.stdout.write(`status: pushed\nsha: ${sha}\ntarget: ${target}\n`);
+  } finally {
+    if (!keepEphemeral) cleanupEphemeralDir();
   }
-  if (AMBIGUOUS_LINE_RE.test(res.stderr)) {
-    exitStatus(
-      `status: landing-uncertain\nreason: push exited 0 with ambiguous ref warning: ${res.stderr}\nephemeral_dir: ${fresh.dir}`,
-      4,
-      { rollback: false, keepEphemeral: true },
-    );
-  }
-  cleanupEphemeralDir();
-  clearRollback();
-  process.stdout.write(`status: pushed\nsha: ${sha}\ntarget: ${target}\n`);
 }
 
 /** @param {CliOptions} opts */
@@ -974,31 +996,37 @@ function cmdConfirm(opts) {
   const target = assertRef(opts.target, "--target");
   const sha = assertSha(opts.sha);
 
-  // Confirm never reads `<workdir>/bare.git` and never rolls back `<workdir>`: a push may already
-  // have landed on origin. Every decision uses a brand-new bare clone outside `<workdir>`.
-  const fresh = tryCreateEphemeralBareClone(repo, url, ssh);
-  if (!fresh.ok) {
-    exitStatus(
-      `status: landing-uncertain\nreason: ${fresh.error}\nephemeral_dir: ${fresh.dir}`,
-      4,
-      { rollback: false, keepEphemeral: true },
-    );
-  }
+  let keepEphemeral = false;
+  try {
+    // Confirm never reads `<workdir>/bare.git` and never rolls back `<workdir>`: a push may already
+    // have landed on origin. Every decision uses a brand-new bare clone outside `<workdir>`.
+    const fresh = tryCreateEphemeralBareClone(repo, url, ssh);
+    if (!fresh.ok) {
+      keepEphemeral = true;
+      exitStatus(
+        `status: landing-uncertain\nreason: ${fresh.error}\nephemeral_dir: ${fresh.dir}`,
+        4,
+        { rollback: false, keepEphemeral: true },
+      );
+    }
 
-  const targetRef = `refs/heads/${target}`;
-  const check = tryCheckTargetAndLanded(fresh.bareDir, targetRef, sha, { fetchFirst: false });
-  if (!check.ok) {
-    exitStatus(
-      `status: landing-uncertain\nreason: ${check.error}\nephemeral_dir: ${fresh.dir}`,
-      4,
-      { rollback: false, keepEphemeral: true },
-    );
+    const targetRef = `refs/heads/${target}`;
+    const check = tryCheckTargetAndLanded(fresh.bareDir, targetRef, sha, { fetchFirst: false });
+    if (!check.ok) {
+      keepEphemeral = true;
+      exitStatus(
+        `status: landing-uncertain\nreason: ${check.error}\nephemeral_dir: ${fresh.dir}`,
+        4,
+        { rollback: false, keepEphemeral: true },
+      );
+    }
+    if (!check.landed) {
+      fail(`stop: ${sha} is not an ancestor of ${targetRef} (${check.targetSha})`);
+    }
+    process.stdout.write(`status: confirmed\ntarget_sha: ${check.targetSha}\n`);
+  } finally {
+    if (!keepEphemeral) cleanupEphemeralDir();
   }
-  if (!check.landed) {
-    fail(`stop: ${sha} is not an ancestor of ${targetRef} (${check.targetSha})`);
-  }
-  cleanupEphemeralDir();
-  process.stdout.write(`status: confirmed\ntarget_sha: ${check.targetSha}\n`);
 }
 
 /** @param {CliOptions} opts */

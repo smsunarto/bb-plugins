@@ -337,7 +337,8 @@ describe("captain-ship direct-ship script", () => {
     expect(skill).toContain("replacing any existing `Repo:` lines");
     expect(skill).toContain("machine git credentials");
     expect(skill).toContain("stop after `status: ready`");
-    expect(skill).toContain("never read `<workdir>/bare.git` or `<workdir>/checks`");
+    expect(skill).toContain("never trust `<workdir>/bare.git` or `<workdir>/checks`");
+    expect(skill).toContain("from outside `<workdir>`");
 
     expect(buildRepoUrl("smsunarto/bb-plugins")).toBe(
       "https://github.com/smsunarto/bb-plugins.git",
@@ -1826,6 +1827,58 @@ describe("captain-ship direct-ship script", () => {
     expect(existsSync(fakeSshLog)).toBe(false);
 
     rmSync(preReceive);
+
+    // Vector (d): review round-2 repro — check forges T in bare.git and deletes verified.json and
+    // checks/; push stops advising cleanup+re-clone (never "run verify"), and re-running verify
+    // still decides already-landed in a fresh ephemeral clone and MUST NOT report already-landed.
+    const wdRerunVerify = join(root, "ship-rerun-verify-forge");
+    const commonRerunVerify = ["--repo", REPO_SLUG, "--dir", wdRerunVerify];
+    runScript(["clone", ...commonRerunVerify], { env });
+    runScript(
+      ["verify", ...commonRerunVerify, "--target", "main", "--branch", "crew", "--sha", sha],
+      { env },
+    );
+    const rerunBare = join(wdRerunVerify, "bare.git");
+    forgeLooseCommitParent(rerunBare, base, sha, env);
+    expect(
+      runGit(["--git-dir", rerunBare, "merge-base", "--is-ancestor", sha, "refs/heads/main"], {
+        env,
+        allowFailure: true,
+      }).status,
+    ).toBe(0);
+    rmSync(join(wdRerunVerify, "verified.json"));
+    rmSync(join(wdRerunVerify, "checks"), { recursive: true });
+
+    const pushAfterDelete = runScript(
+      ["push", ...commonRerunVerify, "--target", "main", "--sha", sha],
+      { env, allowFailure: true },
+    );
+    expect(pushAfterDelete.status).toBe(1);
+    expect(pushAfterDelete.stderr).toContain("run cleanup, then clone and verify again");
+    expect(pushAfterDelete.stderr).not.toContain("run verify before push");
+
+    const verifyAfterForge = runScript(
+      ["verify", ...commonRerunVerify, "--target", "main", "--branch", "crew", "--sha", sha],
+      { env, allowFailure: true },
+    );
+    expect(verifyAfterForge.stdout).not.toContain("status: already-landed");
+    expect(runGit(["--git-dir", originDir, "rev-parse", "refs/heads/main"], { env }).stdout).toBe(
+      base,
+    );
+    runScript(["cleanup", "--dir", wdRerunVerify], { env });
+
+    // Invalid verified.json also advises cleanup + re-clone, never "run verify".
+    const wdInvalidVerified = join(root, "ship-invalid-verified");
+    const commonInvalid = ["--repo", REPO_SLUG, "--dir", wdInvalidVerified];
+    runScript(["clone", ...commonInvalid], { env });
+    writeFileSync(join(wdInvalidVerified, "verified.json"), "{}\n");
+    const pushInvalid = runScript(["push", ...commonInvalid, "--target", "main", "--sha", sha], {
+      env,
+      allowFailure: true,
+    });
+    expect(pushInvalid.status).toBe(1);
+    expect(pushInvalid.stderr).toContain("run cleanup, then clone and verify again");
+    runScript(["cleanup", "--dir", wdInvalidVerified], { env });
 
     // Defense in depth: verify still refuses grafts, shallow, and alternates planted in bare.git before verify.
     for (const rel of ["info/grafts", "shallow", "objects/info/alternates"]) {
