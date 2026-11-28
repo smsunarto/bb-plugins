@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { sharedStyles } from "./shared-ui-styles";
 import { BANNER_HOVER } from "../packages/ui/src/banner-hover";
+import { styles } from "../packages/ui/src/styles";
 
 function checkUtils(root: string) {
   const path = join(root, "utils.ts");
@@ -49,10 +50,21 @@ test("shared selectors match their content fingerprint", () => {
   expect(result.classes).toBe(readFileSync("packages/ui/src/styles.ts", "utf8"));
   expect(sharedStyles(source + "\n/* changed */").classes).not.toBe(result.classes);
 
-  // controls.css banner-hover custom properties stay in lockstep with BANNER_HOVER.
-  const collapsed = source.replace(/\s+/g, " ");
-  expect(collapsed).toContain(`--bb-banner-hover-bg: ${BANNER_HOVER.lightBg};`);
-  expect(collapsed).toContain(`--bb-banner-hover-shadow: ${BANNER_HOVER.lightShadow};`);
-  expect(collapsed).toContain(`--bb-banner-hover-bg: ${BANNER_HOVER.darkBg};`);
-  expect(collapsed).toContain(`--bb-banner-hover-shadow: ${BANNER_HOVER.darkShadow};`);
+  // controls.css banner-hover custom properties stay in lockstep with BANNER_HOVER,
+  // bound specifically to the light base rule and the .dark rule (swapping them fails).
+  const bannerHoverClass = styles["banner-hover"];
+  const rules = [...source.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]+)\}/g)].map(
+    ([, selector, body]) => ({
+      selector: selector!.replace(/\s+/g, " ").trim(),
+      body: body!.replace(/\s+/g, " ").trim(),
+    }),
+  );
+  const lightRule = rules.find((r) => r.selector === `.${bannerHoverClass}`);
+  const darkRule = rules.find((r) => r.selector === `.dark .${bannerHoverClass}`);
+  expect(lightRule, "light banner-hover rule").toBeDefined();
+  expect(darkRule, "dark banner-hover rule").toBeDefined();
+  expect(lightRule!.body).toContain(`--bb-banner-hover-bg: ${BANNER_HOVER.lightBg};`);
+  expect(lightRule!.body).toContain(`--bb-banner-hover-shadow: ${BANNER_HOVER.lightShadow};`);
+  expect(darkRule!.body).toContain(`--bb-banner-hover-bg: ${BANNER_HOVER.darkBg};`);
+  expect(darkRule!.body).toContain(`--bb-banner-hover-shadow: ${BANNER_HOVER.darkShadow};`);
 });
