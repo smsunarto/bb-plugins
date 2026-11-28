@@ -8,6 +8,11 @@ import { chromium, type Page } from "playwright";
 import { installDom } from "@bb-plugins/testing";
 import { scanFile, scanSelectors, stripComments } from "./style-contract";
 import { CAPTAIN_EMPTY_HIDE_CSS } from "../plugins/captain/src/app/overview-default";
+import { FRAME_BORDER_CSS } from "../plugins/monokai/app/frame-border";
+import { NEW_TAB_LAUNCHER_CSS } from "../plugins/monokai/app/new-tab-launcher";
+import { SEARCH_FIELDS_CSS } from "../plugins/monokai/app/search-fields";
+import { BRANCH_PICKER_CSS } from "../plugins/t3-composer/src/branch-picker-style";
+import { hiddenProjectsCss } from "../plugins/t3-composer/src/captain-projects/project-picker-hide";
 // workaround:t3-composer/prompt-stack-banner-chrome
 import {
   CARD_ATTR,
@@ -83,11 +88,7 @@ const SINGLE_CARD_PATTERNS: readonly { name: string; pattern: RegExp; cssOnly?: 
 ];
 
 function trackedPluginFiles(): string[] {
-  return execFileSync(
-    "git",
-    ["ls-files", "--cached", "--others", "--exclude-standard", "plugins"],
-    { encoding: "utf8" },
-  )
+  return execFileSync("git", ["ls-files", "--cached", "plugins"], { encoding: "utf8" })
     .split("\n")
     .filter(
       (file) =>
@@ -725,9 +726,7 @@ function buildBannerFixtureHtml(
   theme: ThemeSpec,
   tailwindCss: string,
   controlsCss: string,
-  t3AppCss: string,
-  rpivCss: string,
-  devinCss: string,
+  pluginStylesheetsCss: string,
   bodyMarkup: string,
 ): string {
   return `<!doctype html>
@@ -748,9 +747,7 @@ function buildBannerFixtureHtml(
         /* Settle CSS hover transitions synchronously in headless Chromium without affecting CSS animations. */
         button, a, span { transition-duration: 0s !important; }
         ${theme.themeCss}
-        ${t3AppCss}
-        ${rpivCss}
-        ${devinCss}
+        ${pluginStylesheetsCss}
         ${CAPTAIN_EMPTY_HIDE_CSS}
       </style>
       <script>
@@ -910,92 +907,167 @@ async function assertHoverAndFocusContract(page: Page, themeName: string): Promi
   ).not.toBe(sharedToggleHoverBg);
   expect(activeTabHover.shadow, `${themeName}:captain-active-tab no hover shadow`).toBe("none");
 
-  // Real Captain More pill and Read plan button inside bg-popover:
-  // never receive TOGGLE_ATTR, use the exact shared hover fill + Light inset edge,
-  // never darken in Default Light, lighten in Dark, and Read plan keeps its outline shadow.
-  const captainMore = page
-    .locator('[data-card-kind="captain-ask"] button[aria-expanded]')
-    .filter({ hasText: /More|Less/ })
-    .first();
-  expect(
-    await captainMore.getAttribute(TOGGLE_ATTR),
-    `${themeName}:captain-more untagged`,
-  ).toBeNull();
-  await captainMore.hover();
-  const moreCheck = await captainMore.evaluate((btn) => {
-    const compositeToLuma = (
-      window as unknown as { __compositeToLuma: (b: string, o?: string) => number }
-    ).__compositeToLuma;
-    const popover = btn.closest(".bg-popover")!;
-    const pill = btn.querySelector("span")!;
-    const baseBg = getComputedStyle(popover).backgroundColor;
-    const pillCs = getComputedStyle(pill);
-    return {
-      buttonBg: getComputedStyle(btn).backgroundColor,
-      pillBg: pillCs.backgroundColor,
-      pillShadow: pillCs.boxShadow,
-      restLuma: compositeToLuma(baseBg),
-      pillHoverLuma: compositeToLuma(baseBg, pillCs.backgroundColor),
-    };
-  });
-  expect(moreCheck.buttonBg, `${themeName}:captain-more wrapper transparent`).toBe(
-    "rgba(0, 0, 0, 0)",
-  );
-  expect(moreCheck.pillBg, `${themeName}:captain-more pill uses shared hover fill`).toBe(
-    sharedToggleHoverBg,
-  );
-  if (themeName === "default-light") {
-    expect(moreCheck.pillShadow, `${themeName}:captain-more light hover edge`).toContain("inset");
-    expect(
-      moreCheck.pillHoverLuma,
-      `${themeName}:captain-more pill never darkens`,
-    ).toBeGreaterThanOrEqual(moreCheck.restLuma);
-  } else {
-    expect(
-      moreCheck.pillHoverLuma,
-      `${themeName}:captain-more pill lightens in dark`,
-    ).toBeGreaterThan(moreCheck.restLuma);
+  async function hoverMetrics(
+    locator: ReturnType<Page["locator"]>,
+    opts: { targetSpan?: boolean; onPopover?: boolean } = {},
+  ) {
+    const read = () =>
+      locator.evaluate(
+        (el, { targetSpan, onPopover, cardAttr }) => {
+          const compositeToLuma = (
+            window as unknown as { __compositeToLuma: (b: string, o?: string) => number }
+          ).__compositeToLuma;
+          const target = targetSpan ? el.querySelector("span")! : el;
+          const base = onPopover ? el.closest(".bg-popover")! : el.closest(`[${cardAttr}]`)!;
+          const baseBg = getComputedStyle(base).backgroundColor;
+          const cs = getComputedStyle(target);
+          return {
+            wrapperBg: getComputedStyle(el).backgroundColor,
+            bg: cs.backgroundColor,
+            shadow: cs.boxShadow,
+            borderColor: cs.borderTopColor,
+            hasVisibleBorder:
+              cs.borderTopWidth !== "0px" && cs.borderTopColor !== "rgba(0, 0, 0, 0)",
+            fillLuma: compositeToLuma(baseBg, cs.backgroundColor),
+            borderLuma: compositeToLuma(baseBg, cs.borderTopColor),
+          };
+        },
+        {
+          targetSpan: Boolean(opts.targetSpan),
+          onPopover: Boolean(opts.onPopover),
+          cardAttr: CARD_ATTR,
+        },
+      );
+    await page.mouse.move(0, 0);
+    const before = await read();
+    await locator.hover();
+    const after = await read();
+    return { before, after };
   }
 
-  const captainReadPlan = page
-    .locator('[data-card-kind="captain-ask"] button[aria-expanded]')
-    .filter({ hasText: /Read plan/ })
+  // Real Captain More pill and Read plan / Revise / Later / Other… buttons inside bg-popover:
+  // never receive TOGGLE_ATTR, use the exact shared hover fill, never darken in any theme,
+  // and always show a visible hover cue: fill lightens in Dark; in Light, bordered controls
+  // keep white fill and strengthen their single border without adding an inset edge, while
+  // borderless Other… gets the inset hairline (and stays borderless in Dark).
+  const askBodyControls: readonly {
+    name: string;
+    locator: ReturnType<Page["locator"]>;
+    bordered: boolean;
+    targetSpan?: boolean;
+    expectTransparentWrapper?: boolean;
+  }[] = [
+    {
+      name: "captain-more",
+      locator: page
+        .locator('[data-card-kind="captain-ask"] button[aria-expanded]')
+        .filter({ hasText: /More|Less/ })
+        .first(),
+      bordered: true,
+      targetSpan: true,
+      expectTransparentWrapper: true,
+    },
+    {
+      name: "captain-read-plan",
+      locator: page
+        .locator('[data-card-kind="captain-ask"] button[aria-expanded]')
+        .filter({ hasText: /Read plan/ })
+        .first(),
+      bordered: true,
+    },
+    {
+      name: "captain-revise",
+      locator: page
+        .locator('[data-card-kind="captain-ask"] [data-captain-answers] button')
+        .filter({ hasText: /^Revise$/ })
+        .first(),
+      bordered: true,
+    },
+    {
+      name: "captain-later",
+      locator: page.locator('[data-card-kind="captain-ask"] button[aria-label="Later"]').first(),
+      bordered: true,
+    },
+    {
+      name: "captain-other",
+      locator: page.locator('[data-card-kind="captain-ask"] button[aria-label="Other…"]').first(),
+      bordered: false,
+    },
+  ];
+  for (const ctrl of askBodyControls) {
+    expect(
+      await ctrl.locator.getAttribute(TOGGLE_ATTR),
+      `${themeName}:${ctrl.name} untagged`,
+    ).toBeNull();
+    const { before, after } = await hoverMetrics(ctrl.locator, {
+      targetSpan: ctrl.targetSpan,
+      onPopover: true,
+    });
+    if (ctrl.expectTransparentWrapper) {
+      expect(after.wrapperBg, `${themeName}:${ctrl.name} wrapper transparent`).toBe(
+        "rgba(0, 0, 0, 0)",
+      );
+    }
+    expect(after.bg, `${themeName}:${ctrl.name} uses shared hover fill`).toBe(sharedToggleHoverBg);
+    expect(after.fillLuma, `${themeName}:${ctrl.name} never darkens`).toBeGreaterThanOrEqual(
+      before.fillLuma,
+    );
+    if (themeName === "default-light") {
+      if (ctrl.bordered) {
+        expect(after.shadow, `${themeName}:${ctrl.name} shadow intact (no doubled edge)`).toBe(
+          before.shadow,
+        );
+        expect(after.shadow, `${themeName}:${ctrl.name} no inset shadow`).not.toContain("inset");
+        expect(
+          after.borderColor,
+          `${themeName}:${ctrl.name} strengthens single border on Light hover`,
+        ).not.toBe(before.borderColor);
+        expect(
+          after.borderLuma,
+          `${themeName}:${ctrl.name} stronger Light border has higher contrast`,
+        ).toBeLessThan(before.borderLuma);
+      } else {
+        expect(after.shadow, `${themeName}:${ctrl.name} light hover edge`).toContain("inset");
+        expect(after.shadow, `${themeName}:${ctrl.name} visible Light hover cue`).not.toBe(
+          before.shadow,
+        );
+      }
+    } else {
+      expect(after.fillLuma, `${themeName}:${ctrl.name} lightens in dark`).toBeGreaterThan(
+        before.fillLuma,
+      );
+      if (ctrl.bordered) {
+        expect(after.shadow, `${themeName}:${ctrl.name} shadow intact`).toBe(before.shadow);
+        expect(after.shadow, `${themeName}:${ctrl.name} no inset shadow`).not.toContain("inset");
+      } else {
+        expect(after.shadow, `${themeName}:${ctrl.name} dark hover no shadow`).toBe("none");
+        expect(after.hasVisibleBorder, `${themeName}:${ctrl.name} dark hover no border`).toBe(
+          false,
+        );
+      }
+    }
+  }
+
+  // Primary Captain ask option (Approve) must strictly lighten (never darken) in every theme.
+  const captainApprove = page
+    .locator('[data-card-kind="captain-ask"] [data-captain-answers] button')
+    .filter({ hasText: /^Approve/ })
     .first();
   expect(
-    await captainReadPlan.getAttribute(TOGGLE_ATTR),
-    `${themeName}:captain-read-plan untagged`,
+    await captainApprove.getAttribute(TOGGLE_ATTR),
+    `${themeName}:captain-approve untagged`,
   ).toBeNull();
-  const rpBeforeShadow = await captainReadPlan.evaluate((el) => getComputedStyle(el).boxShadow);
-  await captainReadPlan.hover();
-  const rpAfter = await captainReadPlan.evaluate((el) => {
-    const compositeToLuma = (
-      window as unknown as { __compositeToLuma: (b: string, o?: string) => number }
-    ).__compositeToLuma;
-    const popover = el.closest(".bg-popover")!;
-    const baseBg = getComputedStyle(popover).backgroundColor;
-    const cs = getComputedStyle(el);
-    return {
-      bg: cs.backgroundColor,
-      shadow: cs.boxShadow,
-      restLuma: compositeToLuma(baseBg),
-      hoverLuma: compositeToLuma(baseBg, cs.backgroundColor),
-    };
-  });
-  expect(rpAfter.bg, `${themeName}:captain-read-plan uses shared hover fill`).toBe(
-    sharedToggleHoverBg,
+  const approve = await hoverMetrics(captainApprove, { onPopover: true });
+  expect(approve.after.bg, `${themeName}:captain-approve changes fill on hover`).not.toBe(
+    approve.before.bg,
   );
-  if (themeName === "default-light") {
-    expect(rpAfter.shadow, `${themeName}:captain-read-plan light hover edge`).toContain("inset");
-    expect(
-      rpAfter.hoverLuma,
-      `${themeName}:captain-read-plan never darkens`,
-    ).toBeGreaterThanOrEqual(rpAfter.restLuma);
-  } else {
-    expect(rpAfter.shadow, `${themeName}:captain-read-plan shadow intact`).toBe(rpBeforeShadow);
-    expect(rpAfter.hoverLuma, `${themeName}:captain-read-plan lightens in dark`).toBeGreaterThan(
-      rpAfter.restLuma,
-    );
-  }
+  expect(
+    approve.after.fillLuma,
+    `${themeName}:captain-approve must lighten (never darken) on hover`,
+  ).toBeGreaterThan(approve.before.fillLuma);
+  expect(approve.after.shadow, `${themeName}:captain-approve no inset hover shadow`).not.toContain(
+    "inset",
+  );
 
   // PromptStackCollapseRow must NOT receive TOGGLE_ATTR.
   expect(
@@ -1062,9 +1134,7 @@ async function assertThemeBannerContract(
   theme: ThemeSpec,
   tailwindCss: string,
   controlsCss: string,
-  t3AppCss: string,
-  rpivCss: string,
-  devinCss: string,
+  pluginStylesheetsCss: string,
   bodyMarkup: string,
   taggerScript: string,
 ): Promise<void> {
@@ -1073,15 +1143,7 @@ async function assertThemeBannerContract(
   // instead of bb's `.dark` class fails immediately.
   await page.emulateMedia({ colorScheme: theme.htmlClass === "dark" ? "light" : "dark" });
   await page.setContent(
-    buildBannerFixtureHtml(
-      theme,
-      tailwindCss,
-      controlsCss,
-      t3AppCss,
-      rpivCss,
-      devinCss,
-      bodyMarkup,
-    ),
+    buildBannerFixtureHtml(theme, tailwindCss, controlsCss, pluginStylesheetsCss, bodyMarkup),
   );
 
   // Pre-t3-composer behavioral checks on REAL plugin banners:
@@ -1097,29 +1159,34 @@ async function assertThemeBannerContract(
     `${theme.name}:real Devin banner zero pulse/glimmer without t3-composer`,
   ).toEqual([]);
 
-  // 2. Real TodoBanner toggle lightens on hover in dark themes even without t3-composer.
-  if (theme.htmlClass === "dark") {
-    const rpivBtnSel = '[data-card-kind="plugin-rpiv-todo"] button[aria-expanded]';
-    await page.hover(rpivBtnSel);
-    const rpivPreHover = await page.evaluate((sel) => {
-      const compositeToLuma = (
-        window as unknown as { __compositeToLuma: (b: string, o?: string) => number }
-      ).__compositeToLuma;
-      const btn = document.querySelector(sel)!;
-      const card = btn.closest("section")!;
-      const cardBg = getComputedStyle(card).backgroundColor;
-      const btnBg = getComputedStyle(btn).backgroundColor;
-      return {
-        restLuma: compositeToLuma(cardBg),
-        hoverLuma: compositeToLuma(cardBg, btnBg),
-      };
-    }, rpivBtnSel);
+  // 2. Real TodoBanner toggle lightens on hover in every theme (including Light) even without t3-composer.
+  const rpivBtnSel = '[data-card-kind="plugin-rpiv-todo"] button[aria-expanded]';
+  await page.hover(rpivBtnSel);
+  const rpivPreHover = await page.evaluate((sel) => {
+    const compositeToLuma = (
+      window as unknown as { __compositeToLuma: (b: string, o?: string) => number }
+    ).__compositeToLuma;
+    const btn = document.querySelector(sel)!;
+    const card = btn.closest("section")!;
+    const cardBg = getComputedStyle(card).backgroundColor;
+    const btnCs = getComputedStyle(btn);
+    return {
+      btnShadow: btnCs.boxShadow,
+      restLuma: compositeToLuma(cardBg),
+      hoverLuma: compositeToLuma(cardBg, btnCs.backgroundColor),
+    };
+  }, rpivBtnSel);
+  expect(
+    rpivPreHover.hoverLuma,
+    `${theme.name}:real TodoBanner lightens on hover without t3-composer`,
+  ).toBeGreaterThan(rpivPreHover.restLuma);
+  if (theme.name === "default-light") {
     expect(
-      rpivPreHover.hoverLuma,
-      `${theme.name}:real TodoBanner lightens on hover without t3-composer`,
-    ).toBeGreaterThan(rpivPreHover.restLuma);
-    await page.mouse.move(0, 0);
+      rpivPreHover.btnShadow,
+      `${theme.name}:real TodoBanner light hover edge without t3-composer`,
+    ).toContain("inset");
   }
+  await page.mouse.move(0, 0);
 
   // Mount the REAL t3-composer prompt-stack tagger + stylesheet.
   await page.addScriptTag({ content: taggerScript });
@@ -1137,6 +1204,8 @@ async function assertThemeBannerContract(
       switch (kind) {
         case "captain-idle":
           return card.querySelector("[data-bb-plugin='captain'] span[id]");
+        case "captain-ask":
+          return card.querySelector('button[role="tab"][aria-selected="true"] > span[title]');
         case "core-plan":
           return card.querySelector("#plan-label");
         case "core-todo":
@@ -1169,6 +1238,18 @@ async function assertThemeBannerContract(
 
     const findValues = (card: Element, kind: string): Element[] => {
       switch (kind) {
+        case "captain-ask": {
+          const live = card.querySelector('[aria-live="polite"]');
+          if (!live) return [];
+          const walker = document.createTreeWalker(live, NodeFilter.SHOW_TEXT);
+          const owners: Element[] = [];
+          for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+            if (/\bwaiting\b/i.test(node.textContent ?? "") && node.parentElement) {
+              owners.push(node.parentElement);
+            }
+          }
+          return owners;
+        }
         case "core-bg-1":
         case "core-bg-2":
           return [...card.querySelectorAll("[data-t3-prompt-stack-value]:not(#bg-model-badge)")];
@@ -1326,14 +1407,21 @@ async function assertThemeBannerContract(
   }
   expect(expectedLabelColor, theme.name).not.toBe(expectedValueColor);
 
+  const kindsWithValues = new Set([
+    "captain-ask",
+    "core-bg-1",
+    "core-bg-2",
+    "core-context-strip",
+    "plugin-rpiv-todo",
+    "plugin-devin",
+  ]);
   for (const m of report.cardMetrics) {
     expect(m.borderTopWidth, `${theme.name}:${m.kind}`).toBe("0px");
     expect(m.overflow, `${theme.name}:${m.kind}`).toBe("hidden");
     expect(m.radius, `${theme.name}:${m.kind}`).toBe("8px");
     expect(m.minHeight, `${theme.name}:${m.kind}`).toBe("32px");
     expect(m.restAncestorViolations, `${theme.name}:${m.kind} flat rest ancestors`).toEqual([]);
-    if (m.kind === "captain-ask") continue;
-    if (m.kind !== "core-queue") {
+    if (m.kind !== "core-queue" && m.kind !== "captain-ask") {
       expect(m.iconLeft, `${theme.name}:${m.kind} has icon`).not.toBeNull();
     }
     if (m.iconLeft !== null) {
@@ -1351,6 +1439,9 @@ async function assertThemeBannerContract(
     expect(m.labelMask, `${theme.name}:${m.kind} label mask`).toBe("none");
     expect(m.labelAnim, `${theme.name}:${m.kind} label anim`).toBe("none");
 
+    if (kindsWithValues.has(m.kind)) {
+      expect(m.values.length, `${theme.name}:${m.kind} has values`).toBeGreaterThan(0);
+    }
     for (const v of m.values) {
       expect(v.size, `${theme.name}:${m.kind}:val(${v.text})`).toBe("12px");
       expect(v.weight, `${theme.name}:${m.kind}:val(${v.text})`).toBe("400");
@@ -1485,9 +1576,30 @@ describe("prompt-stack banner contract", () => {
     const tailwindCss = await compileRealTailwindCss(bodyMarkup);
     const controlsCss = readFileSync("packages/ui/src/controls.css", "utf8");
     const monokaiCss = readFileSync("plugins/monokai/themes/bb-monokai.css", "utf8");
-    const t3AppCss = readFileSync("plugins/t3-composer/app.css", "utf8");
-    const rpivCss = readFileSync("plugins/kitchen-sink/src/app/rpiv-todo/style.css", "utf8");
-    const devinCss = readFileSync("plugins/devin/src/app/devin.css", "utf8");
+    // Load every tracked runtime plugin stylesheet (including plugins/monokai/app/*.css)
+    // AND every exported content-script bb-DOM CSS constant so any plugin stylesheet
+    // styling bb's DOM is exercised against the rendered prompt stack.
+    const pluginStylesheets = trackedPluginFiles()
+      .filter(
+        (file) =>
+          file.endsWith(".css") && !file.includes("/themes/") && !file.includes("/scripts/"),
+      )
+      .sort();
+    expect(pluginStylesheets).toContain("plugins/monokai/app/project-control.css");
+    const injectedBbDomStyles = [
+      ["plugins/monokai/app/frame-border.ts#FRAME_BORDER_CSS", FRAME_BORDER_CSS],
+      ["plugins/monokai/app/search-fields.ts#SEARCH_FIELDS_CSS", SEARCH_FIELDS_CSS],
+      ["plugins/monokai/app/new-tab-launcher.ts#NEW_TAB_LAUNCHER_CSS", NEW_TAB_LAUNCHER_CSS],
+      ["plugins/t3-composer/src/branch-picker-style.ts#BRANCH_PICKER_CSS", BRANCH_PICKER_CSS],
+      [
+        "plugins/t3-composer/src/captain-projects/project-picker-hide.ts#hiddenProjectsCss",
+        hiddenProjectsCss(["proj_guard_sample"]),
+      ],
+    ] as const;
+    const pluginStylesheetsCss = [
+      ...pluginStylesheets.map((file) => `/* ${file} */\n${readFileSync(file, "utf8")}`),
+      ...injectedBbDomStyles.map(([name, css]) => `/* ${name} */\n${css}`),
+    ].join("\n");
     const taggerScript = await bundlePromptStackTagger();
 
     const browser = await chromium.launch();
@@ -1499,6 +1611,7 @@ describe("prompt-stack banner contract", () => {
           --ink: oklch(0.81 0 0);
           --background: var(--canvas);
           --foreground: var(--ink);
+          --muted: color-mix(in oklab, var(--ink) 8%, var(--canvas));
           --muted-foreground: oklch(0.78 0 0);
           --subtle-foreground: oklch(0.68 0 0);
           --border: color-mix(in oklch, var(--ink) 19.4%, var(--canvas));
@@ -1535,6 +1648,7 @@ describe("prompt-stack banner contract", () => {
               --ink: oklch(0.3211 0 0);
               --background: var(--canvas);
               --foreground: var(--ink);
+              --muted: color-mix(in oklab, var(--ink) 6%, var(--canvas));
               --muted-foreground: oklch(0.44 0 0);
               --subtle-foreground: oklch(0.5 0 0);
               --border: color-mix(in oklch, var(--ink) 14%, var(--canvas));
@@ -1560,9 +1674,7 @@ describe("prompt-stack banner contract", () => {
           theme,
           tailwindCss,
           controlsCss,
-          t3AppCss,
-          rpivCss,
-          devinCss,
+          pluginStylesheetsCss,
           bodyMarkup,
           taggerScript,
         );
@@ -1581,9 +1693,7 @@ describe("prompt-stack banner contract", () => {
           themes[0]!,
           tailwindCss,
           controlsCss,
-          t3AppCss,
-          rpivCss,
-          devinCss,
+          pluginStylesheetsCss,
           bodyMarkup,
         ),
       );

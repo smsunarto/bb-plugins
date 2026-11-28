@@ -485,7 +485,7 @@ function AnswerRow({
         type="button"
         size="icon-sm"
         variant="outline"
-        className={cn(TAP, "text-muted-foreground hover:text-foreground")}
+        className={cn(TAP, surface.bannerHover, "text-muted-foreground hover:text-foreground")}
         aria-label="Later"
         aria-keyshortcuts="L"
         aria-description="Hide for an hour"
@@ -501,7 +501,7 @@ function AnswerRow({
           variant="ghost"
           tone="muted"
           aria-label="Other…"
-          className={cn(TAP, "px-2")}
+          className={cn(TAP, surface.bannerHover, "px-2")}
           onClick={openOther}
         >
           <svg
@@ -844,11 +844,9 @@ export function ActionButton({
       className={cn(
         TAP,
         bannerKind
-          ? cn(MOBILE_ANSWER, "max-sm:min-w-0")
+          ? cn(MOBILE_ANSWER, surface.bannerHover, "max-sm:min-w-0")
           : "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal",
-        bannerKind &&
-          action.primary &&
-          "bg-(--foreground) text-background hover:bg-(--foreground)/90",
+        bannerKind && action.primary && "bg-(--foreground) text-background",
         className,
       )}
       aria-keyshortcuts={shortcuts && index < 9 ? String(index + 1) : undefined}
