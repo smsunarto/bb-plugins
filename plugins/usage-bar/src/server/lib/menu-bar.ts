@@ -203,7 +203,7 @@ export const menuBar = Effect.fn("menuBar")(function* (
       (account) =>
         sdkCall((signal) =>
           bb.sdk.plugins.callRpc({
-            pluginId: POOL_PLUGIN_ID,
+            pluginId: source.poolPluginId ?? POOL_PLUGIN_ID,
             method: "account.refreshUsage",
             input: { accountId: account.id },
             outputSchema: z.unknown(),

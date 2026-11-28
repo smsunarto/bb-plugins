@@ -57,12 +57,17 @@ const poolSecretSchema = z.object({
  * bb `plugins/account-pool/src/store.ts`). If that layout changes, extras for pool
  * accounts silently disappear while quota keeps working.
  */
-export async function poolToken(dataDir: string, accountId: string): Promise<string | null> {
+export async function poolToken(
+  dataDir: string,
+  accountId: string,
+  pluginId = "account-pool",
+): Promise<string | null> {
   if (!/^[a-z0-9_-]+$/iu.test(accountId)) return null;
+  if (!/^[a-z0-9-]+$/iu.test(pluginId)) return null;
   const path = join(
     dataDir,
     "plugins",
-    "account-pool",
+    pluginId,
     "secrets",
     "accounts",
     `account-${accountId}.json`,

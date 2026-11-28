@@ -73,22 +73,27 @@ const poolSchema = z.object({
 export type PoolView = z.infer<typeof poolSchema>;
 
 export const POOL_PLUGIN_ID = "account-pool";
+export const POOL_PLUGIN_IDS = ["account-pool-plus", POOL_PLUGIN_ID] as const;
 const POOL_DEADLINE_MS = 5_000;
 
 /** The pool's accounts, or null when the Account Pooler cannot be read. */
 export async function readPool(bb: Pick<BbPluginApi, "sdk" | "log">): Promise<PoolView | null> {
-  try {
-    return await bb.sdk.plugins.callRpc({
-      pluginId: POOL_PLUGIN_ID,
-      method: "status.get",
-      input: null as never,
-      outputSchema: poolSchema,
-      signal: AbortSignal.timeout(POOL_DEADLINE_MS),
-    });
-  } catch (error) {
-    bb.log.warn(`Account Pooler status not read: ${(error as Error).message}`);
-    return null;
+  let lastError: Error | null = null;
+  for (const pluginId of POOL_PLUGIN_IDS) {
+    try {
+      return await bb.sdk.plugins.callRpc({
+        pluginId,
+        method: "status.get",
+        input: null as never,
+        outputSchema: poolSchema,
+        signal: AbortSignal.timeout(POOL_DEADLINE_MS),
+      });
+    } catch (error) {
+      lastError = error as Error;
+    }
   }
+  bb.log.warn(`Account Pooler status not read: ${lastError?.message ?? "unavailable"}`);
+  return null;
 }
 
 export type Eligibility =
